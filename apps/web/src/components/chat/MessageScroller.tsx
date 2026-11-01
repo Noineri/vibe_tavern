@@ -2,7 +2,8 @@ import { useMemo } from "react";
 import { Virtuoso } from "react-virtuoso";
 import type { ReactNode } from "react";
 import type { Components, ContextProp } from "react-virtuoso";
-import { useChatStore, useIsSending } from "../../stores/chat-store.js";
+import { useHasFreshGeneration, useIsGenerationVisible, usePendingUserContent } from "../../stores/chat-store.js";
+import { useActiveStreamingMessageId } from "../../stores/chat-selectors.js";
 import { useMessageOrder } from "../../stores/index.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useImageGenChatStore } from "../../stores/image-gen-chat-store.js";
@@ -14,6 +15,7 @@ import { useIsMobile } from "../../hooks/use-mobile.js";
 import { cn } from "../../lib/cn.js";
 import { useStickToBottom } from "./use-stick-to-bottom.js";
 import { partitionMessageRenderWindow } from "./message-render-window.js";
+import { MessageScrollContext } from "./message-scroll-context.js";
 
 /**
  * Flat-list display-id derivation: the visible message sequence BEFORE any
@@ -33,10 +35,10 @@ import { partitionMessageRenderWindow } from "./message-render-window.js";
  */
 export function useDisplayMessageIds(): string[] {
   const messageOrder = useMessageOrder();
-  const isSending = useIsSending();
-  const pendingUserMessageContent = useChatStore((s) =>
-    s.activeChatId ? (s.generations[s.activeChatId]?.pendingUserMessageContent ?? null) : null,
-  );
+  const isSending = useIsGenerationVisible();
+  const hasFreshGeneration = useHasFreshGeneration();
+  const streamingMessageId = useActiveStreamingMessageId();
+  const pendingUserMessageContent = usePendingUserContent();
   const lastPersistedMessage = useSnapshotStore((s) => {
     const lastMessageId = s.messageOrder[s.messageOrder.length - 1];
     return lastMessageId ? s.messagesById[lastMessageId] : null;
@@ -46,7 +48,8 @@ export function useDisplayMessageIds(): string[] {
     const state = useSnapshotStore.getState();
     const ids = messageOrder.filter(id => state.messagesById[id]?.role !== "tool");
 
-    if (pendingUserMessageContent) {
+    // Empty text is a valid attachment-only send; null alone means no pending user turn.
+    if (pendingUserMessageContent !== null) {
       const lastMsg = lastPersistedMessage;
       const alreadyPersisted =
         lastMsg?.role === "user" &&
@@ -56,12 +59,12 @@ export function useDisplayMessageIds(): string[] {
         ids.push("__pending-user");
       }
       ids.push("__pending-assistant");
-    } else if (isSending && lastPersistedMessage?.role === "user") {
+    } else if (isSending && !streamingMessageId && (hasFreshGeneration || lastPersistedMessage?.role === "user")) {
       ids.push("__pending-assistant");
     }
 
     return ids;
-  }, [messageOrder, pendingUserMessageContent, lastPersistedMessage, isSending]);
+  }, [messageOrder, pendingUserMessageContent, lastPersistedMessage, isSending, hasFreshGeneration, streamingMessageId]);
 }
 
 export interface MessageScrollerProps {
@@ -195,6 +198,7 @@ export function MessageScroller({ displayIds, renderItem, bottomInset = 0 }: Mes
     onVirtualizedHeightChanged,
     pinned,
     scrollToBottom,
+    revealStart,
   } = useStickToBottom(resetKey, imageGenRunInFlight);
   const context = useMemo<MessageScrollerContext>(() => ({
     renderItem,
@@ -205,6 +209,7 @@ export function MessageScroller({ displayIds, renderItem, bottomInset = 0 }: Mes
   }), [renderItem, stableTailIds, stableTailStartIndex, stableTailRef, bottomInset]);
 
   return (
+    <MessageScrollContext.Provider value={revealStart}>
     <TranslateErrorBoundary>
       <div className={cn("relative flex-1 flex flex-col min-h-0", isMobile && "overscroll-y-none")}>
         <Virtuoso<string, MessageScrollerContext>
@@ -240,5 +245,6 @@ export function MessageScroller({ displayIds, renderItem, bottomInset = 0 }: Mes
         )}
       </div>
     </TranslateErrorBoundary>
+    </MessageScrollContext.Provider>
   );
 }

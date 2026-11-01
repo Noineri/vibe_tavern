@@ -14,6 +14,8 @@ import { Icons } from "../icons.js";
 import { useT } from "../../../i18n/context.js";
 import { agentOwnerKey, agentThreadKey, getAgentHost, scriptOwnerId, type AgentHostBridge, type AgentHostContext, type AgentKind } from "../../../lib/agent-host-registry.js";
 import { useAgentController, type AgentSendOptions } from "./use-agent-controller.js";
+import { useAgentThreadRefresh } from "./use-agent-thread-refresh.js";
+import { useVisibleAgentThread } from "../../../lib/agent-run-visibility.js";
 import { useAgentPlan } from "../../../hooks/use-agent-plan.js";
 import { useAgentModelBinding } from "./use-agent-model-binding.js";
 import { useAgentPresetCatalog } from "./use-agent-preset-catalog.js";
@@ -23,10 +25,14 @@ import { listAllLorebooks } from "../../../api/lorebook-api.js";
 import { listAllScripts } from "../../../api/script-api.js";
 import { listCoauthorSkills } from "../../../api/skill-api.js";
 import { useSnapshotStore } from "../../../stores/snapshot-store.js";
-import { useAgentTurnStore } from "../../../stores/agent-turn-store.js";
+import { useAgentShellMobileTab } from "./use-agent-shell-mobile-tab.js";
 import type { MentionAutocompleteItem } from "../mention-autocomplete-query.js";
 import { AgentChatPane } from "./AgentChatPane.js";
-import { AgentSettingsModal } from "./AgentSettingsModal.js";
+import { AgentShellModals } from "./agent-shell-modals.js";
+import { AgentProfileChip } from "./AgentProfileChip.js";
+import { useAgentEmptyProfile } from "./use-agent-empty-profile.js";
+import { useAgentInputPrefill } from "./use-agent-input-prefill.js";
+import { useAgentCallDirector } from "./use-agent-call-director.js";
 import { AgentShellTabButton } from "./AgentShellTabButton.js";
 import { AgentShellDesktopTwoPane } from "./desktop-two-pane.js";
 import type { AgentContextPillItem } from "./AgentContextPills.js";
@@ -56,18 +62,16 @@ import type { AgentContextPillItem } from "./AgentContextPills.js";
  * and the profile modal open flag — the per-kind provider/model selection
  * lives in `use-agent-model-binding.ts` (SC-0e) and is only consumed here.
  *
- * AS-6c SEAMS (remaining for later units): the turn/review stores keep their
- * `experience-copilot-*` names (AS-10 owns the call-site rename), and the
- * transport/wire types stay the experience client's (server keys stay bare
- * threadId — only the in-client store maps re-key through `agentThreadKey`).
- * AS-6c-ii landed here: the controller takes the host `kind` (required) and
- * every store read/write keys through the helper; the send path itself is
- * fully behind the descriptor's `transport` (AS-6c-i).
+ * Thread ids stay bare on the server; client stores use agentThreadKey.
+ * An owner change remounts the session view so late reads/settles from the
+ * previous owner cannot enter the new owner's local session or host bridge.
  */
 
 export interface AgentShellProps {
   /** The registered host kind driving this shell (`getAgentHost(kind)`). */
   kind: AgentKind;
+  /** False for a mounted but hidden host (closed pane/nonselected mobile tab). */
+  visible?: boolean;
   /** The typed thread owner — both script hosts pass
    *  `{ kind: "script", scriptId }` (the unsaved mini-app draft passes its
    *  local draft id here, exactly as it passed it as `ownerId` before). */
@@ -92,15 +96,13 @@ export interface AgentShellProps {
   hostProps?: unknown;
 }
 
-type MobileTab = "chat" | "edit";
+export function AgentShell(props: AgentShellProps) {
+  return <AgentShellSession key={`${props.kind}:${agentOwnerKey(props.owner)}`} {...props} />;
+}
 
-/** E6: how long the Edit-tab pulse plays after the clean→dirty edge.
- *  Matches the CSS animation total (~2 × 1.1s), same as DOC_PULSE_MS in
- *  CoauthorMode. */
-const EDIT_TAB_PULSE_MS = 2200;
-
-export function AgentShell({
+function AgentShellSession({
   kind,
+  visible = true,
   owner,
   isMobile,
   onBack,
@@ -117,6 +119,7 @@ export function AgentShell({
 
   // ── Session lifecycle state ──────────────────────────────────────────────
   const [threadId, setThreadId] = useState<string | null>(null);
+  useVisibleAgentThread(kind, threadId, visible);
   const [messages, setMessages] = useState<ExperienceCopilotMessageWire[]>([]);
   // SC-19b: the thread's frozen context events (merged-timeline order) —
   // fetched whenever messages refetch, rendered as separators by the list.
@@ -166,6 +169,13 @@ export function AgentShell({
   ownerRef.current = owner;
   const planOwner = host.planOwner?.({ owner });
   const agentPlan = useAgentPlan(planOwner);
+  // DR-9 (P1): the DESKTOP sidechat panel drops its plan section — the story
+  // plan's desktop presentation becomes the chat column's strip (DR-11); the
+  // mobile sidechat pane keeps the section (the phone's strip lives in the
+  // Chat pane, mockup §9). One pane prop from here — the pane itself stays
+  // viewport-agnostic; script/mini-app owners (kind "script") keep their
+  // section on both viewports.
+  const showPlanSection = !(planOwner?.kind === "chatBranch" && !isMobile);
 
   // Characters come from the live snapshot store (already app-wide); the other
   // four catalog sources are fetched ONCE per shell mount (best-effort — a
@@ -274,30 +284,69 @@ export function AgentShell({
     [contextLinks, handleSetContextLinks],
   );
 
+  // ── Toolbar modal open state (AP-27: the gear opens the settings summary,
+  //  the profile modal is its child now) ───────────────────────────────────
+  const [settingsModalOpen, setSettingsModalOpen] = useState(false);
+
+  // ── DR-6: the header's profile chip + its own profiles modal ──────────
+  //  The chip's edit-profiles row (agent_settings_edit_profiles) opens the
+  //  profiles modal straight from the header (standalone — no parentBack:
+  //  it was not opened from a settings surface), so the shell owns a second
+  //  controlled mount beside the settings summary's child one; only one is
+  //  ever open.
+  const [profileModalOpen, setProfileModalOpen] = useState(false);
+  // The chip's assignment hook reads the (chat, kind) row once per mount —
+  // the sibling write surfaces (the settings summary's dropdown, both
+  // profiles-modal footers) hold their own hook instances, so their writes
+  // are invisible to the chip until it re-reads. Both surfaces are MODALS
+  // (the chip is occluded while either is open), so bumping this epoch on
+  // their close — remounting the chip with a fresh read — is enough to
+  // keep the always-visible label correct; the modals themselves are
+  // untouched (their own surfaces re-read on open, as before).
+  const [profileChipEpoch, setProfileChipEpoch] = useState(0);
+  // ONE bump, two causes (DR-6 + DR-7): a sibling assignment surface's
+  // close (the comment above) AND this shell's own effective-profile
+  // change (the DR-7 hand-off row's write, seen by the hook below) both
+  // remount the chip with a fresh (chat, kind) read.
+  const bumpProfileChipRead = useCallback(() => {
+    setProfileChipEpoch((epoch) => epoch + 1);
+  }, []);
+
+  // ── DR-7: the ACTIVE profile drives the empty state; the OOC
+  //  hand-off row writes it — the shell's OWN parked-choice instance
+  //  (choose = exactly the DR-6 write) + the ONE built-in-presentation
+  //  derivation. Lives in `use-agent-empty-profile.ts` (file-size
+  //  ratchet); the plan comes from the same `useAgentPlan` cache the plan
+  //  section renders from (events = tasks).
+  const { effectiveProfileId: emptyStateProfileId, emptyPresentation, starterKeys, handoffRow } = useAgentEmptyProfile({
+    kind,
+    owner,
+    scriptId,
+    assignedProfileId,
+    plan: agentPlan.plan,
+    bumpProfileChip: bumpProfileChipRead,
+    t,
+  });
+
   // ── Provider / model selection (per-kind binding, SC-0e) ─────────────────
   // Each assistant kind remembers its own provider + model (the kind's
   // settings, not the global uiSettings copilot pair) — changing the model
   // in one assistant never changes another. Resolution and persistence live
   // in the hook; the shell only consumes the current selection.
-  const { providerProfileId, model, handleProviderChange } = useAgentModelBinding(kind, owner);
+  // DR-8: the empty-profile hook's EFFECTIVE profile id rides along (the
+  // hook gates it to chat-target hosts itself) so an own profile model can
+  // override the displayed pair + write path; `ownModelCaption` is the
+  // composer's profile-model caption line (null = today's composer, byte-identical).
+  const { providerProfileId, model, handleProviderChange, ownModelCaption } = useAgentModelBinding(
+    kind,
+    owner,
+    emptyStateProfileId,
+  );
 
-  // ── UI-only tab state ────────────────────────────────────────────────────
-  const [activeTab, setActiveTab] = useState<MobileTab>("chat");
-
-  // ── Toolbar modal open state (AP-27: the gear opens the settings summary,
-  //  the profile modal is its child now) ───────────────────────────────────
-  const [settingsModalOpen, setSettingsModalOpen] = useState(false);
-
-  // UX 2026-08-16 remark 6 — prefill handed to the chat input by a HOST
-  // surface (the experience "send to copilot" flow) through the bridge.
-  // Object identity is the trigger.
-  const [inputPrefill, setInputPrefill] = useState<{ text: string } | null>(null);
-  // AP-18: a starter click fills the composer (never sent) — a fresh object
-  // per click retriggers the composers' prefill effect; focusing lives in
-  // the pane's handler (it owns the composer DOM).
-  const handleStarterPick = useCallback((text: string): void => {
-    setInputPrefill({ text });
-  }, []);
+  // UX 2026-08-16 remark 6 — the prefill bridge lives in
+  //  `use-agent-input-prefill.ts` (file-size ratchet); a fresh object per
+  //  pick retriggers the composers' effect, focusing lives in the pane.
+  const { inputPrefill, setInputPrefill, handleStarterPick } = useAgentInputPrefill();
 
   // ── AS-6b2: the shell↔host bridge ────────────────────────────────────────
   // One stable object per shell; the host's editor pane assigns `session`
@@ -309,7 +358,6 @@ export function AgentShell({
     bridgeRef.current = { session: null, setInputPrefill };
   }
   const bridge = bridgeRef.current;
-
   // SC-19b: the events read is best-effort and host-optional — a failure (or
   // a host without the member) leaves the separators empty, never the
   // session. Called everywhere messages refetch (load / settle / switch);
@@ -366,50 +414,30 @@ export function AgentShell({
     }
   }, [ownerKey, transport]);
 
-  // (The experience host's draft rehydration — rehydrateExperienceCopilotDrafts
-  // — runs in the HOST pane's mount effect: child effects run before this one,
-  // so the stores are seeded before loadSession's threadId lands, exactly as
-  // the pre-split shell's single ordered effect guaranteed.)
+  // Hosts hydrate durable reviews once this load resolves their thread id;
+  // their async preparation barrier also protects a send before that read ends.
   useEffect(() => {
     void loadSession();
     void fetchSessions();
   }, [loadSession, fetchSessions]);
 
   // ── Stream controller ────────────────────────────────────────────────────
-  // Refetch persisted messages after each turn settles: the live `pendingText`
-  // is cleared and the persisted assistant message takes over. SC-18: the
-  // host learns the outcome first (its per-turn attachments clear on success
-  // and stay for a retry on failure) — built fresh at call time from the
-  // ref-carried owner (the outcome lands after awaits, never the render
-  // closure); the only caller is the controller's settle path below.
-  // CA-4f: the message/events reload half is ONE callback (`refreshThread`) —
-  // `handleTurnSettled` calls it after a turn, and the pane exposes it to
-  // sent-attachment actions through the CA-4f context: the same refetch path,
-  // never a second one.
-  const refreshThread = useCallback((id: string) => {
-    transport.listMessages(id)
-      .then(setMessages)
-      .catch(() => {
-        // Best-effort refetch — swallow so a transient list failure leaves the
-        // last-known messages on screen rather than surfacing a spurious error.
-      });
-    // SC-19b: the separators refetch alongside the messages (a host without
-    // the member keeps its empty list — no separators, exactly as today).
-    void fetchEvents(id).then(setEvents);
-  }, [transport, fetchEvents]);
-  const handleTurnSettled = useCallback((ok: boolean) => {
-    host.onSendSettled?.(
-      { owner: ownerRef.current, scriptId, threadId, isSending: false, hostProps, bridge },
-      ok,
-    );
-    if (!threadId) return;
-    refreshThread(threadId);
-  }, [threadId, host, scriptId, hostProps, bridge, fetchEvents, refreshThread]);
-  // The pane-side refresh (CA-4f context): the CURRENT thread through the
-  // same `refreshThread` the settle path uses.
-  const refreshMessages = useCallback(() => {
-    if (threadId !== null) refreshThread(threadId);
-  }, [threadId, refreshThread]);
+  // The refresh/settle trio lives in `use-agent-thread-refresh.ts` (file-size
+  // ratchet, DR-11): refetch persisted messages after each turn settles —
+  // the live stream text is cleared (LAG-3) and the persisted assistant message
+  // takes over.
+  const { refreshThread, handleTurnSettled, refreshMessages } = useAgentThreadRefresh({
+    transport,
+    fetchEvents,
+    setMessages,
+    setEvents,
+    host,
+    ownerRef,
+    scriptId,
+    threadId,
+    hostProps,
+    bridge,
+  });
 
   // CM-8: context meter state per thread (metrics / auto-compact / compact).
   // `onCompacted` refetches messages so the newly appended digest message
@@ -426,6 +454,7 @@ export function AgentShell({
   });
 
   const ctrl = useAgentController({
+    prepareTurn: (id, signal) => bridge.session?.onBeforeSend(id, signal),
     kind,
     transport,
     threadId,
@@ -436,6 +465,7 @@ export function AgentShell({
     applyPlanToolResult: agentPlan.applyToolResult, // PM-6: `plan` tool results → the plan cache
     threadTodo, // TAG-7 (restored PM-7): seeds the session-scoped todo panel state (mount/switch)
     threadMessages: messages, // AP-10: the edit-last delete target resolves from the live list
+    streamingMirrorKey: ownerKey, // DR-11: publish isSending for outside readers (the story strip)
   });
 
   // ── AS-6b2: the dispatch seam (host's dangling-review capture + options) ─
@@ -456,9 +486,22 @@ export function AgentShell({
   // variant chips; undefined for hosts that define no slot).
   const composerTopSlot = host.composerTopSlot?.(hostCtx);
   const sendWithOptions = (dispatch: (opts?: AgentSendOptions) => void) => {
-    bridge.session?.onBeforeSend();
     dispatch(host.buildSendOptions(hostCtx));
   };
+
+  // DR-12: the pending director call (`story_plan_call_director`) —
+  // `callDirector` queues it
+  // after opening the panel; the shell sends it once its controller is
+  // ready (the bootstrap above has created the session when none was
+  // active). No-op for owners that never queued (every non-sidechat host).
+  useAgentCallDirector({
+    ownerKey,
+    threadId,
+    sessionLoading,
+    isSending: ctrl.isSending,
+    send: (content) => sendWithOptions((opts) => void ctrl.handleSend(content, opts)),
+    t,
+  });
 
   // ── Session switch / new (ER-12b) ────────────────────────────────────────
   // Both are NO-OP while a turn is streaming (the switcher is also visually
@@ -523,44 +566,8 @@ export function AgentShell({
     [fetchSessions, transport, t],
   );
 
-  // ── Mobile auto-switch on proposal ───────────────────────────────────────
-  // A proposal becomes reviewable in the Chat pane (activity cards + Apply),
-  // so when one lands on mobile the surface jumps there. Ref-guarded edge
-  // mirroring CoauthorMode's `useCoauthorMobileTab`.
-  const hasProposal = useAgentTurnStore((s) => {
-    if (!threadId) return false;
-    const activities = s.turnsByThread[agentThreadKey(kind, threadId)] ?? [];
-    return activities.some(
-      (a) => a.status === "done" && a.target !== undefined && a.proposed !== undefined,
-    );
-  });
-  const prevHasProposal = useRef(hasProposal);
-  useEffect(() => {
-    const was = prevHasProposal.current;
-    prevHasProposal.current = hasProposal;
-    if (!was && hasProposal && isMobile) {
-      setActiveTab("chat");
-    }
-  }, [hasProposal, isMobile]);
-
-  // ── E6: Edit-tab dirty badge + one-shot pulse ───────────────────────
-  // Ref-guarded clean→dirty edge (proposal edge above, CA-14): the dot shows
-  // while dirty and on Chat; the pulse plays once per edge. NO auto-switch —
-  // a user-chosen Apply doesn't yank them off the chat tab.
-  const [editTabPulse, setEditTabPulse] = useState(false);
-  const prevEditTabDirty = useRef(editTabDirty);
-  useEffect(() => {
-    const was = prevEditTabDirty.current;
-    prevEditTabDirty.current = editTabDirty;
-    if (!was && editTabDirty) setEditTabPulse(true);
-  }, [editTabDirty]);
-  // Clear the highlight once the pulse animation has played
-  // (coauthor-tab-pulse ≈ 2 × 1.1s, same as DOC_PULSE_MS in CoauthorMode).
-  useEffect(() => {
-    if (!editTabPulse) return;
-    const id = setTimeout(() => setEditTabPulse(false), EDIT_TAB_PULSE_MS);
-    return () => clearTimeout(id);
-  }, [editTabPulse]);
+  // ── Mobile Chat/Edit tab: proposal auto-switch + E6 dirty pulse ─────────
+  const { activeTab, setActiveTab, editTabPulse } = useAgentShellMobileTab(kind, threadId, isMobile, editTabDirty);
 
   // ── Pane content (shared between desktop/mobile, mounted by branch) ──────
   // AP-3b: the pane JSX lives in AgentChatPane.tsx (this shell sits at the
@@ -584,20 +591,37 @@ export function AgentShell({
       handleNewSession={handleNewSession}
       handleRenameSession={handleRenameSession}
       setSettingsModalOpen={setSettingsModalOpen}
+      profileChip={
+        <AgentProfileChip
+          // Remount on sibling-surface close = a fresh (chat, kind) read —
+          // see `profileChipEpoch` above.
+          key={profileChipEpoch}
+          agentKind={kind}
+          scriptId={scriptId}
+          chatId={owner.kind === "chat" ? owner.chatId : undefined}
+          assignedProfileId={assignedProfileId}
+          onOpenProfiles={() => setProfileModalOpen(true)}
+        />
+      }
       copilotContext={copilotContext}
       ctrl={ctrl}
       sendWithOptions={sendWithOptions}
       planOwner={planOwner}
+      showPlanSection={showPlanSection}
       inputPrefill={inputPrefill}
       providerProfileId={providerProfileId}
       model={model}
       handleProviderChange={handleProviderChange}
+      modelCaption={ownModelCaption}
       catalog={catalog}
       pinnedContext={pinnedContext}
       handlePinContext={handlePinContext}
       handleUnpinContext={handleUnpinContext}
       composerTopSlot={composerTopSlot}
       onStarterPick={handleStarterPick}
+      emptyPresentation={emptyPresentation}
+      starterKeysOverride={starterKeys}
+      handoffRow={handoffRow}
       refreshMessages={refreshMessages}
     />
   );
@@ -610,27 +634,32 @@ export function AgentShell({
   const hasEditorPane = renderEditorPane !== undefined;
   const editorPane = hasEditorPane ? renderEditorPane(hostCtx) : null;
 
-  // ── Toolbar modals (AP-27: the settings summary only) ────────────────────
-  // XU-5/XU-6: the preview moved OUT of a modal into the editor's default tab
-  // (the inline `ExperienceFrame`), the sandbox became the inline Try tab in
-  // BOTH modes (quote 10), and the rules tester was absorbed into the
-  // sandbox's diagnostics (XU-4) — so no sandbox modal remains. The profile
-  // + skill modals open as the summary's children (with parentBack), never
-  // from the shell directly.
+  // ── Toolbar modals (AP-27: the gear's settings summary; DR-6: the chip's
+  //  standalone profiles modal) — the mounts live in `agent-shell-modals.tsx`
+  //  (file-size ratchet, DR-8); their closers also bump the profile-chip
+  //  read epoch (either modal's footers may write the (chat, kind) row
+  //  behind the chip's back).
   const modals = (
-    <>
-      <AgentSettingsModal
-        agentKind={kind}
-        scriptId={scriptId}
-        chatId={owner.kind === "chat" ? owner.chatId : undefined}
-        assignedProfileId={assignedProfileId}
-        providerProfileId={providerProfileId}
-        model={model}
-        onProviderChange={handleProviderChange}
-        isOpen={settingsModalOpen}
-        onClose={() => setSettingsModalOpen(false)}
-      />
-    </>
+    <AgentShellModals
+      agentKind={kind}
+      scriptId={scriptId}
+      chatId={owner.kind === "chat" ? owner.chatId : undefined}
+      assignedProfileId={assignedProfileId}
+      providerProfileId={providerProfileId}
+      model={model}
+      onProviderChange={handleProviderChange}
+      currentModel={{ providerProfileId, model }}
+      settingsOpen={settingsModalOpen}
+      profileOpen={profileModalOpen}
+      onSettingsClose={() => {
+        setSettingsModalOpen(false);
+        bumpProfileChipRead();
+      }}
+      onProfileClose={() => {
+        setProfileModalOpen(false);
+        bumpProfileChipRead();
+      }}
+    />
   );
 
   if (isMobile) {

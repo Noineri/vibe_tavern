@@ -290,6 +290,19 @@ function clearCoauthorReviewSession(chatId: string, characterId: string): void {
   reviewSessions.delete(key(chatId, characterId));
 }
 
+/** An authoritative remote deletion is not an ephemeral turn-start clear.
+ * Drop retained overlays and pending selections without inventing an outcome
+ * for another device's Apply/Reject. Completed ledger entries stay intact. */
+export function clearCoauthorRemoteReview(chatId: string): void {
+  const prefix = `${chatId}\u0000`;
+  for (const identity of reviewSessions.keys()) if (identity.startsWith(prefix)) reviewSessions.delete(identity);
+  for (const [identity, ledger] of ledgers) if (identity.startsWith(prefix)) ledger.pending = [];
+  for (const identity of reviewSelections.keys()) if (identity.startsWith(prefix)) {
+    reviewSelections.delete(identity);
+    notifyCoauthorReviewSelection(identity);
+  }
+}
+
 function notifyCoauthorReviewSelection(identity: string): void {
   for (const listener of reviewSelectionListeners.get(identity) ?? []) listener();
 }
@@ -473,11 +486,12 @@ export function settleCoauthorAppliedReview(
   characterId: string,
   originActivities: CoauthorToolActivity[],
   review: AgentReviewSnapshot,
+  options: { clearTurn?: boolean } = {},
 ): void {
   const currentTurn = useCoauthorTurnStore.getState().turnsByChat[chatId];
   const originTurnWasReplaced = currentTurn !== undefined && currentTurn !== originActivities;
-  resolveCoauthorReview(chatId, characterId, review, { clearSession: !originTurnWasReplaced });
-  if (currentTurn === originActivities) {
+  resolveCoauthorReview(chatId, characterId, review, { clearSession: !originTurnWasReplaced && options.clearTurn !== false });
+  if (currentTurn === originActivities && options.clearTurn !== false) {
     useCoauthorTurnStore.getState().clearTurn(chatId);
   } else if (currentTurn) {
     // A newer same-chat proposal owns the retained source from now on. Keeping

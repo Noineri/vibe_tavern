@@ -64,6 +64,7 @@ const m2 = () =>
         isSelected: true,
         finishReason: null,
         createdAt: "2026-01-01T00:00:00.000Z",
+        tokenCount: 0,
       },
     ],
   });
@@ -858,6 +859,7 @@ describe("narration playlist partial tracks (FS-3)", () => {
           isSelected: true,
           finishReason: null,
           createdAt: "2026-01-01T00:00:00.000Z",
+          tokenCount: 0,
         },
       ],
     });
@@ -1093,6 +1095,7 @@ describe("narration playlist re-voice (FS-6)", () => {
           isSelected: true,
           finishReason: null,
           createdAt: "2026-01-01T00:00:00.000Z",
+          tokenCount: 0,
         },
       ],
     });

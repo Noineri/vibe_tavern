@@ -327,6 +327,12 @@ export class ExperienceAdapter implements ExperienceRuntimeApi {
 		return status.data;
 	};
 
+	clearExperienceReportQueue = async (sessionId: string, body: { chatId: string; branchId: string; expectedRevision: number }): Promise<{ ok: true }> => {
+		const cleared = await this.lifecycle.clearReportQueue(sessionId, body);
+		if (!cleared.ok) throw mapError(cleared.error);
+		return { ok: true };
+	};
+
 	// ─── Replay ──────────────────────────────────────────────────────────────
 
 	undoExperienceSession = async (sessionId: string, body: { targetRevision: number }) => {

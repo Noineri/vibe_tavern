@@ -5,6 +5,7 @@ import { useSnapshotStore } from "../../../stores/snapshot-store.js";
 import { useIsMobile } from "../../../hooks/use-mobile.js";
 import { resolveEntityAvatarUrl } from "../../../lib/avatar.js";
 import { replaceUiMacros } from "../../../lib/macros.js";
+import { countTokens } from "../../../utils/tokenizer.js";
 import { Markdown } from "../../../lib/markdown.js";
 import { MessageShell } from "../MessageShell.js";
 import type { MessageMetaContext } from "../../../lib/message-meta-registry.js";
@@ -67,9 +68,17 @@ export function PendingUserMessage() {
         isStreaming: true,
         isCoauthorTurn: false,
         presetName: null,
-        tokenCount: 0,
-        createdAt: Date.now().toString(),
+        // LC-5: the stub counts its displayed text through the SAME path as
+        // the persisted message (the identical macro substitution above, then
+        // countTokens' cache) — the stub shows the real number and the
+        // persisted row hits the cache with the identical value: no jump on
+        // settle.
+        tokenCount: countTokens(displayContent),
+        // ERX-9: a millisecond string is not a parseable Date; MessageShell
+        // suppresses the entire metadata row when its timestamp is invalid.
+        createdAt: new Date().toISOString(),
         diceRolls: pendingDiceRolls,
+        experienceReports: activeGen.pendingExperienceReport ? [activeGen.pendingExperienceReport] : [],
       } satisfies MessageMetaContext}
       copied={false}
       slotExtras={{}}

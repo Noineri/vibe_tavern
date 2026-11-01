@@ -120,6 +120,34 @@ function makeExperienceService(options: ExperienceServiceOptions = {}) {
 }
 
 describe("PromptAssemblyService experience-report projection (IR-52)", () => {
+	it("ERX-3: carries only frozen public roster labels into the prompt and renders actor prose", async () => {
+		const service = makeExperienceService({ attachmentsByMessage: new Map([["msg_1", [makeStoreAttachment({
+			publicEventsJson: JSON.stringify({
+				title: "Cards",
+				participants: [{ id: "seat_1", label: "Player", controller: "human", character: { secret: "PRIVATE_ROSTER_SECRET" } }],
+				events: [{ type: "move", participantId: "seat_1", detail: "played a yellow 6" }],
+			}),
+		})]]]) });
+		const built = await service.buildPipelineContext({ chatId: "chat_1" as ChatId, model: "m" });
+		const snapshot = built.context.chat.recentMessages.find((message) => message.id === "msg_1")?.experienceReports?.[0];
+		expect(snapshot?.participants).toEqual([{ id: "seat_1", label: "Player" }]);
+		expect(JSON.stringify(snapshot)).not.toContain("PRIVATE_ROSTER_SECRET");
+		const result = await service.assembleForChat({ chatId: "chat_1" as ChatId, model: "m" });
+		const payload = JSON.stringify(result.prompt.finalPayload);
+		expect(payload).toContain("- Player: played a yellow 6");
+		expect(payload).not.toContain("PRIVATE_ROSTER_SECRET");
+	});
+
+	it("ERX-3: malformed or absent roster data degrades to actor ids without dropping legacy reports", async () => {
+		for (const participants of [undefined, null, "bad", [null, { id: 3, label: "bad" }, { id: "seat_1", label: 7 }]]) {
+			const service = makeExperienceService({ attachmentsByMessage: new Map([["msg_1", [makeStoreAttachment({
+				publicEventsJson: JSON.stringify({ title: "Legacy", participants, events: [{ type: "move", participantId: "seat_1", detail: "passed" }] }),
+			})]]]) });
+			const result = await service.assembleForChat({ chatId: "chat_1" as ChatId, model: "m" });
+			expect(JSON.stringify(result.prompt.finalPayload)).toContain("- seat_1: passed");
+		}
+	});
+
 	it("batch-loads bound attachments and attaches experienceReports to the correct user message", async () => {
 		const service = makeExperienceService({
 			attachmentsByMessage: new Map([["msg_1", [makeStoreAttachment()]]]),
@@ -161,10 +189,12 @@ describe("PromptAssemblyService experience-report projection (IR-52)", () => {
 			.find((m) => m.messageId === "msg_1");
 		expect(userMsg).toBeDefined();
 		expect(userMsg!.content).toContain("I make my move.");
-		expect(userMsg!.content).toContain("[Experience report — Tic-Tac-Toe — authoritative]");
-		expect(userMsg!.content).toContain("resolved facts");
-		expect(userMsg!.content).toContain("- move: X played center");
-		expect(userMsg!.content).toContain("[End experience report]");
+		// ERX-2b, 2026-10-27: the in-story frame applies to already-bound report history too.
+		expect(userMsg!.content).toContain("[In the story — Tic-Tac-Toe]");
+		expect(userMsg!.content).toContain("it is settled and now part of the story");
+		// ERX-2, 2026-10-27: normalize string details without changing the projection boundary.
+		expect(userMsg!.content).toContain("- X played center");
+		expect(userMsg!.content).toContain("[End]");
 	});
 
 	it("NEVER leaks the hidden checkpoint into the snapshot or the payload", async () => {
@@ -195,7 +225,7 @@ describe("PromptAssemblyService experience-report projection (IR-52)", () => {
 
 		const result = await service.assembleForChat({ chatId: "chat_1" as ChatId, model: "m", summary: true });
 		const payloadStr = JSON.stringify(result.prompt.finalPayload);
-		expect(payloadStr).toContain("[Experience report — Tic-Tac-Toe");
+		expect(payloadStr).toContain("[In the story — Tic-Tac-Toe]");
 		expect(payloadStr).toContain("X played center");
 	});
 
@@ -206,7 +236,7 @@ describe("PromptAssemblyService experience-report projection (IR-52)", () => {
 		const userMsg = (result.prompt.finalPayload as { messages: Array<{ messageId?: string; content: string }> }).messages
 			.find((m) => m.messageId === "msg_1");
 		expect(userMsg!.content).toBe("I make my move.");
-		expect(userMsg!.content).not.toContain("[Experience report");
+		expect(userMsg!.content).not.toContain("[In the story");
 	});
 
 	it("skips a malformed publicEventsJson without crashing (graceful degradation)", async () => {

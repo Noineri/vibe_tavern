@@ -5,7 +5,7 @@ import type { AgentPlan } from "@vibe-tavern/api-contracts";
 useDomEnv();
 
 const { act, renderHook, waitFor } = await import("@testing-library/react");
-const { parseAgentPlanToolArgs, parseAgentPlanToolResult, useAgentPlan } = await import("./use-agent-plan.js");
+const { parseAgentPlanToolArgs, parseAgentPlanToolResult, ingestAgentPlan, readAgentPlan, subscribeAgentPlan, useAgentPlan } = await import("./use-agent-plan.js");
 
 const originalFetch = globalThis.fetch;
 const calls: Array<{ url: string; method: string; body?: string }> = [];
@@ -120,5 +120,51 @@ describe("useAgentPlan", () => {
 
     act(() => result.current.applyToolResult({ args: { plan: PLAN }, output: { ok: false, error: "not saved" } }));
     expect(result.current.plan).toEqual(replacement);
+  });
+
+  it("ingestAgentPlan pushes an already-saved server plan into the cache with no fetch (DR-10a)", async () => {
+    const owner = { kind: "chatBranch" as const, chatId: "dr10-chat", branchId: "dr10-branch" };
+    const { result } = renderHook(() => useAgentPlan(owner));
+    await waitFor(() => expect(result.current.plan.goal).toBe("Branch plan"));
+    const getsBefore = calls.filter((call) => call.method === "GET").length;
+
+    const accepted: AgentPlan = {
+      goal: "Accepted proposal",
+      constraints: [],
+      tasks: [{ id: "ev1", title: "First event", body: "", status: "active" }],
+    };
+    act(() => ingestAgentPlan(owner, accepted));
+
+    expect(result.current.plan).toEqual(accepted);
+    expect(calls.filter((call) => call.method === "GET")).toHaveLength(getsBefore);
+  });
+});
+
+describe("readAgentPlan / subscribeAgentPlan (DR-13)", () => {
+  it("readAgentPlan returns the entry's plan and never starts a fetch (a pure visibility read)", () => {
+    const owner = { kind: "chatBranch" as const, chatId: "dr13-read-chat", branchId: "dr13-read-branch" };
+    const getsBefore = calls.filter((call) => call.method === "GET").length;
+
+    // A cold entry reads empty — and creates no GET (the strip owns loading).
+    expect(readAgentPlan(owner)).toEqual({ goal: "", constraints: [], tasks: [] });
+    expect(calls.filter((call) => call.method === "GET")).toHaveLength(getsBefore);
+
+    act(() => ingestAgentPlan(owner, PLAN));
+    expect(readAgentPlan(owner)).toEqual(PLAN);
+    expect(calls.filter((call) => call.method === "GET")).toHaveLength(getsBefore);
+  });
+
+  it("subscribeAgentPlan fires on every entry replace and stops after unsubscribe", () => {
+    const owner = { kind: "chatBranch" as const, chatId: "dr13-sub-chat", branchId: "dr13-sub-branch" };
+    let notifications = 0;
+    const unsubscribe = subscribeAgentPlan(owner, () => { notifications += 1; });
+
+    act(() => ingestAgentPlan(owner, PLAN));
+    act(() => ingestAgentPlan(owner, { ...PLAN, goal: "Second replace" }));
+    expect(notifications).toBe(2);
+
+    unsubscribe();
+    act(() => ingestAgentPlan(owner, { ...PLAN, goal: "After unsubscribe" }));
+    expect(notifications).toBe(2);
   });
 });

@@ -4,12 +4,11 @@
  *
  * The experience-copilot turn store (`agent-turn-store.ts`) is
  * deliberately ephemeral: it holds a turn's tool activities in memory with no
- * `persist` middleware, because the backend does not persist tool calls onto
- * the message record. The consequence is that a page reload wipes any in-review
- * proposal, so the user loses the diff + review affordance and has to re-run
- * the turn. ER-10 persists the FINALIZED proposed-producing activities (the
- * subset `aggregateExperienceCopilotProposal` derives from) to localStorage,
- * keyed by threadId, and rehydrates them on boot.
+ * `persist` middleware. Rebuilding a diff after reload also requires its old
+ * base and hunk progress, not just message history. We persist the finalized
+ * proposal-producing activities and their complete round (the
+ * subset `aggregateExperienceCopilotProposal` derives from) through the review
+ * API, keyed by threadId. localStorage is read only for one-time migration.
  *
  * ENVELOPE V2 — THE WHOLE ROUND. A review is more than its activities: the
  * turn-start snapshot (the diff "before" side), the per-buffer accepted /
@@ -20,9 +19,10 @@
  * `{ activities, round }` together; a V1 envelope (activities only) still
  * loads, degraded (no review anchor).
  *
- * WRITE SIDE. `syncPersistedCopilotRound(threadId)` is the single entry point
- * the copilot shell calls from an effect on every round/activity mutation: it
- * reads both stores and either saves or CLEARS the key. The key survives while
+ * WRITE SIDE. The server producer writes finalized proposals before terminal
+ * delivery. `syncPersistedCopilotRound(threadId)` persists idle review progress
+ * through the ordered API lane; preparation flushes it before a new turn.
+ * Live/replayed activity updates never upload partial proposals. It survives while
  * anything reviewable remains (finalized activities OR a dangling capture);
  * a fully resolved / reverted round removes it. Unsaved buffer edits and
  * accepted-hunk text do NOT survive a reload (the draft buffers are in-memory),
@@ -45,64 +45,40 @@
  * so rehydration reconstructs the same two-buffer diff with zero new UI.
  *
  * VERSIONING. The envelope carries `_v`. A version mismatch on load (e.g.
- * after a schema change) discards the entry rather than seeding incompatible
+ * after a schema change) discards the legacy entry rather than seeding incompatible
  * data — the user simply sees no draft, same as before ER-10. Malformed JSON
  * is likewise discarded (best-effort: persistence is a convenience, never a
- * correctness constraint — the canonical buffers are the script/visual draft
- * stores' source of truth).
+ * legacy-import guarantee; canonical reviews use the validated server API).
  */
 import type { AgentToolActivity } from "../stores/agent-turn-store.js";
-import { useAgentTurnStore } from "../stores/agent-turn-store.js";
 import type { AgentReviewRound } from "../stores/agent-review-store.js";
-import { useAgentReviewRoundStore } from "../stores/agent-review-store.js";
-import { agentThreadKey } from "./agent-host-registry.js";
+import type { AgentReviewEnvelope } from "@vibe-tavern/api-contracts";
+import { isFinalizedReviewActivity as isFinalizedActivity, finalizeReviewActivities as finalizeForPersistence } from "@vibe-tavern/api-contracts";
+import { createBufferAgentReviewPersistence, serializeBufferAgentReview } from "./buffer-agent-review-persistence.js";
+import {
+  streamExperienceCopilot, answerCopilotAsk,
+} from "../api/experience-copilot-api.js";
+export { isFinalizedActivity, finalizeForPersistence };
 
 /** The draft envelope is experience-scoped (the `vt:experience-copilot-draft:`
  *  prefix, the store slices below) — its store-map keys go through the shared
- *  helper with the experience kind (AS-6c-ii: the helper keeps the legacy
- *  bare threadId for this kind, so boot rehydration keeps hitting the
- *  pre-6c-ii localStorage entries with zero migration). */
+ *  helper with the experience kind, retaining the legacy bare threadId. */
 const DRAFT_KIND = "experience";
 
 const DRAFT_PREFIX = "vt:experience-copilot-draft:";
 const DRAFT_VERSION = 2;
 
-/** localStorage envelope — versioned so a future schema change can migrate/discard. */
-interface DraftEnvelope {
-  _v: number;
-  activities: unknown[];
-  /** V2: the review round (snapshots / hunk selections / dangling). */
-  round: AgentReviewRound | null;
-}
+/** The legacy reader also examines V1/unknown versions before narrowing. */
+type DraftEnvelope = Omit<AgentReviewEnvelope, "_v"> & { _v: number };
 
 /** What a parsed envelope yields: the finalized activities plus (V2 only) the
  *  review round. `round` is null for V1 envelopes and for a malformed round —
  *  the activities still load, degraded. */
-export interface ParsedCopilotDraft {
-  activities: AgentToolActivity[];
-  round: AgentReviewRound | null;
-}
+export type ParsedCopilotDraft = Pick<AgentReviewEnvelope, "activities" | "round">;
 
 /**
- * Type guard for a finalized, proposed-producing activity. Mirrors the filter
- * in `experience-copilot-apply.ts` (`aggregateExperienceCopilotProposal`) so
- * the persisted subset is exactly what the aggregator consumes. Defensive: a
- * value that fails any clause is dropped on load (corruption / version-skew
- * defense).
+ * The shared finalized guard preserves the legacy reader's permissive filter.
  */
-export function isFinalizedActivity(x: unknown): x is AgentToolActivity {
-  if (typeof x !== "object" || x === null) return false;
-  const a = x as Record<string, unknown>;
-  if (
-    a.status !== "done"
-    || typeof a.toolCallId !== "string"
-    || typeof a.toolName !== "string"
-    || (a.target !== "rules" && a.target !== "visual")
-    || typeof a.proposed !== "string"
-    || a.proposed.length === 0
-  ) return false;
-  return true;
-}
 
 /** Type guard for the V2 review-round payload. Mirrors the round store's
  *  `AgentReviewRound` shape field by field — a value that fails any clause
@@ -137,18 +113,7 @@ export function isReviewRound(x: unknown): x is AgentReviewRound {
  * deduped by `toolCallId` (later wins) in insertion order — mirroring the
  * store's own upsert-merge semantics. Pure: no I/O.
  */
-export function finalizeForPersistence(activities: AgentToolActivity[]): AgentToolActivity[] {
-  // Map (not Set) so a later duplicate toolCallId OVERWRITES the value while
-  // preserving the first occurrence's POSITION — mirroring both the store's
-  // upsert-merge (later fields win) and `aggregateExperienceCopilotProposal`'s
-  // finalizedActivities dedup. Map iteration is insertion order.
-  const byId = new Map<string, AgentToolActivity>();
-  for (const a of activities) {
-    if (!isFinalizedActivity(a)) continue;
-    byId.set(a.toolCallId, a);
-  }
-  return [...byId.values()];
-}
+// The shared finalizer above retains first-call order with later values winning.
 
 /**
  * Serialize a thread's activities + review round to the versioned persistence
@@ -160,10 +125,7 @@ export function serializeDraft(
   activities: AgentToolActivity[],
   round: AgentReviewRound | null,
 ): string | null {
-  const finalized = finalizeForPersistence(activities);
-  if (finalized.length === 0 && round?.dangling == null) return null;
-  const envelope: DraftEnvelope = { _v: DRAFT_VERSION, activities: finalized, round };
-  return JSON.stringify(envelope);
+  return serializeBufferAgentReview(activities, round, DRAFT_KIND);
 }
 
 /**
@@ -194,8 +156,8 @@ function key(threadId: string): string {
 }
 
 /**
- * Persist a thread's activities (filtered to the finalized subset) + review
- * round. When nothing reviewable remains the key is removed instead.
+ * Legacy envelope writer retained for migration fixtures / older callers.
+ * The running host writes ONLY through syncPersistedCopilotRound below.
  * Best-effort: any localStorage failure (quota / disabled / absent) is
  * swallowed — the in-memory proposal still works for the current session.
  * No-op without localStorage.
@@ -285,43 +247,33 @@ export function loadAllDrafts(): Record<string, ParsedCopilotDraft> {
   return out;
 }
 
-/**
- * The WRITE side of the persistence contract (envelope v2): read both stores'
- * current state for the thread and save/clear the localStorage key. Called by
- * the copilot shell from an effect on every round/activity mutation — the
- * single funnel that keeps the key in sync without wiring localStorage into
- * the stores themselves. Idempotent; no-op without localStorage.
- */
-export function syncPersistedCopilotRound(threadId: string): void {
-  const key = agentThreadKey(DRAFT_KIND, threadId);
-  const activities = useAgentTurnStore.getState().turnsByThread[key] ?? [];
-  const round = useAgentReviewRoundStore.getState().roundsByThread[key] ?? null;
-  saveDraft(threadId, activities, round);
+const reviewPersistence = createBufferAgentReviewPersistence(DRAFT_KIND, {
+  read: (threadId) => {
+    const parsed = loadDraft(threadId);
+    return parsed === null ? null : { _v: 2, ...parsed };
+  },
+  remove: clearDraft,
+});
+
+export const experienceCopilotRuns = reviewPersistence.runs;
+
+/** Per-thread server hydration; never boot-scan legacy keys into live stores. */
+export function rehydrateExperienceCopilotDrafts(threadId: string): Promise<void> {
+  return reviewPersistence.hydrate(threadId);
 }
 
-/**
- * Boot rehydration: seed the turn store (activities) AND the review-round
- * store (round) with any persisted drafts from a previous session. Merges into
- * the existing dicts (additive; on a fresh page load both stores are empty).
- * Safe to call multiple times. No-op without localStorage. Called from the
- * copilot shell's mount effect.
- */
-export function rehydrateExperienceCopilotDrafts(): void {
-  const drafts = loadAllDrafts();
-  if (Object.keys(drafts).length === 0) return;
-  useAgentTurnStore.setState((s) => ({
-    turnsByThread: {
-      ...s.turnsByThread,
-      ...Object.fromEntries(
-        Object.entries(drafts).map(([tid, d]) => [agentThreadKey(DRAFT_KIND, tid), d.activities]),
-      ),
-    },
-  }));
-  const rounds = Object.fromEntries(
-    Object
-      .entries(drafts)
-      .flatMap(([tid, d]) => (d.round !== null ? [[agentThreadKey(DRAFT_KIND, tid), d.round] as const] : [])),
-  );
-  if (Object.keys(rounds).length === 0) return;
-  useAgentReviewRoundStore.setState((s) => ({ roundsByThread: { ...s.roundsByThread, ...rounds } }));
+/** Ordered, run-aware write funnel. An unhydrated or server-owned review
+ * cannot be overwritten by the editor's initial empty/transient render. */
+export function syncPersistedCopilotRound(threadId: string): Promise<void> {
+  return reviewPersistence.sync(threadId);
 }
+
+/** The shared controller awaits this before destructive turn-start changes. */
+export function prepareExperienceCopilotReviewTurn(threadId: string, signal: AbortSignal, buffers: { rules: string; visual: string }): Promise<void> {
+  return reviewPersistence.prepare(threadId, signal, buffers);
+}
+
+export const streamPersistedExperienceCopilot: typeof streamExperienceCopilot = (threadId, body, opts) =>
+  reviewPersistence.run(threadId, opts.signal, () => streamExperienceCopilot(threadId, body, opts));
+export const answerPersistedCopilotAsk: typeof answerCopilotAsk = (threadId, body, opts) =>
+  reviewPersistence.run(threadId, opts.signal, () => answerCopilotAsk(threadId, body, opts));

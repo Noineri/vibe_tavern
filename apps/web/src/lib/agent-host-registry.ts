@@ -214,14 +214,14 @@ export interface AgentHostBufferSpec {
 
 /**
  * AS-6b2: the live handle a host's editor pane assigns to
- * {@link AgentHostBridge.session} every render. `onBeforeSend` runs
- * synchronously before each dispatched turn (the buffer host captures its
- * dangling review before the turn store is cleared); `buildSendOptions`
+ * {@link AgentHostBridge.session} every render. `onBeforeSend` runs inside
+ * the controller's re-entrancy guard and may await durable review writes
+ * before the turn store is cleared; `buildSendOptions`
  * returns the host's per-turn send options (AS-6c-ii: typed — the options
  * type lives in this registry now, so no narrowing cast is needed).
  */
 export interface AgentHostSessionHandle {
-  onBeforeSend: () => void;
+  onBeforeSend: (threadId: string, signal: AbortSignal) => void | Promise<void>;
   buildSendOptions: () => AgentSendOptions;
 }
 
@@ -255,6 +255,9 @@ export interface RecordProposalCardProps {
  * type unification generalize these behind per-kind wire types.
  */
 export interface AgentHostTransport {
+  /** Server-owned run lifecycle. Built-in hosts all wire this; transports for
+   * embedded/synchronous clients may omit background-run support. */
+  runs?: typeof import("../api/agent-run-api.js").agentThreadRuns;
   /** Stream one agent turn for a thread (the send path). */
   sendStream: typeof streamExperienceCopilot;
   /** Answer a pending `ask_user` question — the split-turn continuation
@@ -387,6 +390,9 @@ export type AgentProfileAssignment = { target: "script" } | { target: "chat" };
 /** Everything the generic shell needs to host one agent kind. */
 export interface AgentHostDescriptor {
   kind: AgentKind;
+  /** Optional for embedded hosts without app navigation; every built-in host
+   * supplies this destination for background-run notification actions. */
+  open?: (owner: AgentThreadOwner) => void | Promise<void>;
   /** i18n KEYS (not strings) — the shell resolves them through `useT`. */
   i18n: {
     title: AgentI18nKey;

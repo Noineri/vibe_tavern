@@ -15,6 +15,7 @@ import {
   copilotToolSetSchema,
   copilotProfileSchema,
   copilotProfileCreateSchema,
+  copilotProfileUpdateSchema,
   reorderCopilotProfilesSchema,
   COPILOT_TOOL_KEYS,
   sidechatOocToolSetSchema,
@@ -679,12 +680,19 @@ describe("copilotToolSetSchema (CP-1)", () => {
 // ─── SC-5: the sidechat-ooc tool set (keys before tools — the TAG-1 pattern) ──
 
 describe("sidechatOocToolSetSchema (SIDECHAT_PLAN SC-5)", () => {
-  test("accepts each of the 5 Wave-3 toggles with either boolean, and {} (all off)", () => {
+  test("accepts each known toggle with either boolean, and {} (all off)", () => {
     for (const key of SIDECHAT_OOC_TOOL_KEYS) {
       expect(sidechatOocToolSetSchema.parse({ [key]: true })).toEqual({ [key]: true });
       expect(sidechatOocToolSetSchema.parse({ [key]: false })).toEqual({ [key]: false });
     }
     expect(sidechatOocToolSetSchema.parse({})).toEqual({});
+    // DR-4a: the two DIRECTOR toggles are named here beside the loop — the
+    // keys exist on the wire before the director seed serves the tools
+    // (known-but-off in the OOC seed's set).
+    expect(sidechatOocToolSetSchema.parse({ propose_plan: true, propose_tracker_template: false })).toEqual({
+      propose_plan: true,
+      propose_tracker_template: false,
+    });
   });
 
   test("rejects the other kinds' keys and unknown keys (strict)", () => {
@@ -696,7 +704,12 @@ describe("sidechatOocToolSetSchema (SIDECHAT_PLAN SC-5)", () => {
     expect(() => sidechatOocToolSetSchema.parse({ search_contex: true })).toThrow();
   });
 
-  test("SIDECHAT_OOC_TOOL_KEYS lists exactly the 6 toggles in definition order", () => {
+  test("SIDECHAT_OOC_TOOL_KEYS lists exactly the 9 toggles in definition order", () => {
+    // Behavior change (DR-4a): was the 6 landed toggles → now 8, the two
+    // director proposal tools appended, basis: DIRECTOR_MODE_PLAN DR-4a.
+    // Behavior change (DR-4b, owner ruling 2026-10-27): 8 → 9, `ask_user`
+    // appended — the shared ask tool serves the sidechat, on for the
+    // director seed, off for the OOC seed.
     expect(SIDECHAT_OOC_TOOL_KEYS).toEqual([
       "search_context",
       "read_context_item",
@@ -704,6 +717,9 @@ describe("sidechatOocToolSetSchema (SIDECHAT_PLAN SC-5)", () => {
       "todo",
       "read_plan",
       "read_message_prompt",
+      "propose_plan",
+      "propose_tracker_template",
+      "ask_user",
     ]);
   });
 
@@ -826,6 +842,56 @@ describe("copilotProfileSchema (CP-1)", () => {
       agentKind: "experience",
     };
     expect(() => copilotProfileSchema.parse({ ...base, maxSteps: 5 })).toThrow();
+  });
+});
+
+// ─── DR-7b: sourceBuiltinId provenance (additive + immutable) ─────────────
+// The wire profile gains an optional nullable `sourceBuiltinId` (old
+// payloads parse unchanged — the field is additive on a strict object);
+// create gains it with NO default (absent = no source); update OMITS it
+// (provenance is set once at create, exactly like `agentKind`).
+describe("copilotProfile sourceBuiltinId (DR-7b)", () => {
+  const wireBase = {
+    id: "cprof_1",
+    name: "Card games",
+    isBuiltIn: false,
+    basePrompt: "p",
+    toolSet: {},
+    agentKind: "sidechat-ooc",
+  };
+
+  test("wire profile accepts a source id and an explicit null", () => {
+    expect(copilotProfileSchema.parse({ ...wireBase, sourceBuiltinId: "builtin-director" })).toEqual({
+      ...wireBase,
+      sourceBuiltinId: "builtin-director",
+    });
+    expect(copilotProfileSchema.parse({ ...wireBase, sourceBuiltinId: null })).toEqual({
+      ...wireBase,
+      sourceBuiltinId: null,
+    });
+  });
+
+  test("wire profile without the key parses unchanged (additive — old payloads byte-identical)", () => {
+    expect(copilotProfileSchema.parse(wireBase)).toEqual(wireBase);
+  });
+
+  test("create accepts an optional source and keeps it; absent = no key added (no default)", () => {
+    const base = { name: "X", basePrompt: "p", toolSet: {} };
+    expect(copilotProfileCreateSchema.parse({ ...base, sourceBuiltinId: "builtin" })).toEqual({
+      ...base,
+      agentKind: "experience",
+      sourceBuiltinId: "builtin",
+    });
+    const parsed = copilotProfileCreateSchema.parse(base);
+    expect(parsed).toEqual({ ...base, agentKind: "experience" });
+    expect("sourceBuiltinId" in parsed).toBe(false);
+  });
+
+  test("update omits sourceBuiltinId — a PATCH smuggling it is strict-rejected", () => {
+    // Same immutability family as agentKind: omitted (not optional) from the
+    // update contract, so the strict object rejects the key outright.
+    expect(() => copilotProfileUpdateSchema.parse({ name: "Y", sourceBuiltinId: "builtin" })).toThrow();
+    expect(copilotProfileUpdateSchema.parse({ name: "Y" })).toEqual({ name: "Y" });
   });
 });
 

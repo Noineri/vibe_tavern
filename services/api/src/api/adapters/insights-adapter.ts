@@ -1,5 +1,5 @@
-import { applyTrackerTemplate, brandId, ensureActiveObjectiveTarget, readTrackerTemplate, trackerTemplateFromChat, withTrackerTemplate, type CharacterId, type ChatBranchId, type ChatId, type MessageId, type MessageVariantId, type ObjectiveMode, type ObjectiveState, type ObjectiveTaskStatus, type SceneBackfillMode, type SceneTrackerConfig, type TrackerTemplate } from "@vibe-tavern/domain";
-import type { StoreContainer } from "@vibe-tavern/db";
+import { applyTrackerTemplate, brandId, ensureActiveObjectiveTarget, readTrackerTemplate, trackerTemplateFromChat, withTrackerTemplate, TRACKER_TEMPLATE_VERSION, type CharacterId, type ChatBranchId, type ChatId, type MessageId, type MessageVariantId, type ObjectiveMode, type ObjectiveState, type ObjectiveTaskStatus, type SceneBackfillMode, type SceneTrackerConfig, type TrackerTemplate } from "@vibe-tavern/domain";
+import type { Chat, StoreContainer } from "@vibe-tavern/db";
 import type { SessionRuntime } from "../../runtime/session/session-runtime.js";
 import type { ProviderProfileService } from "../../domain/providers/provider-profile-service.js";
 import type { ConfigPatchResponse, InsightsCompletionPatchResponse, SceneBackfillStatusResponse, ScenePreviewResponse, SceneStatusResponse, SceneTargetResponse } from "../contract/session-types.js";
@@ -336,13 +336,46 @@ export class InsightsAdapter {
 				details: { code: "no_tracker_template" },
 			});
 		}
+		return this.writeTrackerSetup(chat, template);
+	};
+
+	/** Apply ONLY a scene half (DIRECTOR_MODE_PLAN DR-5): the tracker-scene
+	 *  proposal's Accept path. Same apply tail as the character-template apply
+	 *  (the one extracted helper — no copy), but the template is synthesized
+	 *  from the proposal's scene with `objective: null`, so the goal tracker's
+	 *  state and `objectiveEnabled` pass through untouched (goals come from the
+	 *  story plan — A9). Same preconditions as the character apply: the chat
+	 *  must exist and be an RP chat (the template-apply family's rule). */
+	applyTrackerSceneTemplate = async (
+		chatId: string,
+		scene: NonNullable<TrackerTemplate["scene"]>,
+	): Promise<ConfigPatchResponse> => {
+		const chat = await this.stores.chats.getById(chatId);
+		if (!chat) throw notFound("Chat", `Chat '${chatId}' was not found.`);
+		if (chat.mode !== "rp") {
+			throw unprocessable("Tracker templates can only be applied to RP chats.", { code: "not_an_rp_chat" });
+		}
+		return this.writeTrackerSetup(chat, {
+			version: TRACKER_TEMPLATE_VERSION,
+			scene,
+			objective: null,
+		});
+	};
+
+	/** The shared apply TAIL of every tracker-template apply (extracted in DR-5
+	 *  — `applyCharacterTrackerTemplate` and `applyTrackerSceneTemplate` both
+	 *  route through this ONE helper, never a copy): project the template onto
+	 *  the chat's CURRENT config/objective state, persist through
+	 *  `replaceTrackerSetup` (the known accepted bypass — see story-plan-sync.ts's
+	 *  header), and return the active-chat patch the web refreshes from. */
+	private async writeTrackerSetup(chat: Chat, template: TrackerTemplate): Promise<ConfigPatchResponse> {
 		const next = applyTrackerTemplate(template, {
 			insightsConfig: chat.insightsConfig,
 			objectiveState: chat.insightsObjectiveState,
 		});
-		await this.stores.chats.replaceTrackerSetup(chatId, next.insightsConfig, next.objectiveState);
-		return this.refresh(chatId);
-	};
+		await this.stores.chats.replaceTrackerSetup(chat.id, next.insightsConfig, next.objectiveState);
+		return this.refresh(chat.id);
+	}
 
 	/** Save this chat's portable setup onto its character without machine-local
 	 * provider/model selections. Available for every chat mode; only apply is RP-only. */

@@ -3,6 +3,18 @@
  * sidechat `propose_objective` record proposal (`recordType: "objective"`),
  * registered as `recordProposalRenderers.objective` in the sidechat host.
  *
+ * forks: 2 — StoryPlanProposalCard.tsx (DR-10a's sanctioned fork on this
+ * skeleton) and TrackerSceneProposalCard.tsx (DR-10b); each copy's header
+ * carries its own correspondence map.
+ *
+ * DR-10b (R3): while the ACTIVE branch plan has events, the same objective
+ * proposal becomes the next PLAN EVENT (the DR-5 dispatch inserts it after
+ * the current event — never a tracker item), so the card retitles through
+ * the plan-mode strings (mock §6). The plan state comes through the SAME
+ * `useAgentPlan` cache seam the plan section reads (the sidechat host's
+ * owner = active chat + active branch) — never a second fetch path. With no
+ * plan events the card is exactly today's goal card (its SC-11 pins hold).
+ *
  * fork #1 of RecordProposalFallbackCard
  * (`apps/web/src/components/shared/agent-shell/RecordProposalFallbackCard.tsx`).
  * Correspondence map (frame cloned, content specialized):
@@ -49,6 +61,8 @@ import { toast } from "sonner";
 import type { RecordProposalCardProps } from "../../../lib/agent-host-registry.js";
 import { useSnapshotStore } from "../../../stores/snapshot-store.js";
 import { fetchChatAction } from "../../../stores/api-actions/chat-actions.js";
+import { ingestAgentPlan, useAgentPlan } from "../../../hooks/use-agent-plan.js";
+import { pickCurrent } from "../../shared/agent-plan/AgentPlanPanel.js";
 import {
   applyObjectiveProposal,
   rejectObjectiveProposal,
@@ -57,6 +71,7 @@ import {
   ObjectiveProposalApiError,
 } from "../../../api/agent-thread-proposals-api.js";
 import { Icons } from "../../shared/icons.js";
+import { cn } from "../../../lib/cn.js";
 import { useT } from "../../../i18n/context.js";
 
 /** The objective payload contract (sidechat `propose_objective` tool input
@@ -77,6 +92,19 @@ function readObjectivePayload(payload: unknown): ObjectivePayload {
   return reason === undefined ? { description } : { description, reason };
 }
 
+/** The plan-mode status chip tint (mock §6: pending accent, applied success,
+ *  rejected muted — the StoryPlanProposalCard chip's twin; kept private here
+ *  because the no-plan chip stays the source's single accent tint). */
+function planModeChipClass(status: RecordProposal["status"]): string {
+  const tint =
+    status === "applied"
+      ? "bg-success-dim text-success-text"
+      : status === "rejected"
+        ? "bg-s2 text-t3"
+        : "bg-accent/15 text-accent";
+  return cn("shrink-0 rounded-full px-1.5 py-px font-ui text-[calc(var(--ui-fs)-4px)]", tint);
+}
+
 export function ObjectiveProposalCard({ proposal, threadId }: RecordProposalCardProps) {
   const { t } = useT();
   // The stored status seeds the card: a reloaded thread renders the persisted
@@ -94,6 +122,26 @@ export function ObjectiveProposalCard({ proposal, threadId }: RecordProposalCard
   const trackerOff = !trackerOn || trackerBlocked;
   const { description, reason } = readObjectivePayload(proposal.payload);
 
+  // DR-10b (R3): the ACTIVE branch's plan through the ONE cache seam — the
+  // same `useAgentPlan` entry the sidechat plan section reads (the host's
+  // owner = active chat + active branch). No branch id (the store's chat
+  // without one) → no owner → the empty plan → today's card byte-identical.
+  const chatId = useSnapshotStore((s) => s.activeChat?.id ?? null);
+  const activeBranchId = useSnapshotStore((s) => s.activeChat?.activeBranchId ?? null);
+  const planOwner = chatId !== null && activeBranchId !== null
+    ? { kind: "chatBranch" as const, chatId, branchId: activeBranchId }
+    : undefined;
+  const { plan, isLoading } = useAgentPlan(planOwner);
+  // The R3 predicate — the web twin of the dispatch's `activeBranchPlanWithEvents`
+  // (`plan.tasks.length > 0`), held off while the first GET runs so a cold
+  // cache never flashes the plan-mode copy over a plan that may not exist.
+  const planMode = !isLoading && plan.tasks.length > 0;
+  // The current event's title interpolates into the "goes next" line (the
+  // shared `pickCurrent` rule — `pickCurrentStoryEvent`'s web twin). An
+  // all-completed plan has no current event: the line simply renders nothing
+  // (the backend appends at the end — `insertStoryEventAfterCurrent`).
+  const currentEvent = pickCurrent(plan.tasks);
+
   async function runResolve(decision: "apply" | "reject"): Promise<void> {
     if (busy || status !== "pending") return;
     setBusy(true);
@@ -104,6 +152,14 @@ export function ObjectiveProposalCard({ proposal, threadId }: RecordProposalCard
           : await rejectObjectiveProposal(threadId, proposal.id);
       setStatus(resolved.proposal.status);
       if (decision === "apply" && resolved.proposal.status === "applied") {
+        // DR-10b: under a plan the apply response carries the refreshed
+        // `plan` companion (the inserted event is already saved) — ingest it
+        // into the cache so mounted plan consumers re-render without a
+        // second fetch (the StoryPlanProposalCard D5 pattern). The owner is
+        // the render-scope one whose plan the user just reviewed.
+        if (planOwner !== undefined && resolved.plan !== undefined) {
+          ingestAgentPlan(planOwner, resolved.plan);
+        }
         // Fresh id through `getState()`: render closures hold the pre-action
         // state (the frontend-skill rule). The chat cannot be null here (the
         // sidechat panel mounts on the active chat), but stay defensive.
@@ -147,14 +203,27 @@ export function ObjectiveProposalCard({ proposal, threadId }: RecordProposalCard
     >
       <div className="flex items-start gap-1.5">
         <span className="mt-px shrink-0 leading-[1.45] text-t3"><Icons.target /></span>
+        {planMode && (
+          <span
+            className="min-w-0 flex-1 self-center font-ui text-[calc(var(--ui-fs)-1px)] font-medium leading-snug text-t2"
+          >
+            {t("agent.objective_proposal.plan_mode_title")}
+          </span>
+        )}
         <span
           data-testid="objective-proposal-status"
-          className="ml-1 shrink-0 rounded-full bg-accent/15 px-1.5 py-px font-ui text-[calc(var(--ui-fs)-4px)] text-accent"
+          className={planMode
+            ? planModeChipClass(status)
+            : "ml-1 shrink-0 rounded-full bg-accent/15 px-1.5 py-px font-ui text-[calc(var(--ui-fs)-4px)] text-accent"}
         >
           {status === "pending"
-            ? t("agent.record_proposal.status_pending")
+            ? planMode
+              ? t("agent.objective_proposal.plan_status_pending")
+              : t("agent.record_proposal.status_pending")
             : status === "applied"
-              ? t("agent.objective_proposal.added")
+              ? planMode
+                ? t("agent.objective_proposal.plan_status_applied")
+                : t("agent.objective_proposal.added")
               : t("agent.objective_proposal.rejected")}
         </span>
       </div>
@@ -179,6 +248,28 @@ export function ObjectiveProposalCard({ proposal, threadId }: RecordProposalCard
         </div>
       )}
 
+      {/* R3: the event's future position — the current event's title
+          interpolates (model text — page-translatable). An all-completed plan
+          has no current event and renders no line. */}
+      {planMode && status === "pending" && currentEvent !== null && (
+        <div
+          data-testid="objective-plan-next-line"
+          translate="yes"
+          className="min-w-0 whitespace-normal break-words font-ui text-[calc(var(--ui-fs)-3px)] text-t3"
+        >
+          {t("agent.objective_proposal.plan_next_line", { title: currentEvent.title })}
+        </div>
+      )}
+
+      {planMode && status === "applied" ? (
+        <div
+          data-testid="objective-plan-applied-line"
+          className="min-w-0 whitespace-normal break-words font-ui text-[calc(var(--ui-fs)-2px)] text-t3"
+        >
+          {t("agent.objective_proposal.plan_applied_line")}
+        </div>
+      ) : null}
+
       {status === "pending" ? (
         <div className="flex items-center gap-2">
           <button
@@ -188,7 +279,9 @@ export function ObjectiveProposalCard({ proposal, threadId }: RecordProposalCard
             onClick={() => void runResolve("apply")}
             className="rounded-md border-0 bg-accent px-4 py-1.5 font-ui text-[calc(var(--ui-fs)-1px)] font-semibold text-on-accent transition-all hover:brightness-110 active:scale-[0.98] disabled:cursor-default disabled:opacity-40"
           >
-            {t("agent.record_proposal.accept")}
+            {planMode
+              ? t("agent.objective_proposal.plan_accept")
+              : t("agent.record_proposal.accept")}
           </button>
           <button
             type="button"

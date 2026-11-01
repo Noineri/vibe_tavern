@@ -199,6 +199,16 @@ Edit `installer/vibe-tavern.iss` to change:
 
 All three modes share the same DI wiring, services, and app factory. The only difference is how directories are resolved at startup.
 
+### Response compression
+
+The web build emits optional `.br` and `.gz` siblings beside compressible JS, CSS, SVG, JSON and raw TTF/OTF files in `assets/` and `fonts/`.
+Already-compressed formats (including WOFF/WOFF2) and source maps are excluded, and a variant is written only when it is smaller than the original.
+Standalone, installer and Android packaging copy the whole frontend tree, including these siblings; the standalone executable also embeds that tree.
+On-disk Bun asset routes negotiate Brotli/gzip by `Accept-Encoding`, retain the original MIME, and revalidate each representation separately with `Vary: Accept-Encoding`.
+Missing or older siblings fall back to the original file without a restart, and range requests retain the original raw-file behavior.
+The embedded/Hono fallback compresses responses on demand through Hono's default middleware, which also compresses API JSON but excludes SSE and JSONL streams.
+`index.html` keeps its content-derived weak validator.
+
 ### Path resolution flow
 
 ```

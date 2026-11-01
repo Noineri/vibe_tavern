@@ -236,6 +236,30 @@ describe("frame port — actions", () => {
 // ─── reduce ──────────────────────────────────────────────────────────────────
 
 describe("frame port — reduce", () => {
+  test("ERX-1a: keeps a top-level event actor id through frame normalization", () => {
+    const source = COUNTER_SCRIPT.replace('type: "incremented"', 'type: "incremented", participantId: "p1", detail: "raised the count"');
+    const result = runReduce(source, { count: 1 }, { type: "increment", requestId: "actor-move", expectedRevision: 1 }, BASE_CAPS);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected a valid frame transition");
+    expect(result.value.events).toEqual([{ visibility: "public", type: "incremented", participantId: "p1", detail: "raised the count" }]);
+  });
+
+  test("ERX-1a: rejects a non-string event actor before a frame transition can commit", () => {
+    const source = COUNTER_SCRIPT.replace('type: "incremented"', 'type: "incremented", participantId: 7');
+    const result = runReduce(source, { count: 1 }, { type: "increment", requestId: "bad-actor", expectedRevision: 1 }, BASE_CAPS);
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected an invalid frame transition");
+    expect(result.kind).toBe("invalid_transition");
+  });
+
+  test("ERX-1a: realtime update retains the same event actor field", () => {
+    const source = TICKER_SCRIPT.replace('type: "expired"', 'type: "expired", participantId: "p1", detail: "ran out of time"');
+    const result = runUpdate(source, { remaining: 100, total: 100 }, 100, BASE_CAPS);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected a valid frame update");
+    expect(result.value.events).toEqual([{ visibility: "public", type: "expired", participantId: "p1", detail: "ran out of time" }]);
+  });
+
   test("returns the validated transition", () => {
     const result = runReduce(COUNTER_SCRIPT, { count: 1 }, { type: "increment", requestId: "r1", expectedRevision: 1 }, BASE_CAPS);
     expect(result.ok).toBe(true);

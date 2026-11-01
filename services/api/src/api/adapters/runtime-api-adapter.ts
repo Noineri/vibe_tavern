@@ -37,6 +37,7 @@ import { COAUTHOR_SKILL_LIBRARY } from "../contract/skill-contracts.js";
 import type { AgentKindId } from "../../domain/agent/agent-kind.js";
 import { CopilotProfileAdapter } from "./copilot-profile-adapter.js";
 import { AgentPlanAdapter } from "./agent-plan-adapter.js";
+import type { StoryPlanSync } from "../../domain/director/story-plan-sync.js";
 import { SamplerSetAdapter } from "./sampler-set-adapter.js";
 import { FormatTemplateAdapter } from "./format-template-adapter.js";
 import { AiInstructionTemplateAdapter } from "./ai-instruction-template-adapter.js";
@@ -46,7 +47,8 @@ import { DiceAdapter } from "./dice-adapter.js";
 import { ExperienceAdapter } from "./experience-adapter.js";
 import { ExperienceCopilotAdapter } from "./experience-copilot-adapter.js";
 import { AgentThreadProposalAdapter } from "./agent-thread-proposal-adapter.js";
-import { brandId, type ChatId } from "@vibe-tavern/domain";
+import { brandId, type ChatBranchId, type ChatId } from "@vibe-tavern/domain";
+import { notFound } from "../../shared/errors.js";
 import type { SkillLibraryService } from "../../domain/coauthor/skills/skill-library.js";
 import type { DiceService } from "../../domain/dice/dice-service.js";
 import type { ExperienceService } from "../../domain/interactive/experience-service.js";
@@ -131,6 +133,13 @@ export class RuntimeApiAdapter implements RuntimeApi {
 		 * 400). */
 		sidechatSkillService?: SkillLibraryService,
 		attachmentAssetLoader: AttachmentAssetLoader = (assetId) => assetService.loadBuffer(assetId),
+		/** DR-3b: the story-plan sync the branch-plan PUT delegates to
+		 * (StoryPlanSync.applyPlan — normalize-or-422 + save + ACTIVE-branch
+		 * projection), and DR-5's proposal apply reuses for the next-event
+		 * insert (insertNextEvent). Optional: harnesses without it keep the
+		 * plain store save / the unavailability 404; production
+		 * (server-runtime) always injects the real sync. */
+		storyPlanSync?: Pick<StoryPlanSync, "applyPlan" | "insertNextEvent">,
 	) {
 		const bootstrapAdapter = new BootstrapAdapter(sessionRuntime);
 		this.bootstrap = bootstrapAdapter.bootstrap;
@@ -144,11 +153,6 @@ export class RuntimeApiAdapter implements RuntimeApi {
 		// stays unset in production — the backends' global-fetch default applies
 		// (the same seam can carry the proxy-aware provider fetch later, per-backend).
 		this.imageGen = new ImageGenAdapter(stores, assetService, undefined, { providerProfiles: providerProfileService });
-		this.chat = new ChatAdapter(
-			stores, sessionRuntime, liveChatOrchestrator,
-			chatSummaryService, providerProfileService, assetService,
-			sttAdapter.transcribeSttAudio,
-		);
 		this.character = new CharacterAdapter(sessionRuntime, stores, assetService, providerProfileService);
 		this.persona = new PersonaAdapter(sessionRuntime, stores, assetService, providerProfileService);
 		this.lorebook = new LorebookAdapter(stores);
@@ -192,7 +196,7 @@ export class RuntimeApiAdapter implements RuntimeApi {
 			),
 		);
 		this.copilotProfiles = new CopilotProfileAdapter(stores);
-		this.agentPlan = new AgentPlanAdapter(stores);
+		this.agentPlan = new AgentPlanAdapter(stores, storyPlanSync);
 		this.samplerSets = new SamplerSetAdapter(stores);
 		this.formatTemplates = new FormatTemplateAdapter(stores);
 		this.aiInstructionTemplates = new AiInstructionTemplateAdapter(stores);
@@ -207,15 +211,37 @@ export class RuntimeApiAdapter implements RuntimeApi {
 			attachmentAssetLoader,
 			(assetId) => assetService.cleanup(assetId),
 		);
-		// SC-11: the thread-proposal apply/reject slice, wired with the REUSED
-		// insights seams — the insights runtime's add-task member (route mode;
-		// wired above, so its bound member is ready here) and the
-		// ObjectiveService's short-term adder (goals mode; the branded id
-		// enters at that adapter edge).
+		// One registry for every app-visible agent/chat generation and lifecycle.
+		this.chat = new ChatAdapter(
+			stores, sessionRuntime, liveChatOrchestrator,
+			chatSummaryService, providerProfileService, assetService,
+			sttAdapter.transcribeSttAudio, undefined, this.experienceCopilot.agentRuns,
+		);
+		// SC-11 + DR-5: the thread-proposal apply/reject slice, wired with the
+		// REUSED seams — the insights runtime's add-task member (route mode),
+		// the ObjectiveService's short-term adder (goals mode) and config
+		// updater (A6's auto-check switch), StoryPlanSync (the story-plan apply
+		// + R3's next-event insert), the insights adapter's shared tracker
+		// template tail (tracker-scene), and the session runtime's config
+		// patch (the reject companion). The branded ids enter at these seam
+		// closures.
 		this.agentThreadProposals = new AgentThreadProposalAdapter(stores, {
 			addObjectiveTask: (chatId, body) => this.insights.addObjectiveTask(chatId, body),
 			addShortTermGoal: (chatId, description) =>
 				objectiveService.addShortTermGoal(brandId<ChatId>(chatId), description),
+			insertNextStoryEvent: (chatId, branchId, event) => {
+				if (!storyPlanSync) throw notFound("StoryPlanSync", "Story plan proposal resolution is unavailable (no story plan sync wired).");
+				return storyPlanSync.insertNextEvent(brandId<ChatId>(chatId), brandId<ChatBranchId>(branchId), event);
+			},
+			applyStoryPlan: (chatId, branchId, plan) => {
+				if (!storyPlanSync) throw notFound("StoryPlanSync", "Story plan proposal resolution is unavailable (no story plan sync wired).");
+				return storyPlanSync.applyPlan(brandId<ChatId>(chatId), brandId<ChatBranchId>(branchId), plan);
+			},
+			updateObjectiveConfig: (chatId, patch) =>
+				objectiveService.updateObjectiveConfig(brandId<ChatId>(chatId), patch),
+			applyTrackerScene: (chatId, scene) => this.insights.applyTrackerSceneTemplate(chatId, scene),
+			readInsightsPatch: (chatId) =>
+				sessionRuntime.buildConfigPatchResponse(brandId<ChatId>(chatId), { activeChat: true }),
 		});
 	}
 }

@@ -28,6 +28,7 @@ import {
   type CopilotProfile,
   type ScriptAgentToolSet,
 } from "@vibe-tavern/api-contracts";
+import { BUILTIN_PROFILE_ID, type AgentBuiltinProfileSeed } from "../agent-kind.js";
 
 // ─── Module definition (metadata only — the prompt text loads lazily) ───────
 
@@ -135,6 +136,17 @@ export function isScriptAuthoringTrusted(script: {
 }
 
 // ─── Built-in profile seed (AS-7; see resolveBuiltinCopilotProfile) ──────────
+
+/**
+ * The script kind's built-in seeds (DR-1) — one seed today; the first entry
+ * keeps the id `"builtin"` (the stored sentinel). Declared here (the script
+ * seed's species home), read by the kind descriptor
+ * (`kinds/script-kind.ts`), the seed dispatch and the seed-list helpers in
+ * experience-copilot-module.ts — one declaration, one source.
+ */
+export const SCRIPT_AGENT_BUILTIN_SEEDS: readonly AgentBuiltinProfileSeed[] = [
+  { id: BUILTIN_PROFILE_ID, name: SCRIPT_AGENT_MODULE.name },
+];
 
 /**
  * Project {@link SCRIPT_AGENT_MODULE} + its loaded `base.md` into the

@@ -10,7 +10,7 @@
  *
  * Runner: bun:test with scoped happy-dom.
  */
-import { describe, it, expect, beforeAll, beforeEach, mock } from "bun:test";
+import { describe, it, expect, beforeAll, beforeEach, afterAll, mock } from "bun:test";
 import { useState } from "react";
 import { wireLorebook, wireLoreEntry } from "../../../../test/wire-fixtures.js";
 import type { ReactNode } from "react";
@@ -25,7 +25,6 @@ const realLorebookApi = await import("../../../api/lorebook-api.js");
 const realLoreEntryList = await import("./LoreEntryList.js");
 const realLinkBindingPopover = await import("../../shared/LinkBindingPopover.js");
 const realTooltip = await import("../../shared/Tooltip.js");
-const realTokenizer = await import("../../../utils/tokenizer.js");
 
 // Identity i18n — assertion strings match keys verbatim.
 installI18nContextSeam();
@@ -88,8 +87,15 @@ mock.module("../../shared/Tooltip.js", () => ({
   TooltipProvider: ({ children }: { children: ReactNode }) => children,
 }));
 
-// countTokens is irrelevant to filtering; stub it to keep the test fast + isolated.
-mock.module("../../../utils/tokenizer.js", () => ({ ...realTokenizer, countTokens: () => 0 }));
+// countTokens is irrelevant to the search suites; stubbed to keep them fast
+// + isolated. The LC-5 suite swaps in the REAL countTokens (with its LRU)
+// through the same seam — `countTokensImpl` — so the two worlds never share
+// a module mock. Real module captured as a LOAD-TIME COPY (R15): a live
+// namespace spread inside the factory would re-register whatever mock is
+// current if another file's registration rewrites the slots.
+const realTokenizer = { ...(await import("../../../utils/tokenizer.js")) };
+let countTokensImpl: (text: string) => number = () => 0;
+mock.module("../../../utils/tokenizer.js", () => ({ ...realTokenizer, countTokens: (text: string) => countTokensImpl(text) }));
 
 let LorebookAccordion: typeof import("./LorebookAccordion.js").LorebookAccordion;
 let render: typeof import("@testing-library/react").render;
@@ -684,5 +690,74 @@ describe("LorebookAccordion advanced settings", () => {
     await openAdvanced(view);
     fireEvent.click(view.getByRole("checkbox", { name: "lore_overflow_alert" }));
     expect(writes).toEqual([{ overflowAlert: true }]);
+  });
+});
+
+// ─── LC-5: header total = SUM of per-entry counts ──────────────────────────
+// LONG_CHAT_PERFORMANCE_REPORT step 5 (owner ruling 2026-10-30): the header
+// total is the SUM of per-entry cached counts — editing one entry re-encodes
+// only that entry; the label stays an estimate. The encode spy (own-property
+// shadow on the shared encoder singleton, removed in afterAll) watches what
+// the accordion actually encodes; the real BPE still runs, so the rendered
+// numbers stay real.
+describe("LorebookAccordion token total (LC-5)", () => {
+  const tokenizer = realTokenizer.getTokenizer();
+  const realEncode = tokenizer.encode.bind(tokenizer);
+  const encodedTexts: string[] = [];
+  const encodeSpy = mock((text: string) => {
+    encodedTexts.push(text);
+    return realEncode(text);
+  });
+  tokenizer.encode = encodeSpy;
+  afterAll(() => {
+    delete (tokenizer as { encode?: unknown }).encode;
+  });
+
+  const LC5_ENTRIES: LoreEntryRecord[] = [
+    makeEntry({ id: "s1", title: "Alpha", content: "alpha lore one" }),
+    makeEntry({ id: "s2", title: "Beta", content: "beta lore two" }),
+    makeEntry({ id: "s3", title: "Gamma", content: "gamma lore three" }),
+  ];
+  const LC5_SUM = LC5_ENTRIES.reduce((sum, e) => sum + realEncode(e.content).length, 0);
+
+  beforeEach(() => {
+    listLoreEntries.mockClear();
+    listLoreEntries.mockResolvedValue(LC5_ENTRIES);
+    encodedTexts.length = 0;
+    realTokenizer.resetTokenCountCacheForTests();
+    countTokensImpl = realTokenizer.countTokens;
+  });
+  afterAll(() => {
+    countTokensImpl = () => 0;
+  });
+
+  it("header total = the sum of per-entry counts, not one joined encode", async () => {
+    const view = renderAccordion();
+    await waitFor(() => expect(view.getByTitle(`3 · ${LC5_SUM.toLocaleString()} tokens_label`)).toBeDefined());
+    // every entry content encoded exactly once; no joined-string encode
+    expect([...encodedTexts].sort()).toEqual(LC5_ENTRIES.map((e) => e.content).sort());
+    view.unmount();
+  });
+
+  it("editing one entry re-encodes only that entry — the others hit the cache", async () => {
+    const first = renderAccordion();
+    await waitFor(() => expect(first.getByTitle(`3 · ${LC5_SUM.toLocaleString()} tokens_label`)).toBeDefined());
+    expect(encodedTexts).toHaveLength(3);
+    first.unmount();
+
+    // Edit s2's content; the accordion reloads its entries on the next mount
+    // (the load effect keys on the lorebook id, so a changed list arrives
+    // through a remount — the same flow a reopen after an edit performs).
+    const editedContent = "beta lore two, edited";
+    listLoreEntries.mockResolvedValue(LC5_ENTRIES.map((e) => (e.id === "s2" ? { ...e, content: editedContent } : e)));
+    encodedTexts.length = 0;
+    const second = renderAccordion();
+    const editedSum =
+      LC5_SUM - realEncode("beta lore two").length + realEncode(editedContent).length;
+    await waitFor(() => expect(second.getByTitle(`3 · ${editedSum.toLocaleString()} tokens_label`)).toBeDefined());
+    // exactly the edited entry's new content was encoded — no joined string,
+    // no re-encode of the untouched entries
+    expect(encodedTexts).toEqual([editedContent]);
+    second.unmount();
   });
 });

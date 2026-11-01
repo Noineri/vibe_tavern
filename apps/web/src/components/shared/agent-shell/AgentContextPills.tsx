@@ -7,6 +7,10 @@ import { useT } from "../../../i18n/context.js";
  * pinned links + PATCH, this renders each pin as a small chip with an ×
  * and reports unpins up. Renders nothing when empty.
  *
+ * DR-15 (mockup §9): the row renders in the composer's attached strip
+ * ABOVE the input card (no card-interior padding — the wrapping row owns
+ * the spacing, chips align flush with the card edge).
+ *
  * A dangling target (entity deleted after pinning) is handled by the CALLER
  * passing `label` = the raw targetId — the pill itself does not care.
  */
@@ -30,7 +34,7 @@ export function AgentContextPills({ items, onUnpin }: AgentContextPillsProps) {
     <div
       role="list"
       aria-label={t("copilot_context_pills_label")}
-      className="flex flex-wrap items-center gap-1.5 px-4 pt-2.5"
+      className="flex flex-wrap items-center gap-1.5"
     >
       {items.map((item) => (
         <div

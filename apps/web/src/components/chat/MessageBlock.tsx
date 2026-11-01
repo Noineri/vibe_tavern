@@ -1,4 +1,4 @@
-import { memo, useState, useMemo, useRef, useEffect, useLayoutEffect } from "react";
+import { memo, useContext, useState, useMemo, useRef, useEffect, useLayoutEffect } from "react";
 import { motion, AnimatePresence, useAnimationControls, type PanInfo } from "framer-motion";
 import { cn } from "../../lib/cn.js";
 import type { MessageMetaContext } from "../../lib/message-meta-registry.js";
@@ -8,8 +8,9 @@ import { copyText } from "../../lib/clipboard.js";
 
 import { BottomSheet } from "../shared/BottomSheet.js";
 import * as Select from "@radix-ui/react-select";
-import { useDisplayMessage, useMacroContext, useMessageAuthor, useIsStreamingTarget, useStreamingRevealedFor } from "../../stores/chat-selectors.js";
+import { useDisplayMessage, useMacroContext, useMessageAuthor, useIsStreamingTarget, useStreamingRevealedFor, useEditingDraftFor } from "../../stores/chat-selectors.js";
 import { useChatStore, useIsSending } from "../../stores/index.js";
+import { usePendingUserContent } from "../../stores/chat-store.js";
 import { useProviderDataStore } from "../../stores/provider-data-store.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useMessageAiEditorStore } from "../../stores/message-ai-editor-store.js";
@@ -19,12 +20,8 @@ import { AutoTextarea } from "../shared/auto-textarea.js";
 import { MobileExpandTextarea } from "../shared/MobileExpandTextarea.js";
 import { useT } from "../../i18n/context.js";
 import { brandId, parseStoredAttachments, REGEX_PLACEMENT, resolveAssistantPrefillSupport, type ChatId, type RegexPreset } from "@vibe-tavern/domain";
-import {
-  applyRegexLayer,
-  createValueEscapingMacroSource,
-  filterRegexPresets,
-  type RegexMacroSource,
-} from "@vibe-tavern/prompt-pipeline";
+import { filterRegexPresets } from "@vibe-tavern/prompt-pipeline";
+import { deriveVariantDisplayText } from "../../lib/variant-display-text.js";
 import { useActiveRegexPresets } from "../../hooks/use-active-regex-presets.js";
 import "./MessageReasoning.js";
 import "./CoauthorToolActivitySlot.js";
@@ -47,7 +44,8 @@ import type { DiscussScope } from "./DiscussInSidechatMenu.js";
 import { DestructiveConfirmModal } from "../shared/destructive-confirm-modal.js";
 import { StreamingMarkdown } from "./StreamingMarkdown.js";
 import { AttachmentGrid } from "./AttachmentGrid.js";
-import { MobileVariantCarousel } from "./variants/mobile-variant-carousel.js";
+import { MobileVariantCarousel, type MobileVariantCarouselHandle } from "./variants/mobile-variant-carousel.js";
+import { MessageScrollContext } from "./message-scroll-context.js";
 import { VariantControls } from "./variants/variant-controls.js";
 import { GenerationDots } from "./variants/generation-dots.js";
 import type { SwipeDirection, VariantPickerItem } from "./variants/types.js";
@@ -68,10 +66,12 @@ type VariantControlsOverlayState = {
 export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps) {
   const { t } = useT();
   const chat = useChatController();
+  const revealMessageStart = useContext(MessageScrollContext);
   const [copied, setCopied] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [variantControlsOverlay, setVariantControlsOverlay] = useState<VariantControlsOverlayState | null>(null);
   const variantControlsRef = useRef<HTMLSpanElement>(null);
+  const mobileCarouselRef = useRef<MobileVariantCarouselHandle>(null);
   const variantOverlayTimerRef = useRef<number | undefined>(undefined);
 
   // Read ALL display data from memoized selector — re-renders only when THIS message changes
@@ -80,7 +80,10 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   const macroContext = useMacroContext();
 
   const editingMessageId = useChatStore(s => s.editingMessageId);
-  const editingDraft = useChatStore(s => s.editingDraft);
+  // LAG-1: edit text reaches only the block being edited — every other block
+  // gets the stable "" and never re-renders per keystroke (shared derivation
+  // with the co-author turn parts in chat-selectors.ts).
+  const editingDraft = useEditingDraftFor(input.messageId);
   const isSending = useIsSending();
   const messageActionId = useChatStore(s => s.messageActionId);
   // LS-4a: Continue rides the SAME prefill capability the backend registry
@@ -96,10 +99,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   const agentKindSettings = useBootstrapStore((s) => s.data?.agentKindSettings);
   // Narrow primitive selector — only the active chat's pending user content.
   // Replaces reading it off the whole activeGen object (which mutated every tick).
-  const pendingUserMessageContent = useChatStore(s => {
-    if (!s.activeChatId) return null;
-    return s.generations[s.activeChatId]?.pendingUserMessageContent ?? null;
-  });
+  const pendingUserMessageContent = usePendingUserContent();
   const activeCharacterId = useSnapshotStore((s) => s.activeChat?.characterId ?? null);
   const activePersonaId = useSnapshotStore((s) => s.activeChat?.personaId ?? null);
   const narrationTextRef = useRef("");
@@ -206,13 +206,6 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   const regexPresetId = useSnapshotStore((s) => s.activeChat?.promptPresetId ?? null);
   const regexHistoryLength = useSnapshotStore((s) => s.messageOrder.length);
   const displayRegexPresets = useActiveRegexPresets(regexCharacterId, regexPresetId);
-  const displayRegexMacroSource = useMemo<RegexMacroSource>(
-    () =>
-      createValueEscapingMacroSource((text) =>
-        macroContext ? replaceUiMacros(text, macroContext) : text,
-      ),
-    [macroContext],
-  );
   const applicableDisplayRegex = useMemo(() => {
     if (!msg) return EMPTY_REGEX_PRESETS;
     const placement =
@@ -231,30 +224,21 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
       .filter((preset) => preset.markdownOnly);
     return applicable.length > 0 ? applicable : EMPTY_REGEX_PRESETS;
   }, [msg, displayRegexPresets, regexHistoryLength, input.index]);
-  // Fully memoized so regex compilation reruns only when the variant content,
-  // the applicable preset set, or the macro context actually changes. The
-  // display text here is already macro-resolved (useDisplayMessage / variant
-  // memo); find-pattern macros still resolve via the preset's substituteRegex
-  // mode through the macro source above.
+  // Keep canonical/macro-only variants for metadata and actions. Both render
+  // paths consume this separate display derivation, so a landing never
+  // applies the regex a second time or writes display text into the store.
+  const displayVariants = useMemo(() => variants.map((variant) => ({
+    ...variant,
+    content: deriveVariantDisplayText(variant.content, {
+      macroContext, presets: applicableDisplayRegex, resolveBaseMacros: false,
+    }),
+  })), [variants, applicableDisplayRegex, macroContext]);
   const regexDisplayContent = useMemo(() => {
     if (!msg) return null;
-    const base = selectedVariant ? selectedVariant.content : msg.displayContent;
-    if (!base || applicableDisplayRegex.length === 0) return base;
-    const layerOutput = applyRegexLayer(base, applicableDisplayRegex, displayRegexMacroSource);
-    // ST parity (R-14 bug 3): ST resolves macros on the replacement RESULT at
-    // regex time (engine.js:444 substituteParams(replaceWithGroups)), while
-    // this seam macro-resolves the base BEFORE the regex — so a macro born in
-    // the replacement would otherwise stay literal on screen. Resolve the
-    // layer OUTPUT with the same UI resolver, once after all scripts.
-    // Accepted micro-divergence vs ST's per-script timing: a later script's
-    // find pattern sees the pre-resolution text (ST would see per-script
-    // resolved text); in practice find-pattern macros are governed per-preset
-    // by its substituteRegex mode anyway. replaceUiMacros is idempotent —
-    // pure static value substitutions (names, descriptions, pronoun forms),
-    // no random/time/stateful macros — so re-resolving the already-resolved
-    // base text is a no-op except for the regex-introduced tokens.
-    return macroContext ? replaceUiMacros(layerOutput, macroContext) : layerOutput;
-  }, [msg, selectedVariant, applicableDisplayRegex, displayRegexMacroSource, macroContext]);
+    return displayVariants[selectedVariantIndex]?.content ?? deriveVariantDisplayText(msg.displayContent, {
+      macroContext, presets: applicableDisplayRegex, resolveBaseMacros: false,
+    });
+  }, [msg, displayVariants, selectedVariantIndex, applicableDisplayRegex, macroContext]);
 
   if (input.messageId === "__pending-user") {
     return <PendingUserMessage />;
@@ -394,19 +378,24 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
     chat.handleSelectMessageVariant(msg.id, targetVariant.variantIndex);
   };
 
+  const handleRequestVariant = (targetIndex: number, swipeDirection: SwipeDirection) => {
+    if (isMobile && mobileCarouselRef.current) mobileCarouselRef.current.selectVariant(targetIndex);
+    else handleSelectVariant(targetIndex, swipeDirection);
+  };
+
   // ── Greeting counter controls ──
   const greetingControls = greetingActive ? (
     <span className="ml-auto flex items-center gap-1 text-[calc(var(--ui-fs)-3px)] text-t3">
       <button type="button"
         className={cn("cursor-pointer text-t3 transition-colors duration-100", isMobile ? "active:text-accent" : "hover:text-accent")}
         disabled={!canSwitchVariant || selectedVariantIndex <= 0}
-        onClick={() => { handleSelectVariant(Math.max(0, selectedVariantIndex - 1), -1); }}
+        onClick={() => { handleRequestVariant(Math.max(0, selectedVariantIndex - 1), -1); }}
       >◀</button>
       {t("greeting_counter", { n: selectedVariantIndex + 1, total: variantCount })}
       <button type="button"
         className={cn("cursor-pointer text-t3 transition-colors duration-100", isMobile ? "active:text-accent" : "hover:text-accent")}
         disabled={!canSwitchVariant || selectedVariantIndex >= variantCount - 1}
-        onClick={() => { handleSelectVariant(Math.min(variantCount - 1, selectedVariantIndex + 1), 1); }}
+        onClick={() => { handleRequestVariant(Math.min(variantCount - 1, selectedVariantIndex + 1), 1); }}
       >▶</button>
     </span>
   ) : undefined;
@@ -435,7 +424,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
       selectedVariantIndex={selectedVariantIndex}
       variantCount={variantCount}
       items={pickerItems}
-      onSelectVariant={handleSelectVariant}
+      onSelectVariant={handleRequestVariant}
     />
   );
 
@@ -503,8 +492,12 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
     <div>
       {isMobile && variantCount > 1 && canSwitchVariant ? (
         <MobileVariantCarousel
+          ref={mobileCarouselRef}
+          onBeforeSelect={revealMessageStart ?? undefined}
           selectedVariantIndex={selectedVariantIndex}
-          variants={variants}
+          variants={displayVariants}
+          isBusy={isBusy}
+          swipeWhileBusy={isPureImageSlot}
           onSelectVariant={handleSelectVariant}
           renderPanel={renderImagePanel}
         />
@@ -639,6 +632,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
     // message's — otherwise swiping always shows the first variant's time.
     createdAt: selectedVariant?.createdAt ?? msg.createdAt,
     diceRolls: msg.diceRolls ?? [],
+    experienceReports: msg.experienceReports,
   };
 
   return (

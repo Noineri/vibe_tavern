@@ -78,7 +78,7 @@ describe('agent provider/vision wiring (CA-4b2)', () => {
         // No content: this also proves the CA-4b1 predicate reached sidechat.
         stream = streamSidechatTurn({ ...request, threadId: sidechat.id, content: undefined }, {
           ...common, sync: reads, attach: reads,
-          context: { ...reads, characters: h.stores.characters, traces: h.stores.traces, chatSummaries: h.stores.chatSummaries, presets: h.stores.presets },
+          context: { ...reads, characters: h.stores.characters, traces: h.stores.traces, chatSummaries: h.stores.chatSummaries, presets: h.stores.presets, agentPlans: h.stores.agentPlans },
         });
       }
       const events = [];

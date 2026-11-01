@@ -19,8 +19,14 @@ import type { RegenerateOverride, CoauthorModuleCreate, CoauthorModuleUpdate, Co
 import { isTextMime } from "@vibe-tavern/domain";
 import { createChatAttachmentActions, type AttachmentSummaryExecutor } from "./chat-attachment-actions.js";
 import { resolveChatImageRoute } from "./chat-image-route.js";
+import { ChatGenerationQueueAdapter } from "./chat-generation-queue-adapter.js";
+import { resolveDiceCommit, resolveExperienceCommit } from "./chat-send-commit.js";
+import type { AgentRunRegistry } from "../../domain/agent/agent-run-registry.js";
+import type { AgentRunOwner } from "@vibe-tavern/domain";
+import type { ChatGenerationTurn } from "../contract/chat-runtime-contracts.js";
+import { CoauthorReviewService } from "../../domain/chat/coauthor-review-service.js";
 
-export class ChatAdapter implements ChatRuntimeApi {
+export class ChatAdapter extends ChatGenerationQueueAdapter implements ChatRuntimeApi {
 	constructor(
 		private readonly stores: StoreContainer,
 		private readonly sessionRuntime: SessionRuntime,
@@ -34,7 +40,16 @@ export class ChatAdapter implements ChatRuntimeApi {
 		 *  with the isDefault fallback. */
 		private readonly transcribeSttAudio: SttRuntimeApi["transcribeSttAudio"],
 		private readonly executeAttachmentSummary?: AttachmentSummaryExecutor,
-	) {}
+		agentRuns?: AgentRunRegistry<AgentRunOwner>,
+	) { super(stores, agentRuns); }
+
+	protected override runGenerationTurn(chatId: string, branchId: string, turn: ChatGenerationTurn, signal: AbortSignal, native = false) {
+		return this.sessionRuntime.chatRuntime.withGenerationScope(brandId<ChatId>(chatId), brandId<ChatBranchId>(branchId), turn(signal), !native);
+	}
+
+	getCoauthorReview: ChatRuntimeApi["getCoauthorReview"] = (id) => new CoauthorReviewService(this.stores).get(id);
+	putCoauthorReview: ChatRuntimeApi["putCoauthorReview"] = (id, envelope) => new CoauthorReviewService(this.stores).put(id, envelope);
+	deleteCoauthorReview: ChatRuntimeApi["deleteCoauthorReview"] = (id) => new CoauthorReviewService(this.stores).delete(id);
 
 	// ─── Lifecycle ──────────────────────────────────────────────────────
 
@@ -163,7 +178,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 		};
 	}
 
-	sendMessage = async (chatId: string, body: ChatSendBody & { experienceAttachmentId?: string; experienceQueueRevision?: number; experienceSessionRevision?: number }, signal?: AbortSignal) => {
+	sendMessage = async (chatId: string, body: ChatSendBody & { experienceAttachmentId?: string; experienceQueueRevision?: number; experienceSessionRevision?: number }, requestSignal?: AbortSignal) => this.runNativeGeneration(chatId, { operation: "send", messageId: null }, requestSignal, async (signal) => {
 		logSendDebug("api.runtime.send.start", { chatId, contentLength: body.content?.length ?? 0 });
 		const { profile, transport } = await this.resolveEffectiveProfileOrThrow({ chatId });
 		logSendDebug("api.runtime.send.profile", {
@@ -197,7 +212,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 			promptMessageCount: result.promptMessageCount,
 		});
 		return result.snapshot;
-	};
+	});
 
 	sendMessageStream = async function* (this: ChatAdapter, chatId: string, body: ChatSendBody & { experienceAttachmentId?: string; experienceQueueRevision?: number; experienceSessionRevision?: number }, signal?: AbortSignal) {
 		const { profile, transport } = await this.resolveEffectiveProfileOrThrow({ chatId });
@@ -230,7 +245,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 		}
 	};
 
-	regenerateMessage = async (chatId: string, messageId: string, override?: RegenerateOverride, signal?: AbortSignal) => {
+	regenerateMessage = async (chatId: string, messageId: string, override?: RegenerateOverride, requestSignal?: AbortSignal) => this.runNativeGeneration(chatId, { operation: "regenerate", messageId }, requestSignal, async (signal) => {
 		const { profile, transport } = await this.resolveEffectiveProfileOrThrow({ chatId, modelOverride: override?.model });
 		const result = await this.liveChatOrchestrator.regenerateMessage({
 			chatId,
@@ -243,7 +258,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 			...await this.resolveReplyMediaAssets(profile),
 		});
 		return result.snapshot;
-	};
+	});
 
 	regenerateMessageStream = async function* (this: ChatAdapter, chatId: string, messageId: string, override?: RegenerateOverride, signal?: AbortSignal) {
 		const { profile, transport } = await this.resolveEffectiveProfileOrThrow({ chatId, modelOverride: override?.model });
@@ -266,7 +281,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 	 *  executor pushes under; a capability-less provider cannot accept a
 	 *  continuation, so the request fails honestly instead of silently
 	 *  generating a fresh reply. */
-	continueMessage = async (chatId: string, messageId: string, signal?: AbortSignal) => {
+	continueMessage = async (chatId: string, messageId: string, requestSignal?: AbortSignal) => this.runNativeGeneration(chatId, { operation: "continue", messageId }, requestSignal, async (signal) => {
 		const message = await this.stores.messages.getMessageById(messageId);
 		if (!message || message.chatId !== chatId) {
 			throw notFound("Message", `Message '${messageId}' was not found in chat '${chatId}'.`);
@@ -290,7 +305,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 			...await this.resolveReplyMediaAssets(profile),
 		});
 		return result.snapshot;
-	};
+	});
 
 	continueMessageStream = async function* (this: ChatAdapter, chatId: string, messageId: string, signal?: AbortSignal) {
 		const message = await this.stores.messages.getMessageById(messageId);
@@ -317,7 +332,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 		});
 	};
 
-	generateReply = async (chatId: string, signal?: AbortSignal) => {
+	generateReply = async (chatId: string, requestSignal?: AbortSignal) => this.runNativeGeneration(chatId, { operation: "generate", messageId: null }, requestSignal, async (signal) => {
 		const { profile, transport } = await this.resolveEffectiveProfileOrThrow({ chatId });
 		const result = await this.liveChatOrchestrator.generateReply({
 			chatId,
@@ -328,7 +343,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 			...await this.resolveReplyMediaAssets(profile),
 		});
 		return result.snapshot;
-	};
+	});
 
 	generateReplyStream = async function* (this: ChatAdapter, chatId: string, signal?: AbortSignal) {
 		const { profile, transport } = await this.resolveEffectiveProfileOrThrow({ chatId });
@@ -548,11 +563,14 @@ export class ChatAdapter implements ChatRuntimeApi {
 		return { ok: true, snapshot: await this.sessionRuntime.buildSummaryResponse(brandId<ChatId>(chatId)) };
 	};
 
-	generateChatSummary = (
-		chatId: string,
-		body: { providerProfileId: string; model?: string; summarizedFrom: number; summarizedTo: number; targetSummaryId?: string; label?: string; includeInContext?: boolean; excludeSummarized?: boolean; temperature?: number; maxOutputTokens?: number; contextBudget?: number },
-		signal?: AbortSignal,
-	) => this.chatSummaryService.generateChatSummary({ chatId, ...body, signal });
+	generateChatSummary: ChatRuntimeApi["generateChatSummary"] = (chatId, body) =>
+		this.chatSummaryService.startManualSummary({ chatId, ...body });
+
+	getManualSummaryRun: ChatRuntimeApi["getManualSummaryRun"] = (chatId) =>
+		this.chatSummaryService.getManualSummaryRun(chatId);
+
+	stopManualSummary: ChatRuntimeApi["stopManualSummary"] = (chatId) =>
+		this.chatSummaryService.stopManualSummary(chatId);
 
 	updateMemorySettings: ChatRuntimeApi["updateMemorySettings"] = async (chatId, body) => {
 		const chat = await this.stores.chats.getById(chatId);
@@ -743,30 +761,6 @@ const COAUTHOR_MODEL_REQUIRED_CODE = "coauthor_model_required";
  * CG-4 maps this code to the Co-Author model-selection state. */
 function coauthorModelRequired() {
 	return validation("Choose a model for the Co-Author.", { code: COAUTHOR_MODEL_REQUIRED_CODE });
-}
-
-/** Map the validated send body's optional Dice commit intent (the wire shape
- *  `{diceMode, pendingRevision}`, both-or-neither enforced by the Zod refine)
- *  to the internal `diceCommit` the orchestrator threads into prepareLiveTurn.
- *  Absent ⇒ undefined (no-Dice send behavior). DICE-B11. */
-function resolveDiceCommit(body: { diceMode?: "normal" | "immersive"; pendingRevision?: number }): { mode: "normal" | "immersive"; pendingRevision: number } | undefined {
-	if (body.diceMode !== undefined && body.pendingRevision !== undefined) {
-		return { mode: body.diceMode, pendingRevision: body.pendingRevision };
-	}
-	return undefined;
-}
-
-/** Map the validated send body's optional experience attachment commit intent
- *  (the wire shape `{experienceAttachmentId, experienceQueueRevision,
- *  experienceSessionRevision}`, all-or-none enforced by the Zod refine) to the
- *  internal `experienceCommit` the orchestrator threads into prepareLiveTurn.
- *  Absent ⇒ undefined (no-experience send behavior). IR-51. Carries ONLY the
- *  identifiers of an already-stored queued attachment — never raw state. */
-function resolveExperienceCommit(body: { experienceAttachmentId?: string; experienceQueueRevision?: number; experienceSessionRevision?: number }): { attachmentId: string; queueRevision: number; sessionRevision: number } | undefined {
-	if (body.experienceAttachmentId !== undefined && body.experienceQueueRevision !== undefined && body.experienceSessionRevision !== undefined) {
-		return { attachmentId: body.experienceAttachmentId, queueRevision: body.experienceQueueRevision, sessionRevision: body.experienceSessionRevision };
-	}
-	return undefined;
 }
 
 /** Map a stored user-module row to the API `CoauthorModule` shape: drop the

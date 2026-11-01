@@ -31,7 +31,7 @@ import {
   writeStickyWorldLoreTab,
   type Tab,
 } from "./use-lorebook-editor-state.js";
-import { useBuildNavigationStore } from "../../../stores/build-navigation-store.js";
+import { useBuildScriptIntents } from "./use-build-script-intents.js";
 import { useScriptPanel } from "./ScriptEditor.js";
 import { LorebookEditorView } from "./lorebook-editor-view.js";
 import { LorebookAccordion } from "./LorebookAccordion.js";
@@ -144,20 +144,7 @@ export function LorebookEditor({
     };
   }, [view]);
 
-  // ── Intent navigation hook ──
-  // Create intent: peek (ScriptEditor consumes it once its scope prop lands).
-  useEffect(() => {
-    const create = useBuildNavigationStore.getState().diceCreateIntent;
-    if (create) {
-      if (tab !== "scripts") {
-        setTab("scripts");
-        writeStickyWorldLoreTab("scripts");
-      }
-      if (create.scope.type !== scope) {
-        setScope(create.scope.type as Scope);
-      }
-    }
-  }, [tab, scope, setTab, setScope]);
+  useBuildScriptIntents(tab, scope, setTab, setScope);
 
   // ── pick → list transition ──
   const handlePick = (target: Tab) => {

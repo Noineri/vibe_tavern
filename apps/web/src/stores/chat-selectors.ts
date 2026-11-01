@@ -5,7 +5,7 @@ import { replaceUiMacros } from "../lib/macros.js";
 import { countTokens } from "../utils/tokenizer.js";
 import type { MacroContext } from "./snapshot-store.js";
 import { useChatList, useSnapshotStore } from "./snapshot-store.js";
-import { useChatStore } from "./chat-store.js";
+import { generationMatchesBranch, useChatStore } from "./chat-store.js";
 import { useTraceHistoryEntry } from "./trace-history-store.js";
 import { useContextPreviewEntry, useContextPreviewStore } from "./context-preview-store.js";
 
@@ -200,10 +200,11 @@ export function useMessageAuthor(): MessageAuthorInfo | null {
  * so it never re-renders on a streaming tick.
  */
 export function useIsStreamingTarget(messageId: string): boolean {
+  const branchId = useSnapshotStore((s) => s.activeBranch?.id ?? null);
   return useChatStore((s) => {
     if (!s.activeChatId) return false;
     const gen = s.generations[s.activeChatId];
-    return Boolean(gen?.isSending && gen.streamingMessageId === messageId);
+    return Boolean(gen?.isSending && gen.streamingMessageId === messageId && generationMatchesBranch(gen, branchId));
   });
 }
 
@@ -222,10 +223,11 @@ export function useIsStreamingTarget(messageId: string): boolean {
  * the composer's generate-more gate is simply `streamingMessageId !== null`.
  */
 export function useActiveStreamingMessageId(): string | null {
+  const branchId = useSnapshotStore((s) => s.activeBranch?.id ?? null);
   return useChatStore((s) => {
     if (!s.activeChatId) return null;
     const gen = s.generations[s.activeChatId];
-    return gen?.isSending ? (gen.streamingMessageId ?? null) : null;
+    return gen?.isSending && generationMatchesBranch(gen, branchId) ? (gen.streamingMessageId ?? null) : null;
   });
 }
 
@@ -252,11 +254,12 @@ const EMPTY_STREAMING_REVEAL: StreamingRevealInfo = {
  * (sequential queue).
  */
 export function useStreamingRevealedFor(messageId: string): StreamingRevealInfo {
+  const branchId = useSnapshotStore((s) => s.activeBranch?.id ?? null);
   return useChatStore(
     useShallow((s) => {
       if (!s.activeChatId) return EMPTY_STREAMING_REVEAL;
       const gen = s.generations[s.activeChatId];
-      if (!gen?.isSending || gen.streamingMessageId !== messageId) {
+      if (!gen?.isSending || gen.streamingMessageId !== messageId || !generationMatchesBranch(gen, branchId)) {
         return EMPTY_STREAMING_REVEAL;
       }
       return {
@@ -265,4 +268,22 @@ export function useStreamingRevealedFor(messageId: string): StreamingRevealInfo 
       };
     }),
   );
+}
+
+/**
+ * Returns the in-progress edit draft, but ONLY for the message currently
+ * being edited. Non-edited blocks receive the stable "" primitive, so a
+ * keystroke in one message's edit field never re-renders the other mounted
+ * blocks (LAG-1, AGENT_SHELL_RENDER_LAG_REPORT step 2 — the edit-text twin
+ * of {@link useIsStreamingTarget}'s target gating). The edited block gets the
+ * live `editingDraft` store value itself, so its textarea stays controlled by
+ * the same store value as before the narrowing.
+ *
+ * ONE derivation rule for every feed consumer (MessageBlock and the
+ * co-author turn parts both read this hook — never a copied selector).
+ * Pinned by message-block-isolation.test.tsx and
+ * coauthor-turn-edit-isolation.test.tsx.
+ */
+export function useEditingDraftFor(messageId: string): string {
+  return useChatStore((s) => (s.editingMessageId === messageId ? s.editingDraft : ""));
 }

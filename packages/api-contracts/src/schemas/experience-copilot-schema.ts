@@ -27,6 +27,24 @@ import { agentReviewSnapshotSchema } from "./agent-review-snapshot.js";
 import { attachmentSchema } from "./chat-schema.js";
 import { experiencePlaygroundStartRequestSchema } from "./interactive-schema.js";
 
+/** BR-1b GET /:threadId/run: replay strictly after this run-local SSE id.
+ * 204 means no retained run; otherwise the response is replay + live SSE. */
+export const experienceCopilotRunQuerySchema = z.object({
+  after: z.string().regex(/^\d+$/).transform(Number).pipe(z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER)).default(0),
+});
+export type ExperienceCopilotRunQuery = z.infer<typeof experienceCopilotRunQuerySchema>;
+
+/** POST /:threadId/stop does not wait for cooperative finalization. */
+export const experienceCopilotStopRunResponseSchema = z.object({ stopped: z.boolean() });
+export type ExperienceCopilotStopRunResponse = z.infer<typeof experienceCopilotStopRunResponseSchema>;
+
+/** POST /:threadId/stream refuses a concurrent turn before opening SSE (409). */
+export const experienceCopilotRunActiveErrorSchema = z.object({
+  error: z.string(),
+  code: z.literal("AGENT_RUN_ACTIVE"),
+});
+export type ExperienceCopilotRunActiveError = z.infer<typeof experienceCopilotRunActiveErrorSchema>;
+
 /**
  * Which buffer a copilot proposed edit lands on. Drives which editor surface
  * shows the diff (the rules editor vs the visual editor). Mirrors
@@ -559,17 +577,23 @@ export const SCRIPT_AGENT_TOOL_KEYS = Object.keys(
 
 /**
  * Which tools a `sidechat-ooc` agent profile may toggle (SIDECHAT_PLAN,
- * Wave 1 / SC-5). A PARTIAL record over exactly the 6 toggleable sidechat
- * tools (search_context, read_context_item, propose_objective, todo,
- * read_plan, read_message_prompt) — the same convention as
- * {@link copilotToolSetSchema} and
+ * Wave 1 / SC-5; widened by DIRECTOR_MODE_PLAN DR-4a + DR-4b's owner
+ * ruling B). A PARTIAL record over exactly the 9 toggleable sidechat tools
+ * (search_context, read_context_item, propose_objective, todo, read_plan,
+ * read_message_prompt, propose_plan, propose_tracker_template, ask_user)
+ * — the same convention as {@link copilotToolSetSchema} and
  * {@link scriptAgentToolSetSchema}: tool sets store only ENABLED keys, so a
- * tool that is not yet served is simply absent from every set. The keys
+ * tool that is not served is simply absent from every set. The keys
  * exist on the wire BEFORE their tools (the TAG-1 pattern: the schema
  * declares the toggleable-tool space, `todo`/`ask_user` landed the same way
  * ahead of their implementations) because the tools arrive in later waves
  * and flip on one by one — until then a stored `true` is inert (the stream
- * serves no tools, `buildTools` returns the empty set). `.strict()` rejects
+ * serves no tools, `buildTools` returns the empty set). DR-4a added the two
+ * DIRECTOR toggles this way; DR-4b turns them on in the `builtin-director`
+ * seed and spreads the builder into the stream. `ask_user` (owner ruling
+ * 2026-10-27, DIRECTOR_MODE_PLAN DR-4b): the shared factory
+ * (`domain/agent/agent-ask-user-tool.ts`) serves it, the director seed
+ * enables it, the OOC seed keeps it off. `.strict()` rejects
  * any unknown key — including the other kinds' keys — so a profile cannot
  * silently carry another kind's tools on the wire; the adapter additionally
  * re-validates against the kind's REGISTERED schema
@@ -583,6 +607,9 @@ export const sidechatOocToolSetSchema = z
     todo: z.boolean().optional(),
     read_plan: z.boolean().optional(),
     read_message_prompt: z.boolean().optional(),
+    propose_plan: z.boolean().optional(),
+    propose_tracker_template: z.boolean().optional(),
+    ask_user: z.boolean().optional(),
   })
   .strict();
 
@@ -594,7 +621,9 @@ export type SidechatOocToolSet = z.infer<typeof sidechatOocToolSetSchema>;
  * {@link SCRIPT_AGENT_TOOL_KEYS} derives from `scriptAgentToolSetSchema`
  * (the wire contract is the single source of truth for toggleable-tool
  * names — the kind's default set and builtin seed project through this, and
- * Wave 3 flips each key on by enabling it in the kind's declarative set).
+ * Wave 3 flipped each key on by enabling it in the kind's declarative set;
+ * DR-4a's two director keys are declared known-but-OFF there until DR-4b's
+ * director seed turns them on).
  */
 export const SIDECHAT_OOC_TOOL_KEYS = Object.keys(
   sidechatOocToolSetSchema.shape,
@@ -653,6 +682,12 @@ export const copilotProfileSchema = z
     // Required on the wire profile — the server always emits it (seed and
     // rows alike) so a list consumer can tell kinds apart.
     agentKind: z.string().min(1),
+    // DR-7b: provenance — the built-in seed id this USER profile was
+    // duplicated from (null/absent = no source; built-in seeds never carry
+    // one). Starters-only inheritance (owner split ruling 2026-10-27): a
+    // duplicate resolves its SOURCE's starter prompts and nothing else —
+    // name/prompt/toolSet are its own snapshots.
+    sourceBuiltinId: z.string().min(1).nullable().optional(),
   })
   .strict();
 
@@ -677,19 +712,30 @@ export const copilotProfileCreateSchema = z
     // AS-3: optional with an 'experience' default so the current web client
     // (which sends no kind) keeps creating experience profiles untouched.
     agentKind: z.string().min(1).optional().default("experience"),
+    // DR-7b: provenance — the built-in seed id this profile is duplicated
+    // from. No default: absent = created from scratch (no source). The
+    // server validates it names a built-in seed of the SAME kind (422
+    // `copilot_profile_invalid_source_builtin`) — never a foreign kind's
+    // built-in, never a user id, never a silent strip.
+    sourceBuiltinId: z.string().min(1).optional(),
   })
   .strict();
 
 export type CopilotProfileCreate = z.input<typeof copilotProfileCreateSchema>;
 
 /**
- * Partial update for a user profile. Every field is optional. `agentKind` is
- * OMITTED (not merely optional) — the kind is immutable after create, and
- * the object stays `.strict()`, so a PATCH smuggling an `agentKind` key is
- * rejected with a 400 instead of being silently stripped. A wrong-kind
- * profile is recreated under the right kind, never converted.
+ * Partial update for a user profile. Every field is optional. `agentKind`
+ * and `sourceBuiltinId` are OMITTED (not merely optional) — both are
+ * immutable after create (`agentKind`: the kind is fixed at create, and a
+ * wrong-kind profile is recreated under the right kind, never converted;
+ * `sourceBuiltinId`: provenance is recorded once at duplication and can
+ * never be re-pointed or cleared) — and the object stays `.strict()`, so a
+ * PATCH smuggling either key is rejected with a 400 instead of being
+ * silently stripped.
  */
-export const copilotProfileUpdateSchema = copilotProfileCreateSchema.omit({ agentKind: true }).partial();
+export const copilotProfileUpdateSchema = copilotProfileCreateSchema
+  .omit({ agentKind: true, sourceBuiltinId: true })
+  .partial();
 
 export type CopilotProfileUpdate = z.infer<typeof copilotProfileUpdateSchema>;
 

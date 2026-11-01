@@ -8,12 +8,13 @@
  * copy embedded in the single-file binary and index.html — are tagged here.
  */
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, utimes } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { brotliCompressSync, brotliDecompressSync } from "node:zlib";
 import { createApp } from "../src/server/app-factory.js";
 import { resolveStaticDirRoutes } from "../src/server/server-runtime.js";
-import { weakEtag, withStaticValidator } from "../src/server/static-conditional.js";
+import { serveAssetFile, weakEtag, withStaticValidator } from "../src/server/static-conditional.js";
 import type { RuntimeApi } from "../src/api/routes/index.js";
 
 const temporaryDirectories: string[] = [];
@@ -289,6 +290,118 @@ describe("asset directory routes", () => {
 				expect(response.status === 404 || response.status === 418).toBe(true);
 				expect(await response.text()).not.toBe("s");
 			}
+		} finally {
+			server.stop(true);
+		}
+	});
+});
+
+describe("precompressed asset negotiation", () => {
+	async function fixture() {
+		const content = "export const value = 'compressible';\n".repeat(128);
+		const root = await webDirWith({ "assets/app.js": content });
+		await Bun.write(join(root, "assets/app.js.br"), brotliCompressSync(content));
+		await Bun.write(join(root, "assets/app.js.gz"), Bun.gzipSync(content));
+		const request = (accept?: string, etag?: string, range?: string) => serveAssetFile(join(root, "assets"), "/assets", new Request("http://localhost/assets/app.js", {
+			headers: {
+				...(accept === undefined ? {} : { "Accept-Encoding": accept }),
+				...(etag ? { "If-None-Match": etag } : {}),
+				...(range ? { Range: range } : {}),
+			},
+		}));
+		return { root, content, request };
+	}
+
+	test("prefers Brotli on equal quality, then gzip, with the original MIME", async () => {
+		const { content, request } = await fixture();
+		const br = request("gzip, br");
+		expect(br.headers.get("Content-Encoding")).toBe("br");
+		expect(br.headers.get("Content-Type")).toContain("javascript");
+		expect(br.headers.get("Vary")).toBe("Accept-Encoding");
+		expect(brotliDecompressSync(await br.arrayBuffer()).toString()).toBe(content);
+		const gzip = request("gzip");
+		expect(gzip.headers.get("Content-Encoding")).toBe("gzip");
+		expect(new TextDecoder().decode(Bun.gunzipSync(await gzip.arrayBuffer()))).toBe(content);
+	});
+
+	test("honors qualities, explicit exclusions, wildcard and identity", async () => {
+		const { content, request } = await fixture();
+		for (const [header, expected] of [
+			["br;q=0.2, gzip;q=0.9", "gzip"],
+			["br;q=0, gzip", "gzip"],
+			["br;q=0, *;q=0.5", "gzip"],
+			["BR, gzip;q=0.5", "br"],
+			["*", "br"],
+			["identity;q=1, br;q=0.5", null],
+			["br;q=0, gzip;q=0", null],
+			["deflate", null],
+			[undefined, null],
+		] as const) {
+			const response = request(header);
+			expect(response.headers.get("Content-Encoding"), header).toBe(expected);
+			if (expected === null) expect(await response.text()).toBe(content);
+		}
+	});
+
+	test("validators belong to the selected encoding, including the 304 response", async () => {
+		const { request } = await fixture();
+		const tags = [request("br"), request("gzip"), request()].map((response) => response.headers.get("ETag")!);
+		expect(new Set(tags).size).toBe(3);
+		for (const [index, encoding] of ["br", "gzip", undefined].entries()) {
+			const hit = request(encoding, tags[index]);
+			expect(hit.status).toBe(304);
+			expect(hit.headers.get("Vary")).toBe("Accept-Encoding");
+			expect(hit.headers.get("Content-Encoding")).toBe(encoding ?? null);
+			expect(await hit.text()).toBe("");
+		}
+		expect(request("gzip", tags[0]).status).toBe(200);
+	});
+
+	test("missing siblings fall back per request and range requests retain the raw representation", async () => {
+		const { root, content, request } = await fixture();
+		await rm(join(root, "assets/app.js.br"));
+		expect(request("br, gzip").headers.get("Content-Encoding")).toBe("gzip");
+		await rm(join(root, "assets/app.js.gz"));
+		const raw = request("br, gzip");
+		expect(raw.headers.get("Content-Encoding")).toBeNull();
+		expect(raw.headers.get("Vary")).toBe("Accept-Encoding");
+		expect(await raw.text()).toBe(content);
+		await Bun.write(join(root, "assets/app.js.br"), brotliCompressSync(content));
+		expect(request("br", undefined, "bytes=0-5").headers.get("Content-Encoding")).toBeNull();
+		expect(request("br").headers.get("Content-Encoding")).toBe("br");
+	});
+
+	test("an old compressed sibling cannot mask a rebuilt raw asset", async () => {
+		const { root, content, request } = await fixture();
+		await utimes(join(root, "assets/app.js.br"), new Date(0), new Date(0));
+		const raw = request("br");
+		expect(raw.headers.get("Content-Encoding")).toBeNull();
+		expect(await raw.text()).toBe(content);
+	});
+
+	test("Bun routes deliver compressed assets, HEAD, conditional requests and raw ranges over HTTP", async () => {
+		const { root, content } = await fixture();
+		const server = Bun.serve({
+			port: 0,
+			hostname: "127.0.0.1",
+			routes: resolveStaticDirRoutes({ staticEnabled: true, staticDir: root }),
+			fetch: () => new Response("missing", { status: 404 }),
+		});
+		try {
+			const url = `http://127.0.0.1:${server.port}/assets/app.js`;
+			const response = await fetch(url, { headers: { "Accept-Encoding": "gzip, br" } });
+			expect(response.headers.get("Content-Encoding")).toBe("br");
+			expect(await response.text()).toBe(content);
+			const hit = await fetch(url, { headers: { "Accept-Encoding": "br", "If-None-Match": response.headers.get("ETag")! } });
+			expect(hit.status).toBe(304);
+			expect(hit.headers.get("Vary")).toBe("Accept-Encoding");
+			const head = await fetch(url, { method: "HEAD", headers: { "Accept-Encoding": "gzip" } });
+			expect(head.headers.get("Content-Encoding")).toBe("gzip");
+			expect(await head.text()).toBe("");
+			const range = await fetch(url, { headers: { "Accept-Encoding": "br", Range: "bytes=0-5" } });
+			expect(range.status).toBe(206);
+			expect(range.headers.get("Content-Encoding")).toBeNull();
+			expect(await range.text()).toBe("export");
 		} finally {
 			server.stop(true);
 		}

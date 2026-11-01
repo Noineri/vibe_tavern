@@ -4,16 +4,27 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Hono } from "hono";
 import { createStoreContainer, type StoreContainer, type Chat } from "@vibe-tavern/db";
-import { brandId, OBJECTIVE_MODE, type ChatId } from "@vibe-tavern/domain";
+import {
+	brandId,
+	OBJECTIVE_MODE,
+	type ChatBranchId,
+	type ChatId,
+} from "@vibe-tavern/domain";
 import type { RecordProposal } from "@vibe-tavern/api-contracts";
 import { ExperienceCopilotAdapter } from "../src/api/adapters/experience-copilot-adapter.js";
 import { AgentThreadProposalAdapter } from "../src/api/adapters/agent-thread-proposal-adapter.js";
 import { InsightsAdapter } from "../src/api/adapters/insights-adapter.js";
 import { ObjectiveService } from "../src/domain/insights/objective-service.js";
+import { StoryPlanSync } from "../src/domain/director/story-plan-sync.js";
 import type { ProviderProfileService } from "../src/domain/providers/provider-profile-service.js";
 import type { SceneTrackerService } from "../src/domain/insights/tracker-service.js";
 import type { SessionRuntime } from "../src/runtime/session/session-runtime.js";
 import { createAgentThreadProposalRoutes } from "../src/api/routes/agent-thread-proposals.js";
+import {
+	SIDECHAT_PROPOSE_PLAN_TOOL_NAME,
+	SIDECHAT_PROPOSE_TRACKER_TEMPLATE_TOOL_NAME,
+} from "../src/domain/agent/kinds/sidechat/sidechat-director-tools.js";
+import { SIDECHAT_OBJECTIVE_TOOL_NAME } from "../src/domain/agent/kinds/sidechat/sidechat-objective-tools.js";
 import { isDomainError, httpStatusForDomainError, domainErrorToJson } from "../src/shared/errors.js";
 
 /**
@@ -73,6 +84,12 @@ function mountDomainErrorMapping(app: Hono): Hono {
 let stores: StoreContainer;
 let app: Hono;
 let adapter: AgentThreadProposalAdapter;
+/** The REAL story-plan sync behind the DR-5 seams (same construction as
+ *  server-runtime.ts, minus the observer/wiring halves this suite does not
+ *  exercise — applyPlan + insertNextEvent only). */
+let storyPlanSync: StoryPlanSync;
+let objectiveService: ObjectiveService;
+let insights: InsightsAdapter;
 /** The copilot wire read (the reload path SC-13 consumes) over the SAME
  *  stores — a store-only instance; the lifecycle-only harness shape. */
 let copilotWire: ExperienceCopilotAdapter;
@@ -88,12 +105,27 @@ beforeAll(async () => {
 	// The REAL reused services: the ObjectiveService itself, and the insights
 	// runtime member the insights routes serve (addObjectiveTask = ensureChat +
 	// addTask + snapshot refresh — the refresh stubbed above, nothing else).
-	const objectiveService = new ObjectiveService(stores, stubSessionRuntime, stubUncalledProviders);
-	const insights = new InsightsAdapter(stores, stubSessionRuntime, objectiveService, stubUncalledTracker);
+	// DR-5: the same real services back the new seams — StoryPlanSync (the
+	// story-plan apply + R3's next-event insert), ObjectiveService's config
+	// updater (A6), the insights adapter's shared template tail (tracker-scene)
+	// and the session runtime's config patch (the reject companion, stubbed
+	// above). The branded ids enter at these seam closures, as in production.
+	objectiveService = new ObjectiveService(stores, stubSessionRuntime, stubUncalledProviders);
+	insights = new InsightsAdapter(stores, stubSessionRuntime, objectiveService, stubUncalledTracker);
+	storyPlanSync = new StoryPlanSync(stores, objectiveService);
 	adapter = new AgentThreadProposalAdapter(stores, {
 		addObjectiveTask: (chatId, body) => insights.addObjectiveTask(chatId, body),
 		addShortTermGoal: (chatId, description) =>
 			objectiveService.addShortTermGoal(brandId<ChatId>(chatId), description),
+		insertNextStoryEvent: (chatId, branchId, event) =>
+			storyPlanSync.insertNextEvent(brandId<ChatId>(chatId), brandId<ChatBranchId>(branchId), event),
+		applyStoryPlan: (chatId, branchId, plan) =>
+			storyPlanSync.applyPlan(brandId<ChatId>(chatId), brandId<ChatBranchId>(branchId), plan),
+		updateObjectiveConfig: (chatId, patch) =>
+			objectiveService.updateObjectiveConfig(brandId<ChatId>(chatId), patch),
+		applyTrackerScene: (chatId, scene) => insights.applyTrackerSceneTemplate(chatId, scene),
+		readInsightsPatch: (chatId) =>
+			stubSessionRuntime.buildConfigPatchResponse(brandId<ChatId>(chatId), { activeChat: true }),
 	});
 	app = mountDomainErrorMapping(createAgentThreadProposalRoutes(adapter));
 	copilotWire = new ExperienceCopilotAdapter(stores);
@@ -337,5 +369,342 @@ describe("POST /api/agent/threads/:threadId/proposals/:toolCallId/{apply,reject}
 		const parsed = JSON.parse(row!.content) as { toolName: string; output: RecordProposal };
 		expect(parsed.toolName).toBe("propose_objective");
 		expect(parsed.output).toEqual({ ...makeProposal(toolCallId), status: "applied" });
+	});
+});
+
+// ─── DR-5 — the record-proposal dispatch (story-plan + tracker-scene) ───────
+
+/** A two-event branch plan (the first active — the plan the DR-3 tests use):
+ *  the projection's goal texts are title+body for `task_a` (A3) and the bare
+ *  title for `task_b` (empty body contributes nothing). */
+const PLAN = {
+	goal: "Escape the valley",
+	constraints: ["No anachronisms"],
+	tasks: [
+		{ id: "task_a", title: "Find the pass", body: "The pass opens at dawn", status: "active" },
+		{ id: "task_b", title: "Cross the ravine", body: "", status: "pending" },
+	],
+};
+
+/** A scene half (the tracker-scene payload) — the same shape the CT-3 suite's
+ *  template scene part carries. */
+const SCENE = { enabled: true, config: { schema: { location: { $type: "string" } } } };
+
+function makeStoryPlanProposal(id: string, branchId: string, plan: unknown): RecordProposal {
+	return {
+		kind: "record",
+		id,
+		recordType: "story-plan",
+		op: "update",
+		targetId: branchId,
+		payload: { plan },
+		status: "pending",
+	};
+}
+
+function makeTrackerSceneProposal(id: string, chatId: string, scene: unknown): RecordProposal {
+	return {
+		kind: "record",
+		id,
+		recordType: "tracker-scene",
+		op: "update",
+		targetId: chatId,
+		payload: { scene },
+		status: "pending",
+	};
+}
+
+/** Seed ONE proposal tool row of ANY type on a fresh chat-owned sidechat
+ *  thread — the same persisted shape the generic loop writes for a proposal
+ *  tool result (`{ toolName, output }` keyed by the proposal's own id). */
+async function seedRecordProposal(
+	chat: Chat,
+	toolName: string,
+	proposal: RecordProposal,
+): Promise<{ threadId: string; toolCallId: string }> {
+	const thread = await stores.experienceCopilot.startNewChatSession(
+		chat.id,
+		chat.activeBranchId as string,
+		"sidechat-ooc",
+	);
+	await stores.experienceCopilot.appendMessage(thread.id, {
+		role: "tool",
+		content: JSON.stringify({ toolName, output: proposal }),
+		toolCallId: proposal.id,
+	});
+	return { threadId: thread.id, toolCallId: proposal.id };
+}
+
+/** Save a branch plan through the REAL sync (the branch-plan PUT's own
+ *  path — normalize + save + ACTIVE-branch projection). */
+async function savePlan(chat: Chat, plan: unknown) {
+	return storyPlanSync.applyPlan(
+		brandId<ChatId>(chat.id),
+		brandId<ChatBranchId>(chat.activeBranchId as string),
+		plan,
+	);
+}
+
+async function storedPlan(chat: Chat) {
+	return stores.agentPlans.get({
+		kind: "chatBranch",
+		chatId: chat.id,
+		branchId: chat.activeBranchId as string,
+	});
+}
+
+async function postJson(url: string, body: unknown): Promise<Response> {
+	return app.request(url, {
+		method: "POST",
+		headers: { "content-type": "application/json" },
+		body: JSON.stringify(body),
+	});
+}
+
+async function rowStatus(threadId: string, toolCallId: string): Promise<string> {
+	const row = (await stores.experienceCopilot.listMessages(threadId)).find(
+		(message) => message.toolCallId === toolCallId,
+	);
+	return (JSON.parse(row!.content as string) as { output: RecordProposal }).output.status;
+}
+
+describe("POST /api/agent/threads/:threadId/proposals/:toolCallId/{apply,reject} (DR-5 dispatch)", () => {
+	test("objective apply under a plan with events lands as the NEXT plan event, never a tracker item (R3)", async () => {
+		const chat = await newTrackerChat(true);
+		await savePlan(chat, PLAN);
+		const { threadId, toolCallId } = await seedProposal(chat);
+
+		const response = await post(applyUrl(threadId, toolCallId));
+		expect(response.status).toBe(200);
+		const body = (await response.json()) as { proposal: RecordProposal; plan: { tasks: Array<{ id: string; title: string; status: string }> } };
+		// The objective row resolved as today — only the status changed.
+		expect(body.proposal).toEqual({ ...makeProposal(toolCallId), status: "applied" });
+		// The refreshed plan: the new event sits right AFTER the current one.
+		expect(body.plan.tasks.map((task) => [task.title, task.status])).toEqual([
+			["Find the pass", "active"],
+			["Cross the ravine before dawn", "pending"],
+			["Cross the ravine", "pending"],
+		]);
+
+		// The stored plan carries the event; the tracker carries ONLY the plan's
+		// projected events (three goals) — the proposal never became a separate
+		// tracker item (R3: insertNextEvent, not addShortTermGoal).
+		expect((await storedPlan(chat))?.tasks).toHaveLength(3);
+		const state = await trackerState(chat.id);
+		expect(state.mode).toBe(OBJECTIVE_MODE.goals);
+		expect(state.shortTermGoals.map((goal) => goal.description)).toEqual([
+			"Find the pass\nThe pass opens at dawn",
+			"Cross the ravine before dawn",
+			"Cross the ravine",
+		]);
+		expect(state.tasks).toEqual([]);
+	});
+
+	test("objective apply under an EMPTY plan stays today's behavior — a tracker item, no companion", async () => {
+		const chat = await newTrackerChat(true);
+		// An empty plan projects to empty goals (A8) — no events, so the
+		// proposal stays a tracker add and the response keeps today's shape.
+		await savePlan(chat, { goal: "", constraints: [], tasks: [] });
+		const { threadId, toolCallId } = await seedProposal(chat);
+
+		const response = await post(applyUrl(threadId, toolCallId));
+		expect(response.status).toBe(200);
+		// Byte-identical no-plan response: exactly `{ proposal }`.
+		expect(await response.json()).toEqual({
+			proposal: { ...makeProposal(toolCallId), status: "applied" },
+		});
+		const state = await trackerState(chat.id);
+		expect(state.mode).toBe(OBJECTIVE_MODE.goals);
+		expect(state.shortTermGoals.map((goal) => goal.description)).toEqual(["Cross the ravine before dawn"]);
+	});
+
+	test("story-plan apply saves and projects the plan on the active branch, returns the refreshed plan, and leaves the auto-check config untouched without the flag", async () => {
+		const chat = await newTrackerChat(true);
+		const branchId = chat.activeBranchId as string;
+		const { threadId, toolCallId } = await seedRecordProposal(
+			chat,
+			SIDECHAT_PROPOSE_PLAN_TOOL_NAME,
+			makeStoryPlanProposal("tc_plan_1", branchId, PLAN),
+		);
+
+		// Body-less POST — today's caller shape parses as {}.
+		const response = await post(applyUrl(threadId, toolCallId));
+		expect(response.status).toBe(200);
+		const body = (await response.json()) as { proposal: RecordProposal; plan: { goal: string; tasks: unknown[] } };
+		expect(body.proposal).toEqual({ ...makeStoryPlanProposal("tc_plan_1", branchId, PLAN), status: "applied" });
+		expect(body.plan.goal).toBe("Escape the valley");
+		expect(body.plan.tasks).toHaveLength(2);
+		// The stored branch plan IS the returned (normalized) plan.
+		expect(await storedPlan(chat)).toEqual(body.plan);
+
+		// The projection (active branch): goals mode, one goal per event (A3:
+		// title+body when the body is non-blank, bare title otherwise — A2:
+		// the premise never reaches the tracker).
+		const state = await trackerState(chat.id);
+		expect(state.mode).toBe(OBJECTIVE_MODE.goals);
+		expect(state.longTermGoal).toBe(null);
+		expect(state.shortTermGoals.map((goal) => [goal.id, goal.description, goal.status])).toEqual([
+			["task_a", "Find the pass\nThe pass opens at dawn", "active"],
+			["task_b", "Cross the ravine", "pending"],
+		]);
+		// Without the flag the auto-check config is untouched (A6).
+		expect(state.autoCheckFrequency).toBe(0);
+	});
+
+	test("story-plan apply with enableAutoCheck turns the tracker's auto-check on (A6: frequency 1)", async () => {
+		const chat = await newTrackerChat(true);
+		const branchId = chat.activeBranchId as string;
+		const { threadId, toolCallId } = await seedRecordProposal(
+			chat,
+			SIDECHAT_PROPOSE_PLAN_TOOL_NAME,
+			makeStoryPlanProposal("tc_plan_2", branchId, PLAN),
+		);
+
+		const response = await postJson(applyUrl(threadId, toolCallId), { enableAutoCheck: true });
+		expect(response.status).toBe(200);
+		expect((await trackerState(chat.id)).autoCheckFrequency).toBe(1);
+	});
+
+	test("tracker-scene apply runs the shared template tail scene-only — the tracker config changes, goals and the objective toggle survive", async () => {
+		const chat = await newTrackerChat(true, "goals");
+		// A FOREIGN goal proves A9 (scene only — the objective half passes
+		// through `objective: null` untouched, never replaced).
+		await objectiveService.addShortTermGoal(brandId<ChatId>(chat.id), "A foreign goal");
+		const { threadId, toolCallId } = await seedRecordProposal(
+			chat,
+			SIDECHAT_PROPOSE_TRACKER_TEMPLATE_TOOL_NAME,
+			makeTrackerSceneProposal("tc_scene_1", chat.id, SCENE),
+		);
+
+		const response = await post(applyUrl(threadId, toolCallId));
+		expect(response.status).toBe(200);
+		const body = (await response.json()) as { proposal: RecordProposal; patch: unknown };
+		expect(body.proposal).toEqual({ ...makeTrackerSceneProposal("tc_scene_1", chat.id, SCENE), status: "applied" });
+		// The insights patch companion rides the response (the stubbed refresh).
+		expect(body.patch).toEqual({});
+
+		const updated = await stores.chats.getById(chat.id);
+		expect(updated?.insightsConfig.trackerEnabled).toBe(true);
+		expect(Object.keys(updated?.insightsConfig.tracker?.schema ?? {})).toEqual(["location"]);
+		expect((await trackerState(chat.id)).shortTermGoals.map((goal) => goal.description)).toEqual(["A foreign goal"]);
+		expect(updated?.insightsConfig.objectiveEnabled).toBe(true);
+	});
+
+	test("reject writes status only for the new types — the stored plan and the tracker stay untouched", async () => {
+		const chat = await newTrackerChat(true);
+		const branchId = chat.activeBranchId as string;
+		await savePlan(chat, PLAN);
+		const planSeed = await seedRecordProposal(
+			chat,
+			SIDECHAT_PROPOSE_PLAN_TOOL_NAME,
+			makeStoryPlanProposal("tc_plan_rej", branchId, { ...PLAN, goal: "A rejected goal" }),
+		);
+		const planReject = await post(rejectUrl(planSeed.threadId, planSeed.toolCallId));
+		expect(planReject.status).toBe(200);
+		const planBody = (await planReject.json()) as { proposal: RecordProposal; plan: { goal: string } };
+		expect(planBody.proposal.status).toBe("rejected");
+		// The companion is the CURRENT stored plan — the proposal's plan never landed.
+		expect(planBody.plan.goal).toBe("Escape the valley");
+		expect((await storedPlan(chat))?.goal).toBe("Escape the valley");
+		expect((await trackerState(chat.id)).shortTermGoals).toHaveLength(2);
+
+		const sceneSeed = await seedRecordProposal(
+			chat,
+			SIDECHAT_PROPOSE_TRACKER_TEMPLATE_TOOL_NAME,
+			makeTrackerSceneProposal("tc_scene_rej", chat.id, SCENE),
+		);
+		const sceneReject = await post(rejectUrl(sceneSeed.threadId, sceneSeed.toolCallId));
+		expect(sceneReject.status).toBe(200);
+		const sceneBody = (await sceneReject.json()) as { proposal: RecordProposal; patch: unknown };
+		expect(sceneBody.proposal.status).toBe("rejected");
+		expect(sceneBody.patch).toEqual({});
+		const after = await stores.chats.getById(chat.id);
+		expect(after?.insightsConfig.trackerEnabled).toBe(false);
+
+		// Objective reject under a plan: the plan companion comes back, but
+		// nothing is inserted (R3 fires only on Accept).
+		const objectiveSeed = await seedProposal(chat);
+		const objectiveReject = await post(rejectUrl(objectiveSeed.threadId, objectiveSeed.toolCallId));
+		expect(objectiveReject.status).toBe(200);
+		const objectiveBody = (await objectiveReject.json()) as { proposal: RecordProposal; plan: { tasks: unknown[] } };
+		expect(objectiveBody.proposal.status).toBe("rejected");
+		expect(objectiveBody.plan.tasks).toHaveLength(2);
+		expect((await storedPlan(chat))?.tasks).toHaveLength(2);
+	});
+
+	test("an unknown recordType is refused with the typed 422 before any write", async () => {
+		const chat = await newTrackerChat(true);
+		const unknown: RecordProposal = {
+			kind: "record",
+			id: "tc_mystery",
+			recordType: "mystery-type",
+			op: "update",
+			payload: {},
+			status: "pending",
+		};
+		const { threadId, toolCallId } = await seedRecordProposal(chat, "propose_plan", unknown);
+
+		const applyAttempt = await post(applyUrl(threadId, toolCallId));
+		expect(applyAttempt.status).toBe(422);
+		const applyBody = (await applyAttempt.json()) as ErrorWire;
+		expect(applyBody.error.details?.code).toBe("unknown_proposal_record_type");
+
+		const rejectAttempt = await post(rejectUrl(threadId, toolCallId));
+		expect(rejectAttempt.status).toBe(422);
+
+		// No writes anywhere: the row stays pending, the tracker untouched.
+		expect(await rowStatus(threadId, toolCallId)).toBe("pending");
+		expect((await trackerState(chat.id)).tasks).toEqual([]);
+	});
+
+	test("a failed story-plan domain write leaves the row pending — the status write follows the domain write", async () => {
+		const chat = await newTrackerChat(true);
+		const branchId = chat.activeBranchId as string;
+		// An invalid plan (two active events) — the shared normalize-or-422.
+		const invalid = await seedRecordProposal(
+			chat,
+			SIDECHAT_PROPOSE_PLAN_TOOL_NAME,
+			makeStoryPlanProposal("tc_plan_bad", branchId, {
+				goal: "X",
+				constraints: [],
+				tasks: [
+					{ id: "t1", title: "One", body: "", status: "active" },
+					{ id: "t2", title: "Two", body: "", status: "active" },
+				],
+			}),
+		);
+		const invalidApply = await post(applyUrl(invalid.threadId, invalid.toolCallId));
+		expect(invalidApply.status).toBe(422);
+		expect(((await invalidApply.json()) as ErrorWire).error.details?.code).toBe("agent_plan_multiple_active");
+		expect(await rowStatus(invalid.threadId, invalid.toolCallId)).toBe("pending");
+		expect(await storedPlan(chat)).toBe(null);
+
+		// A foreign target branch — applyPlan's ownership 404, same ordering.
+		const foreign = await seedRecordProposal(
+			chat,
+			SIDECHAT_PROPOSE_PLAN_TOOL_NAME,
+			makeStoryPlanProposal("tc_plan_foreign", "branch_never_born", PLAN),
+		);
+		const foreignApply = await post(applyUrl(foreign.threadId, foreign.toolCallId));
+		expect(foreignApply.status).toBe(404);
+		expect(await rowStatus(foreign.threadId, foreign.toolCallId)).toBe("pending");
+	});
+
+	test("a second story-plan apply is refused as today (already resolved)", async () => {
+		const chat = await newTrackerChat(true);
+		const branchId = chat.activeBranchId as string;
+		const { threadId, toolCallId } = await seedRecordProposal(
+			chat,
+			SIDECHAT_PROPOSE_PLAN_TOOL_NAME,
+			makeStoryPlanProposal("tc_plan_twice", branchId, PLAN),
+		);
+		const first = await post(applyUrl(threadId, toolCallId));
+		expect(first.status).toBe(200);
+
+		const second = await post(applyUrl(threadId, toolCallId));
+		expect(second.status).toBe(409);
+		expect(((await second.json()) as ErrorWire).error.details?.code).toBe("objective_proposal_already_resolved");
+		// Still exactly the one applied plan.
+		expect((await storedPlan(chat))?.tasks).toHaveLength(2);
 	});
 });

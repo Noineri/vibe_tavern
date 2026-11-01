@@ -1,12 +1,14 @@
 import { createParser, type EventSourceMessage } from "eventsource-parser";
 import type { ChatGenerationStatus } from "../api/types.js";
-import type { ProviderErrorCategory } from "@vibe-tavern/api-contracts";
+import { chatGenerationContextSchema, type ChatGenerationContext, type ProviderErrorCategory } from "@vibe-tavern/api-contracts";
 import { ProviderStreamError } from "../api/provider-stream-error.js";
 import type { GenerationMetadata } from "./generation-metadata.js";
 
 export interface ParseSSEStreamOptions {
   response: Response;
   signal?: AbortSignal;
+  /** Numbered replay consumers may reject an already-projected frame. */
+  onEventId?: (id: string) => boolean | void;
   onStatus: (status: ChatGenerationStatus) => void;
   onChunk: (delta: string) => void;
   onReasoningChunk?: (delta: string) => void;
@@ -18,6 +20,10 @@ export interface ParseSSEStreamOptions {
   onToolResult?: (info: { toolCallId: string; toolName: string; output: unknown; isError: boolean }) => void;
   onCoauthorModule?: (info: { moduleId: string; skillId?: string }) => void;
   onGenerationMetadata?: (info: GenerationMetadata) => void;
+  onGenerationContext?: (info: ChatGenerationContext) => void;
+  onUserMessageSaved?: (info: { messageId: string }) => void;
+  /** Server-owned chat Stop settles only after producer exhaustion/EOF. */
+  waitForStreamEnd?: boolean;
 }
 
 /**
@@ -92,14 +98,19 @@ export async function parseSSEStream(opts: ParseSSEStreamOptions): Promise<{
 
   const parser = createParser({
     onEvent(ev: EventSourceMessage) {
+      if (ev.id !== undefined && opts.onEventId?.(ev.id) === false) return;
       // Server-relayed cancel (the request abort was bounced back through the
       // orchestrator). Resolve as cancelled without throwing an error.
-      if (ev.event === "abort") throw new AbortSentinel();
+      if (ev.event === "abort") {
+        if (!opts.waitForStreamEnd) throw new AbortSentinel();
+        finishReason = "cancelled";
+        opts.onStatus("cancelled");
+        return;
+      }
       // The server stored the user message (send path) — an error after this
       // point leaves it in the chat, so the error carries the fact.
       if (ev.event === "user-message-saved") {
         userMessageSaved = true;
-        return;
       }
 
       const data = ev.data;
@@ -119,7 +130,11 @@ export async function parseSSEStream(opts: ParseSSEStreamOptions): Promise<{
         return;
       }
 
-      if (ev.event === "error") {
+      if (ev.event === "generation-context") {
+        opts.onGenerationContext?.(chatGenerationContextSchema.parse(parsed));
+      } else if (ev.event === "user-message-saved") {
+        if (typeof parsed.messageId === "string") opts.onUserMessageSaved?.({ messageId: parsed.messageId });
+      } else if (ev.event === "error") {
         opts.onStatus("failed");
         const message =
           typeof parsed.message === "string" && parsed.message.trim()
@@ -224,6 +239,6 @@ export async function parseSSEStream(opts: ParseSSEStreamOptions): Promise<{
     }
   }
 
-  opts.onStatus("idle");
+  opts.onStatus(finishReason === "cancelled" ? "cancelled" : "idle");
   return { finishReason, usage, ...(metrics !== undefined ? { metrics } : {}), ...(lorebookOverflows !== undefined ? { lorebookOverflows } : {}) };
 }

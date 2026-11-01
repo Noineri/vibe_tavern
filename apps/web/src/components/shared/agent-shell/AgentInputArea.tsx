@@ -10,7 +10,7 @@ import { useT } from "../../../i18n/context.js";
 import { useAgentMention } from "./use-agent-mention.js";
 import type { MentionAutocompleteItem } from "../mention-autocomplete-query.js";
 import { AgentContextPills, type AgentContextPillItem } from "./AgentContextPills.js";
-import { AgentModelPills } from "./AgentModelPills.js";
+import { AgentModelPills, AgentModelCaption } from "./AgentModelPills.js";
 import { AttachmentPreview } from "../../chat/AttachmentPreview.js";
 import { AttachmentOverflowWarning } from "../../chat/attachment-overflow-warning.js";
 import { AttachmentVisionWarning } from "../../chat/attachment-vision-warning.js";
@@ -36,6 +36,11 @@ export interface AgentInputAreaProps {
   providerProfileId: string | null;
   model?: string;
   onProviderChange: (profileId: string, model?: string) => void;
+  /** DR-8 (mockup §11): the profile-model caption rendered above the
+   *  pills row while the effective profile answers on its own model. Absent
+   *  — no caption (today's composer, byte-identical). Shared by BOTH
+   *  composer arms (the mobile area reuses this props interface). */
+  modelCaption?: string | null;
   /** Outside-set draft text (UX 2026-08-16 remark 6): the tester/playground
    *  "send to copilot" button COPIES the digest into the chat input instead of
    *  dispatching the turn — the user presses send themselves. Applied whenever
@@ -44,16 +49,19 @@ export interface AgentInputAreaProps {
   /** CX-6: catalog for the @-mention popover (shared MentionAutocompleteItem
    *  shape). Default [] — absent means the picker is inert. */
   mentionCatalog?: readonly MentionAutocompleteItem[];
-  /** CX-6: currently pinned context (rendered as removable pills above the
-   *  textarea). Default [] — absent renders no pills. */
+  /** CX-6: currently pinned context (rendered as removable pills in the
+   *  attached row above the input card, DR-15). Default [] — absent renders
+   *  no pills. */
   pinnedContext?: readonly AgentContextPillItem[];
   /** CX-6: fired when an item is picked from the @-popover (the @query is
    *  ALREADY stripped from the draft). */
   onPinContext?: (item: MentionAutocompleteItem) => void;
   /** CX-6: fired when a pill's × is clicked. */
   onUnpinContext?: (targetType: string, targetId: string) => void;
-  /** SC-18: an optional host row inside the input card above the textarea
-   *  (the sidechat's attached-variant chips). Default absent — no row. */
+  /** SC-18 / DR-15: an optional host row in the attached strip above the
+   *  input card (the sidechat's attached-variant chips — after the
+   *  pinned-context pills, before the draft attachments). Default absent —
+   *  no row. */
   topSlot?: ReactNode;
   /** AP-6: true while the thread's live awaiting ask exists (computed by the
    *  pane via `selectAgentLiveAsk`) — the next send ANSWERS the ask, so the
@@ -75,6 +83,7 @@ export function AgentInputArea(props: AgentInputAreaProps) {
     providerProfileId,
     model,
     onProviderChange,
+    modelCaption,
     prefill,
     mentionCatalog,
     pinnedContext,
@@ -151,6 +160,23 @@ export function AgentInputArea(props: AgentInputAreaProps) {
     >
       {attachment.attachmentVisionWarning && <AttachmentVisionWarning />}
       {attachment.attachmentOverflow.overflow && <AttachmentOverflowWarning {...attachment.attachmentOverflow} />}
+      {/* DR-15 (mockup §9): everything attached to the next message in ONE
+          wrapping row directly above the card — pinned-context pills, the
+          host's chips (topSlot), then the draft attachments; nothing inside
+          the card but the textarea, the own-model caption and the pills row.
+          `empty:hidden` keeps the strip gap-free when nothing is attached
+          (the host slot's emptiness is only knowable after render, so the
+          row is not conditionally mounted). */}
+      <div data-testid="agent-attached-row" className="mb-2 flex flex-wrap items-center gap-1.5 empty:hidden">
+        <AgentContextPills items={pinnedContext ?? []} onUnpin={(tt, id) => onUnpinContext?.(tt, id)} />
+        {topSlot}
+        {/* CF13: the composed string is base + these appends — `w-full` and
+            the card-interior paddings are `!`-overridden so the chip group
+            slots inline and wraps (6px rhythm like the rest of the row). */}
+        {attachments.length > 0 && (
+          <AttachmentPreview attachments={attachments} onRemove={attachment.remove} className="!w-auto !p-0 !gap-1.5 flex-wrap" />
+        )}
+      </div>
       <div ref={cardRef} className={cn("relative rounded-lg border bg-input-bg transition-colors duration-150", answeringAsk ? "border-accent focus-within:border-accent" : "border-border focus-within:border-border2")}>
         {attachment.isDragOver && (
           <div className="pointer-events-none absolute inset-0 z-[100] flex items-center justify-center rounded-lg border-2 border-dashed border-accent bg-accent/5">
@@ -160,8 +186,6 @@ export function AgentInputArea(props: AgentInputAreaProps) {
           </div>
         )}
         <input type="file" ref={attachment.fileInputRef} className="hidden" accept={attachment.accept} multiple onChange={attachment.onFileInputChange} />
-        <AgentContextPills items={pinnedContext ?? []} onUnpin={(tt, id) => onUnpinContext?.(tt, id)} />
-        {topSlot}
         <AutoTextarea
           bare
           className={cn(composerCls, "w-full !min-h-[55px] !px-4 !pt-[13px] !pb-2 !text-[calc(var(--ui-fs)+1px)] !leading-tight")}
@@ -177,7 +201,15 @@ export function AgentInputArea(props: AgentInputAreaProps) {
           onPaste={attachment.handlePaste}
           onKeyDown={(e) => mention.handleKeyDown(e, handleKeyDown)}
         />
-        {attachments.length > 0 && <AttachmentPreview attachments={attachments} onRemove={attachment.remove} />}
+
+        {/* DR-8 (mockup §11): the own-model caption line — directly above
+            the pills row (the attachments moved to the attached row above
+            the card, DR-15), aligned with the row's padding. */}
+        {modelCaption != null && (
+          <div className="px-3 pt-2">
+            <AgentModelCaption label={modelCaption} />
+          </div>
+        )}
 
         <div className="relative flex items-center gap-2 pt-1.5 pb-[9px] pl-3 pr-3">
           <AgentModelPills providerProfileId={providerProfileId} model={model} onProviderChange={onProviderChange} />

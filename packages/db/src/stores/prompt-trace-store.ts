@@ -3,7 +3,9 @@ import { promptTraces, promptTraceChunks, promptTraceChunkRefs } from '../db-sch
 import type { ActivatedLoreDetail, OverflowedLorebook, ProviderResponseTrace } from '@vibe-tavern/domain';
 import type { AppDb } from '../db-connection.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
-import { deflateTraceValue, inflateTraceValue, type TraceChunk } from '../trace-chunking.js';
+import { deflateTraceValue, inflateTraceValue, collectMarkerIds, type TraceChunk } from '../trace-chunking.js';
+import { compressTraceText, decodeTraceText } from '../trace-storage-codec.js';
+import { isTraceStorageConversionRunning } from '../trace-storage-converter.js';
 
 // ─── Return type ──────────────────────────────────────────────────────────────
 
@@ -113,13 +115,11 @@ export class PromptTraceStore {
     const id = this.idGen.next('trace');
     const now = this.clock.now();
 
-    // The three payload columns are stored as chunk-referencing skeletons
-    // (trace-chunking.ts): every string ≥ TRACE_CHUNK_THRESHOLD moves into
-    // prompt_trace_chunks keyed by its sha256, so the chat history shared by
-    // every later trace in a chat is stored once instead of per-trace.
-    const layers = deflateTraceValue(data.assembledLayers);
-    const final = deflateTraceValue(data.finalPayload ?? {});
-    const response = data.providerResponse ? deflateTraceValue(data.providerResponse) : null;
+    // v2: ordered content-defined blocks plus compressed skeletons. Chunk ids
+    // hash plaintext, so existing v1 chunks can still satisfy a shared block.
+    const layers = deflateTraceValue(data.assembledLayers, 2);
+    const final = deflateTraceValue(data.finalPayload ?? {}, 2);
+    const response = data.providerResponse ? deflateTraceValue(data.providerResponse, 2) : null;
     const chunks = dedupeChunks([layers, final, ...(response ? [response] : [])]);
     const refPairs: Array<{ traceId: string; chunkId: string }> = [];
     for (const deflated of [layers, final, ...(response ? [response] : [])]) {
@@ -129,7 +129,10 @@ export class PromptTraceStore {
     this.db.transaction((tx) => {
       if (chunks.length > 0) {
         tx.insert(promptTraceChunks)
-          .values(chunks.map((chunk) => ({ id: chunk.id, byteSize: chunk.content.length, content: chunk.content })))
+          .values(chunks.map((chunk) => {
+            const content = compressTraceText(chunk.content);
+            return { id: chunk.id, byteSize: content.byteLength, content };
+          }))
           .onConflictDoNothing()
           .run();
       }
@@ -148,9 +151,9 @@ export class PromptTraceStore {
           variantId: data.variantId ?? null,
           model: data.model,
           presetName: data.presetName,
-          assembledLayersJson: JSON.stringify(layers.skeleton),
+          assembledLayersJson: compressTraceText(JSON.stringify(layers.skeleton)),
           tokenAccountingJson: JSON.stringify(data.tokenAccounting),
-          finalPayloadJson: JSON.stringify(final.skeleton),
+          finalPayloadJson: compressTraceText(JSON.stringify(final.skeleton)),
           activatedLoreEntriesJson: JSON.stringify(data.activatedLoreEntries),
           activatedLoreDetailJson: JSON.stringify(data.activatedLoreDetail ?? []),
           overflowedLorebooksJson: JSON.stringify(data.overflowedLorebooks ?? []),
@@ -159,7 +162,7 @@ export class PromptTraceStore {
           prefill: data.prefill ?? null,
           compactionSummary: data.compactionSummary ?? null,
           sentConfigJson: data.sentConfig ? JSON.stringify(data.sentConfig) : null,
-          providerResponseJson: response ? JSON.stringify(response.skeleton) : null,
+          providerResponseJson: response ? compressTraceText(JSON.stringify(response.skeleton)) : null,
           latencyMs: data.latencyMs,
           createdAt: now,
         })
@@ -184,12 +187,12 @@ export class PromptTraceStore {
     return this.mapRowTrace(row, await this.hydrateChunkMap([row]));
   }
 
-  async getTracesByChat(chatId: string, branchId?: string, messageId?: string): Promise<PromptTrace[]> {
+  async getTracesByChat(chatId: string, branchId?: string, messageId?: string, limit?: number): Promise<PromptTrace[]> {
     const conditions = [eq(promptTraces.chatId, chatId)];
     if (branchId) conditions.push(eq(promptTraces.branchId, branchId));
     if (messageId) conditions.push(eq(promptTraces.messageId, messageId));
 
-    const rows = await this.db
+    const query = this.db
       .select()
       .from(promptTraces)
       .where(and(...conditions))
@@ -198,10 +201,41 @@ export class PromptTraceStore {
       // order: the most-recently-inserted id surfaces first. Without this,
       // three traces saved in quick succession can tie on createdAt and return
       // in arbitrary order (flaky `list-prompt-traces` test).
-      .orderBy(desc(promptTraces.createdAt), desc(promptTraces.id))
-      .all();
+      .orderBy(desc(promptTraces.createdAt), desc(promptTraces.id));
+    // LC-1: callers needing only the newest N rows push the limit into SQL —
+    // loading the whole branch to slice in JS was the D1 cost
+    // (LONG_CHAT_PERFORMANCE_REPORT). Same row set: the order above makes
+    // `slice(0, n)` ≡ `LIMIT n`.
+    const rows = limit === undefined
+      ? await query.all()
+      : await query.limit(limit).all();
     const chunkMap = await this.hydrateChunkMap(rows);
     return rows.map((row) => this.mapRowTrace(row, chunkMap));
+  }
+
+  /** LC-1: the NEWEST trace of a chat + branch — one row in SQL (LIMIT 1),
+   *  not `getTracesByChat` + slice (which loaded and inflated EVERY trace of
+   *  the branch to return one). Same newest-first order + id tie-break as
+   *  `getTracesByChat`, so the returned row is exactly
+   *  `getTracesByChat(chatId, branchId)[0]`; chunks are hydrated for that row
+   *  only. Backs `MessageResponse.promptTrace` (buildMessageResponse); the
+   *  full history stays lazy (GET /api/chats/:chatId/traces →
+   *  apps/web/src/stores/trace-history-store.ts). */
+  async getLatestTraceByChat(chatId: string, branchId: string): Promise<PromptTrace | null> {
+    const row = await this.db
+      .select()
+      .from(promptTraces)
+      .where(
+        and(
+          eq(promptTraces.chatId, chatId),
+          eq(promptTraces.branchId, branchId),
+        ),
+      )
+      .orderBy(desc(promptTraces.createdAt), desc(promptTraces.id))
+      .limit(1)
+      .get();
+    if (!row) return null;
+    return this.mapRowTrace(row, await this.hydrateChunkMap([row]));
   }
 
   /** SC-23e: the trace that PRODUCED one swipe — the newest row whose
@@ -226,7 +260,80 @@ export class PromptTraceStore {
     return this.mapRowTrace(row, await this.hydrateChunkMap([row]));
   }
 
+  /** Trace ids matching a deletion scope — captured BEFORE the delete, because
+   *  the rows are then removed by FK cascades (message/branch/chat deletion)
+   *  and their ids are gone. Same condition shape as getTracesByChat, but ids
+   *  only: no hydration, no payload reads. The runtime feeds the result to
+   *  reclaimChunksForTraces after the delete commits. */
+  async listTraceIds(filter: { chatId: string; branchId?: string; messageId?: string }): Promise<string[]> {
+    const conditions = [eq(promptTraces.chatId, filter.chatId)];
+    if (filter.branchId) conditions.push(eq(promptTraces.branchId, filter.branchId));
+    if (filter.messageId) conditions.push(eq(promptTraces.messageId, filter.messageId));
+    const rows = await this.db
+      .select({ id: promptTraces.id })
+      .from(promptTraces)
+      .where(and(...conditions))
+      .all();
+    return rows.map((row) => row.id);
+  }
+
   // ─── Chunk maintenance ────────────────────────────────────────────────
+
+  /**
+   * Scoped chunk reclamation for one deletion (LONG_CHAT_PERFORMANCE_REPORT
+   * step 8). Given the ids of the traces that JUST died (captured before the
+   * delete via listTraceIds — the trace rows themselves were removed by FK
+   * cascades inside it), delete exactly those traces' refs (PK left prefix)
+   * and reclaim a candidate chunk only when NO surviving ref points at it
+   * (per-candidate NOT EXISTS on idx_prompt_trace_chunk_refs_chunk). Chunks
+   * are content-addressed and shared across traces/branches — the guard is
+   * what keeps a surviving branch's shared chunks alive.
+   *
+   * Replaces the per-request global sweepOrphanedChunks anti-join, which
+   * scanned the ENTIRE refs/chunks tables synchronously on the event loop
+   * and froze the whole server on multi-GB DBs; the global pass survives as
+   * best-effort boot-time maintenance (server-runtime.ts).
+   *
+   * Best-effort by design: a failure is logged and NEVER breaks the
+   * user-visible delete that already committed (same contract as the sweep).
+   */
+  async reclaimChunksForTraces(traceIds: readonly string[]): Promise<void> {
+    if (traceIds.length === 0) return;
+    try {
+      // Historical fork refs may be incomplete until the converter repairs
+      // EVERY skeleton. The converter also reclaims refs for deleted traces.
+      if (isTraceStorageConversionRunning(this.db)) return;
+      this.db.transaction((tx) => {
+        // Candidate chunks: what the dying traces' refs point at — collected
+        // BEFORE their refs are deleted, deduplicated across traces.
+        const candidates = new Set<string>();
+        const BATCH = 500; // keep IN clauses inside SQLite variable limits
+        for (let i = 0; i < traceIds.length; i += BATCH) {
+          const idBatch = traceIds.slice(i, i + BATCH);
+          const refRows = tx
+            .select({ chunkId: promptTraceChunkRefs.chunkId })
+            .from(promptTraceChunkRefs)
+            .where(inArray(promptTraceChunkRefs.traceId, idBatch))
+            .all();
+          for (const row of refRows) candidates.add(row.chunkId);
+          tx.delete(promptTraceChunkRefs)
+            .where(inArray(promptTraceChunkRefs.traceId, idBatch))
+            .run();
+        }
+        const chunkList = [...candidates];
+        for (let i = 0; i < chunkList.length; i += BATCH) {
+          const chunkBatch = chunkList.slice(i, i + BATCH);
+          tx.run(sql`DELETE FROM prompt_trace_chunks
+            WHERE id IN ${inList(chunkBatch)}
+            AND NOT EXISTS (SELECT 1 FROM prompt_trace_chunk_refs WHERE chunk_id = prompt_trace_chunks.id)`);
+        }
+      });
+    } catch (error: unknown) {
+      // The delete response is already committed; reclamation must not turn
+      // it into a 500 (same best-effort contract as sweepOrphanedChunks).
+      console.warn(`[db] prompt-trace chunk reclamation skipped: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
 
   /**
    * Reclaim chunks referenced only by traces that no longer exist. Traces
@@ -237,6 +344,7 @@ export class PromptTraceStore {
    */
   async sweepOrphanedChunks(): Promise<void> {
     try {
+      if (isTraceStorageConversionRunning(this.db)) return;
       this.db.transaction((tx) => {
         tx.run(sql`DELETE FROM prompt_trace_chunk_refs WHERE trace_id NOT IN (SELECT id FROM prompt_traces)`);
         tx.run(sql`DELETE FROM prompt_trace_chunks WHERE id NOT IN (SELECT chunk_id FROM prompt_trace_chunk_refs)`);
@@ -260,10 +368,9 @@ export class PromptTraceStore {
    */
   private async hydrateChunkMap(rows: Array<typeof promptTraces.$inferSelect>): Promise<Map<string, string>> {
     const ids = new Set<string>();
-    const marker = '"$vtchunk"';
     for (const row of rows) {
       for (const column of [row.assembledLayersJson, row.finalPayloadJson, row.providerResponseJson]) {
-        if (column && column.includes(marker)) {
+        if (column) {
           for (const id of collectMarkerIds(column)) ids.add(id);
         }
       }
@@ -278,7 +385,7 @@ export class PromptTraceStore {
         .from(promptTraceChunks)
         .where(inArray(promptTraceChunks.id, slice))
         .all();
-      for (const chunk of found) map.set(chunk.id, chunk.content);
+      for (const chunk of found) map.set(chunk.id, decodeTraceText(chunk.content));
     }
     return map;
   }
@@ -295,9 +402,9 @@ export class PromptTraceStore {
       variantId: row.variantId ?? null,
       model: row.model,
       presetName: row.presetName,
-      assembledLayers: inflateTraceValue(JSON.parse(row.assembledLayersJson), lookup),
+      assembledLayers: inflateTraceValue(JSON.parse(decodeTraceText(row.assembledLayersJson)), lookup),
       tokenAccounting: JSON.parse(row.tokenAccountingJson),
-      finalPayload: inflateTraceValue(JSON.parse(row.finalPayloadJson), lookup),
+      finalPayload: inflateTraceValue(JSON.parse(decodeTraceText(row.finalPayloadJson)), lookup),
       activatedLoreEntries: JSON.parse(row.activatedLoreEntriesJson),
       activatedLoreDetail: row.activatedLoreDetailJson ? JSON.parse(row.activatedLoreDetailJson) : [],
       overflowedLorebooks: row.overflowedLorebooksJson ? JSON.parse(row.overflowedLorebooksJson) : [],
@@ -307,7 +414,7 @@ export class PromptTraceStore {
       prefill: row.prefill ?? null,
       compactionSummary: row.compactionSummary ?? null,
       sentConfig: row.sentConfigJson ? JSON.parse(row.sentConfigJson) : null,
-      providerResponse: row.providerResponseJson ? inflateTraceValue(JSON.parse(row.providerResponseJson), lookup) : null,
+      providerResponse: row.providerResponseJson ? inflateTraceValue(JSON.parse(decodeTraceText(row.providerResponseJson)), lookup) : null,
       createdAt: row.createdAt,
     };
   }
@@ -321,11 +428,8 @@ function dedupeChunks(deflated: Array<{ chunks: TraceChunk[] }>): TraceChunk[] {
   return [...byId.values()];
 }
 
-/** Extract the 64-hex ids from `"$vtchunk":"<id>"` occurrences in a skeleton string. */
-function collectMarkerIds(skeletonJson: string): string[] {
-  const ids: string[] = [];
-  const re = /"\$vtchunk":"([0-9a-f]{64})"/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(skeletonJson)) !== null) ids.push(m[1]);
-  return ids;
+/** SQL `(?, ?, …)` list for raw-statement IN clauses (drizzle's inArray
+ *  composes only into query-builder where clauses). */
+function inList(values: readonly string[]): ReturnType<typeof sql> {
+  return sql`(${sql.join(values.map((value) => sql`${value}`), sql`, `)})`;
 }

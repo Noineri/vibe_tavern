@@ -10,6 +10,7 @@ import { SegmentedControl } from "../../shared/SegmentedControl.js";
 import { TextInput } from "../../shared/text-input.js";
 import { lblCls } from "../../../lib/field-tokens.js";
 import { useT } from "../../../i18n/context.js";
+import { useAgentPlan } from "../../../hooks/use-agent-plan.js";
 import { useSnapshotStore } from "../../../stores/snapshot-store.js";
 import { useProviderDataStore } from "../../../stores/provider-data-store.js";
 import { AiAssistantConnectionFields } from "../../shared/ai-assistant/AiAssistantConnectionFields.js";
@@ -48,6 +49,13 @@ import type { ObjectiveLongTermGoal, ObjectiveShortTermGoal, ObjectiveState, Obj
  * objective description and task text are never clobbered by a background
  * auto-check syncing the snapshot mid-edit (auto-check touches task statuses,
  * not these fields, but uncontrolled avoids the race entirely).
+ *
+ * DR-13 (DIRECTOR_MODE_PLAN, mock §8): while the ACTIVE branch plan has
+ * events (the `useAgentPlan` cache seam), the director's projection drives
+ * the goals — this panel shows the muted note (`obj_plan_driven_note`) and
+ * hides the manual add + generate controls; status cycling stays (statuses
+ * flow back into the plan). Without plan events the panel is byte-identical
+ * to today's.
  */
 export function ObjectiveConfig({ chatId }: { chatId: ChatId }) {
   const { t } = useT();
@@ -63,6 +71,24 @@ export function ObjectiveConfig({ chatId }: { chatId: ChatId }) {
   const { mode, shortTermGoals } = state;
   const hasCheckTarget = (mode === "goals" ? shortTermGoals : state.tasks)
     .some((item) => item.status === "active" || item.status === "pending");
+
+  // DR-13 (A7/P3, mock §8): while the ACTIVE branch plan has events, the
+  // director's projection drives the tracker — the muted note shows and the
+  // manual add / generate controls hide (status cycling STAYS: statuses flow
+  // back into the plan, R2). The plan comes through the SAME `useAgentPlan`
+  // cache seam the story strip and proposal cards read (the DR-10b pattern:
+  // active chat + active branch; the InsightsPanel contract pins the prop
+  // `chatId` to the active chat, and the equality guard keeps a hypothetical
+  // non-active-chat mount on today's panel). No branch → no owner → the
+  // empty plan → today's panel byte-identical. `!isLoading` holds the note
+  // off while the first GET runs (the DR-10b cold-cache no-flash rule).
+  const planChatId = useSnapshotStore((s) => s.activeChat?.id ?? null);
+  const planBranchId = useSnapshotStore((s) => s.activeChat?.activeBranchId ?? null);
+  const planOwner = planChatId !== null && planChatId === chatId && planBranchId !== null
+    ? { kind: "chatBranch" as const, chatId: planChatId, branchId: planBranchId }
+    : undefined;
+  const { plan, isLoading } = useAgentPlan(planOwner);
+  const planDriven = !isLoading && plan.tasks.length > 0;
 
   useEffect(() => {
     setBusy(null);
@@ -104,6 +130,15 @@ export function ObjectiveConfig({ chatId }: { chatId: ChatId }) {
 
   return (
     <div className="space-y-4 rounded-lg border border-border bg-s2/50 p-4">
+      {/* DR-13 (mock §8): the director's-plan note — first row under the
+        * panel's objectives toggle row (insights_objective_title), the
+        * mock's placement. */}
+      {planDriven && (
+        <p data-testid="objective-plan-note" className="flex items-center gap-1.5 font-ui text-[calc(var(--ui-fs)-2px)] text-t4">
+          <Ic.film className="shrink-0" />
+          {t("obj_plan_driven_note")}
+        </p>
+      )}
       <SegmentedControl
         value={mode}
         compact
@@ -138,22 +173,26 @@ export function ObjectiveConfig({ chatId }: { chatId: ChatId }) {
         <LongTermGoalEditor chatId={chatId} goal={state.longTermGoal} />
       )}
 
-      {/* Generate / Check */}
+      {/* Generate / Check — DR-13: the generate control hides while the
+        * plan drives (the director owns event authoring); the check control
+        * stays (the strip's check-now runs the same action, mock §5). */}
       <div className="flex flex-wrap gap-2">
-        <button
-          type="button"
-          disabled={busy !== null && busy !== "generate"}
-          onClick={() => busy === "generate" ? stop("generate") : void run("generate", generateObjectiveTasksAction)}
-          className={cn(
-            "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] font-medium transition-colors disabled:opacity-50",
-            busy === "generate"
-              ? "border border-danger/40 bg-danger/10 text-danger hover:bg-danger/20"
-              : "bg-accent text-on-accent hover:opacity-90",
-          )}
-        >
-          {busy === "generate" ? spinner : <Ic.plus />}
-          {t(busy === "generate" ? "obj_stop_button" : mode === "goals" ? "obj_generate_goals_button" : "obj_generate_button")}
-        </button>
+        {!planDriven && (
+          <button
+            type="button"
+            disabled={busy !== null && busy !== "generate"}
+            onClick={() => busy === "generate" ? stop("generate") : void run("generate", generateObjectiveTasksAction)}
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] font-medium transition-colors disabled:opacity-50",
+              busy === "generate"
+                ? "border border-danger/40 bg-danger/10 text-danger hover:bg-danger/20"
+                : "bg-accent text-on-accent hover:opacity-90",
+            )}
+          >
+            {busy === "generate" ? spinner : <Ic.plus />}
+            {t(busy === "generate" ? "obj_stop_button" : mode === "goals" ? "obj_generate_goals_button" : "obj_generate_button")}
+          </button>
+        )}
         <button
           type="button"
           disabled={(busy !== null && busy !== "check") || (busy === null && !hasCheckTarget)}
@@ -166,9 +205,9 @@ export function ObjectiveConfig({ chatId }: { chatId: ChatId }) {
       </div>
 
       {mode === "route" ? (
-        <TaskRoute chatId={chatId} tasks={state.tasks} />
+        <TaskRoute chatId={chatId} tasks={state.tasks} planDriven={planDriven} />
       ) : (
-        <ShortTermGoals chatId={chatId} goals={shortTermGoals} />
+        <ShortTermGoals chatId={chatId} goals={shortTermGoals} planDriven={planDriven} />
       )}
 
       {/* Model selection (secondary insight model — mirrors Summary) */}
@@ -231,7 +270,7 @@ function LongTermGoalEditor({ chatId, goal }: { chatId: ChatId; goal: ObjectiveL
   );
 }
 
-function ShortTermGoals({ chatId, goals }: { chatId: ChatId; goals: ObjectiveShortTermGoal[] }) {
+function ShortTermGoals({ chatId, goals, planDriven }: { chatId: ChatId; goals: ObjectiveShortTermGoal[]; planDriven: boolean }) {
   const { t } = useT();
   const [draft, setDraft] = useState("");
 
@@ -258,24 +297,28 @@ function ShortTermGoals({ chatId, goals }: { chatId: ChatId; goals: ObjectiveSho
           {goals.map((goal) => <ShortTermGoalRow key={goal.id} chatId={chatId} goal={goal} />)}
         </ul>
       )}
-      <div className="mt-2 flex gap-1.5">
-        <TextInput
-          className="flex-1"
-          value={draft}
-          placeholder={t("obj_add_short_placeholder")}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void addGoal(); } }}
-        />
-        <button
-          type="button"
-          onClick={() => void addGoal()}
-          disabled={!draft.trim()}
-          className="inline-flex items-center justify-center rounded-md border border-border2 bg-s2 px-2.5 text-t2 hover:border-accent disabled:opacity-40"
-          title={t("obj_add_short_button")}
-        >
-          <Ic.plus />
-        </button>
-      </div>
+      {/* DR-13: the manual add-goal row hides while the plan drives (mock
+        * §8) — the director's proposal cards author new goals. */}
+      {!planDriven && (
+        <div className="mt-2 flex gap-1.5">
+          <TextInput
+            className="flex-1"
+            value={draft}
+            placeholder={t("obj_add_short_placeholder")}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void addGoal(); } }}
+          />
+          <button
+            type="button"
+            onClick={() => void addGoal()}
+            disabled={!draft.trim()}
+            className="inline-flex items-center justify-center rounded-md border border-border2 bg-s2 px-2.5 text-t2 hover:border-accent disabled:opacity-40"
+            title={t("obj_add_short_button")}
+          >
+            <Ic.plus />
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -356,7 +399,7 @@ function ShortTermGoalRow({ chatId, goal }: { chatId: ChatId; goal: ObjectiveSho
 
 // ─── Task route (ordered list + add) ────────────────────────────────────
 
-function TaskRoute({ chatId, tasks }: { chatId: ChatId; tasks: ObjectiveTask[] }) {
+function TaskRoute({ chatId, tasks, planDriven }: { chatId: ChatId; tasks: ObjectiveTask[]; planDriven: boolean }) {
   const { t } = useT();
   const [draft, setDraft] = useState("");
 
@@ -408,24 +451,29 @@ function TaskRoute({ chatId, tasks }: { chatId: ChatId; tasks: ObjectiveTask[] }
           ))}
         </ol>
       )}
-      <div className="mt-2 flex gap-1.5">
-        <TextInput
-          className="flex-1"
-          value={draft}
-          placeholder={t("obj_add_task_placeholder")}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void addTask(); } }}
-        />
-        <button
-          type="button"
-          onClick={() => void addTask()}
-          disabled={!draft.trim()}
-          className="inline-flex items-center justify-center rounded-md border border-border2 bg-s2 px-2.5 text-t2 hover:border-accent disabled:opacity-40"
-          title={t("obj_add_task_button")}
-        >
-          <Ic.plus />
-        </button>
-      </div>
+      {/* DR-13: the manual add-task row hides while the plan drives (mock
+        * §8) — the same director-owns-authoring rule as the goals-mode add
+        * row; the plan projection itself never touches the route list. */}
+      {!planDriven && (
+        <div className="mt-2 flex gap-1.5">
+          <TextInput
+            className="flex-1"
+            value={draft}
+            placeholder={t("obj_add_task_placeholder")}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void addTask(); } }}
+          />
+          <button
+            type="button"
+            onClick={() => void addTask()}
+            disabled={!draft.trim()}
+            className="inline-flex items-center justify-center rounded-md border border-border2 bg-s2 px-2.5 text-t2 hover:border-accent disabled:opacity-40"
+            title={t("obj_add_task_button")}
+          >
+            <Ic.plus />
+          </button>
+        </div>
+      )}
     </div>
   );
 }

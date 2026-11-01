@@ -75,6 +75,8 @@ export function makeLayer(input: {
   subPosition?: number;
   insertionOrder?: number;
   text: string;
+  /** Pre-computed cost for this layer's text — skips the estimate call (`??`, so a passed 0 counts). */
+  readonly tokenCount?: number;
 }): PromptLayer {
   return {
     id: input.id,
@@ -85,7 +87,7 @@ export function makeLayer(input: {
     priority: input.priority ?? DEFAULT_PROMPT_LAYER_PRIORITY,
     enabled: input.enabled ?? true,
     reason: input.reason ?? PROMPT_LAYER_REASON.included,
-    tokenCount: estimateTokens(input.text),
+    tokenCount: input.tokenCount ?? estimateTokens(input.text),
     text: input.text.trim(),
     ...(input.role ? { role: input.role as "system" | "user" | "assistant" } : {}),
     ...(input.subPosition != null ? { subPosition: input.subPosition } : {}),
@@ -1046,18 +1048,16 @@ function buildLayers(
   const historyText = formatRecentMessages(recentMessagesForHistory);
   if (historyText && resolver.enabled("chatHistory")) {
     layers.push(
-      {
-        ...makeLayer({
-          id: PROMPT_LAYER_ID.recentHistory,
-          sourceType: PROMPT_LAYER_SOURCE_TYPE.chatHistory,
-          sourceId: context.identity.chatId,
-          sourceName: "Chat History",
-          priority: PROMPT_LAYER_PRIORITY.recentHistory,
-          subPosition: resolver.rank("chatHistory", DEFAULT_PROMPT_ORDER.chatHistory),
-          text: historyText,
-        }),
+      makeLayer({
+        id: PROMPT_LAYER_ID.recentHistory,
+        sourceType: PROMPT_LAYER_SOURCE_TYPE.chatHistory,
+        sourceId: context.identity.chatId,
+        sourceName: "Chat History",
+        priority: PROMPT_LAYER_PRIORITY.recentHistory,
+        subPosition: resolver.rank("chatHistory", DEFAULT_PROMPT_ORDER.chatHistory),
+        text: historyText,
         tokenCount: countHistoryTokens(recentMessagesForHistory),
-      },
+      }),
     );
   }
 

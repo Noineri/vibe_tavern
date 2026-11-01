@@ -328,7 +328,7 @@ describe("CoauthorInputArea attachments (CA-3b)", () => {
     const message: AppMessage = {
       id: brandId<MessageId>("sent"), chatId: brandId<ChatId>("chat1"), branchId: brandId<ChatBranchId>("branch"),
       role: "user", authorType: "user", position: 0, content: "Read this", state: "complete", createdAt: "0", updatedAt: "0",
-      variants: [], selectedVariantIndex: null, modelId: null, sceneTracker: null, coauthorModuleId: null, coauthorSkillId: null, attachments: [textFile],
+      tokenCount: 0, variants: [], selectedVariantIndex: null, modelId: null, sceneTracker: null, coauthorModuleId: null, coauthorSkillId: null, attachments: [textFile],
     };
     useSnapshotStore.setState({ character: wireCharacter(), messagesById: { sent: message } });
     const view = render(<CoauthorMessageBlock messageId="sent" index={0} isFirstAssistant={false} isLast prevRole={null} />);

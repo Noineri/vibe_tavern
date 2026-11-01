@@ -34,6 +34,8 @@ import {
   experienceEffectKindSchema,
   experienceEffectStatusSchema,
   experienceEventVisibilitySchema,
+  experienceEventSchema,
+  experienceReportClearRequestSchema,
   experienceManifestSchema,
   experienceParticipantSchema as experienceParticipantResponseSchema,
   experienceStartParticipantSchema as experienceParticipantSchema,
@@ -133,6 +135,41 @@ describe("interactive enum schemas mirror domain EXPERIENCE_* constants", () => 
 });
 
 // --- reducer status narrowing ------------------------------------------------
+
+describe("experienceEventSchema actor ids (ERX-1a)", () => {
+  it("preserves an optional top-level actor independently of the detail payload", () => {
+    const event = { visibility: "public", type: "move", participantId: "seat_1", detail: "played a yellow 6" };
+    expect(expectData(experienceEventSchema.safeParse(event))).toEqual(event);
+    const legacy = { visibility: "public", type: "move", detail: { participantId: "seat_1" } };
+    expect(expectData(experienceEventSchema.safeParse(legacy))).toEqual(legacy);
+    expect(expectData(experienceEventSchema.safeParse({ visibility: "public", type: "finish" })))
+      .toEqual({ visibility: "public", type: "finish" });
+  });
+
+  it.each(["", "x".repeat(INTERACTIVE_SCHEMA_MAX_ID + 1), 1, null, { id: "seat_1" }])("rejects an invalid actor id: %j", (participantId) => {
+    expectReject(experienceEventSchema.safeParse({ visibility: "public", type: "move", participantId, detail: "passed" }));
+  });
+
+  it("preserves the actor through reducer transition validation", () => {
+    const result = experienceTransitionSchema.safeParse({
+      state: {}, status: "active", events: [{ visibility: "public", type: "move", participantId: "seat_1", detail: "passed" }],
+    });
+    expect(result.success).toBe(true);
+    if (!result.success) throw new Error("expected a valid transition");
+    expect(result.data.events[0]?.participantId).toBe("seat_1");
+  });
+});
+
+describe("experienceReportClearRequestSchema (ERX-5a)", () => {
+  it("requires an exact scope and nonnegative integer revision", () => {
+    const valid = { chatId: "chat_1", branchId: "branch_1", expectedRevision: 0 };
+    expect(expectData(experienceReportClearRequestSchema.safeParse(valid))).toEqual(valid);
+    for (const invalid of [{}, { ...valid, chatId: "" }, { ...valid, branchId: "" },
+      { ...valid, expectedRevision: -1 }, { ...valid, expectedRevision: 0.5 }, { ...valid, extra: true }]) {
+      expectReject(experienceReportClearRequestSchema.safeParse(invalid));
+    }
+  });
+});
 
 describe("experienceReducerStatusSchema (transition output is active|completed only)", () => {
   // `interrupted` is host-only (an explicit user end). A reducer returning it

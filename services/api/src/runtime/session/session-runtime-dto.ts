@@ -1,5 +1,5 @@
 import { brandId, type CharacterId, type ChatId, type ChatBranchId, type MessageId, type PersonaId, type PromptPresetId, type PromptTraceRecordDto, type ModelSettingsOverlay } from "@vibe-tavern/domain";
-import type { ChatBranch, LoreEntry, Message, MessageVariant, Attachment, SceneTrackerRecord, DiceRollSnapshot } from "@vibe-tavern/domain";
+import type { ChatBranch, LoreEntry, Message, MessageVariant, Attachment, SceneTrackerRecord, DiceRollSnapshot, ExperienceMessageReport } from "@vibe-tavern/domain";
 import { parseStoredAttachments } from "@vibe-tavern/domain";
 import type { Chat as DbChat, ChatBranch as DbChatBranch, PromptTrace as DbPromptTrace, Message as DbMessage, MessageVariant as DbMessageVariant } from "@vibe-tavern/db";
 import type {
@@ -10,6 +10,7 @@ import type {
 	ProviderModelSettingsRecord,
 	ClientProxyRecord,
 } from "@vibe-tavern/api-contracts";
+import { countTokensDefault } from "../../infrastructure/ai/tokenizer-service.js";
 
 // Re-export canonical types — single source of truth.
 // The wire-DTO interfaces live in @vibe-tavern/api-contracts (shared with the
@@ -25,9 +26,26 @@ export type {
 	ClientProxyRecord,
 };
 
+/** Wire variant — the domain {@link MessageVariant} plus the cl100k count
+ *  of ITS own content (TOKEN_COUNT_ONCE_PLAN TC-4). A DTO-level type on
+ *  purpose: the domain/db entity shapes stay unchanged; the count exists
+ *  only on the wire. */
+export interface MessageVariantDto extends MessageVariant {
+  /** cl100k_base count of this variant's `content`. Computed once in
+   *  {@link mapMessageDto} (the single funnel) through the Wave-1 layered
+   *  cache — consumers read it, never re-encode it. */
+  tokenCount: number;
+}
+
 export interface MessageDto extends Message {
-  variants: MessageVariant[];
+  variants: MessageVariantDto[];
   selectedVariantIndex: number | null;
+  /** cl100k_base count of the message's wire `content` (the selected
+   *  variant's content when one is selected, else the row's own). Counts
+   *  travel WITH the message (TOKEN_COUNT_ONCE_PLAN TC-4) so the browser
+   *  reads a number instead of encoding; computed once in the funnel
+   *  through the Wave-1 layered cache. */
+  tokenCount: number;
   modelId: string | null;
   /** Active Scene record — mirrors the currently selected variant (like
    *  `modelId`/`content`), so selecting a variant swaps Scene data without a
@@ -49,6 +67,8 @@ export interface MessageDto extends Message {
    *  snapshot the message-meta badge and historical rendering read — never
    *  recomputed from the (possibly renamed/deleted) script. (DICE.) */
   diceRolls?: DiceRollSnapshot[];
+  /** Bounded public reports bound to this user message; no session/checkpoint data. */
+  experienceReports?: ExperienceMessageReport[];
 }
 
 export function mapPromptTraceRecord(trace: DbPromptTrace): PromptTraceRecordDto {
@@ -112,15 +132,26 @@ export function mapChatBranch(branch: DbChatBranch): ChatBranch {
   };
 }
 
-export function mapMessageDto(message: Message, variants: MessageVariant[], diceRolls?: DiceRollSnapshot[]): MessageDto;
-export function mapMessageDto(message: DbMessage, variants: DbMessageVariant[], diceRolls?: DiceRollSnapshot[]): MessageDto;
-export function mapMessageDto(message: Message | DbMessage, variants: MessageVariant[] | DbMessageVariant[], diceRolls?: DiceRollSnapshot[]): MessageDto {
+export function mapMessageDto(message: Message, variants: MessageVariant[], diceRolls?: DiceRollSnapshot[], experienceReports?: ExperienceMessageReport[]): MessageDto;
+export function mapMessageDto(message: DbMessage, variants: DbMessageVariant[], diceRolls?: DiceRollSnapshot[], experienceReports?: ExperienceMessageReport[]): MessageDto;
+export function mapMessageDto(message: Message | DbMessage, variants: MessageVariant[] | DbMessageVariant[], diceRolls?: DiceRollSnapshot[], experienceReports?: ExperienceMessageReport[]): MessageDto {
   // Normalize once: store variants (plain-string ids) and domain variants are
   // structurally identical apart from phantom id brands, so a single cast carries
   // the per-variant Scene record through unchanged. Reading the selection off the
   // typed array keeps `selectedVariant.sceneTracker` correctly typed.
   const domainVariants = variants as MessageVariant[];
   const selectedVariant = domainVariants.find((variant) => variant.isSelected) ?? null;
+  // TC-4: counts are derived HERE and nowhere else — every wire path
+  // (snapshot, bootstrap, message/variant/branch/switch/create responses,
+  // the insights scene patch) flows through this single funnel, so no route
+  // can re-derive them. `countTokensDefault` is the pure cl100k ladder with
+  // no ambient provider-exact context: the number is deterministic cl100k
+  // for the exact string, which is what the contract pins.
+  const variantDtos = domainVariants.map((variant) => ({
+    ...variant,
+    tokenCount: countTokensDefault(variant.content),
+  }));
+  const content = selectedVariant?.content ?? message.content;
   // IG-18a merge point: an image-gen slot's variants carry their own
   // attachments (regenerate-as-variant); the selected variant's set
   // overrides the message row's. Null variant attachments (every text
@@ -143,7 +174,7 @@ export function mapMessageDto(message: Message | DbMessage, variants: MessageVar
     role: message.role as Message['role'],
     authorType: message.authorType as Message['authorType'],
     position: message.position,
-    content: selectedVariant?.content ?? message.content,
+    content,
     modelId: selectedVariant?.modelId ?? null,
     sceneTracker: selectedVariant?.sceneTracker ?? null,
     coauthorModuleId: selectedVariant?.coauthorModuleId ?? null,
@@ -151,11 +182,13 @@ export function mapMessageDto(message: Message | DbMessage, variants: MessageVar
     state: message.state as Message['state'],
     createdAt: message.createdAt,
     updatedAt: message.updatedAt,
-    variants: domainVariants,
+    tokenCount: countTokensDefault(content),
+    variants: variantDtos,
     selectedVariantIndex: selectedVariant?.variantIndex ?? null,
     ...(attachments ? { attachments } : {}),
     ...(rowSetHidden ? { messageLevelAttachments: rowAttachments } : {}),
     ...(diceRolls && diceRolls.length > 0 ? { diceRolls } : {}),
+    ...(experienceReports?.length ? { experienceReports } : {}),
   } satisfies MessageDto;
 }
 

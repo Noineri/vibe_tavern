@@ -1,6 +1,9 @@
-import type { CoauthorEditorState, RegenerateOverride } from "@vibe-tavern/api-contracts";
+import type { ChatGenerationJob, EnqueueChatGenerationJobRequest, ChatGenerationOperation, CoauthorEditorState, CoauthorReviewEnvelope, RegenerateOverride } from "@vibe-tavern/api-contracts";
 import type { Attachment, ImageRoute } from "@vibe-tavern/domain";
 import type { MessageResponse, VariantResponse } from "./session-types.js";
+import type { AgentRunSubscription } from "../../domain/agent/agent-run-registry.js";
+
+export type ChatGenerationTurn = (signal: AbortSignal) => AsyncIterable<{ event: string; data: string }>;
 
 /** Validated HTTP send body retained by both live-send adapter methods. */
 export interface ChatSendBody {
@@ -14,6 +17,16 @@ export interface ChatSendBody {
 
 /** Message mutation segment of the route/runtime contract. */
 export interface ChatMessageRuntimeApi {
+  getGenerationQueue: (chatId: string) => Promise<ChatGenerationJob[]>;
+  enqueueGenerationJob: (chatId: string, body: EnqueueChatGenerationJobRequest) => Promise<ChatGenerationJob>;
+  cancelGenerationJob: (chatId: string, jobId: string) => Promise<{ ok: true }>;
+  clearGenerationQueue: (chatId: string) => Promise<{ ok: true }>;
+  getCoauthorReview: (chatId: string) => Promise<CoauthorReviewEnvelope | null>;
+  putCoauthorReview: (chatId: string, envelope: CoauthorReviewEnvelope) => Promise<CoauthorReviewEnvelope>;
+  deleteCoauthorReview: (chatId: string) => Promise<{ ok: true }>;
+  startChatGeneration: (chatId: string, operation: ChatGenerationOperation, turn: ChatGenerationTurn, subscriberSignal?: AbortSignal) => Promise<AgentRunSubscription>;
+  subscribeChatGeneration: (chatId: string, after: number, signal?: AbortSignal) => AgentRunSubscription | null;
+  stopChatGeneration: (chatId: string) => { stopped: boolean };
   getImageRoute: (chatId: string) => Promise<{ route: ImageRoute }>;
   sendMessage: (chatId: string, body: ChatSendBody, signal?: AbortSignal) => Promise<MessageResponse>;
   sendMessageStream: (chatId: string, body: ChatSendBody, signal?: AbortSignal) => AsyncIterable<{ event: string; data: string }>;

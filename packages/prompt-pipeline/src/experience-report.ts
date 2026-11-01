@@ -11,7 +11,7 @@
  *
  * This is a PURE function over already-bound immutable {@link ExperienceReportSnapshot}
  * data — it performs NO experience-script execution, NO state projection, and NO
- * I/O. It reads ONLY the public report fields (title / summary / events). It
+ * I/O. It reads ONLY the public report fields (title / summary / participants / events). It
  * NEVER references hidden state: the hidden checkpoint lives in a separate DB
  * column read only on branch-fork restore, never on prompt assembly. Absence
  * (empty `reports`) returns an empty string, so a message without a bound
@@ -19,50 +19,37 @@
  */
 
 import type { ExperienceReportSnapshot } from "@vibe-tavern/domain";
+import { renderExperienceEventLine } from "@vibe-tavern/domain";
 
 /**
- * Render an event's `detail` payload compactly for the model.
- *
- * Strings render verbatim; every other JSON value renders as compact JSON. The
- * reducer is responsible for producing prompt-efficient prose or structured
- * facts; this function only serializes what the script emitted.
+ * Add the model block's list marker to the shared public-event rendering.
  */
-function formatDetail(detail: unknown): string {
-  if (typeof detail === "string") return detail;
-  return JSON.stringify(detail);
+function formatEventLine(
+  event: ExperienceReportSnapshot["events"][number],
+  participants: ExperienceReportSnapshot["participants"],
+): string {
+  return `- ${renderExperienceEventLine(event, participants)}`;
 }
 
 /**
- * Format one public event as a single compact line for the model.
- *
- * `- <type>: <detail>` when a detail is present; `- <type>` otherwise. The type
- * id is the reducer's bounded event label (e.g. `round`, `move`, `score`).
+ * The in-story preamble every report block carries. The settled outcome belongs
+ * to the scene, not an app interface; the Writer reacts without replaying it.
+ * Kept as a single constant for every report and send mode.
  */
-function formatEventLine(event: ExperienceReportSnapshot["events"][number]): string {
-  const label = event.type;
-  return event.detail !== undefined ? `- ${label}: ${formatDetail(event.detail)}` : `- ${label}`;
-}
-
-/**
- * The authority preamble every report block carries. Instructs the flat Writer
- * that the events are resolved facts: narrate them, but never alter, repeat as
- * new moves, or replace them. Kept as a single constant so the wording is
- * identical across every report and every send mode.
- */
-const AUTHORITY_PREAMBLE =
-  "The following experience events are resolved facts. Narrate them as part of the scene; do not alter them, repeat them as new moves, or replace them.";
+const STORY_PREAMBLE =
+  "The user's character just played this out in the scene. How it went is listed below; it is settled and now part of the story. Continue the scene from it: let the characters react to the outcome; do not change it, replay it as new moves, or replace it.";
 
 /**
  * Format one bound report snapshot as a delimited model-only block.
  *
  * Layout:
  * ```
- * [Experience report — <title> — authoritative]
- * <authority preamble>
+ * [In the story — <title>]
+ * <in-story preamble>
  * <optional summary line>
  * - <event>
  * - <event>
- * [End experience report]
+ * [End]
  * ```
  *
  * V1 only renders the `report` attachment kind (public events). The `transcript`
@@ -71,10 +58,10 @@ const AUTHORITY_PREAMBLE =
  * the block is never silently dropped.
  */
 function formatReportBlock(report: ExperienceReportSnapshot): string {
-  const header = `[Experience report — ${report.title} — authoritative]`;
+  const header = `[In the story — ${report.title}]`;
   const summaryLine = report.summary ? report.summary : "";
-  const eventLines = report.events.map(formatEventLine);
-  const body = [header, AUTHORITY_PREAMBLE, ...(summaryLine ? [summaryLine] : []), ...eventLines, "[End experience report]"];
+  const eventLines = report.events.map((event) => formatEventLine(event, report.participants));
+  const body = [header, STORY_PREAMBLE, ...(summaryLine ? [summaryLine] : []), ...eventLines, "[End]"];
   return body.join("\n");
 }
 

@@ -67,6 +67,9 @@ function makeFakeKind(id: string, inheritsLegacyCopilotPair: boolean): AgentKind
     skillRootId: id,
     toolSetSchema: z.object({ fake_tool: z.boolean().optional() }).strict(),
     defaultToolSet: { fake_tool: true },
+    // DR-1: the descriptor's built-in seed list — the standard single first
+    // seed (name = kind id, the generic seed's pre-DR-1 name).
+    builtinSeeds: [{ id: "builtin", name: id }],
     recencyAnchorText: "(fake kind pins no context)",
     inheritsLegacyCopilotPair,
     // SC-7b: the fakes serve rp chats (the value is irrelevant to the

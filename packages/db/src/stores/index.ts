@@ -1,4 +1,6 @@
 export { CharacterStore } from './character-store.js';
+export { AgentReviewRoundStore } from './agent-review-round-store.js';
+export type { AgentReviewRoundRecord } from './agent-review-round-store.js';
 export type { Character, CreateCharacterData, UpdateCharacterData } from './character-store.js';
 
 export { CharacterFolder } from './character-folder.js';
@@ -44,11 +46,20 @@ export type {
   ChatAgentSettingsUpdate,
 } from './chat-agent-settings-store.js';
 
+export { AgentProfileModelStore } from './agent-profile-model-store.js';
+export type {
+  AgentProfileModel,
+  AgentProfileModelSetInput,
+} from './agent-profile-model-store.js';
+
 export { ChatStore } from './chat-store.js';
+export { ChatGenerationJobStore } from './chat-generation-job-store.js';
+export type { ChatGenerationJobRecord, EnqueueChatGenerationJob, ChatGenerationJobUpdate } from './chat-generation-job-store.js';
 export type {
   Chat,
   ChatBranch,
 } from './chat-store.js';
+export type { ChatListSummary } from './chat-list-queries.js';
 
 export { MessageStore } from './message-store.js';
 export type { Message, MessageVariant, AddMessageInput, SceneBackfillRun } from './message-store.js';
@@ -244,3 +255,6 @@ export type {
   CreateAiInstructionTemplateData,
   UpdateAiInstructionTemplateData,
 } from './ai-instruction-template-store.js';
+
+export { TokenCountStore, tokenCountKey } from './token-count-store.js';
+export type { TokenCountKey, TokenCountRow, TokenCountPut } from './token-count-store.js';

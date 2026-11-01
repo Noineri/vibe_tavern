@@ -386,6 +386,36 @@ describe("SidechatOocCompactionService - the transcript carries the span's RP ev
 		expect(idxB).toBeLessThan(idxM11);
 	});
 
+	it("DR-12: a `profile_changed` event inside the span never reaches the summarizer transcript", async () => {
+		// The separator's frozen shape, sequenced INSIDE the summarized span —
+		// feed-only provenance, skipped exactly like the context loader does.
+		const events = [
+			makeRpSyncEvent("evt_a", 5, "RP-EVENT-A-MARKER"),
+			{
+				id: "evt_profile",
+				threadId: "thread_1",
+				seq: 100,
+				kind: "profile_changed" as const,
+				payload: {
+					from: { id: "builtin", name: "Sidechat OOC" },
+					to: { id: "builtin-director", name: "Sidechat Director" },
+				},
+				createdAt: "2025-01-01T00:00:00.000Z",
+				rowType: "event" as const,
+			},
+		];
+		const { store } = makeStore(makeThread(), makeTurnSequence(20), events);
+		const executor = makeExecutor();
+		const service = new SidechatOocCompactionService(store, makeProviderProfiles() as unknown as ProviderProfileService, executor.execute);
+
+		await service.compact({ threadId: "thread_1" });
+
+		const transcript = transcriptOf(executor.calls[0].prompt as Record<string, unknown>);
+		expect(transcript).toContain("RP-EVENT-A-MARKER");
+		expect(transcript).not.toContain("Sidechat Director");
+		expect(transcript).not.toContain("profile_changed");
+	});
+
 	it("a re-compaction's span starts at the prior digest's anchor — no re-folded reference, no gap", async () => {
 		// First compaction over m1..m20 with evt_A (pre-m1) folds the span
 		// [timeline start, m13). The re-compaction's span starts at its

@@ -1,0 +1,62 @@
+diff --git a/drawer/viewport/DrawerViewport.js b/drawer/viewport/DrawerViewport.js
+index 58242e1e3b8db08c78999202ce5ce420da9ef011..27ad1bac5eb4e7a213186ae6e175ce8eb414c891 100644
+--- a/drawer/viewport/DrawerViewport.js
++++ b/drawer/viewport/DrawerViewport.js
+@@ -849,6 +849,9 @@ function updateTouchScrollPosition(touchState, touch) {
+  * gesture, or because neither axis has passed the slop yet and the gesture cannot be attributed.
+  */
+ function shouldYieldTouchMove(touchState, event, touch, isVerticalScrollAxis) {
++  // Vibe Tavern local patch: preserve taps with sub-slop finger jitter in short sheets.
++  // Upstream: https://github.com/mui/base-ui/blob/v1.9.0/packages/react/src/drawer/viewport/DrawerViewport.tsx
++  // Drop this patch when upstream applies axis slop to touches without a cross-axis target.
+   if (touchState.preserveNativeCrossAxisScroll) {
+     return true;
+   }
+@@ -856,6 +859,15 @@ function shouldYieldTouchMove(touchState, event, touch, isVerticalScrollAxis) {
+   // Attribution happens once per gesture. Re-arbitrating after the drawer axis has won would let
+   // the pre-attribution branches below fire mid-drag (the slop is measured from the touch origin,
+   // which is never re-baselined), freezing the popup and dropping `preventDefault()`.
+-  if (touchState.drawerAxisAttributed || touchState.allowSwipe === true || !touchState.hasCrossAxisGestureTarget) {
++  if (touchState.drawerAxisAttributed || touchState.allowSwipe === true) {
++    return false;
++  }
++
++  if (!touchState.hasCrossAxisGestureTarget) {
++    const delta = isVerticalScrollAxis ? touch.clientY - touchState.startY : touch.clientX - touchState.startX;
++    if (Math.abs(delta) < AXIS_LOCK_SLOP) {
++      return true;
++    }
++    touchState.drawerAxisAttributed = true;
+     return false;
+   }
+diff --git a/drawer/viewport/DrawerViewport.mjs b/drawer/viewport/DrawerViewport.mjs
+index 2cbf2cf08f26493e606c5b895bbb4e556c042e63..8be1c7e4ef8317067ea16e15d0a56a0feb05dde4 100644
+--- a/drawer/viewport/DrawerViewport.mjs
++++ b/drawer/viewport/DrawerViewport.mjs
+@@ -843,6 +843,9 @@ function updateTouchScrollPosition(touchState, touch) {
+  * gesture, or because neither axis has passed the slop yet and the gesture cannot be attributed.
+  */
+ function shouldYieldTouchMove(touchState, event, touch, isVerticalScrollAxis) {
++  // Vibe Tavern local patch: preserve taps with sub-slop finger jitter in short sheets.
++  // Upstream: https://github.com/mui/base-ui/blob/v1.9.0/packages/react/src/drawer/viewport/DrawerViewport.tsx
++  // Drop this patch when upstream applies axis slop to touches without a cross-axis target.
+   if (touchState.preserveNativeCrossAxisScroll) {
+     return true;
+   }
+@@ -850,6 +853,15 @@ function shouldYieldTouchMove(touchState, event, touch, isVerticalScrollAxis) {
+   // Attribution happens once per gesture. Re-arbitrating after the drawer axis has won would let
+   // the pre-attribution branches below fire mid-drag (the slop is measured from the touch origin,
+   // which is never re-baselined), freezing the popup and dropping `preventDefault()`.
+-  if (touchState.drawerAxisAttributed || touchState.allowSwipe === true || !touchState.hasCrossAxisGestureTarget) {
++  if (touchState.drawerAxisAttributed || touchState.allowSwipe === true) {
++    return false;
++  }
++
++  if (!touchState.hasCrossAxisGestureTarget) {
++    const delta = isVerticalScrollAxis ? touch.clientY - touchState.startY : touch.clientX - touchState.startX;
++    if (Math.abs(delta) < AXIS_LOCK_SLOP) {
++      return true;
++    }
++    touchState.drawerAxisAttributed = true;
+     return false;
+   }

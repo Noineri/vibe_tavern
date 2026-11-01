@@ -11,6 +11,8 @@ import { useMessageAiEditorStore } from "../../stores/message-ai-editor-store.js
 import { useProviderDataStore } from "../../stores/provider-data-store.js";
 import { useProviderStore } from "../../stores/provider-store.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
+import { refreshGenerationQueue } from "../../lib/chat-generation-queue-client.js";
+import type { ChatGenerationJob } from "@vibe-tavern/api-contracts";
 
 useDomEnv();
 
@@ -32,6 +34,7 @@ const initialBootstrap = useBootstrapStore.getState();
 const originalFetch = globalThis.fetch;
 const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
 let scrollCalls: ScrollIntoViewOptions[] = [];
+let serverJobs: ChatGenerationJob[] | undefined;
 
 afterAll(async () => {
   useChatStore.setState(initialChat, true);
@@ -56,8 +59,21 @@ beforeEach(async () => {
   useProviderStore.setState(initialProvider, true);
   useBootstrapStore.setState(initialBootstrap, true);
   useChatStore.setState({ activeChatId: CHAT });
+  serverJobs = undefined;
+  globalThis.fetch = originalFetch;
   globalThis.fetch = Object.assign(
-    async () => new Response(JSON.stringify({}), { status: 200 }),
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = new URL(String(input), "http://localhost").pathname;
+      if (!path.includes("/queue")) return Response.json({});
+      serverJobs ??= [...(useGenerationQueueStore.getState().jobsByChat[CHAT] ?? [])];
+      if (init?.method === "DELETE") serverJobs = serverJobs.map((job) => path.endsWith(`/${job.id}`) ? { ...job, status: "cancelled" } : job);
+      else if (path.endsWith("/clear")) serverJobs = serverJobs.filter((job) => job.status !== "pending");
+      else if (init?.method === "POST") {
+        const job: ChatGenerationJob = { ...JSON.parse(String(init.body)), id: `server-${serverJobs.length}`, chatId: CHAT, status: "pending", enqueuedAt: 1 };
+        serverJobs = [...serverJobs, job]; return Response.json(job, { status: 201 });
+      }
+      return Response.json(init?.method === "GET" || !init?.method ? serverJobs : { ok: true });
+    },
     { preconnect: originalFetch.preconnect },
   );
   scrollCalls = [];
@@ -220,15 +236,16 @@ describe("QueueTimeline desktop", () => {
     await act(async () => { fireEvent.click(view.getByRole("button", { name: "Hide error details" })); });
     expect(view.getByRole("button", { name: "Show error details" }).getAttribute("aria-expanded")).toBe("false");
     const pendingRow = view.container.querySelector<HTMLElement>("[data-queue-timeline-row=pending]");
-    await act(async () => { fireEvent.click(pendingRow!.querySelector<HTMLButtonElement>("button")!); });
-    expect(useGenerationQueueStore.getState().jobsByChat[CHAT]?.some((job) => job.id === pendingJob)).toBe(false);
+    await act(async () => { fireEvent.click(pendingRow!.querySelector<HTMLButtonElement>("button")!); await refreshGenerationQueue(CHAT); });
+    expect(useGenerationQueueStore.getState().jobsByChat[CHAT]?.find((job) => job.id === pendingJob)?.status).toBe("cancelled");
+    expect(useGenerationQueueStore.getState().recordsByChat[CHAT]?.some((record) => record.id === pending)).toBe(false);
     const queuedRunningRow = Array.from(view.container.querySelectorAll<HTMLElement>("[data-queue-timeline-row=running]")).find((row) => row.textContent?.includes("model-running"));
-    await act(async () => { fireEvent.click(queuedRunningRow!.querySelector<HTMLButtonElement>("button")!); });
+    await act(async () => { fireEvent.click(queuedRunningRow!.querySelector<HTMLButtonElement>("button")!); await refreshGenerationQueue(CHAT); });
     expect(useGenerationQueueStore.getState().jobsByChat[CHAT]?.find((job) => job.id === runningJob)?.status).toBe("cancelled");
     const plainRunningRow = Array.from(view.container.querySelectorAll<HTMLElement>("[data-queue-timeline-row=running]")).find((row) => row.textContent?.includes("model-plain"));
     await act(async () => { fireEvent.click(plainRunningRow!.querySelector<HTMLButtonElement>("button")!); });
     expect(useGenerationQueueStore.getState().recordsByChat[CHAT]?.some((record) => record.id === plain)).toBe(true);
-    expect(aborts).toBe(2);
+    expect(aborts).toBe(1); // Queued Stop belongs to DELETE; only the plain row stops through the chat controller.
     expect(failed).not.toBe(plain);
   });
 
@@ -243,7 +260,7 @@ describe("QueueTimeline desktop", () => {
     useSnapshotStore.setState({ activeChat: { promptPresetId: "preset-live" } as AppSnapshot["activeChat"] });
     let closes = 0;
     const view = renderTimeline(() => { closes += 1; });
-    await act(async () => { fireEvent.click(view.getByRole("button", { name: "Clear" })); });
+    await act(async () => { fireEvent.click(view.getByRole("button", { name: "Clear" })); await refreshGenerationQueue(CHAT); });
     expect(closes).toBe(1);
     expect(useGenerationQueueStore.getState().recordsByChat[CHAT]?.map((record) => record.id)).toContain(running);
     expect(useGenerationQueueStore.getState().recordsByChat[CHAT]?.map((record) => record.id)).not.toContain(pending);
@@ -271,7 +288,7 @@ describe("QueueTimeline desktop", () => {
     });
     expect(footer.textContent).toContain("live-two · Live preset two");
     expect(footer.querySelector("span:last-child")?.getAttribute("title")).toBe("live-two · Live preset two");
-    await act(async () => { fireEvent.click(footer); });
+    await act(async () => { fireEvent.click(footer); await refreshGenerationQueue(CHAT); });
     const job = useGenerationQueueStore.getState().jobsByChat[CHAT]?.at(-1);
     expect(job?.messageId).toBe(MESSAGE_ID);
     expect(job?.model).toBe("vendor/live-two");

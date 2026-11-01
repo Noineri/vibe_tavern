@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { normalizeAutoSummaryConfig, type ChatId } from "@vibe-tavern/domain";
 import type { AutoSummaryConfig, ChatSummaryRecord } from "../../api/types.js";
@@ -18,6 +18,7 @@ import { useT } from "../../i18n/context.js";
 import { DualRangeSlider } from "./DualRangeSlider.js";
 import { SummaryHistoryLimitControl } from "./summary-history-limit-control.js";
 import { resolveHistoryLimitState, upsertSummary } from "./summary-tab-helpers.js";
+import { useSummaryRun } from "./use-summary-run.js";
 import { computeTokenEstimate, TokenEstimate, type CountedMessage } from "./TokenEstimate.js";
 import { countTokens } from "../../utils/tokenizer.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
@@ -30,8 +31,6 @@ import { arrayMove } from "@dnd-kit/sortable";
 import {
   createChatSummaryAction,
   deleteChatSummaryAction,
-  generateChatSummaryAction,
-  listChatSummariesAction,
   reorderChatSummariesAction,
   updateChatSummaryAction,
   updateMemorySettingsAction,
@@ -140,9 +139,7 @@ export function useSummaryTab({
   const [summaryMaxTokens, setSummaryMaxTokens] = useState<number | null>(null);
   const [summaryContextBudget, setSummaryContextBudget] = useState<number | null>(null);
   const [dirty, setDirty] = useState(false);
-  const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [generating, setGenerating] = useState(false);
   const [useChatModel, setUseChatModel] = useState(true);
   const [selectedProviderId, setSelectedProviderId] = useState(activeProvider?.id ?? "");
   const [selectedModel, setSelectedModel] = useState(activeProvider?.defaultModel ?? "");
@@ -158,7 +155,6 @@ export function useSummaryTab({
   // the slider/number releases the latch; the Auto toggle re-engages it.
   const [limitOverride, setLimitOverride] = useState<number | null>(messageHistoryLimit > 0 ? messageHistoryLimit : null);
   const [autoConfig, setAutoConfig] = useState<AutoSummaryConfig>(autoSummaryConfig ?? DEFAULT_AUTO_CONFIG);
-  const abortRef = useRef<AbortController | null>(null);
   // Tracks the active chat+branch across renders so the range effect can
   // RESET the range (1..maxMessage) on any branch/chat switch instead of
   // just clamping. clamp-only is wrong twice over:
@@ -234,22 +230,18 @@ export function useSummaryTab({
 
 
   /* ─── effects ─── */
-  const loadSummaries = useCallback(async () => {
-    if (!activeChatId) return;
-    setLoading(true);
-    try {
-      const rows = await listChatSummariesAction(activeChatId);
+  const { loading, generating, checking, generate, stop } = useSummaryRun({
+    isOpen, chatId: activeChatId, branchId: activeBranchId,
+    onLoaded: (rows, preferredId) => {
       setSummaries(rows);
-      if (rows.length > 0) selectSummary(rows[0], false);
-      else startNewSummary();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : t("summary_save_failed"));
-    } finally {
-      setLoading(false);
-    }
-  }, [activeChatId, t]);
-
-  useEffect(() => { if (isOpen) void loadSummaries(); }, [isOpen, loadSummaries]);
+      const selected = rows.find((row) => row.id === preferredId) ?? rows[0];
+      if (selected) selectSummary(selected); else startNewSummary();
+    },
+    onGenerated: (generated) => {
+      setSummaries((previous) => upsertSummary(previous, generated));
+      selectSummary(generated);
+    },
+  });
 
   // Composite scope key: any chat OR branch switch must reset the range,
   // because each branch has its own independent message set. See prevScopeRef.
@@ -418,10 +410,6 @@ export function useSummaryTab({
       toast.error(t("select_provider_error"));
       return;
     }
-    abortRef.current?.abort();
-    const abort = new AbortController();
-    abortRef.current = abort;
-    setGenerating(true);
     // SUM-5 shared override shape — the trio never inherits the RP profile
     // (SUM-2 ruling); the defaults are the summary-sane values.
     const genOverrides: { [K in keyof SecondaryGenOverrides]-?: number } = {
@@ -429,29 +417,21 @@ export function useSummaryTab({
       maxOutputTokens: summaryMaxTokens ?? SUMMARY_DEFAULT_MAX_TOKENS,
       contextBudget: summaryContextBudget ?? SUMMARY_DEFAULT_CONTEXT_BUDGET,
     };
-    try {
-      const generated = await generateChatSummaryAction(activeChatId, {
-        providerProfileId: effectiveProviderId,
-        model: effectiveModel,
-        summarizedFrom: rangeFrom,
-        summarizedTo: rangeTo,
-        targetSummaryId: activeSummaryId ?? undefined,
-        label: draftLabel.trim() || `T${rangeFrom}\u2013T${rangeTo}`,
-        includeInContext,
-        excludeSummarized,
-        includePriorSummaries: rangedIncludePrior,
-        maxPriorSummaries: rangedIncludePrior ? rangedMaxPrior : 0,
-        temperature: genOverrides.temperature,
-        maxOutputTokens: genOverrides.maxOutputTokens,
-        contextBudget: genOverrides.contextBudget,
-      }, abort.signal);
-      setSummaries((prev) => upsertSummary(prev, generated));
-      selectSummary(generated);
-    } catch (err) {
-      if (!abort.signal.aborted) toast.error(err instanceof Error ? err.message : t("summarization_failed"));
-    } finally {
-      setGenerating(false);
-    }
+    await generate({
+      providerProfileId: effectiveProviderId,
+      model: effectiveModel,
+      summarizedFrom: rangeFrom,
+      summarizedTo: rangeTo,
+      targetSummaryId: activeSummaryId ?? undefined,
+      label: draftLabel.trim() || `T${rangeFrom}\u2013T${rangeTo}`,
+      includeInContext,
+      excludeSummarized,
+      includePriorSummaries: rangedIncludePrior,
+      maxPriorSummaries: rangedIncludePrior ? rangedMaxPrior : 0,
+      temperature: genOverrides.temperature,
+      maxOutputTokens: genOverrides.maxOutputTokens,
+      contextBudget: genOverrides.contextBudget,
+    });
   }
 
   async function handleDelete(summaryId: string) {
@@ -758,14 +738,14 @@ export function useSummaryTab({
         {generating ? (
           <button type="button"
             className="mt-3 h-10 w-full rounded-md bg-danger px-4 font-ui text-[var(--ui-fs)] leading-5 font-semibold text-on-danger transition-all hover:brightness-110"
-            onClick={() => abortRef.current?.abort()}
+            onClick={() => void stop()}
           >
             {t("summary_stop_btn")}
           </button>
         ) : (
           <button type="button"
             className="mt-3 h-10 w-full rounded-md bg-accent px-4 font-ui text-[var(--ui-fs)] leading-5 font-semibold text-on-accent hover:brightness-110 disabled:opacity-50"
-            disabled={!activeChatId || !effectiveProviderId || !effectiveModel}
+            disabled={checking || !activeChatId || !effectiveProviderId || !effectiveModel}
             onClick={() => void handleGenerate()}
           >
             {t("summary_generate_range", { from: rangeFrom, to: rangeTo })}

@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "bun:test";
-import { useCallback } from "react";
+import { useCallback, useRef } from "react";
 import { useDomEnv } from "../../../test/dom-env.js";
 import type { ScrollMetrics } from "../../lib/stick-to-bottom.js";
 
@@ -59,12 +59,16 @@ interface HarnessProps {
   metrics: ScrollMetrics;
   resetKey: string;
   suppressFollow?: boolean;
+  targetOffset?: number;
 }
 
-function Harness({ metrics, resetKey, suppressFollow = false }: HarnessProps) {
-  const { scrollerRef, stableTailRef, pinned, scrollToBottom } = useStickToBottom(resetKey, suppressFollow);
+function Harness({ metrics, resetKey, suppressFollow = false, targetOffset = 200 }: HarnessProps) {
+  const { scrollerRef, stableTailRef, pinned, scrollToBottom, revealStart } = useStickToBottom(resetKey, suppressFollow);
+  const targetRef = useRef<HTMLDivElement>(null);
+  const finishRef = useRef<(() => void) | undefined>(undefined);
   const attachScroller = useCallback((node: HTMLDivElement | null) => {
     if (node) {
+      node.getBoundingClientRect = () => new DOMRect(0, 20, 320, metrics.clientHeight);
       Object.defineProperties(node, {
         scrollTop: {
           configurable: true,
@@ -88,9 +92,15 @@ function Harness({ metrics, resetKey, suppressFollow = false }: HarnessProps) {
     <>
       <div ref={attachScroller} data-testid="scroller">
         <div ref={stableTailRef} data-testid="stable-tail" />
+        <div ref={(node) => {
+          targetRef.current = node;
+          if (node) node.getBoundingClientRect = () => new DOMRect(0, 20 + targetOffset - metrics.scrollTop, 320, 200);
+        }} data-testid="reading-target" />
       </div>
       <output data-testid="pinned">{String(pinned)}</output>
       <button type="button" onClick={scrollToBottom}>bottom</button>
+      <button type="button" onClick={() => { if (targetRef.current) finishRef.current = revealStart(targetRef.current); }}>reveal</button>
+      <button type="button" onClick={() => finishRef.current?.()}>finish</button>
     </>
   );
 }
@@ -104,6 +114,62 @@ function observerFor(testId: string): ControlledResizeObserver {
 }
 
 describe("useStickToBottom", () => {
+  it("reveals a variant start and rejects bottom-follow throughout its height transition", () => {
+    const metrics: ScrollMetrics = { scrollTop: 0, scrollHeight: 1000, clientHeight: 400 };
+    const view = render(<Harness metrics={metrics} resetKey="chat-1" />);
+    fireEvent.click(view.getByText("reveal"));
+    expect(metrics.scrollTop).toBe(200);
+    expect(view.getByTestId("pinned").textContent).toBe("false");
+    metrics.scrollHeight = 1600;
+    act(() => { observerFor("stable-tail").notify(); });
+    fireEvent.scroll(view.getByTestId("scroller"));
+    expect(metrics.scrollTop).toBe(200);
+    fireEvent.click(view.getByText("finish"));
+    expect(view.getByTestId("pinned").textContent).toBe("false");
+  });
+
+  it("does not move an already visible start when a short variant grows into a long one", () => {
+    const metrics: ScrollMetrics = { scrollTop: 0, scrollHeight: 1000, clientHeight: 400 };
+    const view = render(<Harness metrics={metrics} resetKey="chat-1" targetOffset={800} />);
+    fireEvent.click(view.getByText("reveal"));
+    expect(metrics.scrollTop).toBe(600);
+    metrics.scrollHeight = 1800;
+    act(() => { observerFor("stable-tail").notify(); });
+    fireEvent.click(view.getByText("finish"));
+    expect(metrics.scrollTop).toBe(600);
+    expect(view.getByTestId("pinned").textContent).toBe("false");
+  });
+
+  it("reconciles the real pin after landing on a short variant and follows later growth normally", () => {
+    const metrics: ScrollMetrics = { scrollTop: 0, scrollHeight: 1000, clientHeight: 400 };
+    const view = render(<Harness metrics={metrics} resetKey="chat-1" />);
+    fireEvent.click(view.getByText("reveal"));
+    metrics.scrollHeight = 600;
+    act(() => { observerFor("stable-tail").notify(); });
+    expect(view.getByTestId("pinned").textContent).toBe("false");
+    fireEvent.click(view.getByText("finish"));
+    expect(view.getByTestId("pinned").textContent).toBe("true");
+    metrics.scrollHeight = 1000;
+    act(() => { observerFor("stable-tail").notify(); });
+    expect(metrics.scrollTop).toBe(600);
+  });
+
+  it("new user intent or a chat reset cancels an old navigation completion", () => {
+    const metrics: ScrollMetrics = { scrollTop: 0, scrollHeight: 1000, clientHeight: 400 };
+    const view = render(<Harness metrics={metrics} resetKey="chat-1" />);
+    fireEvent.click(view.getByText("reveal"));
+    fireEvent.wheel(view.getByTestId("scroller"), { deltaY: -100 });
+    metrics.scrollTop = 350;
+    fireEvent.scroll(view.getByTestId("scroller"));
+    fireEvent.click(view.getByText("finish"));
+    expect(metrics.scrollTop).toBe(350);
+    fireEvent.click(view.getByText("reveal"));
+    view.rerender(<Harness metrics={metrics} resetKey="chat-2" />);
+    fireEvent.click(view.getByText("finish"));
+    expect(metrics.scrollTop).toBe(600);
+    expect(view.getByTestId("pinned").textContent).toBe("true");
+  });
+
   it("follows content growth only while pinned", () => {
     const metrics: ScrollMetrics = { scrollTop: 0, scrollHeight: 1000, clientHeight: 400 };
     const { getByTestId } = render(<Harness metrics={metrics} resetKey="chat-1:branch-1" />);

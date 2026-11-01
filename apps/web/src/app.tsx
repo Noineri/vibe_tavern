@@ -5,11 +5,6 @@ import { FloatingGalleryViewers } from "./components/build/editors/FloatingGalle
 import { TooltipProvider } from "./components/shared/Tooltip.js";
 import { Logo } from "./components/shared/Logo.js";
 import { useSessionStore } from "./stores/session-store.js";
-// CA-15: rehydrate any persisted co-author proposals before the app renders,
-// so an in-review diff survives a page reload. No-op without localStorage
-// (runs at module load, once, before App() mounts any co-author surface).
-import { rehydrateCoauthorDrafts } from "./lib/coauthor-draft.js";
-rehydrateCoauthorDrafts();
 
 export function App() {
   const { t } = useT();

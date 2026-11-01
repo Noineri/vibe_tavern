@@ -19,8 +19,11 @@ export interface DiceCreateIntent {
 
 export interface BuildNavigationState {
   diceCreateIntent: DiceCreateIntent | null;
+  agentOpenIntent: { kind: "experience" | "script"; scriptId: string } | null;
 }
 export interface BuildNavigationActions {
+  requestAgentOpen: (kind: "experience" | "script", scriptId: string) => void;
+  consumeAgentOpen: (intent: NonNullable<BuildNavigationState["agentOpenIntent"]>) => void;
   requestDiceCreate: (input: Omit<DiceCreateIntent, "panel" | "tab" | "action" | "scriptKind" | "createIntentId">) => DiceCreateIntent;
   consumeDiceCreateIntent: () => DiceCreateIntent | null;
 }
@@ -28,6 +31,9 @@ export type BuildNavigationStore = BuildNavigationState & BuildNavigationActions
 
 export const useBuildNavigationStore = create<BuildNavigationStore>()((set, get) => ({
   diceCreateIntent: null,
+  agentOpenIntent: null,
+  requestAgentOpen: (kind, scriptId) => set({ agentOpenIntent: { kind, scriptId } }),
+  consumeAgentOpen: (intent) => { if (get().agentOpenIntent === intent) set({ agentOpenIntent: null }); },
   requestDiceCreate: (input) => {
     const intent: DiceCreateIntent = {
       ...input,

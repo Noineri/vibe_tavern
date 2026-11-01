@@ -1,10 +1,14 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { CopilotProfile } from "@vibe-tavern/api-contracts";
 import { setCopilotProfile } from "../../../api/copilot-profile-api.js";
 import { getAgentChatSettings, patchAgentChatSettings } from "../../../api/agent-chat-settings-api.js";
 import { patchAgentKindSettingsAction, useBootstrapStore } from "../../../stores/api-actions/bootstrap-actions.js";
 import type { TFunc } from "../../../i18n/context.js";
+import { BUILTIN_PROFILE_ID } from "../../../lib/agent-builtin-profiles.js";
+import {
+	resolveChatEffectiveProfileId,
+} from "../../../lib/agent-builtin-profiles.js";
 
 /**
  * Assignment logic for `AgentProfileModal` (AP-24 extraction — AP-27 reuses
@@ -19,34 +23,26 @@ import type { TFunc } from "../../../i18n/context.js";
  * settings summary's one-step dropdown parks its choice outside the hook,
  * so it needs the failure signal to unpark); every success closes the
  * modal through `onAssigned`.
+ *
+ * The module also exports `useParkedProfileChoice` — the one-step
+ * (dropdown / menu) adapter that parks a choice and commits it through
+ * the hook above; see that hook's header for its provenance.
  */
-export const BUILTIN_PROFILE_ID = "builtin";
 
 /**
- * The effective profile id for a chat-target modal (SC-0k) — the modal-side
- * mirror of `CopilotProfileResolver.resolveForChat` (same hop order): the
- * chat's own choice when it resolves (the built-in sentinel always resolves;
- * a stored custom id resolves when its row is in the loaded list) → the
- * kind default when it resolves (a built-in default reads as null) → the
- * built-in seed. Dangling ids fall through, never mark a missing row.
+ * The first built-in profile's id sentinel — "builtin" (a stored null
+ * assignment resolves to the seed; a chat row pinning it pins the seed).
+ * Defined in `lib/agent-builtin-profiles.ts` (DR-7) so the sidechat
+ * built-in derivations and this hook share ONE spelling; re-exported here
+ * for the existing importers.
  */
-export function resolveChatEffectiveProfileId(
-	chatProfileId: string | null,
-	kindDefaultProfileId: string | null,
-	loadedProfileIds: ReadonlySet<string>,
-): string {
-	if (chatProfileId !== null && (chatProfileId === BUILTIN_PROFILE_ID || loadedProfileIds.has(chatProfileId))) {
-		return chatProfileId;
-	}
-	if (
-		kindDefaultProfileId !== null &&
-		kindDefaultProfileId !== BUILTIN_PROFILE_ID &&
-		loadedProfileIds.has(kindDefaultProfileId)
-	) {
-		return kindDefaultProfileId;
-	}
-	return BUILTIN_PROFILE_ID;
-}
+export { BUILTIN_PROFILE_ID };
+
+// DR-12: the SC-0k effective-profile chain moved to its lib home
+// (`agent-builtin-profiles.ts`) so the call-director STORE can share the one
+// derivation — stores never import from components. Re-exported here for the
+// hook's own callers (the derivation itself is unchanged).
+export { resolveChatEffectiveProfileId };
 
 export interface AgentProfileAssignmentInput {
 	/** The agent kind whose profiles this instance manages (AS-8b). */
@@ -217,4 +213,122 @@ export function useAgentProfileAssignment({
 		assignHere,
 		assignDefault,
 	};
+}
+
+// ─── One-step parked choice (dropdowns / menus) ────────────────────────
+
+export interface ParkedProfileChoiceInput {
+	/** The agent kind whose profiles this instance manages (AS-8b). */
+	agentKind: string;
+	/** True when the host's `profileAssignment` targets `"chat"` (sidechat). */
+	isChatTarget: boolean;
+	/** SC-13a: the script a script-target host writes (unreachable for chat hosts). */
+	scriptId?: string;
+	/** SC-0g: the chat a chat-target host writes (ignored by script hosts). */
+	chatId?: string;
+	/** The profile currently assigned to this experience, or null (built-in seed). */
+	assignedProfileId: string | null;
+	/** The loaded profiles (the commit guard resolves the parked id against these). */
+	profiles: CopilotProfile[];
+	/** Controlled-open flag, passed through to `useAgentProfileAssignment` (the
+	 *  chat-row read runs on open, resets on close) and driving the parked
+	 *  choice's own close reset below. Always-open consumers pass literal
+	 *  `true` — the close reset then never fires. */
+	isOpen: boolean;
+	t: TFunc;
+}
+
+export interface ParkedProfileChoice {
+	/** The parked (in-flight) choice id, or null (render the effective id). */
+	chosenId: string | null;
+	/** Parks a choice (the dropdown pick / menu row); the commit effect applies it. */
+	choose: (id: string) => void;
+	/** The EFFECTIVE profile id for the host's variant: `chatEffectiveProfileId`
+	 *  for chat-target hosts, the assignment mirror `activeProfileId` otherwise. */
+	effectiveId: string;
+}
+
+/**
+ * The one-step parked-profile-choice adapter over `useAgentProfileAssignment`.
+ *
+ * PROVENANCE — extracted from `AgentSettingsModal`'s inline parked-choice
+ * pattern (AP-27, the settings summary's profile dropdown);
+ * `AgentProfileChip` (DR-6) carried copy #2; unified by owner unit 2026-10-27
+ * (DIRECTOR_MODE_PLAN.md DR-6b — see its execution log). `AgentProfileModal`
+ * is NOT a consumer: its footer is the two-step surface (select, then the
+ * explicit Assign button) this hook adapts FOR one-step controls
+ * (dropdowns, menus).
+ *
+ * WHY IT OWNS THE `useAgentProfileAssignment` CALL — the parking state and
+ * the assignment callbacks are mutually recursive (`onAssigned` unparks,
+ * `onFailed` resets the pin + unparks), so the seam passes the hook's own
+ * inputs and this adapter wires everything: consumers get back exactly the
+ * three values both of them render (`chosenId`, `choose`, `effectiveId`).
+ */
+export function useParkedProfileChoice({
+	agentKind,
+	isChatTarget,
+	scriptId,
+	chatId,
+	assignedProfileId,
+	profiles,
+	isOpen,
+	t,
+}: ParkedProfileChoiceInput): ParkedProfileChoice {
+	// The consumer's control is one-step (choose = apply) while the
+	// assignment hook is two-step (select, then assign): the choice parks
+	// here and the commit effect below applies it through the hook once the
+	// target resolves. A FAILED write resets the park (see `onFailed`) so
+	// the control shows the effective profile again and choosing the same
+	// profile retries.
+	const [chosenId, setChosenId] = useState<string | null>(null);
+	// The commit edge pins the committed choice (see below) — the hook
+	// object is fresh every render, so without it the effect would re-fire
+	// the write on every parent re-render until the server round-trip
+	// clears the choice. Reset on failure and on close (a stale pin would
+	// swallow a same-profile retry, even in a later modal session).
+	const committedRef = useRef<string | null>(null);
+
+	// The close reset (AgentSettingsModal's former `!isOpen` branch): a
+	// closing consumer unparks and clears the pin; always-open consumers
+	// (isOpen constant true) never fire it.
+	useEffect(() => {
+		if (!isOpen) {
+			setChosenId(null);
+			committedRef.current = null;
+		}
+	}, [isOpen]);
+
+	// No in-flight choice: pass null (the hook's guards no-op on null, and
+	// neither resolution read below depends on the selection).
+	const selected = chosenId !== null ? (profiles.find((p) => p.id === chosenId) ?? null) : null;
+	const assignment = useAgentProfileAssignment({
+		agentKind,
+		isChatTarget,
+		scriptId,
+		chatId,
+		assignedProfileId,
+		selected,
+		profiles,
+		isOpen,
+		t,
+		onAssigned: () => setChosenId(null),
+		onFailed: () => {
+			committedRef.current = null;
+			setChosenId(null);
+		},
+	});
+	const effectiveId = isChatTarget ? assignment.chatEffectiveProfileId : assignment.activeProfileId;
+
+	// The commit edge (see `chosenId` above): guards + writes live in the
+	// hook (`assign` / `assignHere` no-op when the choice is already active).
+	useEffect(() => {
+		if (chosenId === null || chosenId === committedRef.current) return;
+		if (!profiles.some((p) => p.id === chosenId)) return;
+		committedRef.current = chosenId;
+		if (isChatTarget) assignment.assignHere();
+		else assignment.assign();
+	}, [chosenId, profiles, isChatTarget, assignment]);
+
+	return { chosenId, choose: setChosenId, effectiveId };
 }

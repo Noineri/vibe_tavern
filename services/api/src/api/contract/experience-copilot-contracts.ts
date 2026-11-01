@@ -6,8 +6,11 @@
 
 import type { ExperienceCopilotStreamRequest, ExperienceCopilotStreamEvent } from "../../domain/interactive/copilot/experience-copilot-stream.js";
 import type { ExperienceCopilotThreadWire, ExperienceCopilotMessageWire, ExperienceCopilotContextMetrics, ExperienceCopilotContextLink, AgentKindSettingsWire, AgentKindSettingsPatchRequest, AgentChatSettingsWire, AgentChatSettingsPatchRequest, AgentThreadEventWire, AgentBranchForkSidechatResult, AgentBranchSidechatSummary } from "@vibe-tavern/api-contracts";
-import type { RecordProposal } from "@vibe-tavern/api-contracts";
-import type { Attachment, ImageRoute } from "@vibe-tavern/domain";
+import type { RecordProposal, AgentThreadProposalApplyRequest } from "@vibe-tavern/api-contracts";
+import type { AgentPlan, Attachment, ImageRoute } from "@vibe-tavern/domain";
+import type { ConfigPatchResponse } from "./session-types.js";
+import type { AgentRunSubscription } from "../../domain/agent/agent-run-registry.js";
+import type { ExperienceCopilotStopRunResponse, AgentReviewEnvelope } from "@vibe-tavern/api-contracts";
 
 /** GET/PATCH `/context` response: the thread's last-turn metrics (null before the
  *  first turn) plus its auto-compact toggle (CM-4). */
@@ -56,14 +59,27 @@ export interface ExperienceCopilotTurnDeleteResult {
  *  `{ event, data }` chunks (same contract as `sendMessageStream`) so the route
  *  emits them verbatim through `streamSSE`. */
 
-/** The SC-11 apply/reject response: the resolved proposal with its final
+/** The SC-11/DR-5 apply/reject response: the resolved proposal with its final
  *  `status` (`applied` / `rejected`) — the same `RecordProposal` shape the
- *  tool row carries, so SC-13's review card re-renders from it directly. */
+ *  tool row carries, so SC-13's review card re-renders from it directly —
+ *  plus (DR-5) the recordType's refreshed companion data, present only for
+ *  the types that produce it: `plan` for story-plan resolutions and
+ *  objective resolutions under a plan with events (the no-plan objective
+ *  response is byte-identical to SC-11's bare `{ proposal }`), `patch` for
+ *  tracker-scene resolutions. */
 export interface AgentThreadProposalResolveWire {
   proposal: RecordProposal;
+  /** The target branch's refreshed normalized plan (the DR-5 companion). */
+  plan?: AgentPlan;
+  /** The refreshed insights config patch (the tracker-scene companion). */
+  patch?: ConfigPatchResponse;
 }
 
 export interface ExperienceCopilotRuntimeApi {
+	/** Server-owned V2 review; null means this existing thread has no review. */
+	experienceCopilotGetReview: (threadId: string) => Promise<AgentReviewEnvelope | null>;
+	experienceCopilotPutReview: (threadId: string, envelope: AgentReviewEnvelope) => Promise<AgentReviewEnvelope>;
+	experienceCopilotDeleteReview: (threadId: string) => Promise<{ ok: true }>;
 	experienceCopilotSummarizeAttachment: (threadId: string, messageId: string, attachmentId: string, body: { providerProfileId?: string; model?: string }, signal?: AbortSignal) => Promise<Attachment>;
 	experienceCopilotClearAttachmentSummary: (threadId: string, messageId: string, attachmentId: string) => Promise<Attachment>;
 	experienceCopilotSetAttachmentIncluded: (threadId: string, messageId: string, attachmentId: string, included: boolean) => Promise<{ ok: true }>;
@@ -102,6 +118,14 @@ export interface ExperienceCopilotRuntimeApi {
 	 *  `tool-result`, `finish`, `error`). Persists the turn (user message + tool
 	 *  calls/results + final assistant text) to the ER-3 store. */
 	experienceCopilotStream: (threadId: string, body: Omit<ExperienceCopilotStreamRequest, "threadId">, signal?: AbortSignal) => AsyncGenerator<ExperienceCopilotStreamEvent>;
+
+	/** Start detached execution; the signal cancels only the returned subscription.
+	 * Kind errors and AgentRunActiveError are thrown before SSE opens. */
+	experienceCopilotStartRun: (threadId: string, body: Omit<ExperienceCopilotStreamRequest, "threadId">, subscriberSignal?: AbortSignal) => Promise<AgentRunSubscription>;
+	/** Replay strictly after the cursor and tail live events; null means no log since boot (204). */
+	experienceCopilotSubscribeRun: (threadId: string, after: number, signal?: AbortSignal) => AgentRunSubscription | null;
+	/** Idempotent cooperative stop; false when absent, finished, or already stopping. */
+	experienceCopilotStopRun: (threadId: string) => ExperienceCopilotStopRunResponse;
 
 	/** The single active (unarchived) thread for a script, or null. Delegates to
 	 *  the ER-3 store's `getActive`. */
@@ -311,26 +335,37 @@ export interface ExperienceCopilotRuntimeApi {
 // copilot adapter stays under its size ratchet.
 
 /** The thread-proposal resolution runtime contract — implemented by the
- *  dedicated `AgentThreadProposalAdapter` (SC-11), consumed by
- *  `api/routes/agent-thread-proposals.ts`. */
+ *  dedicated `AgentThreadProposalAdapter` (SC-11, generalized by DR-5),
+ *  consumed by `api/routes/agent-thread-proposals.ts`. */
 export interface AgentThreadProposalsRuntimeApi {
-	/** Apply one pending objective proposal: add the item through the reused
-	 *  insights service for the tracker's CURRENT mode (route → a task via
-	 *  the insights runtime's `addObjectiveTask`, goals → a short-term goal
-	 *  via `ObjectiveService.addShortTermGoal`) and mark the tool row
-	 *  `applied`. Typed 409s: `objective_tracker_disabled` (tracker off at
-	 *  Accept time), `objective_proposal_already_resolved` (repeat apply);
-	 *  404 for a foreign/non-proposal toolCallId or a thread that is not a
-	 *  chat-owned `sidechat-ooc` row. */
-	agentThreadApplyObjectiveProposal: (
+	/** Apply one pending record proposal (DR-5: dispatch by `recordType`
+	 *  through the one registry in
+	 *  `domain/sidechat/sidechat-objective-proposal.ts`):
+	 *  - `objective` — no plan with events on the active branch → the item
+	 *    through the reused insights service for the tracker's CURRENT mode
+	 *    (route → a task via the insights runtime's `addObjectiveTask`,
+	 *    goals → a short-term goal via `ObjectiveService.addShortTermGoal`);
+	 *    under such a plan → `StoryPlanSync.insertNextEvent` with the goal
+	 *    text (R3), never a tracker item;
+	 *  - `story-plan` — `StoryPlanSync.applyPlan`; `enableAutoCheck: true`
+	 *    in the body also sets the auto-check frequency to 1 (A6);
+	 *  - `tracker-scene` — the shared tracker-template apply tail with
+	 *    `{ scene, objective: null }`.
+	 *  Typed 409s: `objective_tracker_disabled` (objective apply, tracker
+	 *  off at Accept time), `objective_proposal_already_resolved` (repeat
+	 *  resolution); typed 422 `unknown_proposal_record_type`; 404 for a
+	 *  foreign/non-proposal toolCallId or a thread that is not a chat-owned
+	 *  `sidechat-ooc` row. */
+	agentThreadApplyProposal: (
 		threadId: string,
 		toolCallId: string,
+		body: AgentThreadProposalApplyRequest,
 	) => Promise<AgentThreadProposalResolveWire>;
 
-	/** Reject one pending objective proposal: write nothing to the tracker,
+	/** Reject one pending record proposal: write nothing to the domain,
 	 *  mark the tool row `rejected`. Same 404/409 contract as
-	 *  {@link agentThreadApplyObjectiveProposal}. */
-	agentThreadRejectObjectiveProposal: (
+	 *  {@link agentThreadApplyProposal}. */
+	agentThreadRejectProposal: (
 		threadId: string,
 		toolCallId: string,
 	) => Promise<AgentThreadProposalResolveWire>;

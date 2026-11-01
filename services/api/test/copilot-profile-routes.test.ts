@@ -56,7 +56,7 @@ async function createProfile(over: Record<string, unknown> = {}) {
     body: JSON.stringify(createInput(over)),
   });
   expect(res.status).toBe(200);
-  return (await res.json()) as { id: string; name: string; isBuiltIn: boolean };
+  return (await res.json()) as { id: string; name: string; isBuiltIn: boolean; sourceBuiltinId: string | null };
 }
 
 describe("GET /api/copilot/profiles", () => {
@@ -153,6 +153,77 @@ describe("DELETE /api/copilot/profiles/:id", () => {
     const list = await app.request("/api/copilot/profiles");
     const body = (await list.json()) as { profiles: Array<{ id: string }> };
     expect(body.profiles.some((p) => p.id === created.id)).toBe(false);
+  });
+});
+
+// ─── DR-7b: source provenance (create-only, validated, emitted) ───────────
+// POST accepts `sourceBuiltinId` when it names a built-in seed the kind
+// declares (the experience kind's own seed is "builtin"); a foreign kind's
+// built-in or any other id is a typed 422 (`copilot_profile_invalid_source_builtin`
+// — the invalid-tool-set family), never a silent strip. The response and
+// the list emit the field; a PATCH smuggling it is strict-rejected (400).
+
+describe("POST /api/copilot/profiles sourceBuiltinId (DR-7b)", () => {
+  test("creates with a same-kind built-in source and emits it; the list emits it too", async () => {
+    const res = await app.request("/api/copilot/profiles", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(createInput({ sourceBuiltinId: "builtin" })),
+    });
+    expect(res.status).toBe(200);
+    const created = (await res.json()) as { id: string; sourceBuiltinId: string | null };
+    expect(created.sourceBuiltinId).toBe("builtin");
+
+    const list = await app.request("/api/copilot/profiles");
+    const body = (await list.json()) as {
+      profiles: Array<{ id: string; isBuiltIn: boolean; sourceBuiltinId?: string | null }>;
+    };
+    // The built-in seed row carries NO source (it IS one); the duplicate emits its provenance.
+    expect(body.profiles[0]?.isBuiltIn).toBe(true);
+    expect(body.profiles[0]?.sourceBuiltinId).toBeUndefined();
+    expect(body.profiles.find((p) => p.id === created.id)?.sourceBuiltinId).toBe("builtin");
+  });
+
+  test("a create WITHOUT the key stays source-less (absent = no source, no default)", async () => {
+    const created = await createProfile();
+    expect(created.sourceBuiltinId).toBeNull();
+  });
+
+  test("a foreign kind's built-in id → 422 copilot_profile_invalid_source_builtin", async () => {
+    // "builtin-director" is a real built-in — but of the SIDECHAT kind,
+    // not the experience kind this create targets.
+    const res = await app.request("/api/copilot/profiles", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(createInput({ sourceBuiltinId: "builtin-director" })),
+    });
+    expect(res.status).toBe(422);
+    const body = (await res.json()) as { error: { details?: Record<string, unknown> } };
+    expect(body.error.details?.code).toBe("copilot_profile_invalid_source_builtin");
+  });
+
+  test("a user id / unknown id as source → 422 (only the kind's built-ins resolve)", async () => {
+    const created = await createProfile();
+    for (const source of [created.id, "no-such-builtin"]) {
+      const res = await app.request("/api/copilot/profiles", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(createInput({ sourceBuiltinId: source })),
+      });
+      expect(res.status).toBe(422);
+      const body = (await res.json()) as { error: { details?: Record<string, unknown> } };
+      expect(body.error.details?.code).toBe("copilot_profile_invalid_source_builtin");
+    }
+  });
+
+  test("a PATCH smuggling sourceBuiltinId is strict-rejected → 400 (immutable after create)", async () => {
+    const created = await createProfile();
+    const res = await app.request(`/api/copilot/profiles/${created.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ sourceBuiltinId: "builtin" }),
+    });
+    expect(res.status).toBe(400);
   });
 });
 

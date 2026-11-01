@@ -122,10 +122,13 @@ describe("the sidechat-ooc agent kind (SC-4a)", () => {
     expect(kindServesChatMode(kind, CHAT_MODE.coauthor)).toBe(false);
   });
 
-  test("the six toggles are known keys; all six landed tools are on", () => {
+  test("the nine toggles are known keys; the six landed OOC tools are on, the two director keys and ask_user are known-but-off in the default", () => {
     const kind = getAgentKind("sidechat-ooc");
     // The toggle names are the plan's settled contract, carried by the wire
     // schema (the single source of truth, re-exported for consumers).
+    // Behavior change (DR-4b): was 8 keys → now 9, `ask_user` appended
+    // (owner ruling 2026-10-27, DIRECTOR_MODE_PLAN DR-4b ruling B) — off in
+    // the OOC default, on in the `builtin-director` seed.
     expect(SIDECHAT_OOC_TOOL_KEYS).toEqual([
       "search_context",
       "read_context_item",
@@ -133,12 +136,17 @@ describe("the sidechat-ooc agent kind (SC-4a)", () => {
       "todo",
       "read_plan",
       "read_message_prompt",
+      "propose_plan",
+      "propose_tracker_template",
+      "ask_user",
     ]);
-    // The schema accepts each of the six (either boolean) and the all-off
-    // `{}` — tool sets store only enabled keys, so `{}` IS “all six
+    // The schema accepts each of the keys (either boolean) and the all-off
+    // `{}` — tool sets store only enabled keys, so `{}` IS “all nine
     // disabled”, what a user profile can still choose.
     expect(kind.toolSetSchema.parse({ search_context: true })).toEqual({ search_context: true });
     expect(kind.toolSetSchema.parse({ read_plan: false })).toEqual({ read_plan: false });
+    expect(kind.toolSetSchema.parse({ propose_plan: true })).toEqual({ propose_plan: true });
+    expect(kind.toolSetSchema.parse({ ask_user: true })).toEqual({ ask_user: true });
     expect(kind.toolSetSchema.parse({})).toEqual({});
     // Foreign keys (the experience kind's write_buffer, the script kind's
     // run_script_test) are rejected, not silently stripped — no profile can
@@ -147,8 +155,10 @@ describe("the sidechat-ooc agent kind (SC-4a)", () => {
     expect(kind.toolSetSchema.safeParse({ run_script_test: true }).success).toBe(false);
     // SC-10 flipped the search pair, SC-11 `propose_objective`, SC-12
     // `todo` + `read_plan`, SC-23e `read_message_prompt` (each unit flips
-    // its own keys) — all six tools have landed and the default set
-    // carries them all.
+    // its own keys) — all six OOC tools have landed and the DEFAULT set
+    // carries them all; the two director keys and `ask_user` stay OFF in
+    // the kind default and the first seed (DR-4b's `builtin-director` seed
+    // enables them).
     expect(kind.defaultToolSet).toEqual({
       search_context: true,
       read_context_item: true,
@@ -206,6 +216,47 @@ describe("resolveBuiltinCopilotProfile('sidechat-ooc') — the builtin seed", ()
     const seed = await resolveBuiltinCopilotProfile("sidechat-ooc", db);
     expect(seed.basePrompt).toBe("CUSTOM SIDECHAT OOC BASE");
   });
+
+  test("the `builtin-director` seed carries the director asset with its own toggles (DR-4b)", async () => {
+    const director = await resolveBuiltinSidechatOocProfile(undefined, "builtin-director");
+    expect(director.id).toBe("builtin-director");
+    expect(director.name).toBe("Director");
+    expect(director.isBuiltIn).toBe(true);
+    expect(director.agentKind).toBe("sidechat-ooc");
+    // The base prompt IS the `sidechat_director_base` asset (registry map →
+    // the loader ladder), byte-identical — the OOC asset does NOT leak in.
+    const assetText = await loadPromptAsset(getServicePromptAssetFile("sidechat_director_base"));
+    const oocText = await loadPromptAsset(getServicePromptAssetFile("sidechat_ooc_base"));
+    expect(director.basePrompt).toBe(assetText);
+    expect(director.basePrompt).not.toBe(oocText);
+    // The OOC six MINUS propose_objective, PLUS the two DR-4a proposal tools
+    // and ask_user (owner ruling 2026-10-27) — the plan's DR-4 enumeration.
+    expect(director.toolSet).toEqual({
+      search_context: true,
+      read_context_item: true,
+      todo: true,
+      read_plan: true,
+      read_message_prompt: true,
+      propose_plan: true,
+      propose_tracker_template: true,
+      ask_user: true,
+    });
+    expect(copilotProfileSchema.safeParse(director).success).toBe(true);
+    // The dispatch reaches the sidechat species' resolver for this seed too.
+    expect(director).toEqual(await resolveBuiltinCopilotProfile("sidechat-ooc", undefined, "builtin-director"));
+  });
+
+  test("a `sidechat_director_base` override replaces the director seed base (SP-5 parity)", async () => {
+    const { db, profileStore, uiSettings } = await setupDb();
+    const profile = await profileStore.createServicePromptProfile({
+      name: "Director base override",
+      overrides: { sidechat_director_base: "CUSTOM DIRECTOR BASE" },
+    });
+    await uiSettings.update({ activeServicePromptProfileId: profile.id });
+
+    const seed = await resolveBuiltinCopilotProfile("sidechat-ooc", db, "builtin-director");
+    expect(seed.basePrompt).toBe("CUSTOM DIRECTOR BASE");
+  });
 });
 
 // ─── The asset pin (S2-0a style: real assets must load) ─────────────────────
@@ -230,6 +281,91 @@ describe("the sidechat_ooc_base asset — SC-4a pin", () => {
     expect(text).toContain(
       '- `<rp_branch_forked at="n"/>` means the story was branched after message n: everything after it comes from this branch, and earlier discussion of later messages refers to a story line that no longer exists here.',
     );
+  });
+});
+
+// ─── The director asset pin (DR-4b — DIRECTOR_MODE_PLAN's Asset contract) ───
+
+/** Slice one `# Heading` section (heading line up to the next heading) out of
+ *  a markdown asset — the verbatim-block pin's helper. */
+function mdSection(text: string, heading: string): string {
+  const start = text.indexOf(`# ${heading}`);
+  if (start < 0) throw new Error(`fixture: no "# ${heading}" section`);
+  const next = text.indexOf("\n# ", start + 1);
+  return next < 0 ? text.slice(start) : text.slice(start, next);
+}
+
+describe("the sidechat_director_base asset — DR-4b pin", () => {
+  test("agent-sidechat/director.md loads non-empty through the registry map", async () => {
+    expect(getServicePromptAssetFile("sidechat_director_base")).toBe("agent-sidechat/director.md");
+    const text = await loadPromptAsset(getServicePromptAssetFile("sidechat_director_base"));
+    expect(text.trim().length).toBeGreaterThan(0);
+  });
+
+  test("the role line: story director, out of character, never writes the roleplay, never speaks for the user's character", async () => {
+    const text = await loadPromptAsset(getServicePromptAssetFile("sidechat_director_base"));
+    expect(text).toContain("You are the Director — the story director of this roleplay branch.");
+    expect(text).toContain("You never write the roleplay itself and never speak for the user's character.");
+  });
+
+  test("session zero: asks BEFORE planning — genre, tone, boundaries, pacing, the arc, ending vs open end — through ask_user with options", async () => {
+    const text = await loadPromptAsset(getServicePromptAssetFile("sidechat_director_base"));
+    const sessionZero = mdSection(text, "Session zero");
+    expect(sessionZero).toContain("Before proposing any plan, ask what story the user wants");
+    expect(sessionZero).toContain("through `ask_user` with option chips");
+    for (const item of ["genre and setting", "tone", "boundaries", "pacing", "the arc", "the ending — a planned ending or an open end"]) {
+      expect(sessionZero).toContain(`- ${item}`);
+    }
+    expect(sessionZero).toContain("propose the complete plan with `propose_plan`");
+  });
+
+  test("plan semantics: premise hidden from the RP model; constraints = story rules; task titles brief, bodies current-only", async () => {
+    const text = await loadPromptAsset(getServicePromptAssetFile("sidechat_director_base"));
+    const plan = mdSection(text, "The story plan");
+    expect(plan).toContain("the roleplay model NEVER receives it");
+    expect(plan).toContain("constraints are the story rules");
+    expect(plan).toContain("the title names the event in a few words");
+    expect(plan).toContain(
+      "write it only for the event that is current, never for later events",
+    );
+    expect(plan).toContain("One event at a time is current: the goal tracker carries the current event to the roleplay model");
+    expect(plan).toContain("You propose status changes only when the user asks, or when the check clearly missed");
+  });
+
+  test("the check protocol triggers on «Сверь игру с планом.» and never rewrites completed events", async () => {
+    const text = await loadPromptAsset(getServicePromptAssetFile("sidechat_director_base"));
+    const check = mdSection(text, "Checking the game against the plan");
+    // The RU command is a button/command name the model must echo exactly —
+    // pinned VERBATIM (the plan's own two sanctioned Cyrillic phrases).
+    expect(check).toContain("«Сверь игру с планом.»");
+    expect(check).toContain('"Check the game against the plan."');
+    expect(check).toContain("read the roleplay that has happened since your last turn, and the plan's statuses");
+    expect(check).toContain("never rewrite completed events");
+    expect(check).toContain("off-plan play is not punished");
+    expect(check).toContain("the user decides");
+  });
+
+  test("tracker setup: offers propose_tracker_template and mentions «Сохранить как заготовку персонажа»", async () => {
+    const text = await loadPromptAsset(getServicePromptAssetFile("sidechat_director_base"));
+    const tracker = mdSection(text, "Scene tracker");
+    expect(tracker).toContain("propose the setup with `propose_tracker_template`");
+    expect(tracker).toContain("«Сохранить как заготовку персонажа»");
+  });
+
+  test("the OOC asset's RP-sync rules are copied in VERBATIM (the whole Reading the RP material section)", async () => {
+    const director = await loadPromptAsset(getServicePromptAssetFile("sidechat_director_base"));
+    const ooc = await loadPromptAsset(getServicePromptAssetFile("sidechat_ooc_base"));
+    // The plan's Asset contract: the OOC asset's RP-sync rules ride the
+    // director asset unchanged — byte-for-byte, not paraphrased.
+    expect(director).toContain(mdSection(ooc, "Reading the RP material"));
+  });
+
+  test("the only Cyrillic in the asset is the two sanctioned phrases", async () => {
+    const text = await loadPromptAsset(getServicePromptAssetFile("sidechat_director_base"));
+    const withoutSanctioned = text
+      .replaceAll("«Сверь игру с планом.»", "")
+      .replaceAll("«Сохранить как заготовку персонажа»", "");
+    expect(withoutSanctioned).not.toMatch(/[\u0400-\u04FF]/);
   });
 });
 

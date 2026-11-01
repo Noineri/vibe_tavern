@@ -14,6 +14,7 @@ import { invalidateActiveContextPreview } from "../context-preview-store.js";
 import { useSceneGenerationStore } from "../scene-generation-store.js";
 import { useChatStore } from "../chat-store.js";
 import { useNavigationStore } from "../navigation-store.js";
+import { useChatNotifications } from "../chat-notifications-store.js";
 import { extractPersistedCoauthorActivities, useCoauthorTurnStore } from "../coauthor-turn-store.js";
 import { fetchBootstrapAction } from "./bootstrap-actions.js";
 import { toast } from "sonner";
@@ -38,6 +39,14 @@ function syncSelectedCharacterFromSnapshot(snapshot: AppSnapshot): void {
   if (characterId) {
     useChatStore.getState().setSelectedCharacterId(characterId);
   }
+}
+
+/** A background completion must not navigate: returning to its chat refetches it. */
+function syncChatSnapshotIfActive(chatId: ChatId, snapshot: AppSnapshot): void {
+  // Read after the request settles, since the user may switch while it is in flight.
+  if (useChatStore.getState().activeChatId !== chatId) return;
+  syncSnapshot(snapshot);
+  syncSelectedCharacterFromSnapshot(snapshot);
 }
 
 /** Hydrate proposals that non-streaming responses expose only after commit. */
@@ -73,8 +82,7 @@ export async function waitForPendingVariantSelections(chatId: ChatId): Promise<v
 export async function fetchChatAction(chatId: ChatId): Promise<AppSnapshot> {
   await waitForPendingVariantSelections(chatId);
   const snapshot = await fetchChat(chatId);
-  syncSnapshot(snapshot);
-  syncSelectedCharacterFromSnapshot(snapshot);
+  syncChatSnapshotIfActive(chatId, snapshot);
   return snapshot;
 }
 
@@ -180,20 +188,20 @@ export async function sendChatMessageAction(chatId: ChatId, content: string, att
   // LS-4b: `prefill` is the one-shot per-send override; absent ⇒ the preset
   // prefill cascade is untouched.
   const snapshot = await sendChatMessage(chatId, { content, attachments, ...diceCommit, ...experienceCommit, ...(prefill !== undefined ? { prefill } : {}) }, { signal });
-  syncSnapshot(snapshot);
+  syncChatSnapshotIfActive(chatId, snapshot);
   syncCommittedCoauthorTurn(chatId);
   startInsightsCompletionRefreshFromSnapshot(chatId, snapshot);
 }
 
 export async function continueMessageAction(chatId: ChatId, messageId: string, signal?: AbortSignal): Promise<void> {
   const snapshot = await continueChatMessage(chatId, messageId, { signal });
-  syncSnapshot(snapshot);
+  syncChatSnapshotIfActive(chatId, snapshot);
   syncCommittedCoauthorTurn(chatId);
 }
 
 export async function regenerateMessageAction(chatId: ChatId, messageId: string, signal?: AbortSignal, override?: { model?: string; promptPresetId?: string }): Promise<void> {
   const snapshot = await regenerateChatMessage(chatId, messageId, { signal, override });
-  syncSnapshot(snapshot);
+  syncChatSnapshotIfActive(chatId, snapshot);
   syncCommittedCoauthorTurn(chatId);
 }
 
@@ -434,7 +442,7 @@ export async function renameBranchAction(chatId: ChatId, branchId: ChatBranchId,
 export async function generateReplyAction(chatId: ChatId, signal?: AbortSignal): Promise<void> {
   useCoauthorTurnStore.getState().clearTurn(chatId);
   const snapshot = await generateReply(chatId, { signal });
-  syncSnapshot(snapshot);
+  syncChatSnapshotIfActive(chatId, snapshot);
   syncCommittedCoauthorTurn(chatId);
   startInsightsCompletionRefreshFromSnapshot(chatId, snapshot);
 }
@@ -478,9 +486,16 @@ export async function deleteChatSummaryAction(chatId: ChatId, summaryId: string)
 }
 
 export async function generateChatSummaryAction(chatId: ChatId, input: Parameters<typeof generateChatSummary>[1], signal?: AbortSignal): Promise<ChatSummaryRecord> {
-  const result = await generateChatSummary(chatId, input, { signal });
-  syncSnapshot(result.snapshot);
-  return result.chatSummary;
+  const release = useChatNotifications.getState().retain(chatId);
+  let completedSummaryId: string | undefined;
+  try {
+    const result = await generateChatSummary(chatId, input, { signal });
+    completedSummaryId = result.chatSummary.id;
+    syncChatSnapshotIfActive(chatId, result.snapshot);
+    return result.chatSummary;
+  } finally {
+    release(completedSummaryId);
+  }
 }
 
 export async function updateMemorySettingsAction(chatId: ChatId, input: { messageHistoryLimit?: number; autoSummaryConfig?: Partial<AutoSummaryConfig> }): Promise<void> {

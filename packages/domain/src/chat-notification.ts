@@ -27,9 +27,11 @@
  * messages) emit nothing — there is nothing for the user to see.
  */
 export type ChatNotification =
-  | { readonly chatId: string; readonly kind: "summary.started" }
-  | { readonly chatId: string; readonly kind: "summary.generated"; readonly summaryId: string; readonly label: string }
-  | { readonly chatId: string; readonly kind: "summary.failed" };
+  | { readonly chatId: string; readonly kind: "summary.started"; readonly source?: "manual" }
+  | { readonly chatId: string; readonly kind: "summary.generated"; readonly summaryId: string; readonly label: string; readonly source?: "manual" }
+  | { readonly chatId: string; readonly kind: "summary.failed"; readonly source?: "manual" }
+  | { readonly chatId: string; readonly kind: "summary.cancelled"; readonly source: "manual" }
+  | { readonly chatId: string; readonly kind: "queue.updated" };
 
 /**
  * Augment the core EventMap with the notification event. Relative module path

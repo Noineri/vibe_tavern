@@ -1,57 +1,128 @@
-import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { motion, useAnimationControls, type PanInfo } from "framer-motion";
+import { useEffectEvent, useImperativeHandle, useLayoutEffect, useRef, useState, type ReactNode, type Ref } from "react";
 import { Markdown } from "../../../lib/markdown.js";
 import { cn } from "../../../lib/cn.js";
 import type { SwipeDirection } from "./types.js";
+import { getVariantRenderWindow, observeVariantScrollSettle } from "./variant-scroll-snap.js";
+
+export type MobileVariantCarouselHandle = {
+  selectVariant: (index: number) => void;
+};
 
 type MobileVariantCarouselProps = {
+  ref?: Ref<MobileVariantCarouselHandle>;
   selectedVariantIndex: number;
-  variants: { content: string }[];
+  variants: { id?: string; variantIndex?: number; content: string }[];
+  isBusy: boolean;
+  /** Image slots keep the same busy exception as VariantControls. */
+  swipeWhileBusy?: boolean;
   onSelectVariant: (targetIndex: number, direction: SwipeDirection) => void;
+  /** The list's existing scroll controller owns vertical reading navigation. */
+  onBeforeSelect?: (viewport: HTMLElement) => (() => void) | void;
   /** IG-CF11 (mobile swipe zone): panel renderer for pure image slots. Their
    *  variant panels carry no text, so the Markdown panels collapsed to ~0
    *  height — the swipe gesture had no surface and phones could only use the
    *  chevrons. When provided, each panel renders this instead of the Markdown
-   *  block (position-aligned with `variants`). Prev/next panels render
-   *  non-interactive (pointer-events-none): neighbor images must not open the
-   *  lightbox/menus — the drag lives on the track, which still receives the
-   *  events through a pointer-events-none child. */
+   *  block (position-aligned with `variants`). Neighbor panels are inert:
+   *  their images must not open the lightbox/menus. */
   renderPanel?: (position: number) => ReactNode;
 };
 
-/** Three-panel swipe carousel for variant browsing on mobile (framer-motion
- *  drag). Renders prev / current / next variants side by side in a 300%-wide
- *  track; drag past threshold snaps to the neighbor and fires onSelectVariant.
- *  Height auto-fits the current panel via a ResizeObserver (no inner scroll). */
+/** Native scroll-snap pager: the browser owns axis arbitration and motion.
+ *  Every variant keeps a full-width slot; only current ±1 mount content.
+ *  Height follows the selected panel, not the tallest neighbor. */
 export function MobileVariantCarousel(props: MobileVariantCarouselProps) {
-  const { selectedVariantIndex, variants, onSelectVariant, renderPanel } = props;
-  const controls = useAnimationControls();
+  const { selectedVariantIndex, variants, isBusy, swipeWhileBusy = false, onSelectVariant, renderPanel } = props;
   const viewportRef = useRef<HTMLDivElement>(null);
   const currentPanelRef = useRef<HTMLDivElement>(null);
-  const isAnimatingRef = useRef(false);
-  const [viewportWidth, setViewportWidth] = useState(0);
+  const slotWidthRef = useRef(0);
+  const requestedIndexRef = useRef<number | null>(null);
+  const finishNavigationRef = useRef<(() => void) | undefined>(undefined);
   const [viewportHeight, setViewportHeight] = useState<number | null>(null);
+  const currentIndex = Math.max(0, Math.min(variants.length - 1, selectedVariantIndex));
+  const currentVariant = variants[currentIndex];
+  const hasVariants = variants.length > 0;
+  const swipeLocked = isBusy && !swipeWhileBusy;
+  const renderWindow = getVariantRenderWindow(currentIndex, variants.length);
 
-  const currentVariant = variants[selectedVariantIndex] ?? variants[0];
-  const previousVariant = selectedVariantIndex > 0 ? variants[selectedVariantIndex - 1] : null;
-  const nextVariant = selectedVariantIndex < variants.length - 1 ? variants[selectedVariantIndex + 1] : null;
-  const canGoPrevious = selectedVariantIndex > 0;
-  const canGoNext = selectedVariantIndex < variants.length - 1;
+  const selectSettledVariant = (index: number) => {
+    requestedIndexRef.current = null;
+    finishNavigationRef.current?.();
+    const el = viewportRef.current;
+    finishNavigationRef.current = (el ? props.onBeforeSelect?.(el) : undefined) ?? undefined;
+    onSelectVariant(index, index > currentIndex ? 1 : -1);
+  };
+
+  useImperativeHandle(props.ref, () => ({
+    selectVariant(index) {
+      if (swipeLocked || !Number.isInteger(index) || index < 0 || index >= variants.length || index === currentIndex) return;
+      const el = viewportRef.current;
+      // Preserve instant jump-list selection outside the adjacent render
+      // window, or before layout exists; only chevrons need a visible slide.
+      if (!el || slotWidthRef.current <= 0 || Math.abs(index - currentIndex) > 1) {
+        selectSettledVariant(index);
+        return;
+      }
+      requestedIndexRef.current = index;
+      el.scrollTo({
+        left: index * slotWidthRef.current,
+        behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+      });
+    },
+  }), [currentIndex, swipeLocked, variants.length, onSelectVariant, props.onBeforeSelect]);
+
+  const alignSelected = useEffectEvent(() => {
+    const el = viewportRef.current;
+    if (el && slotWidthRef.current > 0) el.scrollLeft = currentIndex * slotWidthRef.current;
+  });
+
+  const updateWidth = useEffectEvent(() => {
+    const el = viewportRef.current;
+    if (!el) return;
+    const width = el.getBoundingClientRect().width;
+    if (width <= 0) return;
+    // The gap lives on the track, never inside a panel. Read the CSS source
+    // instead of duplicating its size in the scroll/index calculations.
+    const gap = Number.parseFloat(getComputedStyle(el).columnGap) || 0;
+    const pitch = width + gap;
+    if (pitch === slotWidthRef.current) return;
+    requestedIndexRef.current = null;
+    slotWidthRef.current = pitch;
+    alignSelected();
+  });
+
+  const readMetrics = useEffectEvent(() => ({
+    scrollLeft: viewportRef.current?.scrollLeft ?? 0,
+    slotWidth: slotWidthRef.current,
+    variantCount: variants.length,
+  }));
+
+  const commitSettled = useEffectEvent((index: number) => {
+    if (swipeLocked) {
+      alignSelected();
+      return;
+    }
+    if (index !== currentIndex) selectSettledVariant(index);
+  });
 
   useLayoutEffect(() => {
     const el = viewportRef.current;
     if (!el) return;
 
-    const updateWidth = () => {
-      const nextWidth = el.getBoundingClientRect().width;
-      setViewportWidth((currentWidth) => Math.abs(currentWidth - nextWidth) > 0.5 ? nextWidth : currentWidth);
-    };
-
     updateWidth();
-    const observer = new ResizeObserver(updateWidth);
+    const observer = new ResizeObserver(() => updateWidth());
     observer.observe(el);
     return () => observer.disconnect();
-  }, []);
+  }, [hasVariants]);
+
+  useLayoutEffect(() => {
+    const el = viewportRef.current;
+    if (!el) return;
+    return observeVariantScrollSettle(el, {
+      readMetrics: () => readMetrics(),
+      onSettle: (index) => commitSettled(index),
+      readRequestedIndex: () => requestedIndexRef.current,
+    });
+  }, [hasVariants]);
 
   useLayoutEffect(() => {
     const el = currentPanelRef.current;
@@ -66,100 +137,78 @@ export function MobileVariantCarousel(props: MobileVariantCarouselProps) {
     const observer = new ResizeObserver(updateHeight);
     observer.observe(el);
     return () => observer.disconnect();
-  }, [currentVariant?.content, selectedVariantIndex]);
+  }, [currentIndex, currentVariant?.id, currentVariant?.content, renderPanel]);
 
   useLayoutEffect(() => {
-    if (viewportWidth > 0) controls.set({ x: -viewportWidth });
-  }, [controls, selectedVariantIndex, viewportWidth]);
-
-  const snapToCenter = () => {
-    void controls.start({
-      x: -viewportWidth,
-      transition: { type: "spring", stiffness: 420, damping: 38 },
+    const finish = finishNavigationRef.current;
+    const el = viewportRef.current;
+    if (!finish || !el) return;
+    let cancelled = false;
+    // CSS transitions are native animations: finished rejects on interruption.
+    // allSettled handles both completion and cancellation without a timer or
+    // the unresolved Framer drag promise that caused the old carousel lock.
+    void Promise.allSettled(el.getAnimations().map((animation) => animation.finished)).then(() => {
+      if (cancelled || finishNavigationRef.current !== finish) return;
+      finishNavigationRef.current = undefined;
+      finish();
     });
-  };
+    return () => { cancelled = true; };
+  }, [currentIndex, viewportHeight]);
 
-  const handleDragEnd = (_event: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
-    if (isAnimatingRef.current || viewportWidth <= 0) return;
+  useLayoutEffect(() => () => {
+    const finish = finishNavigationRef.current;
+    finishNavigationRef.current = undefined;
+    finish?.();
+  }, []);
 
-    const threshold = Math.min(120, Math.max(55, viewportWidth * 0.22));
-    const shouldGoNext = canGoNext && (info.offset.x < -threshold || info.velocity.x < -650);
-    const shouldGoPrevious = canGoPrevious && (info.offset.x > threshold || info.velocity.x > 650);
-
-    if (!shouldGoNext && !shouldGoPrevious) {
-      snapToCenter();
-      return;
-    }
-
-    const swipeDirection: SwipeDirection = shouldGoNext ? 1 : -1;
-    const targetIndex = selectedVariantIndex + swipeDirection;
-    const targetX = shouldGoNext ? -viewportWidth * 2 : 0;
-
-    isAnimatingRef.current = true;
-    void controls.start({
-      x: targetX,
-      transition: { type: "spring", stiffness: 420, damping: 38 },
-    }).then(() => {
-      onSelectVariant(targetIndex, swipeDirection);
-      controls.set({ x: -viewportWidth });
-      isAnimatingRef.current = false;
-    });
-  };
+  useLayoutEffect(() => {
+    // Structural/external selection aligns instantly; chevrons use the handle
+    // above and do not change selection until the native motion settles.
+    // Lock activation also cancels an in-flight swipe back to the selection.
+    requestedIndexRef.current = null;
+    alignSelected();
+  }, [currentIndex, currentVariant?.id, variants.length, swipeLocked]);
 
   if (!currentVariant) return null;
 
+  const clearRequestedIndex = () => { requestedIndexRef.current = null; };
+
   return (
-    <motion.div
+    <div
       ref={viewportRef}
-      className="relative overflow-hidden"
-      style={{ height: viewportHeight ?? undefined, transition: "height 180ms ease", touchAction: "pan-y" }}
+      data-testid="mobile-variant-carousel"
+      onPointerDown={clearRequestedIndex}
+      onTouchStart={clearRequestedIndex}
+      onWheel={clearRequestedIndex}
+      onKeyDown={clearRequestedIndex}
+      className={cn(
+        "relative flex items-start gap-3 overflow-y-hidden snap-x snap-mandatory overscroll-x-contain scrollbar-hide",
+        swipeLocked ? "overflow-x-hidden" : "overflow-x-auto",
+      )}
+      style={{ height: viewportHeight ?? undefined, transition: "height 180ms ease" }}
     >
-      <motion.div
-        className="absolute left-0 top-0 flex w-[300%] items-start"
-        animate={controls}
-        drag="x"
-        dragConstraints={{
-          left: canGoNext ? -viewportWidth * 2 : -viewportWidth,
-          right: canGoPrevious ? 0 : -viewportWidth,
-        }}
-        dragDirectionLock
-        dragElastic={0.08}
-        onDragEnd={handleDragEnd}
-      >
-        <div
-          className={cn("w-1/3 shrink-0 pr-3", renderPanel && previousVariant && "pointer-events-none")}
-          aria-hidden={!previousVariant}
-        >
-          {previousVariant && (renderPanel
-            ? renderPanel(selectedVariantIndex - 1)
-            : (
-              <div translate="yes" className="font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 [&_em]:italic [&_em]:text-msg-t2">
-                <Markdown text={previousVariant.content} />
-              </div>
-            ))}
-        </div>
-        <div ref={currentPanelRef} className="w-1/3 shrink-0" translate="yes">
-          {renderPanel
-            ? renderPanel(selectedVariantIndex)
-            : (
-              <div className="font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 [&_em]:italic [&_em]:text-msg-t2">
-                <Markdown text={currentVariant.content} />
-              </div>
-            )}
-        </div>
-        <div
-          className={cn("w-1/3 shrink-0 pl-3", renderPanel && nextVariant && "pointer-events-none")}
-          aria-hidden={!nextVariant}
-        >
-          {nextVariant && (renderPanel
-            ? renderPanel(selectedVariantIndex + 1)
-            : (
-              <div translate="yes" className="font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 [&_em]:italic [&_em]:text-msg-t2">
-                <Markdown text={nextVariant.content} />
-              </div>
-            ))}
-        </div>
-      </motion.div>
-    </motion.div>
+      {variants.map((variant, index) => {
+        const isCurrent = index === currentIndex;
+        return (
+          <div
+            key={variant.id ?? variant.variantIndex ?? index}
+            ref={isCurrent ? currentPanelRef : undefined}
+            data-variant-index={index}
+            className={cn("min-w-0 w-full shrink-0 snap-start snap-always", !isCurrent && "pointer-events-none")}
+            aria-hidden={isCurrent ? undefined : true}
+            inert={isCurrent ? undefined : true}
+            translate={isCurrent ? "yes" : "no"}
+          >
+            {renderWindow.includes(index) && (renderPanel
+              ? renderPanel(index)
+              : (
+                <div className="font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 [&_em]:italic [&_em]:text-msg-t2">
+                  <Markdown text={variant.content} />
+                </div>
+              ))}
+          </div>
+        );
+      })}
+    </div>
   );
 }

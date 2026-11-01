@@ -34,11 +34,10 @@
  * becomes the implicit target.
  */
 import type { AssemblePromptResponse, ChatBranchId, ChatId, ObjectiveLongTermGoal, ObjectiveMode, ObjectiveShortTermGoal, ObjectiveState, ObjectiveTask, ObjectiveTaskStatus } from "@vibe-tavern/domain";
-import { brandId, defaultObjectiveState, isObjectiveTaskStatus, OBJECTIVE_CONTEXT_WINDOW, OBJECTIVE_MODE, OBJECTIVE_TASK_STATUS } from "@vibe-tavern/domain";
-import { z } from "zod";
+import { brandId, defaultObjectiveState, isObjectiveTaskStatus, log, OBJECTIVE_CONTEXT_WINDOW, OBJECTIVE_MODE, OBJECTIVE_TASK_STATUS } from "@vibe-tavern/domain";
 import type { StoreContainer } from "@vibe-tavern/db";
 import { getInsightsAssembler } from "@vibe-tavern/prompt-pipeline";
-import type { PromptAssemblyContext, PromptAssemblyResult } from "@vibe-tavern/prompt-pipeline";
+import type { PromptAssemblyContext } from "@vibe-tavern/prompt-pipeline";
 import { nonstreamingProviderExecute } from "../../infrastructure/ai/nonstreaming-provider-executor.js";
 import type { ProviderExecutionInput } from "../../infrastructure/ai/provider-execution-types.js";
 import { INSIGHTS_FIELD_MAP, resolveInsightsPrompt } from "./insights-prompts.js";
@@ -47,115 +46,51 @@ import type { SessionRuntime } from "../../runtime/session/session-runtime.js";
 import type { ProviderProfileService } from "../providers/provider-profile-service.js";
 import { BackgroundTaskLocks } from "../../shared/background-task-locks.js";
 import { logSendDebug } from "../../shared/send-debug-log.js";
-import { parseStructuredOutput } from "./structured-output.js";
+import {
+  advanceAfterCompletion,
+  insightsAssemblyToPromptResponse,
+  parseCheckVerdict,
+  parseGoalsResult,
+  parseTaskList,
+  selectActiveTask,
+} from "./objective-helpers.js";
+
+// Re-exported for existing importers (the unchanged objective-service test
+// suite, tracker-service) — the helpers moved to objective-helpers.ts (DR-3a
+// arch-gate ratchet: the service file could not grow); this module stays
+// their public import path.
+export {
+  advanceAfterCompletion,
+  insightsAssemblyToPromptResponse,
+  parseCheckVerdict,
+  parseGoalsResult,
+  parseTaskList,
+  selectActiveTask,
+} from "./objective-helpers.js";
 
 type Execute = typeof nonstreamingProviderExecute;
 type ResolvePrompt = typeof resolveInsightsPrompt;
 type ResolvedProfile = ProviderExecutionInput["profile"];
 
-const generatedTaskRouteSchema = z.object({
-  tasks: z.array(z.object({ description: z.string().trim().min(1) }).strict()).min(1),
-}).strict();
-
-const generatedGoalsSchema = z.object({
-  longTerm: z.object({ description: z.string().trim().min(1) }).strict(),
-  shortTerm: z.array(z.object({ description: z.string().trim().min(1) }).strict()).min(1),
-}).strict();
-
-const completionVerdictSchema = z.object({ completed: z.boolean() }).strict();
-
-/** Parse the generation model's strict JSON route. All generated tasks start pending. */
-export function parseTaskList(text: string): ObjectiveTask[] {
-  const route = parseStructuredOutput(text, generatedTaskRouteSchema);
-  return route.tasks.map((task, index) => ({
-    id: `obj_task_${index + 1}`,
-    description: task.description,
-    status: OBJECTIVE_TASK_STATUS.pending,
-  }));
-}
-
-/** Parse the goals-mode generation: one long-term goal + a non-empty short-term list. All start pending. */
-export function parseGoalsResult(text: string): {
-  longTermGoal: ObjectiveLongTermGoal;
-  shortTermGoals: ObjectiveShortTermGoal[];
-} {
-  const parsed = parseStructuredOutput(text, generatedGoalsSchema);
-  return {
-    longTermGoal: { description: parsed.longTerm.description, status: OBJECTIVE_TASK_STATUS.pending },
-    shortTermGoals: parsed.shortTerm.map((goal, index) => ({
-      id: `obj_st_${index + 1}`,
-      description: goal.description,
-      status: OBJECTIVE_TASK_STATUS.pending,
-    })),
-  };
-}
-
-/** Parse the completion model's strict `{ completed: boolean }` JSON verdict. */
-export function parseCheckVerdict(text: string): boolean {
-  return parseStructuredOutput(text, completionVerdictSchema).completed;
-}
+const logger = log.tag("objective-service");
 
 /**
- * The active target = first 'active' item, else first 'pending'. Null when the
- * route/list is exhausted. Generic over the task/goal shape (ObjectiveTask and
- * ObjectiveShortTermGoal share it) so route tasks and goals-mode short-term
- * goals reuse the same invariant.
+ * DR-3a: optional post-commit observer for the objective state. Called after
+ * every successful `commitState` lane write — synchronously from the lane's
+ * point of view (the lane NEVER awaits it), so observers must run their own
+ * async bookkeeping detached. Observer failures are logged and swallowed:
+ * the tracker's own write has already succeeded and must not be rolled back
+ * or delayed by an observer bug. Today's only registrant is StoryPlanSync's
+ * follow-back (domain/director/story-plan-sync.ts), registered at wiring in
+ * server-runtime.ts.
  */
-export function selectActiveTask<T extends ObjectiveTask = ObjectiveTask>(items: T[]): T | null {
-  return (
-    items.find((t) => t.status === OBJECTIVE_TASK_STATUS.active) ??
-    items.find((t) => t.status === OBJECTIVE_TASK_STATUS.pending) ??
-    null
-  );
-}
-
-/**
- * Mark the current active target 'completed' (the check passed). Returns a new
- * array (no mutation). The next 'pending' implicitly becomes the target on the
- * next selectActiveTask call. No-op when there is no active target.
- */
-export function advanceAfterCompletion<T extends ObjectiveTask = ObjectiveTask>(items: T[]): T[] {
-  const target = selectActiveTask(items);
-  if (!target) return items;
-  return items.map((t) => (t.id === target.id ? { ...t, status: OBJECTIVE_TASK_STATUS.completed } : t));
-}
+export type ObjectiveStateObserver = (chatId: ChatId, nextState: ObjectiveState) => void | Promise<void>;
 
 /** Current mode's active target: route task or selected short-term goal. */
 function selectStateTarget(state: ObjectiveState): ObjectiveTask | null {
   return state.mode === OBJECTIVE_MODE.goals
     ? selectActiveTask(state.shortTermGoals)
     : selectActiveTask(state.tasks);
-}
-
-/**
- * Map a pure pipeline `PromptAssemblyResult` (from the InsightsAssembler) to the
- * `AssemblePromptResponse` DTO the executor consumes. The insight prompt has no
- * lore activation, scripts, or retrieval — those trace fields stay empty. The
- * executor only reads `finalPayload.messages` (via `toSdkMessages`); the mapped
- * `layers` exist for trace/logging consistency.
- */
-export function insightsAssemblyToPromptResponse(assembly: PromptAssemblyResult): AssemblePromptResponse {
-  return {
-    layers: assembly.layers.map((layer) => ({
-      id: layer.id,
-      sourceType: layer.sourceType,
-      sourceId: layer.sourceId,
-      sourceName: layer.sourceName,
-      position: layer.position,
-      priority: layer.priority,
-      enabled: layer.enabled,
-      reason: layer.reason,
-      tokenCount: layer.tokenCount,
-      text: layer.text,
-      ...(layer.injectionDepth !== undefined ? { injectionDepth: layer.injectionDepth } : {}),
-    })),
-    tokenAccounting: { total: assembly.totalTokenEstimate },
-    activatedLoreEntries: [],
-    scriptInjections: [],
-    retrievedMemories: [],
-    finalPayload: assembly.finalPayload,
-    prefill: assembly.prefill ?? null,
-  };
 }
 
 /** Compose the final instruction: override-or-default base + dynamic objective context. */
@@ -207,7 +142,7 @@ function goalsRevision(state: ObjectiveState): string {
   return JSON.stringify({ mode: state.mode, longTermGoal: state.longTermGoal, shortTermGoals: state.shortTermGoals });
 }
 
-/** Small FIFO keyed coordinator used for independent LLM and commit lanes. forks: 1 — the per-proposal lock in domain/sidechat/sidechat-objective-proposal.ts (SC-11). */
+/** Small FIFO keyed coordinator used for independent LLM and commit lanes. forks: 2 — the per-proposal lock in domain/sidechat/sidechat-objective-proposal.ts (SC-11); the follow-back tail chain in domain/director/story-plan-sync.ts (DR-3a). */
 class ObjectiveKeyedCoordinator {
   private readonly tails = new Map<string, Promise<void>>();
 
@@ -242,6 +177,8 @@ export class ObjectiveService {
   private readonly llmCoordinator = new ObjectiveKeyedCoordinator();
   /** Short lane: every Objective read-modify-write commit is atomic per chat. */
   private readonly stateCoordinator = new ObjectiveKeyedCoordinator();
+  /** DR-3a — optional post-commit observer (null = today's behavior, no notification). */
+  private stateObserver: ObjectiveStateObserver | null = null;
 
   constructor(
     private readonly stores: StoreContainer,
@@ -250,6 +187,14 @@ export class ObjectiveService {
     private readonly execute: Execute = nonstreamingProviderExecute,
     private readonly resolvePrompt: ResolvePrompt = resolveInsightsPrompt,
   ) {}
+
+  /** DR-3a: register the post-commit state observer (see {@link ObjectiveStateObserver}).
+   *  Registration happens at wiring (server-runtime.ts), after both the service
+   *  and the observer's owner (StoryPlanSync) exist; there is no unregister —
+   *  the observer lives as long as the process. */
+  registerStateObserver(observer: ObjectiveStateObserver): void {
+    this.stateObserver = observer;
+  }
 
   /** Load the chat's objective state, or null when none has been generated. */
   async getState(chatId: ChatId): Promise<ObjectiveState> {
@@ -597,6 +542,22 @@ export class ObjectiveService {
   }
 
   /**
+   * DR-3a (story-plan sync): replace the tracker's plan-owned fields with a
+   * story-plan projection. `project` is a PURE function of the current state
+   * (see `projectStoryPlanGoals` in domain/director/story-plan-sync.ts);
+   * returning null discards the projection without writing (an unchanged
+   * re-save is a no-op). A thin `commitState` wrapper: the projection rides
+   * the same serialized lane as every other objective write and fires the
+   * state observer like any other commit.
+   */
+  async replaceShortTermGoalsFromPlan(
+    chatId: ChatId,
+    project: (current: ObjectiveState) => ObjectiveState | null,
+  ): Promise<ObjectiveState> {
+    return this.commitState(chatId, project);
+  }
+
+  /**
    * INS-5 — update the non-task objective config (tuning + custom prompts). All
    * fields optional; only present keys are merged. autoCheckFrequency is clamped
    * to >= 0 (0 = manual only), injectionDepth to >= 1. The custom prompts are
@@ -802,8 +763,41 @@ export class ObjectiveService {
       await this.stores.chats.updateInsightsObjectiveState(chatId, {
         insightsObjectiveState: next,
       });
+      // DR-3a: fire the (optional) observer AFTER the write stood. Strictly
+      // synchronous from the lane's point of view — see notifyStateObserver.
+      this.notifyStateObserver(chatId, next);
       return next;
     });
+  }
+
+  /**
+   * DR-3a — signal the state observer WITHOUT awaiting it: the lane is the
+   * objective state's serialization boundary, and an await inside it would
+   * reorder the very writes the lane exists to serialize. The observer runs
+   * detached; sync throws and detached promise rejections are logged and
+   * swallowed — the committed state stands regardless of observer failures.
+   */
+  private notifyStateObserver(chatId: ChatId, state: ObjectiveState): void {
+    const observer = this.stateObserver;
+    if (!observer) return;
+    try {
+      const maybe = observer(chatId, state);
+      if (maybe instanceof Promise) {
+        void maybe.catch((error: unknown) => {
+          logger.warn(
+            "state observer rejected for chat %s: %s",
+            chatId as string,
+            error instanceof Error ? error.message : String(error),
+          );
+        });
+      }
+    } catch (error) {
+      logger.warn(
+        "state observer threw for chat %s: %s",
+        chatId as string,
+        error instanceof Error ? error.message : String(error),
+      );
+    }
   }
 
   /**

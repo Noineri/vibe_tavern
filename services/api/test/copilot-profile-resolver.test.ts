@@ -86,6 +86,8 @@ describe("CopilotProfileResolver", () => {
       // AS-3: rows always carry their owning kind (pre-AS-3 rows read as
       // 'experience' via the column default).
       agentKind: "experience",
+      // DR-7b: provenance — null = created from scratch (no source).
+      sourceBuiltinId: null,
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-01T00:00:00.000Z",
     };

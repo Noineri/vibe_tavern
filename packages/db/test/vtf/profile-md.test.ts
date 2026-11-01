@@ -117,9 +117,12 @@ describe("profile-md: prose-only contract (functional sections are not emitted)"
     expect(md).not.toContain("depth_prompt_");
   });
 
-  it("preserves functional headings losslessly as unknown sections when present in input", () => {
-    // A profile.md should never legitimately carry these, but if it does the
-    // codec preserves them verbatim (lossless) rather than silently dropping.
+  it("folds a functional heading found in a profile.md into the preceding known field (lossless, no drop)", () => {
+    // A profile.md should never legitimately carry these — they live in
+    // instructions.json — but when one appears after a known section the fold
+    // keeps its text: the heading line + body become FIELD text instead of a
+    // separate unknown section. (The exchange monolith is the one fold-exempt
+    // parser — see the fold describe below.)
     const md = [
       "---",
       "name: X",
@@ -135,10 +138,12 @@ describe("profile-md: prose-only contract (functional sections are not emitted)"
       "secret system text",
     ].join("\n");
     const parsed = parseProfileMd(md);
-    expect(parsed.unknownSections).toEqual([{ heading: "SYSTEM", body: "secret system text" }]);
-    // Re-serialize keeps it losslessly.
-    expect(serializeProfileMd(parsed)).toContain("# SYSTEM");
-    expect(serializeProfileMd(parsed)).toContain("secret system text");
+    expect(parsed.profile.description).toBe("desc\n\n# SYSTEM\nsecret system text");
+    expect(parsed.unknownSections).toEqual([]);
+    // Re-serialize keeps the text losslessly — inside the personality body.
+    const reSerialized = serializeProfileMd(parsed);
+    expect(reSerialized).toContain("# SYSTEM");
+    expect(reSerialized).toContain("secret system text");
   });
 });
 
@@ -256,13 +261,67 @@ describe("profile-md: lossless unknowns", () => {
     expect(serializeProfileMd(parsed)).toContain("author_email: secret@example.com");
   });
 
-  it("preserves unknown body sections", () => {
+  it("preserves an unknown body section that precedes every known section", () => {
+    // An unknown section BEFORE the first known heading has nothing to fold
+    // into, so it keeps riding verbatim as an unknown section. (An unknown
+    // section AFTER a known one folds into that field — see the fold describe.)
     const md = [
       "---",
       "name: X",
       "vt:",
       "  mes_example_mode: always",
       "  mes_example_depth: 4",
+      "---",
+      "",
+      "# CUSTOM NOTES",
+      "Something extra.",
+      "",
+      "# PERSONALITY",
+      "main desc",
+    ].join("\n");
+    const parsed = parseProfileMd(md);
+    expect(parsed.unknownSections).toEqual([{ heading: "CUSTOM NOTES", body: "Something extra." }]);
+    const reSerialized = serializeProfileMd(parsed);
+    expect(reSerialized).toContain("# CUSTOM NOTES");
+    expect(reSerialized).toContain("Something extra.");
+  });
+});
+
+// ─── Unknown H1 fold (MD_HEADING_LOSS_REPORT) ──────────────────────────────
+
+describe("profile-md: unknown H1 sections fold into the preceding known section", () => {
+  // Owner incident (2026-11-01): pasting prose that begins with its own H1
+  // heading under # PERSONALITY parsed to description "" — the foreign H1
+  // started a new (unknown) section whose text no field ever received. The
+  // fold makes the codec lossless: an unknown H1 section following a known
+  // one joins that known section's field text, heading line included.
+  it("folds a foreign H1 (+H2) section under an EMPTY # PERSONALITY into description (owner incident shape)", () => {
+    const md = [
+      "---",
+      "name: Keith",
+      "vt:",
+      "  mes_example_mode: always",
+      "  mes_example_depth: 4",
+      "---",
+      "",
+      "# PERSONALITY",
+      "# KEITH ALLEN",
+      "## SUMMARY",
+      "Keith Allen is a senior analyst.",
+      "",
+      "# SCENARIO",
+      "Late-night office.",
+    ].join("\n");
+    const parsed = parseProfileMd(md);
+    expect(parsed.profile.description).toBe("# KEITH ALLEN\n## SUMMARY\nKeith Allen is a senior analyst.");
+    expect(parsed.profile.scenario).toBe("Late-night office.");
+    expect(parsed.unknownSections).toEqual([]);
+  });
+
+  it("folds into a NON-empty known section too (uniform rule, blank-line join)", () => {
+    const md = [
+      "---",
+      "name: X",
       "---",
       "",
       "# PERSONALITY",
@@ -272,10 +331,94 @@ describe("profile-md: lossless unknowns", () => {
       "Something extra.",
     ].join("\n");
     const parsed = parseProfileMd(md);
-    expect(parsed.unknownSections).toEqual([{ heading: "CUSTOM NOTES", body: "Something extra." }]);
-    const reSerialized = serializeProfileMd(parsed);
-    expect(reSerialized).toContain("# CUSTOM NOTES");
-    expect(reSerialized).toContain("Something extra.");
+    expect(parsed.profile.description).toBe("main desc\n\n# CUSTOM NOTES\nSomething extra.");
+    expect(parsed.unknownSections).toEqual([]);
+  });
+
+  it("folds into the optional fields as well (# SYSTEM after a non-empty EXAMPLES)", () => {
+    const md = [
+      "---",
+      "name: X",
+      "---",
+      "",
+      "# EXAMPLES",
+      "<START>",
+      "{{char}}: Hi.",
+      "",
+      "# SYSTEM",
+      "secret system text",
+    ].join("\n");
+    const parsed = parseProfileMd(md);
+    expect(parsed.profile.mesExample).toBe("<START>\n{{char}}: Hi.\n\n# SYSTEM\nsecret system text");
+    expect(parsed.unknownSections).toEqual([]);
+  });
+
+  it("accumulates consecutive unknown sections in order into the same known field", () => {
+    const md = [
+      "---",
+      "name: X",
+      "---",
+      "",
+      "# EXAMPLES",
+      "<START>",
+      "{{char}}: Hi.",
+      "",
+      "# FIRST ASIDE",
+      "one",
+      "",
+      "# SECOND ASIDE",
+      "two",
+    ].join("\n");
+    const parsed = parseProfileMd(md);
+    expect(parsed.profile.mesExample).toBe("<START>\n{{char}}: Hi.\n\n# FIRST ASIDE\none\n\n# SECOND ASIDE\ntwo");
+    expect(parsed.unknownSections).toEqual([]);
+  });
+
+  it("is round-trip stable: parse → serialize → parse yields identical fields (folded case)", () => {
+    const md = [
+      "---",
+      "name: X",
+      "---",
+      "",
+      "# PERSONALITY",
+      "intro",
+      "",
+      "# KEITH ALLEN",
+      "## SUMMARY",
+      "Senior analyst.",
+      "",
+      "# SCENARIO",
+      "An office.",
+    ].join("\n");
+    const first = parseProfileMd(md);
+    const second = parseProfileMd(serializeProfileMd(first));
+    expect(second.profile).toEqual(first.profile);
+    expect(second.unknownSections).toEqual(first.unknownSections);
+    // The folded heading is field text now — re-emitted verbatim, exactly
+    // once, inside the personality body (no separate unknown section).
+    const serialized = serializeProfileMd(first);
+    expect(serialized.split("# KEITH ALLEN").length - 1).toBe(1);
+  });
+
+  it("keeps H2/H3 lines inline (only H1 splits sections)", () => {
+    const md = "---\nname: X\n---\n\n# PERSONALITY\nIntro.\n## SUB\nMore.\n### DEEP\nDeepest.";
+    const parsed = parseProfileMd(md);
+    expect(parsed.profile.description).toBe("Intro.\n## SUB\nMore.\n### DEEP\nDeepest.");
+  });
+
+  it("keeps a genuinely-empty PERSONALITY empty when nothing follows (deliberate clearing sticks)", () => {
+    const parsed = parseProfileMd("---\nname: X\n---\n\n# PERSONALITY\n\n# SCENARIO\nA scene.");
+    expect(parsed.profile.description).toBe("");
+    expect(parsed.profile.scenario).toBe("A scene.");
+  });
+
+  it("returns unknown sections verbatim with foldUnknownSections: false (monolith transport)", () => {
+    // The exchange monolith's functional headings ride as unknown sections —
+    // its parse is exempt from the fold (see monolith.ts unpackMonolith).
+    const md = "---\nname: X\n---\n\n# PERSONALITY\ndesc\n\n# SYSTEM\nsecret system text";
+    const parsed = parseProfileMd(md, { foldUnknownSections: false });
+    expect(parsed.profile.description).toBe("desc");
+    expect(parsed.unknownSections).toEqual([{ heading: "SYSTEM", body: "secret system text" }]);
   });
 });
 

@@ -20,6 +20,7 @@ import {
 } from "@vibe-tavern/api-contracts";
 import { ProviderStreamError } from "../../../api/provider-stream-error.js";
 import type { Attachment } from "@vibe-tavern/domain";
+import { isAgentRunActiveError } from "./agent-stream-guard.js";
 
 /**
  * Agent turn actions (AGENT_SHELL_POLISH, Wave 3 / AP-10) — the turn-action
@@ -164,13 +165,20 @@ export interface AgentTurnStateControls {
   isSendingRef: { current: boolean };
   abortRef: { current: AbortController | null };
   setIsSending: (value: boolean) => void;
-  setPendingText: (value: string) => void;
-  setPendingReasoning: (value: string) => void;
+  /** LAG-3: clear the CURRENT thread's live stream pair (the live-stream
+   *  store's clear — the controller binds kind + threadId; the regenerate
+   *  guards the thread non-null before touching it). */
+  clearLiveStreamText: () => void;
   setPendingAskAnswer: (value: AgentPendingAskAnswer | null) => void;
   setPendingPermissionAnswer: (value: AgentPendingPermissionAnswer | null) => void;
   /** AP-13: write/clear the thread's last turn failure (the error card's
    *  live state — bound to the controller's current thread). */
   setTurnFailure: (failure: AgentTurnFailure | null) => void;
+  /** LAG-2: drain the controller's frame-coalesced delta buffer NOW —
+   *  called before every live-stream clear below so no buffered delta is
+   *  lost at the clear (the controller owns the ONE buffering derivation;
+   *  this is its flush handle). */
+  flushDeltaBuffer: () => void;
 }
 
 export interface UseAgentTurnActionsArgs {
@@ -179,6 +187,10 @@ export interface UseAgentTurnActionsArgs {
   kind: AgentKind;
   /** The host descriptor's transport — the actions' ONLY API seam. */
   transport: AgentHostTransport;
+  prepareTurn?: (threadId: string, signal: AbortSignal) => void | Promise<void>;
+  isCurrentTurn?: (controller: AbortController, threadId: string) => boolean;
+  waitForDiscovery?: (threadId: string) => Promise<boolean> | undefined;
+  followExistingRun?: (error: unknown, threadId: string, controller: AbortController, callbacks: CopilotStreamOpts) => ReturnType<AgentHostTransport["sendStream"]>;
   threadId: string | null;
   providerProfileId: string | null;
   model?: string;
@@ -408,7 +420,7 @@ export function useAgentTurnActions(
   args: UseAgentTurnActionsArgs,
 ): AgentTurnActions {
   const { kind, transport, threadId, providerProfileId, model, onTurnSettled, onMetrics, applyPlanToolResult, threadMessages, sendTurn, buildStreamCallbacks, turnState } = args;
-  const { isSendingRef, abortRef, setIsSending, setPendingText, setPendingReasoning, setPendingAskAnswer, setPendingPermissionAnswer, setTurnFailure } = turnState;
+  const { isSendingRef, abortRef, setIsSending, clearLiveStreamText, setPendingAskAnswer, setPendingPermissionAnswer, setTurnFailure, flushDeltaBuffer } = turnState;
 
   // AP-10: the shared delete core for handleDeleteTurn and handleEditLast —
   // guards, busy flags, the transport call, the send-style error path. The
@@ -479,6 +491,8 @@ export function useAgentTurnActions(
 
   const handleRegenerate = useCallback(
     async (opts?: AgentSendOptions): Promise<void> => {
+      const discovery = threadId ? args.waitForDiscovery?.(threadId) : undefined;
+      if (discovery && !await discovery) return;
       // Silent guards (no toast): missing thread, already sending.
       if (!threadId || isSendingRef.current) return;
       // Missing provider is the one guard that deserves feedback.
@@ -487,42 +501,33 @@ export function useAgentTurnActions(
         return;
       }
 
-      // AP-29 follow-up 2: the replaced turn is already gone server-side
-      // once this stream opens (the regenerate mode deletes it before the
-      // history load), so the feed hides it from HERE to the settle — the
-      // new turn streams as a fresh turn, never joined to the replaced one.
-      // A refusal/failure clears it below, and the settle refetch shows the
-      // stored truth (the old turn) again, not a blank.
-      // AP-29 follow-up 3: record the replaced rows' ids alongside the flag
-      // (a later regenerate overwrites them with a fresh set) — the flag
-      // drops at the settle below, but the SET survives a success until the
-      // refetch lands (see the threadMessages effect next to the flag state).
-      setIsRegenerating(true);
-      const replacedIds = findReplacedAssistantIds(threadMessages);
-      setHiddenRegeneratedIds(replacedIds.length > 0 ? replacedIds : null);
-
-      // Same turn-start reset as a send: the replaced turn's live activities
-      // drop (the SSE below rebuilds them), and any stale ask/permission
-      // override clears (the settle+refetch shows the persisted truth).
-      // AP-13: a retry supersedes the card — the stale failure clears while
-      // the new turn runs (its failure replaces the card below).
-      useAgentTurnStore.getState().clearTurn(kind, threadId);
-      setPendingAskAnswer(null);
-      setPendingPermissionAnswer(null);
-      setTurnFailure(null);
-
       const controller = new AbortController();
       abortRef.current = controller;
       isSendingRef.current = true;
-      setIsSending(true);
-      setPendingText("");
-      setPendingReasoning("");
-      // NO pendingUserContent — a regenerate has no new user row (the server
-      // reruns the last turn against the surviving thread state).
-
       const sawStreamEvent = { current: false };
-      try {
-        const streamResult = await transport.sendStream(
+      const start = async () => {
+        const prepared = args.prepareTurn?.(threadId, controller.signal);
+        if (prepared) await prepared;
+        controller.signal.throwIfAborted();
+        // Hide the replaced rows only AFTER preparation succeeds. The hide
+        // set survives success until the refetch lands (AP-29).
+        setIsRegenerating(true);
+        const replacedIds = findReplacedAssistantIds(threadMessages);
+        setHiddenRegeneratedIds(replacedIds.length > 0 ? replacedIds : null);
+
+        useAgentTurnStore.getState().clearTurn(kind, threadId);
+        setPendingAskAnswer(null);
+        setPendingPermissionAnswer(null);
+        setTurnFailure(null);
+
+        setIsSending(true);
+        // LAG-2: drain anything still buffered before the turn-start clear
+        // (the controller's send/answer paths' belt-and-braces, mirrored here).
+        flushDeltaBuffer();
+        clearLiveStreamText();
+        // No new user row: the server reruns the surviving thread state.
+
+        return transport.sendStream(
           threadId,
           {
             regenerate: true,
@@ -550,6 +555,19 @@ export function useAgentTurnActions(
             ...buildStreamCallbacks(threadId, sawStreamEvent),
           },
         );
+      };
+      try {
+        const streamResult = await start().catch((error: unknown) => {
+          if (isAgentRunActiveError(error)) {
+            // A refused regenerate removed no rows. The winning run may be a
+            // normal send, so its completion must not keep old rows hidden.
+            setIsRegenerating(false);
+            setHiddenRegeneratedIds(null);
+          }
+          if (args.followExistingRun) return args.followExistingRun(error, threadId, controller, buildStreamCallbacks(threadId, sawStreamEvent));
+          throw error;
+        });
+        if (args.isCurrentTurn?.(controller, threadId) === false) return;
 
         // Same CM-7 metrics surfacing as handleSend.
         const rawMetrics = streamResult.metrics;
@@ -558,8 +576,10 @@ export function useAgentTurnActions(
           : null;
         onMetrics?.(parsedMetrics?.success ? parsedMetrics.data : null);
 
-        setPendingText("");
-        setPendingReasoning("");
+        // LAG-2: drain before the settle clear — the last frame's buffered
+        // deltas land in the feed (the controller's send-path invariant).
+        flushDeltaBuffer();
+        clearLiveStreamText();
         setIsSending(false);
         isSendingRef.current = false;
         // AP-13: the retry answered — the card clears with the failure.
@@ -569,8 +589,9 @@ export function useAgentTurnActions(
         // (no settle → refetch contract change: the effect below drops the
         // set when `threadMessages` no longer contains them).
         setIsRegenerating(false);
-        onTurnSettled?.(true);
+        onTurnSettled?.(streamResult.finishReason !== "cancelled");
       } catch (error) {
+        if (args.isCurrentTurn?.(controller, threadId) === false) return;
         if (controller.signal.aborted) {
           toast.info(getT()("generation_cancelled"));
         } else {
@@ -578,8 +599,10 @@ export function useAgentTurnActions(
           // the category description, so the toast is gone.
           setTurnFailure(copilotTurnFailureOf(error));
         }
-        setPendingText("");
-        setPendingReasoning("");
+        // LAG-2: drain before the failure/abort clear (nothing can write
+        // after the clear).
+        flushDeltaBuffer();
+        clearLiveStreamText();
         setIsSending(false);
         isSendingRef.current = false;
         // AP-29 follow-up 3: refusal / failure / cancel drops the hide at
@@ -589,10 +612,10 @@ export function useAgentTurnActions(
         setHiddenRegeneratedIds(null);
         onTurnSettled?.(false);
       } finally {
-        abortRef.current = null;
+        if (args.isCurrentTurn?.(controller, threadId) !== false) abortRef.current = null;
       }
     },
-    [kind, threadId, providerProfileId, model, transport, onTurnSettled, onMetrics, applyPlanToolResult, buildStreamCallbacks, threadMessages, isSendingRef, abortRef, setIsSending, setPendingText, setPendingReasoning, setPendingAskAnswer, setPendingPermissionAnswer, setTurnFailure],
+    [kind, threadId, providerProfileId, model, transport, onTurnSettled, onMetrics, applyPlanToolResult, buildStreamCallbacks, threadMessages, isSendingRef, abortRef, setIsSending, clearLiveStreamText, setPendingAskAnswer, setPendingPermissionAnswer, setTurnFailure, flushDeltaBuffer, args.prepareTurn],
   );
 
   const handleEditLast = useCallback(

@@ -1,13 +1,19 @@
 import { create } from "zustand";
-import type { ChatId, Attachment, DiceRollSnapshot } from "@vibe-tavern/domain";
+import type { ChatId, Attachment, DiceRollSnapshot, ExperienceMessageReport } from "@vibe-tavern/domain";
 import type { ChatGenerationStatus } from "../api/types.js";
 import type { GenerationMetadata } from "../lib/generation-metadata.js";
 import { useSnapshotStore } from "./snapshot-store.js";
 import { useDiceStore } from "./dice-store.js";
+import type { ChatGenerationContext } from "@vibe-tavern/api-contracts";
 
 // ── Per-chat generation state ──────────────────────────────────────────
 
 export interface ChatGenerationState {
+  context?: ChatGenerationContext | null;
+  /** Frozen locally before the server's first context frame arrives. */
+  branchId?: string | null;
+  /** Streaming Stop belongs to the server; reader abort only detaches. */
+  requestStop?: (() => void) | null;
   isSending: boolean;
   /**
    * Explicit identity of the message currently being streamed into (the
@@ -40,11 +46,15 @@ export interface ChatGenerationState {
    * (immer store), so this filtered array is a stable frozen bundle.
    */
   pendingDiceRolls: DiceRollSnapshot[];
+  /** Public report captured together with the exact outgoing attachment intent. */
+  pendingExperienceReport: ExperienceMessageReport | null;
   abortController: AbortController | null;
 }
 
 function defaultGenState(): ChatGenerationState {
   return {
+    context: null,
+    requestStop: null,
     isSending: false,
     streamingMessageId: null,
     streamingRevealedText: "",
@@ -55,6 +65,7 @@ function defaultGenState(): ChatGenerationState {
     pendingUserMessageContent: null,
     pendingUserMessageAttachments: [],
     pendingDiceRolls: [],
+    pendingExperienceReport: null,
     abortController: null,
   };
 }
@@ -127,7 +138,9 @@ export interface ChatActions {
    * `pendingDiceRolls` (frozen for the pending-user shell). Yields `[]` when
    * Dice is off / no pending rolls, so regenerate & non-Dice sends are inert.
    */
-  startGeneration: (chatId: string, pendingUserContent?: string | null, pendingAttachments?: Attachment[], streamingMessageId?: string | null) => AbortController;
+  startGeneration: (chatId: string, pendingUserContent?: string | null, pendingAttachments?: Attachment[], streamingMessageId?: string | null, pendingExperienceReport?: ExperienceMessageReport | null) => AbortController;
+  setGenerationContext: (chatId: string, context: ChatGenerationContext) => void;
+  setGenerationStop: (chatId: string, stop: () => void) => void;
 
   /** Set the revealed streaming text (throttled by StreamingReveal). */
   setStreamingRevealed: (chatId: string, revealedText: string) => void;
@@ -194,7 +207,7 @@ export const useChatStore = create<ChatStore>()((set, get) => ({
     return newGen;
   },
 
-  startGeneration: (chatId, pendingContent, pendingAttachments, streamingMessageId = null) => {
+  startGeneration: (chatId, pendingContent, pendingAttachments, streamingMessageId = null, pendingExperienceReport = null) => {
     const controller = new AbortController();
     const pendingDiceRolls = captureBindableDiceRolls(chatId);
     set((s) => ({
@@ -203,10 +216,12 @@ export const useChatStore = create<ChatStore>()((set, get) => ({
         [chatId]: {
           ...defaultGenState(),
           isSending: true,
+          branchId: useSnapshotStore.getState().activeChat?.id === chatId ? useSnapshotStore.getState().activeBranch?.id ?? null : null,
           streamingMessageId,
           pendingUserMessageContent: pendingContent ?? null,
           pendingUserMessageAttachments: pendingAttachments ?? [],
           pendingDiceRolls,
+          pendingExperienceReport: pendingContent != null && streamingMessageId === null ? pendingExperienceReport : null,
           abortController: controller,
         },
       },
@@ -226,6 +241,15 @@ export const useChatStore = create<ChatStore>()((set, get) => ({
       };
     });
   },
+
+  setGenerationContext: (chatId, context) => set((s) => {
+    const gen = s.generations[chatId];
+    return gen ? { generations: { ...s.generations, [chatId]: { ...gen, context, branchId: context.branchId, streamingMessageId: context.messageId } } } : s;
+  }),
+  setGenerationStop: (chatId, requestStop) => set((s) => {
+    const gen = s.generations[chatId];
+    return gen ? { generations: { ...s.generations, [chatId]: { ...gen, requestStop } } } : s;
+  }),
 
   appendReasoningText: (chatId, delta) => {
     set((s) => {
@@ -279,6 +303,8 @@ export const useChatStore = create<ChatStore>()((set, get) => ({
           [chatId]: {
             ...gen,
             isSending: false,
+            context: null,
+            requestStop: null,
             streamingMessageId: null,
             streamingRevealedText: "",
             streamingReasoningText: "",
@@ -287,6 +313,7 @@ export const useChatStore = create<ChatStore>()((set, get) => ({
             pendingUserMessageContent: null,
             pendingUserMessageAttachments: [],
             pendingDiceRolls: [],
+            pendingExperienceReport: null,
             abortController: null,
           },
         },
@@ -296,6 +323,7 @@ export const useChatStore = create<ChatStore>()((set, get) => ({
 
   abortGeneration: (chatId) => {
     const gen = get().generations[chatId];
+    if (gen?.requestStop) { gen.requestStop(); return; }
     if (gen?.abortController) {
       gen.abortController.abort();
     }
@@ -315,6 +343,7 @@ export const useChatStore = create<ChatStore>()((set, get) => ({
             presetName: null,
             pendingUserMessageContent: null,
             pendingDiceRolls: [],
+            pendingExperienceReport: null,
             abortController: null,
           },
         },
@@ -337,9 +366,42 @@ export const useChatStore = create<ChatStore>()((set, get) => ({
  * Returns null if no chat is active or no generation in progress.
  */
 export function useActiveGeneration(): ChatGenerationState | null {
+  const branchId = useSnapshotStore((s) => s.activeBranch?.id ?? null);
   return useChatStore((s) => {
     if (!s.activeChatId) return null;
-    return s.generations[s.activeChatId] ?? null;
+    const gen = s.generations[s.activeChatId];
+    return generationMatchesBranch(gen, branchId) ? gen ?? null : null;
+  });
+}
+
+/** The composer remains busy across branches; only the message projection is
+ * branch-scoped. Legacy/non-stream fixtures without an origin retain parity. */
+export function generationMatchesBranch(gen: ChatGenerationState | undefined, branchId: string | null): boolean {
+  const origin = gen?.context?.branchId ?? gen?.branchId;
+  return !origin || origin === branchId;
+}
+
+export function useIsGenerationVisible(): boolean {
+  const branchId = useSnapshotStore((s) => s.activeBranch?.id ?? null);
+  return useChatStore((s) => {
+    const gen = s.activeChatId ? s.generations[s.activeChatId] : undefined;
+    return Boolean(gen?.isSending && generationMatchesBranch(gen, branchId));
+  });
+}
+
+export function usePendingUserContent(): string | null {
+  const branchId = useSnapshotStore((s) => s.activeBranch?.id ?? null);
+  return useChatStore((s) => {
+    const gen = s.activeChatId ? s.generations[s.activeChatId] : undefined;
+    return generationMatchesBranch(gen, branchId) ? gen?.pendingUserMessageContent ?? null : null;
+  });
+}
+
+export function useHasFreshGeneration(): boolean {
+  const branchId = useSnapshotStore((s) => s.activeBranch?.id ?? null);
+  return useChatStore((s) => {
+    const gen = s.activeChatId ? s.generations[s.activeChatId] : undefined;
+    return Boolean(gen?.isSending && gen.context?.messageId === null && generationMatchesBranch(gen, branchId));
   });
 }
 

@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { RegenerateOverride } from "@vibe-tavern/api-contracts";
 import { createApp } from "../src/server/app-factory.js";
 import type { RuntimeApi } from "../src/api/contract/runtime-api.js";
+import { ChatGenerationRunAdapter } from "../src/api/adapters/chat-generation-run-adapter.js";
 
 /**
  * HTTP contract of POST /api/chats/:chatId/messages/:messageId/regenerate/stream.
@@ -27,7 +28,11 @@ async function appRecordingOverrides(): Promise<{
   };
   // createApiRouter hands createChatRoutes `runtime.chat`; only the method
   // under test is stubbed.
-  const runtime = { chat: { regenerateMessageStream } } as unknown as RuntimeApi;
+  const runs = new ChatGenerationRunAdapter({
+    chats: { getById: async () => ({ id: "chat_1", characterId: "char_1", activeBranchId: "branch_1", mode: "rp", title: "Regenerate" }) },
+    characters: { getById: async () => ({ name: "Regenerate" }) },
+  } as unknown as ConstructorParameters<typeof ChatGenerationRunAdapter>[0]);
+  const runtime = { chat: { regenerateMessageStream, startChatGeneration: runs.startChatGeneration } } as unknown as RuntimeApi;
   return { app: await createApp({ runtime }), overrides };
 }
 

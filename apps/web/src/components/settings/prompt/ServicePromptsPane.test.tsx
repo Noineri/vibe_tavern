@@ -11,6 +11,12 @@ import type { ServicePromptProfile } from "@vibe-tavern/api-contracts";
 const realApi = await import("../../../api/service-prompt-api.js");
 const stableT = (key: string, opts?: Record<string, unknown>) => {
 	if (opts && typeof opts.count === "number") return `${key} ${opts.count}`;
+	// ML-13 sentinel: identity t returns the key itself, so it cannot
+	// distinguish "the pane passed the RAW key" from "the pane called
+	// t(key)". This one key maps to a distinct sentinel — the lock-tooltip
+	// pin asserts the sentinel, proving t() was called (the sibling pane's
+	// pattern), not that the key merely appears.
+	if (key === "promptManager.servicePrompts.liveTooltip") return "TRANSLATED-LIVE-TOOLTIP";
 	return key;
 };
 const stableTDynamic = (key: string, opts?: Record<string, unknown>) => {
@@ -47,7 +53,17 @@ mock.module("../../../api/service-prompt-api.js", () => ({
 
 mock.module("../../shared/Tooltip.js", () => ({
 	...realTooltip,
-	CustomTooltip: ({ children }: { children: React.ReactNode }) => children,
+	// ML-13 was: `({ children }) => children` — the passthrough dropped
+	// `content`, so nothing could see what the pane passed to the tooltip.
+	// Now content renders inline with a testid, mirroring the real component's
+	// `if (!content) return <>{children}</>` guard; children still render —
+	// the family stays shape-identical (`...realTooltip` above).
+	CustomTooltip: ({ children, content }: { children: React.ReactNode; content?: React.ReactNode }) => (
+		<>
+			{content ? <span data-testid="svc-lock-tooltip">{content}</span> : null}
+			{children}
+		</>
+	),
 }));
 
 const { act, fireEvent, render, waitFor } = await import("@testing-library/react");
@@ -145,6 +161,21 @@ describe("ServicePromptsPane", () => {
 		expect(rows[0].getAttribute("data-testid")).toBe("service-row-default");
 		expect(master.innerHTML).toContain("<svg");
 		expect(getByText("promptManager.servicePrompts.liveBadge")).toBeTruthy();
+	});
+
+	test("Default row lock tooltip shows the translated text, not the i18n key (ML-13)", async () => {
+		// Red-first pin (ML-13): the pane passed the RAW key
+		// `content="promptManager.servicePrompts.liveTooltip"` — the tooltip
+		// showed the key itself. The sibling pane (ImagePromptTemplatesPane)
+		// wraps it in t(). stableT maps this one key to a sentinel (see its
+		// header comment), so t() output is distinguishable from the raw key
+		// even under identity i18n.
+		const def = makeDefaultProfile();
+		listMock.mockResolvedValue({ profiles: [def], activeProfileId: null });
+		getDetailMock.mockResolvedValue({ profile: def, resolved: makeResolved() });
+		const { getByTestId } = render(<Harness active={true} />);
+		await waitFor(() => expect(getByTestId("service-row-default")).toBeTruthy());
+		expect(getByTestId("svc-lock-tooltip").textContent).toBe("TRANSLATED-LIVE-TOOLTIP");
 	});
 
 	test("detail of non-Default renders all fields grouped (accordions)", async () => {

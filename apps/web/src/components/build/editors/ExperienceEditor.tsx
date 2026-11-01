@@ -88,7 +88,8 @@ import { ExperienceCopilotShell, type ExperienceCopilotStep } from "./copilot/Ex
 import { ExperienceCreationStepper } from "./experience-creation-stepper.js";
 import { useExperienceRulesValidation } from "./use-experience-rules-validation.js";
 import { ExperienceManagementControls } from "./ExperienceManagementControls.js";
-import { ExperienceGalleryCard, firstExistingBoundVisual } from "./experience-gallery-card.js";
+import { ExperienceGalleryCard } from "./experience-gallery-card.js";
+import { useExperienceOpen } from "./use-experience-open.js";
 import { isUntrustedImport, ScriptSafetyBanner } from "./script-safety/ScriptSafetyBanner.js";
 import { ImportedScriptWarningModal } from "./script-safety/ImportedScriptWarningModal.js";
 import { FindingsWarningModal } from "./script-safety/FindingsWarningModal.js";
@@ -169,9 +170,7 @@ export function ExperienceEditor() {
   // copilot is iterative. A failed create surfaces a transient banner — never
   // silently dropped.
   const [createError, setCreateError] = useState<string | null>(null);
-  // The just-created script id — drives the shell's CREATION MODE (3-position
-  // [Rules|Visual|Sandbox] toggle). Cleared on navigating back so re-opening
-  // the same script later is EDITING mode (2-position toggle).
+  // Just-created script identity; cleared on return to the picker.
   const [creatingScriptId, setCreatingScriptId] = useState<string | null>(null);
   // ER-13d-2b: the rules starter id chosen in step 1 (creation rules template
   // picker). Drives the paired-visual highlight in step 2. Cleared on
@@ -248,27 +247,7 @@ export function ExperienceEditor() {
     }
   }, []);
 
-  // ER-18b: opening a mini-app auto-selects its FIRST bound visual, so the
-  // editor starts on the already-bound visual instead of an empty one the user
-  // then has to swap for the bound one.
-  const openScript = useCallback((scriptId: string) => {
-    setActiveScriptId(scriptId);
-    const bound = boundVisuals[scriptId] ?? [];
-    const firstExisting = firstExistingBoundVisual(bound, visuals);
-    setActiveVisualId(firstExisting?.id ?? null);
-  }, [boundVisuals, visuals]);
-
-  // Backfill for the rare case where the bound set arrives AFTER the script was
-  // opened (fast click before the per-script fetch resolved): fill the first
-  // bound visual once it is known, as long as nothing else has been selected.
-  useEffect(() => {
-    if (!activeScriptId || isLocalId(activeScriptId)) return;
-    if (activeVisualId !== null) return;
-    const bound = boundVisuals[activeScriptId];
-    if (!bound || bound.length === 0) return;
-    const first = firstExistingBoundVisual(bound, visuals);
-    if (first) setActiveVisualId(first.id);
-  }, [activeScriptId, activeVisualId, boundVisuals, visuals]);
+  const openScript = useExperienceOpen(activeScriptId, activeVisualId, boundVisuals, visuals, setActiveScriptId, setActiveVisualId, setScripts);
 
   // Keep clean draft bases in sync with freshly loaded server rows; dirty
   // buffers are preserved by the stores themselves (IR-81A semantics).

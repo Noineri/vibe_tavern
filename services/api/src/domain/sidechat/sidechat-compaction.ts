@@ -148,9 +148,13 @@ async function buildSidechatSummarizerTranscript(
 			transcript.push(flow);
 			continue;
 		}
+		const mapped = mapTimelineEvent(threadId, entry);
+		// DR-12: the profile-switch separator is feed-only provenance — the
+		// summarizer transcript skips it exactly like the context loader does.
+		if (mapped.kind === "profile_changed") continue;
 		transcript.push({
 			role: "user",
-			content: `${RP_REFERENCE_PREFIX} ${renderTimelineEvent(mapTimelineEvent(threadId, entry))}`,
+			content: `${RP_REFERENCE_PREFIX} ${renderTimelineEvent(mapped)}`,
 		});
 	}
 	return transcript;

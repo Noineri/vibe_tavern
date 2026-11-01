@@ -4,7 +4,7 @@
  * has no Web Audio). Mirrors the Kokoro client-test shape.
  */
 
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 
 import {
   WhisperSttClient,
@@ -56,6 +56,13 @@ async function finishLoad(worker: FakeWorker, modelId = "onnx-community/whisper-
 afterEach(() => {
   __setWhisperLoadStallMsForTests(null);
 });
+const originalSetTimeout = globalThis.setTimeout, originalClearTimeout = globalThis.clearTimeout;
+function restoreClock() {
+  globalThis.setTimeout = originalSetTimeout;
+  globalThis.clearTimeout = originalClearTimeout;
+}
+beforeEach(restoreClock);
+afterAll(restoreClock);
 
 describe("WhisperSttClient.load", () => {
   test("sends the load request with defaults (q8, wasm) and resolves on loaded", async () => {
@@ -99,18 +106,40 @@ describe("WhisperSttClient.load", () => {
   });
 
   test("progress events re-arm the watchdog and reach subscribers", async () => {
-    __setWhisperLoadStallMsForTests(30);
+    // Assert timer ownership directly: a 25ms real sleep inside a 30ms window
+    // races a busy worker and can reject before the second progress event.
+    const timers = new Map<unknown, () => void>();
+    let sequence = 0;
+    // Opaque handles are used only by clearTimeout here, across DOM/Bun/Node
+    // overloads; the fake does not implement a runtime Timer object's methods.
+    const schedule = spyOn(globalThis, "setTimeout").mockImplementation(((handler: unknown) => {
+      const id = ++sequence as unknown as ReturnType<typeof setTimeout>;
+      if (typeof handler !== "function") throw new Error("Expected a watchdog callback");
+      timers.set(id, () => handler());
+      return id;
+    }) as unknown as typeof setTimeout);
+    const cancel = spyOn(globalThis, "clearTimeout").mockImplementation((id) => { if (id !== undefined) timers.delete(id); });
     const { client, worker } = makeClient();
     const seen: unknown[] = [];
     client.onLoadProgress((p) => seen.push(p.data));
-    const promise = client.load("onnx-community/whisper-base");
-    await Bun.sleep(0);
-    worker.respond({ type: "load-progress", data: { file: "model.onnx", progress: 10 } });
-    await Bun.sleep(25); // past the original window — progress re-armed it
-    worker.respond({ type: "load-progress", data: { file: "model.onnx", progress: 80 } });
-    worker.respond({ type: "loaded", modelId: "onnx-community/whisper-base" });
-    await promise;
-    expect(seen.length).toBe(2);
+    try {
+      const promise = client.load("onnx-community/whisper-base");
+      const firstTimer = [...timers.keys()][0];
+      expect(timers.size).toBe(1);
+      worker.respond({ type: "load-progress", data: { file: "model.onnx", progress: 10 } });
+      expect(cancel).toHaveBeenCalledWith(firstTimer);
+      expect(timers.has(firstTimer!)).toBe(false);
+      const secondTimer = [...timers.keys()][0];
+      worker.respond({ type: "load-progress", data: { file: "model.onnx", progress: 80 } });
+      expect(cancel).toHaveBeenCalledWith(secondTimer);
+      expect(timers.size).toBe(1);
+      expect(schedule).toHaveBeenCalledTimes(3);
+      worker.respond({ type: "loaded", modelId: "onnx-community/whisper-base" });
+      await promise;
+      expect(timers.size).toBe(0);
+      expect(seen).toEqual([{ file: "model.onnx", progress: 10 }, { file: "model.onnx", progress: 80 }]);
+      expect(client.isLoaded()).toBe(true);
+    } finally { client.dispose(); schedule.mockRestore(); cancel.mockRestore(); }
   });
 
   test("load of a DIFFERENT model while one is in flight chains (never resolves the wrong model)", async () => {

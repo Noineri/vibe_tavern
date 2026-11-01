@@ -10,7 +10,7 @@
  *
  * Runner: bun:test + happy-dom.
  */
-import { afterEach, beforeAll, describe, expect, it, mock } from "bun:test";
+import { afterEach, afterAll, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import { brandId, type ChatId } from "@vibe-tavern/domain";
 import { act } from "react";
 import { useDomEnv } from "../../../../test/dom-env.js";
@@ -18,6 +18,8 @@ import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 import type { ObjectiveState } from "../../../api/types.js";
 import type { SnapshotStore } from "../../../stores/snapshot-store.js";
 import type { ProviderDataActions, ProviderDataState } from "../../../stores/provider-data-store.js";
+import en from "../../../i18n/locales/en.json";
+import ru from "../../../i18n/locales/ru.json";
 
 type ProviderDataStore = ProviderDataState & ProviderDataActions;
 
@@ -25,7 +27,7 @@ useDomEnv();
 const { render, fireEvent, waitFor } = await import("@testing-library/react");
 
 const mocks = {
-  activeChat: null as null | { id: string; insightsObjectiveState: ObjectiveState },
+  activeChat: null as null | { id: string; activeBranchId?: string; insightsObjectiveState: ObjectiveState },
   generateObjectiveTasksAction: mock(),
   checkObjectiveCompletionAction: mock(),
   addObjectiveTaskAction: mock(),
@@ -425,5 +427,150 @@ describe("ObjectiveConfig (INS-5)", () => {
     expect(pickerRow.className).toContain("grid-cols-2");
     expect(pickerRow.className).toContain("max-md:grid-cols-1");
     view.unmount();
+  });
+});
+
+// ─── Under a story plan (DIRECTOR_MODE_PLAN DR-13, mock §8) ───────────────
+// behavior addition: while the ACTIVE branch plan has events — through the
+// SAME useAgentPlan cache seam (the branch plan GET served by the fetch
+// mock below, the DR-10b card-test pattern) — the panel shows the muted
+// note and hides the manual add + generate controls; the check control and
+// status cycling stay (statuses flow back into the plan). With no plan
+// events (no branch, or an events-empty plan) the panel is exactly today's
+// — the INS-5 pins above, untouched.
+
+const planOf = (tasks: { id: string; title: string; body: string; status: string }[]) => ({
+  goal: "Cat becomes human",
+  constraints: [],
+  tasks,
+});
+const PLAN_WITH_EVENTS = planOf([
+  { id: "ev1", title: "Morning after the transformation", body: "", status: "completed" },
+  { id: "ev2", title: "House rules", body: "", status: "active" },
+]);
+const plansByBranch = new Map<string, ReturnType<typeof planOf>>();
+const planGetUrls: string[] = [];
+/** When true the /plan GET parks on a resolver the test holds
+ *  (`heldPlanGets`) — the cold-cache no-flash pin needs the panel's first
+ *  paint BEFORE the plan lands. */
+let holdPlanGets = false;
+const heldPlanGets: Array<(plan: unknown) => void> = [];
+const originalFetch = globalThis.fetch;
+
+beforeEach(() => {
+  plansByBranch.clear();
+  planGetUrls.length = 0;
+  holdPlanGets = false;
+  heldPlanGets.length = 0;
+  globalThis.fetch = (async (input: RequestInfo | URL): Promise<Response> => {
+    const url = String(input);
+    if (!url.includes("/plan")) {
+      return new Response(JSON.stringify({}), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    planGetUrls.push(url);
+    if (holdPlanGets) {
+      return new Promise<Response>((resolve) => {
+        heldPlanGets.push((plan) =>
+          resolve(new Response(JSON.stringify({ plan }), { status: 200, headers: { "content-type": "application/json" } })));
+      });
+    }
+    const branchId = url.split("/branches/")[1]?.split("/")[0] ?? "";
+    return new Response(
+      JSON.stringify({ plan: plansByBranch.get(branchId) ?? planOf([]) }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+  }) as unknown as typeof fetch;
+});
+
+afterAll(() => {
+  globalThis.fetch = originalFetch;
+});
+
+/** Seed the mocked active chat WITH an active branch — the plan owner's
+ *  second half (the branch-less `withState` above is exactly the no-owner
+ *  case: today's panel, pinned by every INS-5 test). */
+function withPlanState(state: ObjectiveState, branchId: string) {
+  mocks.activeChat = { id: "chat_1", activeBranchId: branchId, insightsObjectiveState: state };
+}
+
+/** The projected-goals state the server's plan projection produces (A2/A5):
+ * goals mode, no long-term goal, one short-term goal per plan event. */
+const PROJECTED: ObjectiveState = {
+  ...EMPTY,
+  mode: "goals",
+  shortTermGoals: [
+    { id: "ev1", description: "Morning after the transformation", status: "completed" },
+    { id: "ev2", description: "House rules", status: "active" },
+  ],
+};
+
+describe("ObjectiveConfig — under a story plan (DR-13 §8)", () => {
+  it("with plan events: the note shows, add + generate hide, check + status cycling stay", async () => {
+    plansByBranch.set("b-dr13-goals", PLAN_WITH_EVENTS);
+    withPlanState(PROJECTED, "b-dr13-goals");
+    mocks.updateObjectiveShortTermGoalAction.mockResolvedValue(undefined);
+    const view = render(<ObjectiveConfig chatId={CHAT_ID} />);
+
+    await waitFor(() => expect(view.getByTestId("objective-plan-note").textContent).toBe("obj_plan_driven_note"));
+    expect(view.queryByText("obj_generate_goals_button")).toBeNull();
+    expect(view.queryByPlaceholderText("obj_add_short_placeholder")).toBeNull();
+    // The check control and the status dots stay — statuses flow back into
+    // the plan (R2), so cycling stays a tracker action under the plan.
+    expect(view.getByText("obj_check_button")).toBeTruthy();
+    fireEvent.click(view.getAllByTitle("obj_cycle_status")[1]!);
+    expect(mocks.updateObjectiveShortTermGoalAction).toHaveBeenCalledWith("chat_1", "ev2", { status: "completed" });
+  });
+
+  it("cold cache: today's panel paints first; the note appears only when the plan lands (no-flash)", async () => {
+    holdPlanGets = true;
+    withPlanState(PROJECTED, "b-dr13-cold");
+    const view = render(<ObjectiveConfig chatId={CHAT_ID} />);
+
+    // Before the GET resolves: exactly today's panel.
+    expect(view.getByText("obj_generate_goals_button")).toBeTruthy();
+    expect(view.getByPlaceholderText("obj_add_short_placeholder")).toBeTruthy();
+    expect(view.queryByTestId("objective-plan-note")).toBeNull();
+
+    await waitFor(() => expect(heldPlanGets.length).toBe(1));
+    await act(async () => {
+      heldPlanGets[0]!(PLAN_WITH_EVENTS);
+    });
+    await waitFor(() => expect(view.getByTestId("objective-plan-note")).toBeTruthy());
+    expect(view.queryByText("obj_generate_goals_button")).toBeNull();
+    expect(view.queryByPlaceholderText("obj_add_short_placeholder")).toBeNull();
+  });
+
+  it("an events-empty plan on the active branch keeps today's panel", async () => {
+    plansByBranch.set("b-dr13-empty", planOf([]));
+    withPlanState({ ...EMPTY, tasks: [{ id: "t1", description: "Manual task", status: "pending" }] }, "b-dr13-empty");
+    const view = render(<ObjectiveConfig chatId={CHAT_ID} />);
+
+    // Wait for the plan GET to land so planDriven is a COMMITTED false, not
+    // a cold one (R10 — read the invariant when it holds).
+    await waitFor(() => expect(planGetUrls.some((url) => url.includes("b-dr13-empty"))).toBe(true));
+    await waitFor(() => {
+      expect(view.queryByTestId("objective-plan-note")).toBeNull();
+      expect(view.getByText("obj_generate_button")).toBeTruthy();
+      expect(view.getByPlaceholderText("obj_add_task_placeholder")).toBeTruthy();
+    });
+  });
+
+  it("route mode under a plan hides its add-task row too (one director-owns-authoring rule)", async () => {
+    plansByBranch.set("b-dr13-route", planOf([{ id: "ev1", title: "Raid the fridge", body: "", status: "active" }]));
+    withPlanState({ ...EMPTY, tasks: [{ id: "t1", description: "Old manual task", status: "pending" }] }, "b-dr13-route");
+    const view = render(<ObjectiveConfig chatId={CHAT_ID} />);
+
+    await waitFor(() => expect(view.getByTestId("objective-plan-note")).toBeTruthy());
+    expect(view.queryByText("obj_generate_button")).toBeNull();
+    expect(view.queryByPlaceholderText("obj_add_task_placeholder")).toBeNull();
+    // The list itself still renders (status controls stay).
+    expect(view.getByText("Old manual task")).toBeTruthy();
+  });
+
+  it("locale tables carry the note verbatim (EN + the RU owner canon, mock §8)", () => {
+    const record = en as Record<string, string>;
+    expect(record["obj_plan_driven_note"]).toBe("The director's story plan drives these goals");
+    const ruRecord = ru as Record<string, string>;
+    expect(ruRecord["obj_plan_driven_note"]).toBe("Цели ведёт режиссёр по плану сюжета");
   });
 });

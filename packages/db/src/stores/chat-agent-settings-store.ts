@@ -94,6 +94,43 @@ export class ChatAgentSettingsStore {
     return this.mapRow(row!);
   }
 
+  /** DR-12: store one pair's pending profile-change payload (the separator
+   *  that had no active thread to land in at PATCH time). Payload-agnostic —
+   *  the shape is the DOMAIN writer's contract (services/api's
+   *  sidechat-profile-change.ts), exactly like the timeline events' payload:
+   *  this store only serializes it. `null` clears the marker. */
+  async setPendingProfileChange(chatId: string, agentKind: string, payload: unknown): Promise<void> {
+    await this.db
+      .insert(chatAgentSettings)
+      .values({
+        chatId,
+        agentKind,
+        updatedAt: this.clock.now(),
+        pendingProfileChangeJson: payload === null ? null : JSON.stringify(payload),
+      })
+      .onConflictDoUpdate({
+        target: [chatAgentSettings.chatId, chatAgentSettings.agentKind],
+        set: {
+          pendingProfileChangeJson: payload === null ? null : JSON.stringify(payload),
+        },
+      })
+      .run();
+  }
+
+  /** DR-12: read one pair's pending profile-change payload back (parsed),
+   *  or null when the marker is absent. Malformed JSON is the caller's
+   *  refusal to handle (the writer serializes through JSON.stringify, so a
+   *  parse failure is corruption). */
+  async getPendingProfileChange(chatId: string, agentKind: string): Promise<unknown> {
+    const row = await this.db
+      .select({ pendingProfileChangeJson: chatAgentSettings.pendingProfileChangeJson })
+      .from(chatAgentSettings)
+      .where(and(eq(chatAgentSettings.chatId, chatId), eq(chatAgentSettings.agentKind, agentKind)))
+      .get();
+    if (row === undefined || row.pendingProfileChangeJson === null) return null;
+    return JSON.parse(row.pendingProfileChangeJson);
+  }
+
   // ─── Row mapper ────────────────────────────────────────────────────────────
 
   private mapRow(row: typeof chatAgentSettings.$inferSelect): ChatAgentSettings {

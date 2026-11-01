@@ -1,11 +1,50 @@
 # Backend Architecture
 
-> **services/api** — Single Bun process serving HTTP API and static frontend. No microservices, no queues.
+> **services/api** — Single Bun process serving HTTP API and static frontend, with in-process background runs and a SQLite-backed generate-more queue; no external workers or message broker.
 
 ## Architecture gates
 
 `bun run typecheck` runs a ratchet that blocks new `domain/` imports from `api/` or `runtime/`.
 Domain code must receive a narrow interface or shared package/domain dependency instead of reaching upward to `SessionRuntime`.
+
+## Server-owned generations
+
+`domain/agent/agent-run-registry.ts` owns execution, independent of HTTP subscriptions.
+The composition root shares one registry across agent threads and chat generations: bare thread IDs for assistants, `chat:<chatId>` for RP and Co-Author.
+`start` synchronously reserves a key, consumes its generator without subscriber backpressure, numbers the retained events, and releases the slot only after generator finalization/persistence.
+A competing start returns HTTP 409 with top-level `code: "AGENT_RUN_ACTIVE"`; different keys run concurrently.
+Disconnect/unmount only detaches a subscriber; explicit Stop aborts the run's own controller and waits cooperatively for producer cleanup, including saved partial chat output.
+Native JSON chat requests reserve that same slot, so the first non-streaming regenerate cannot overlap a queued job; their original request-signal cancellation remains supported.
+
+`api/adapters/chat-generation-run-adapter.ts` records `generation-context` first: run ID, chat, starting branch, operation and nullable existing-message target.
+`ChatRuntime.withGenerationScope` pins every lazy iterator pull to that branch and isolates pending traces with AsyncLocalStorage; changing the visible branch cannot retarget a producer.
+GET replay uses a run-local `after` cursor (default zero); the log survives completion until the key's next start, or process restart.
+There is no persisted run log and no automatic restart/re-execution of an interrupted ordinary turn; committed history/reviews remain available.
+App-level `GET /api/agent-runs` discovers active runs and `GET /api/agent-runs/events` publishes `agent.run` lifecycle notifications through the existing EventBus.
+Owners distinguish agent-thread script/chat-branch identities from chat-generation `{ kind: "chat", chatId, mode }` identities; Co-Author is not a copilot host.
+
+Manual ranged summaries reuse the registry implementation in an independent `ChatSummaryService` registry keyed `summary:<chatId>` so they do not block replies.
+Their POST waits for the original JSON result while execution survives a closed connection; GET status and POST Stop recover the modal's controls.
+Manual `summary.started/generated/failed/cancelled` notifications use the existing per-chat events channel; cancellation is quiet, and automatic summaries retain their own locks/lifecycle.
+
+### Durable reviews and generate-more jobs
+
+`agent_review_rounds` is the only buffer-review table: separate nullable unique cascade FKs to thread and chat, with an exactly-one-owner CHECK.
+Shared contracts are `agent-review-round.ts` (v2 activities, base snapshots, hunk progress and dangling capture, including script code) and `coauthor-review.ts` (CA-15 v1 activities, including profile/greeting/lore/tracker-template proposals).
+The producer stores finalized proposals before terminal delivery; read-only/no-proposal/failed-tool turns preserve an existing review rather than rewriting or deleting it.
+Reviews never apply themselves: host Apply/Reject and existing save/binding endpoints remain explicit user actions.
+GET/PUT/DELETE review endpoints restore across browsers/devices; ordered client lanes flush prior progress before a new producer starts, suppress partial browser writes/replay checkpoints, and upload legacy localStorage once only when the server has no review.
+Full replacement provides same-client ordering/predecessor checks, not cross-device compare-and-swap.
+
+`domain/chat/chat-generation-queue.ts` owns per-chat ordered execution over `ChatGenerationJobStore` and the same detached regenerate/profile path as the stream route.
+`chat_generation_jobs` stores assistant-message ownership, model/preset keys, status, optional variant result/error and epoch-ms enqueue time; chat/message deletion cascades, and equal timestamps retain SQLite insertion order.
+Model/preset keys are frozen at enqueue; generation settings resolve at pop, and a null preset uses the chat's then-current preset.
+The target message determines the job's branch; no active-branch mutation is needed.
+An idle chat claims one pending job; failure marks it failed and advances, pending cancellation marks cancelled, running Stop keeps any partial variant and advances, and Clear deletes only pending rows.
+The standalone first regenerate stays outside the queue.
+Queue status settles before terminal `agent.run` publication and each queue mutation emits `queue.updated` on the existing per-chat channel, allowing one completion toast after the last successful job.
+Startup marks interrupted running rows failed with an actionable retry reason and resumes only pending rows; there is no silent rerun of interrupted work.
+The web mirrors the queue through typed RPC and events; no browser pump remains.
 
 ---
 
@@ -282,6 +321,51 @@ There is a single completion-refresh endpoint: `POST /api/chats/:chatId/insights
 
 A backfill regenerates Scene records across existing assistant messages (fill-missing or rebuild). It is backed by a durable server-authoritative run row (`scene_backfill_runs`: chat/branch ownership, mode, frozen manifest, cursor/status, per-item errors, cancel request, timestamps). The client drives start/status/cancel/retry over typed RPC and polls status; a frontend reload reattaches to the run via a persisted runId, and a server restart leaves it resumable (a stale `running` row resumes the unprocessed tail rather than pretending work is active). The loop is fire-and-forget — it reuses `generateForTarget` per item (a normal per-target job, sequential for rate-limit safety) and **never blocks ordinary chat**; only the latest selected target can independently participate in the normal send wait. Retry reprocesses only failed + unprocessed items (succeeded items are never regenerated). Completed canonical records are the durable result.
 
+### Plan-driven goals (story-plan ↔ tracker sync)
+
+The story plan (a chat branch's agent plan, DIRECTOR_MODE_PLAN) can drive the goal tracker instead of the user authoring goals by hand — one module, `services/api/src/domain/director/story-plan-sync.ts` (`StoryPlanSync`), one direction per write, never a cycle.
+
+- **Projection** — `projectStoryPlanGoals(previous, next, objective)` maps a plan save onto goals-mode short-term goals 1:1 (event id → goal id, status carried by id): the premise never reaches the tracker (the long-term goal is always nulled — the RP model sees only the current event), a goal's text is the event title plus the body when non-blank, and a stale editor save never reverts a check (a task whose status did not change against `previous` keeps the tracker's current status for that id).
+- **Follow-back** — `followGoalStatuses(plan, objective)` copies goal statuses of matching ids back into the plan and normalizes (two actives keep the tracker's active one): a passed check advances the plan with no model call. The state records the branch it was projected from, so follow-back always targets the right branch's plan.
+- **State observer** — `ObjectiveService` takes an optional post-commit observer (`registerStateObserver`, `services/api/src/domain/insights/objective-service.ts`); `StoryPlanSync` registers it at wiring (`services/api/src/server/server-runtime.ts`) and saves the follow-back into the source branch's plan. The lane never awaits it; observer failures are logged and swallowed.
+- **Branch reconcile** — every active-branch change (activate, create, delete, the load-time fallbacks) ends with `reconcileActiveBranch`, which re-projects from the ACTIVE branch's plan: switching branches swaps the tracker's goals (and back) without losing statuses; foreign goals (not plan-projected) are left alone. The hooks are late-bound — `ChatApplicationService.registerActiveBranchReconciler`, the one reconciler call site outside the service itself (construction order forbids constructor injection: the service is born before the sync exists).
+- **Entry points** — `applyPlan(chatId, branchId, plan)` (normalize-or-422, save, and project when the branch is the chat's active one; an empty plan projects to empty goals and leaves the tracker's enabled flag as is) backs both the branch-plan `PUT` route (the adapter delegates to it) and the `story-plan` proposal's Accept; `insertNextEvent` lands an objective proposal as the next plan event while a plan drives the chat.
+- **The `profile_changed` context event** (DR-12) — every (chat, kind) sidechat profile switch writes a frozen `profile_changed` event beside the messages (writer `services/api/src/domain/sidechat/sidechat-profile-change.ts`): into every active thread's feed when one exists, else parked on `chat_agent_settings.pending_profile_change_json` (migration 0129) and materialized at the next session creation. Uniform for every switch surface (chip, settings dropdown, hand-off row, call-director); user-feed provenance only — the context loader and the compaction service skip it, and it survives reloads through the events route.
+
+---
+
+## Prompt trace storage
+
+`packages/db/src/stores/prompt-trace-store.ts` stores trace payloads losslessly; trace IDs, owners, dates, model/preset names and query fields stay plain.
+The three payload skeleton columns (`assembled_layers_json`, `final_payload_json`, `provider_response_json`) and `prompt_trace_chunks.content` are BLOB columns, accepting legacy TEXT during conversion.
+`trace-storage-codec.ts` detects Zstd by its magic bytes and uses Bun's built-in level-3 compression; no native dependency or wire-format change is involved.
+
+Strings of at least 256 UTF-16 code units become ordered `{"$vtlist":["<plaintext-sha256>",...]}` references.
+`trace-blocks.ts` pins the gear table and cut rule: target 4096 characters, minimum 512, maximum 16384; only the terminal tail may be shorter, and surrogate pairs are never split.
+Content-defined boundaries let neighboring history windows reuse blocks despite inserted or removed prefixes.
+Strings with unpaired UTF-16 surrogates stay escaped inside the compressed JSON skeleton instead of being normalized by UTF-8 block encoding.
+Blocks deduplicate by plaintext hash, and `byte_size` records their compressed byte length.
+Legacy `{"$vtchunk":"<id>"}` skeletons remain readable, including documents and chunks with mixed storage versions.
+`saveTrace` commits blocks, refs and compressed skeletons in one transaction; reads decompress only requested rows and their referenced blocks.
+Latest-trace reads remain SQL `LIMIT 1`; lazy history keeps its SQL limit rather than hydrating every trace.
+Forks copy stored columns unchanged and harvest both marker forms to preserve independent ref ownership.
+
+`trace-storage-converter.ts` runs after `Application ready` in the shared runtime wiring for dev, prod, standalone and Android.
+It compresses legacy chunks under their old IDs, then atomically converts each trace and rebuilds its refs.
+Historical forks can lack inverted refs, so no old chunk is reclaimed until every surviving skeleton has been processed.
+The persistent `trace-storage-v2-running` marker suspends ordinary scoped reclamation and the boot sweep during conversion and across interruptions.
+The final cleanup removes dead refs and unreferenced blocks in bounded units, then atomically sets `trace-storage-v2` and clears the running marker.
+The pass yields after 15 ms of accumulated work between atomic units; a single compression/row transaction can exceed that interval.
+A failed or cancelled pass leaves its marker incomplete and resumes next boot; it never drops a trace or silently skips corrupt data.
+One summary line is logged on completion, and later boots skip conversion silently.
+
+`trace-storage-vacuum.ts` runs once on the next boot, after stores open but before `Application ready`, while the bind-first placeholder still serves API traffic.
+It requires the conversion-complete marker, no running pass and no `trace-storage-v2-vacuumed` marker; successful VACUUM and WAL truncation precede the vacuum marker.
+An interrupted/failed VACUUM is retried rather than marked successful.
+Later boots keep LC-8's best-effort global orphan sweep, while ordinary deletions use `listTraceIds` plus `reclaimChunksForTraces`, never a request-path global anti-join.
+JSONL chat exports serialize message fields only and contain no traces; SQLite snapshots preserve BLOB bytes without a separate trace export.
+Future retention/usage tools must report compressed table/index sizes and reclaim only a deletion's candidate chunks; deleting traces remains an explicit user action, not part of conversion.
+
 ---
 
 ## Lorebook Activation Engine
@@ -555,7 +639,7 @@ The engine the copilot authors against — kernel, sandbox, durable effects (`mo
 
 `EXPERIENCE_COPILOT_PLAN_MODE_PLAN` — a host-agnostic, script-owned plan the model maintains and the user can edit. It is the DURABLE half of the plan/todo pair (PM-7, owner ruling 2026-10-11: **todo = the thread's session quick checklist; plan = the script's durable document surviving sessions**). Domain shape in `packages/domain/src/agent-plan.ts` (`AgentPlan` = goal + constraints + tasks; at most one `active` task), storage in `packages/db/src/stores/agent-plan-store.ts` (one `agent_plans` row per owner, full-rewrite save, malformed JSON → null + log, never throw).
 
-- **Owner kinds** — `AgentPlanOwner` is a discriminated union; today exactly one arm exists (`{ kind: "script", scriptId }`). The union is the extension seam: a chat-scoped owner later is one nullable owner column on the host's table + one union arm, with zero changes to the store, tools, or contracts.
+- **Owner kinds** — `AgentPlanOwner` is a discriminated union with two arms today: `{ kind: "script", scriptId }` and `{ kind: "chatBranch", chatId; branchId }` (the story plan a sidechat branch owns — see [Insights → Plan-driven goals](#plan-driven-goals-story-plan--tracker-sync)). The union remains the extension seam: another owner is one nullable owner column on the host's table + one union arm, with zero changes to the store, tools, or contracts.
 - **Tools** — `createAgentPlanTools({ load, save })` (`services/api/src/domain/agent-plan/agent-plan-tools.ts`) builds the host-agnostic `plan` (whole-structure rewrite, object root, returns `{ok, activeTitle?, remaining?}`) and `read_plan` (returns the full plan or `{empty: true}`). The factory has zero copilot imports; the copilot injects `load`/`save` bound to the thread's `scriptId`.
 - **Progressive injection** — each turn the assembler injects a `# Plan` system section (`agent-plan-prompt.ts`, pure): header, goal, constraints, every task as `[status] title`, then ONLY the active task's body plus the discipline lines. Bodies of other tasks are deliberately absent (they are readable on demand via `read_plan`) — bounded prompt cost for long plans. An absent/empty plan omits the section byte-identically, and the section survives history compaction (system-level).
 - **HTTP** — `GET`/`PUT /api/scripts/:scriptId/agent-plan` run the same `normalizeAgentPlan` validation as the tool, so the user editor and the model write through one contract (two `active` tasks → typed `422`).

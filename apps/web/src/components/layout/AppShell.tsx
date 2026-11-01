@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect } from "react";
-import { Toaster, toast } from "sonner";
+import { toast } from "sonner";
 import * as Popover from "@radix-ui/react-popover";
 import * as buildConfig from "../../build-config.js";
 import { useT } from "../../i18n/context.js";
@@ -9,13 +9,15 @@ import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
 import { apiFetch } from "../../api/client.js";
 import { resolveAssistantPrefillSupport } from "@vibe-tavern/domain";
 import { type ThemeMode } from "../../themes/registry.js";
-import { useChatStore, useNavigationStore, useCharacterStore, useProviderStore, useModalStore, useIsSending } from "../../stores/index.js";
+import { useChatStore, useNavigationStore, useCharacterStore, useProviderStore, useModalStore } from "../../stores/index.js";
 import { saveCharacterAction } from "../../stores/api-actions/character-actions.js";
 import { useActiveTrace, useLazyContextPreview } from "../../stores/chat-selectors.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useBootstrapStore, fetchPersonasAction } from "../../stores/api-actions/bootstrap-actions.js";
 import { summarizeChatAction, saveChatSummaryAction, updateChatDynamicPromptAction } from "../../stores/api-actions/chat-actions.js";
 import { useChatController } from "../../hooks/use-chat-controller.js";
+import { useChatGenerationAttachment } from "../../hooks/use-chat-generation-attachment.js";
+import { useCoauthorReviewPersistence } from "../../hooks/use-coauthor-review-persistence.js";
 import { useGenerationQueue } from "../../hooks/use-generation-queue.js";
 import { useCharacterController } from "../../hooks/use-character-controller.js";
 import { useProviderProfiles } from "../../hooks/use-provider-profiles.js";
@@ -25,6 +27,7 @@ import { useIsMobile } from "../../hooks/use-mobile.js";
 import { useShellSurface } from "../../hooks/use-shell-surface.js";
 import { useChatEvents } from "../../hooks/use-chat-events.js";
 import { useQuotaEvents } from "../../hooks/use-quota-events.js";
+import { useAgentRunEvents } from "../../hooks/use-agent-run-events.js";
 import { ContextMemoryModal } from "../modals/ContextMemoryModal.js";
 import { CreateCharacterModal } from "../modals/CreateCharacterModal.js";
 import { PersonaModal } from "../modals/PersonaModal.js";
@@ -42,6 +45,7 @@ import { UpdateModal } from "../modals/UpdateModal.js";
 import { StarPromptModal } from "../modals/StarPromptModal.js";
 import { CoauthorModuleModal } from "../coauthor/CoauthorModuleModal.js";
 import { CoauthorSkillModal } from "../coauthor/CoauthorSkillModal.js";
+import { AppToaster } from "./AppToaster.js";
 import { AvatarPanel } from "../settings/popovers/AvatarPanel.js";
 import type { TweaksSettings } from "../../lib/local-storage.js";
 import type { ProxyRecord } from "../../api/types.js";
@@ -70,9 +74,10 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
   const activePersona = useSnapshotStore((s) => s.persona);
   const activeBranch = useSnapshotStore((s) => s.activeBranch);
   const messageCount = useSnapshotStore((s) => s.messageOrder.length);
-  const draft = useChatStore((s) => s.draft);
-  const isSending = useIsSending();
-  const editingDraft = useChatStore((s) => s.editingDraft);
+  // LAG-1: the root's `draft` / `editingDraft` / `isSending` subscriptions are
+  // gone (dead since a848c0582 — the play surface reads both drafts from the
+  // store itself); each per-keystroke write re-rendered the whole app tree,
+  // sidechat included. Pinned by app-shell-render-isolation.test.tsx.
   const selectedTraceId = useChatStore((s) => s.selectedTraceId);
   const confirmDestroy = useCharacterStore((s) => s.confirmDestroy);
   const setConfirmDestroy = useCharacterStore((s) => s.setConfirmDestroy);
@@ -106,13 +111,16 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
   useEffect(() => { void fetchPersonasAction(); }, []);
 
   const chat = useChatController();
+  useChatGenerationAttachment(chat.reattachGeneration);
+  useCoauthorReviewPersistence();
   // W7: subscribe to the per-chat SSE channel for background notifications
   // (auto-summary). No-op when no chat is active.
   useChatEvents(activeChatId);
   // Global (non-chat-scoped) quota notifications — one subscription per app.
   useQuotaEvents();
+  useAgentRunEvents();
   // Register the queue pump's runner (Q3) once runRegenerateJob is available.
-  useGenerationQueue(chat.runRegenerateJob);
+  useGenerationQueue();
   const character = useCharacterController();
   const provider = useProviderProfiles();
   const preset = usePresetController();
@@ -557,17 +565,7 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
       <CoauthorModuleModal />
       <CoauthorSkillModal />
       <SetupWizard onVisibilityChange={setWizardVisible} />
-      <Toaster
-        position={isMobile ? "top-center" : "bottom-right"}
-        toastOptions={{
-          // glass-blur is a no-op in opaque themes (--glass-blur: 0) and frosts
-          // the lava blobs behind the toast in glass themes. --glass-bg is the
-          // translucent tint tuned to survive the blur (vs --s2, which reads
-          // muddy when blurred).
-          className: "glass-blur",
-          style: { background: "var(--glass-bg)", color: "var(--t1)", border: "1px solid var(--border)" },
-        }}
-      />
+      <AppToaster />
     </div>
   );
 }

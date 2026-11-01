@@ -1,5 +1,5 @@
 import type { ChatId, ChatMode, ObjectiveMode, ObjectiveTaskStatus, PromptTraceRecordDto, SceneTrackerConfig, ChatBranchId, MessageVariantId } from "@vibe-tavern/domain";
-import type { CoauthorApplyRequest, CoauthorCorrection, RegenerateOverride } from "@vibe-tavern/api-contracts";
+import type { CoauthorApplyRequest, CoauthorCorrection, RegenerateOverride, ManualSummaryRunState, ManualSummaryStopResponse } from "@vibe-tavern/api-contracts";
 import type { AppSnapshot, ChatListItem, ChatSummaryRecord, AutoSummaryConfig, InsightsConfigPatch, InsightsCompletionPatchResponse, InsightsCompletionTarget, ScenePreviewResponse, SceneTargetResponse, SceneStatusResponse, SceneBackfillMode, SceneBackfillStatusResponse, ContextPreviewResponse, DiceMode } from "./types.js";
 import { client } from "./client.js";
 import { unwrapRpc, unwrapError, errorFromBody, type RpcErrorBody, type RpcResponse } from "./unwrap.js";
@@ -345,6 +345,7 @@ export async function regenerateAttachmentDescription(
 
 export { sendStream as sendChatMessageStream, regenerateStream as regenerateChatMessageStream, generateReplyStream as generateReplyStream, continueStream as continueChatMessageStream };
 export type { StreamOpts };
+export { isChatGenerationRunning, subscribeChatGeneration, stopChatGeneration } from "./chat-generation-api.js";
 
 // ─── Branches ───────────────────────────────────────────────────────────
 
@@ -398,6 +399,14 @@ export async function updateChatDynamicPrompt(chatId: ChatId, content: string): 
 export async function listChatSummaries(chatId: ChatId): Promise<ChatSummaryRecord[]> {
   const response = await client.api.chats[":chatId"].summaries.$get({ param: { chatId } });
   return unwrapRpc(response);
+}
+
+export async function getManualSummaryRun(chatId: ChatId): Promise<ManualSummaryRunState> {
+  return unwrapRpc(await client.api.chats[":chatId"].summaries.generate.$get({ param: { chatId } }));
+}
+
+export async function stopManualSummaryRun(chatId: ChatId): Promise<ManualSummaryStopResponse> {
+  return unwrapRpc(await client.api.chats[":chatId"].summaries.generate.stop.$post({ param: { chatId } }));
 }
 
 // SUM-3b: manual reorder of the chat's summary list (active branch).

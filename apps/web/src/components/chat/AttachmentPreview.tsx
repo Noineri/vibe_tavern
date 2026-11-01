@@ -4,6 +4,7 @@ import { isTextMime, type Attachment } from "@vibe-tavern/domain";
 import { getGatewayBaseUrl } from "../../gateway-client.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { useT } from "../../i18n/context.js";
+import { cn } from "../../lib/cn.js";
 import { FileAttachmentChip } from "./file-attachment-chip.js";
 import { formatBytes } from "./attachment-format.js";
 
@@ -60,16 +61,23 @@ function AudioDraftPlayButton({ src, name }: { src: string; name: string }) {
   );
 }
 
-export function AttachmentPreview({ attachments, onRemove }: {
+export function AttachmentPreview({ attachments, onRemove, className }: {
   attachments: readonly Attachment[];
   onRemove: (id: string) => void;
+  /** DR-15: EXTENDS the baked chip-row base (join-only `cn`, no merge).
+   *  The agent composer's attached row passes `!`-important overrides to
+   *  slot the chip group inline (`w-full`→auto, paddings→0, `gap-2`→1.5)
+   *  plus `flex-wrap`; verifying that COMPOSED string against the mockup is
+   *  the caller's job (CF13). Default absent — the baked classes render
+   *  as-is for the RP chat and Co-Author composers. */
+  className?: string;
 }) {
   const isMobile = useIsMobile();
   
   if (attachments.length === 0) return null;
 
   return (
-    <div className="flex w-full items-center gap-2 overflow-x-auto pb-2 pl-3 pr-3 pt-2 scrollbar-hide">
+    <div className={cn("flex w-full items-center gap-2 overflow-x-auto pb-2 pl-3 pr-3 pt-2 scrollbar-hide", className)}>
       {attachments.map((att) => isTextMime(att.mimeType) ? (
         <FileAttachmentChip key={att.id} attachment={att} onRemove={onRemove} />
       ) : (

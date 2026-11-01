@@ -39,8 +39,11 @@ import {
   type AgentStreamDeps,
   type AgentStreamSeams,
 } from "../../agent/agent-stream.js";
+import type { AgentOwnModelBinding } from "../../agent/agent-own-model.js";
 import type { AgentTurnDeleteTurn } from "../../agent/agent-regenerate.js";
 import { isChatOwnedAgentThread } from "../../agent/agent-thread-owner.js";
+import type { AgentReviewService } from "../../agent/agent-review-service.js";
+import { AgentBufferReviewPersistence, persistAgentBufferReviewStream } from "../../agent/agent-buffer-review-persistence.js";
 import {
   assembleExperienceCopilotPrompt,
   type ExperienceCopilotAssembleResult,
@@ -67,6 +70,8 @@ export type {
 // ─── Dependencies ────────────────────────────────────────────────────────────
 
 export interface ExperienceCopilotStreamDeps {
+  /** BR-2b: optional for raw legacy callers; production always supplies it. */
+  readonly reviews?: Pick<AgentReviewService, "get" | "put">;
   readonly resolveVisionAssets?: AgentStreamDeps['resolveVisionAssets'];
   /** The ER-3 store (thread + message persistence). */
   readonly store: ExperienceCopilotStore;
@@ -107,6 +112,11 @@ export interface ExperienceCopilotStreamDeps {
     readonly chatId: string;
     readonly agentKind: string;
   }) => Promise<CopilotProfile>;
+  /** DR-2 (M1): read a resolved profile's own-model binding from the
+   *  agent_profile_models store (the adapter's provider-deps wiring — one
+   *  source for every kind). Absent (tests, legacy harnesses) → the turn
+   *  keeps the request's pair, exactly as before this seam existed. */
+  readonly getAgentOwnModel?: (profile: CopilotProfile) => Promise<AgentOwnModelBinding | null>;
   /** Optional copilot user-skill root for the two-root catalog (CP-4). Absent →
    *  built-in root only. */
   readonly skillUserRoot?: string;
@@ -222,6 +232,7 @@ export async function* streamExperienceCopilot(
   deps: ExperienceCopilotStreamDeps,
   signal?: AbortSignal,
 ): AsyncGenerator<ExperienceCopilotStreamEvent> {
+  const review = deps.reviews ? new AgentBufferReviewPersistence(deps.reviews, request.threadId) : null;
   const seams: AgentStreamSeams<
     ExperienceCopilotStreamRequest,
     ExperienceCopilotThread,
@@ -240,7 +251,11 @@ export async function* streamExperienceCopilot(
     assembleDebugFields: (context) => ({ rulesTrusted: context.rulesTrusted }),
 
     // ── Experience context: rules / visual / bound visuals / trust flag ──
-    loadContext: (thread) => loadCopilotContext(thread.scriptId, deps),
+    loadContext: async (thread) => {
+      const context = await loadCopilotContext(thread.scriptId, deps);
+      await review?.begin({ rules: request.rules ?? context.rules, visual: request.visual ?? context.visual ?? "" });
+      return context;
+    },
 
     // ── Copilot profile (CP-6/CP-7 + SC-0f): a CHAT-OWNED thread resolves
     //  through the chat chain (chat row → kind default → the kind's built-in);
@@ -252,6 +267,10 @@ export async function* streamExperienceCopilot(
         : deps.resolveProfile
           ? deps.resolveProfile(thread.scriptId)
           : resolveBuiltinCopilotProfile(),
+    // DR-2 (M1): the resolved profile's own model, consulted by the loop
+    // BEFORE the provider resolution so it can take precedence over the
+    // request's pair (a dangling provider falls through inside the loop).
+    ...(deps.getAgentOwnModel !== undefined ? { resolveOwnModel: deps.getAgentOwnModel } : {}),
 
     // ── ER-5 assembly: live drafts + attached context + plan → prompt ──
     assemble: async ({ thread, request, kindContext: context, agentProfile: copilotProfile, history, model: modelName }) => {
@@ -347,5 +366,5 @@ export async function* streamExperienceCopilot(
     ...(deps.resolveVisionAssets !== undefined ? { resolveVisionAssets: deps.resolveVisionAssets } : {}),
   };
 
-  yield* streamAgentTurn(request, streamDeps, seams, signal);
+  yield* persistAgentBufferReviewStream(streamAgentTurn(request, streamDeps, seams, signal), review);
 }

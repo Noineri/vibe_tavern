@@ -1,5 +1,8 @@
 import { create } from "zustand";
 import { agentThreadKey, type AgentKind } from "../lib/agent-host-registry.js";
+import type { AgentReviewBufferSnapshot as AgentReviewSnapshot, AgentDanglingCapture, AgentReviewRound } from "@vibe-tavern/api-contracts";
+import { appendAgentReviewSnapshot, ensureAgentReviewKey } from "@vibe-tavern/api-contracts";
+export type { AgentReviewBufferSnapshot as AgentReviewSnapshot, AgentDanglingCapture, AgentReviewRound } from "@vibe-tavern/api-contracts";
 
 /**
  * Agent review ROUND store (AS-5) — the generic rename of the
@@ -15,9 +18,9 @@ import { agentThreadKey, type AgentKind } from "../lib/agent-host-registry.js";
  * already live in the module-level turn store; before this store existed the
  * round lived in React state, so `buildBufferReview` got `base === undefined`
  * after a remount and the review silently vanished while the chat history
- * still showed the turn's cards. Everything here is keyed by threadId, and a
- * thread belongs to exactly one script — so per-thread keying also replaces
- * the old `resetKey` (script) reset, which would otherwise wipe the restored
+ * still showed the turn's cards. Everything here is keyed by kind/threadId;
+ * thread ownership may be a script or a chat branch. Stable keying replaces
+ * the old `resetKey` reset, which would otherwise wipe the restored
  * round on the mount-time "" → threadId transition.
  *
  * LIFETIME: a round is NOT cleared when a new turn starts — the shell
@@ -25,68 +28,23 @@ import { agentThreadKey, type AgentKind } from "../lib/agent-host-registry.js";
  * (CD-8) and the live proposal wins per buffer once the new turn lands. The
  * round resolves when every hunk of both buffers is accepted/dismissed (the
  * review objects simply go null) or is dropped wholesale by the toolbar
- * revert. Persistence across page reloads (localStorage envelope v2) is
- * wired via `syncPersistedCopilotRound` in `experience-copilot-draft.ts`,
- * called from a Shell effect on every round/activity mutation.
+ * revert. This is an in-memory projection of the canonical server review
+ * envelope v2 in agent_review_rounds. The shared ordered persistence client
+ * hydrates it and writes idle hunk progress; producers persist new proposals,
+ * and replay creates neither checkpoints nor partial browser uploads.
+ * LocalStorage is only a one-time legacy migration source.
  *
  * AS-6c-ii keying (decision AS-5/Option A — the kind parameter lands here
  * atomically with the shared key helper and the selector migration, never
  * in a commit where store keys are still bare): every action takes the host
  * `kind` first and keys its rounds map through `agentThreadKey(kind,
  * threadId)` (lib/agent-host-registry.ts — the single source). The
- * experience kind keeps the LEGACY BARE threadId (the localStorage draft
- * envelope persists bare keys — see the helper's persistence contract);
+ * experience kind keeps the LEGACY BARE threadId for migration compatibility;
  * later kinds namespace to `${kind}:${threadId}`.
  */
 
-/** CD-2 snapshot of one turn's starting buffers — the revert target AND the
- *  diff "before" side for the inline review (the editor is frozen while the
- *  model works, so the buffers at proposal time equal the snapshot). */
-export interface AgentReviewSnapshot {
-  /** Monotonic per-thread id (turn order within the round). */
-  id: number;
-  rules: string;
-  visual: string;
-}
-
-/** CD-8 dangling capture: the still-pending proposal frozen right before a
- *  new turn's send clears the live turn store. Per-buffer `rules`/`visual`
- *  carry the proposal texts; `base*` carry the diff bases they were captured
- *  against. Buffers the live turn later touches fall back to this. */
-export interface AgentDanglingCapture {
-  rules?: string;
-  visual?: string;
-  baseRules: string;
-  baseVisual: string;
-}
-
 /** Which buffer a per-buffer piece of round state belongs to. */
 export type AgentReviewBuffer = "rules" | "visual";
-
-/** The serializable round record. Hunk selections are arrays (not Sets) so
- *  the record round-trips through the localStorage envelope unchanged. */
-export interface AgentReviewRound {
-  /** Turn-start snapshots, oldest first (a future checkpoint timeline can use
-   *  the stack; revert + diff base read only the last one). */
-  snapshots: AgentReviewSnapshot[];
-  /** Id for the NEXT snapshot (per-thread monotonic; serialized with the
-   *  round so rehydration keeps ids increasing). */
-  nextSnapshotId: number;
-  /** CD-6: accepted hunk ids per buffer (RV-1 tooLarge sentinel id included). */
-  acceptedRules: number[];
-  acceptedVisual: number[];
-  /** RV-2: dismissed hunk ids per buffer. */
-  dismissedRules: number[];
-  dismissedVisual: number[];
-  /** RV-1: the review key (`base\0proposed`) each buffer's sets belong to.
-   *  `ensureReviewKey` resets a buffer's sets ONLY when the key actually
-   *  changed (a new proposal) — a remount with the same proposal must keep
-   *  the progress. Null while no proposal is pending for that buffer. */
-  rulesKey: string | null;
-  visualKey: string | null;
-  /** CD-8 dangling capture, if any. */
-  dangling: AgentDanglingCapture | null;
-}
 
 export const EMPTY_REVIEW_ROUND: AgentReviewRound = Object.freeze({
   snapshots: [],
@@ -145,11 +103,7 @@ export const useAgentReviewRoundStore = create<AgentReviewState>((set, get) => (
   pushSnapshot: (kind, threadId, snapshot) => {
     const key = agentThreadKey(kind, threadId);
     set((s) =>
-      writeRound(s, key, (round) => ({
-        ...round,
-        snapshots: [...round.snapshots, { ...snapshot, id: round.nextSnapshotId }],
-        nextSnapshotId: round.nextSnapshotId + 1,
-      })),
+      writeRound(s, key, (round) => appendAgentReviewSnapshot(round, snapshot)),
     );
   },
   popSnapshot: (kind, threadId) => {
@@ -181,14 +135,9 @@ export const useAgentReviewRoundStore = create<AgentReviewState>((set, get) => (
   ensureReviewKey: (kind, threadId, buffer, key) => {
     const storeKey = agentThreadKey(kind, threadId);
     const round = roundOf(get(), storeKey);
-    const currentKey = buffer === "rules" ? round.rulesKey : round.visualKey;
-    if (currentKey === key) return;
+    if (ensureAgentReviewKey(round, buffer, key) === round) return;
     set((s) =>
-      writeRound(s, storeKey, (r) =>
-        buffer === "rules"
-          ? { ...r, rulesKey: key, acceptedRules: [], dismissedRules: [] }
-          : { ...r, visualKey: key, acceptedVisual: [], dismissedVisual: [] },
-      ),
+      writeRound(s, storeKey, (r) => ensureAgentReviewKey(r, buffer, key)),
     );
   },
   captureDangling: (kind, threadId, capture) => {

@@ -62,8 +62,27 @@ export function withStaticValidator(
 /** A file's validator from its metadata: hashing a 10 MB chunk on every
  *  request would cost more than the bytes it saves. Size + mtime changes on
  *  every rewrite, including a stable-named file rebuilt in place. */
-function fileEtag(size: number, mtimeMs: number): string {
-	return `W/"${size.toString(16)}-${Math.trunc(mtimeMs).toString(16)}"`;
+function fileEtag(size: number, mtimeMs: number, encoding: string): string {
+	return `W/"${size.toString(16)}-${Math.trunc(mtimeMs).toString(16)}-${encoding}"`;
+}
+
+/** Rank supported codings by client quality, then server preference.
+ * An explicit q=0 overrides the wildcard. Identity is the fallback, not a
+ * competitor unless the client explicitly gives it a higher preference. */
+function acceptedAssetEncodings(header: string | null): ("br" | "gzip")[] {
+	if (!header) return [];
+	const qualities = new Map<string, number>();
+	for (const item of header.split(",")) {
+		const [name, ...parameters] = item.trim().toLowerCase().split(";");
+		if (!name) continue;
+		const qualityParameter = parameters.map((part) => part.trim()).find((part) => part.startsWith("q="));
+		const quality = qualityParameter === undefined ? 1 : Number(qualityParameter.slice(2));
+		qualities.set(name, Number.isFinite(quality) && quality >= 0 && quality <= 1 ? quality : 0);
+	}
+	const quality = (encoding: string): number => qualities.get(encoding) ?? qualities.get("*") ?? 0;
+	return (["br", "gzip"] as const)
+		.filter((encoding) => quality(encoding) > 0 && quality(encoding) >= (qualities.get("identity") ?? 0))
+		.sort((left, right) => quality(right) - quality(left));
 }
 
 /**
@@ -89,9 +108,27 @@ export function serveAssetFile(dir: string, prefix: string, request: Request): R
 	if (!filePath.startsWith(root + sep)) return notFound();
 	const stats = statSync(filePath, { throwIfNoEntry: false });
 	if (!stats?.isFile()) return notFound();
-	const response = withStaticValidator(request, fileEtag(stats.size, stats.mtimeMs), () =>
-		new Response(Bun.file(filePath)),
+	let selectedPath = filePath;
+	let selectedStats = stats;
+	let encoding: "br" | "gzip" | undefined;
+	// Preserve Bun's existing raw-file range behavior; do not slice a compressed
+	// stream using offsets intended for the original representation.
+	if (!request.headers.has("Range")) {
+		for (const candidate of acceptedAssetEncodings(request.headers.get("Accept-Encoding"))) {
+			const sibling = `${filePath}.${candidate === "gzip" ? "gz" : "br"}`;
+			const siblingStats = statSync(sibling, { throwIfNoEntry: false });
+			if (!siblingStats?.isFile() || siblingStats.mtimeMs < stats.mtimeMs) continue;
+			selectedPath = sibling;
+			selectedStats = siblingStats;
+			encoding = candidate;
+			break;
+		}
+	}
+	const response = withStaticValidator(request, fileEtag(selectedStats.size, selectedStats.mtimeMs, encoding ?? "identity"), () =>
+		new Response(Bun.file(selectedPath), { headers: { "Content-Type": Bun.file(filePath).type } }),
 	);
-	response.headers.set("Last-Modified", stats.mtime.toUTCString());
+	response.headers.set("Last-Modified", selectedStats.mtime.toUTCString());
+	response.headers.set("Vary", "Accept-Encoding");
+	if (encoding) response.headers.set("Content-Encoding", encoding);
 	return response;
 }

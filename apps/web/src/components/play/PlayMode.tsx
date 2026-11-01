@@ -7,6 +7,7 @@ import { ImageGenFineTuningChip } from "../chat/ImageGenFineTuningChip.js";
 import { ImageGenProgressRow } from "../chat/ImageGenProgressRow.js";
 import { MessageAiEditorModal } from "../chat/MessageAiEditorModal.js";
 import { ExperienceLauncher } from "../experience/ExperienceLauncher.js";
+import { StoryPlanStrip } from "../chat/sidechat/StoryPlanStrip.js";
 import { AgentShell } from "../shared/agent-shell/AgentShell.js";
 import { AgentShellTabButton } from "../shared/agent-shell/AgentShellTabButton.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
@@ -129,7 +130,7 @@ function PlayModeMobileSidechat({
             data-testid="sidechat-mobile-pane-sidechat"
             className={cn("flex min-w-0 flex-1 flex-col", tab !== "sidechat" && "hidden")}
           >
-            <AgentShell kind={SIDECHAT_AGENT_KIND} owner={owner} isMobile />
+            <AgentShell kind={SIDECHAT_AGENT_KIND} owner={owner} isMobile visible={tab === "sidechat"} />
           </div>
         )}
       </div>
@@ -141,6 +142,10 @@ function PlayModeMobileSidechat({
  * The RP chat pane — MessageList + the shared launcher bar + InputArea.
  * Verbatim the pre-SC-15 `PlayMode` body; shared by the desktop surface and
  * the mobile chat pane so the two never fork the composer stack.
+ * DR-11: the story-plan strip rides as the FIRST child — in-flow and
+ * constant-height (only its curtain overlays), above the message list so
+ * desktop and the mobile Chat pane share it. It renders null while the
+ * active branch has no plan (byte-identical without one).
  */
 function PlayModeChatPane() {
   // Remount at the chat/branch boundary so message-local UI and Virtuoso's
@@ -161,6 +166,7 @@ function PlayModeChatPane() {
   const launcherChatId = useSnapshotStore((s) => s.activeChat?.id ?? null);
   return (
     <>
+      <StoryPlanStrip />
       <MessageList key={activeScope} bottomInset={launcherBarHeight} />
       <div className="relative shrink-0">
         <QueueManager />

@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { createApp } from "../src/server/app-factory.js";
 import { ExperienceBindError } from "@vibe-tavern/db";
 import type { RuntimeApi } from "../src/api/contract/runtime-api.js";
+import { ChatGenerationRunAdapter } from "../src/api/adapters/chat-generation-run-adapter.js";
 
 /**
  * IR-70H send-path gap — HTTP/SSE-level contract for experience-attachment bind
@@ -53,7 +54,11 @@ function runtimeWithSend(send: {
   sendMessage?: RuntimeApi["chat"]["sendMessage"];
   sendMessageStream?: RuntimeApi["chat"]["sendMessageStream"];
 }): RuntimeApi {
-  return { chat: send } as unknown as RuntimeApi;
+  const runs = new ChatGenerationRunAdapter({
+    chats: { getById: async () => ({ id: "chat_1", characterId: "char_1", activeBranchId: "branch_1", mode: "rp", title: "Experience" }) },
+    characters: { getById: async () => ({ name: "Experience" }) },
+  } as unknown as ConstructorParameters<typeof ChatGenerationRunAdapter>[0]);
+  return { chat: { ...send, startChatGeneration: runs.startChatGeneration } } as unknown as RuntimeApi;
 }
 
 function postJson(): RequestInit {

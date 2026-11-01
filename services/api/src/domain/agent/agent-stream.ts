@@ -35,6 +35,7 @@ import { logSendDebug } from "../../shared/send-debug-log.js";
 import { notFound, validation } from "../../shared/errors.js";
 import { promptVisibleAttachments, type Attachment, type AttachmentPatch } from "@vibe-tavern/domain";
 import { prepareAgentModelMessages, type AgentVisionAssets } from "./agent-attachments.js";
+import { resolveTurnOwnModel, type AgentOwnModelBinding } from "./agent-own-model.js";
 import { resolveDigestBoundary, type AgentHistoryMessage } from "./agent-prompt.js";
 import {
   applyAgentTurnAnswer,
@@ -247,8 +248,20 @@ export interface AgentStreamSeams<
   readonly assembleDebugFields?: (kindContext: CTX) => Record<string, unknown>;
   /** Load the kind's turn context, in parallel with the stored history. */
   readonly loadContext: (thread: THREAD) => Promise<CTX>;
-  /** Resolve the kind's agent profile (base prompt + tool toggles + budget). */
+  /** Resolve the kind's agent profile (base prompt + tool toggles + budget).
+   *  DR-2 (M1): resolved at the TOP of the turn (before the provider/model
+   *  resolution) so its own model can take precedence — see
+   *  {@link resolveOwnModel}. */
   readonly resolveProfile: (thread: THREAD) => Promise<PROFILE>;
+  /** DR-2 (M1): read the RESOLVED profile's own-model binding, or null when
+   *  the profile carries none (same as sidechat — the existing chain). The
+   *  loop calls it ONCE per turn with the profile `resolveProfile` returned
+   *  for THIS turn, before resolving the provider: a non-null binding takes
+   *  precedence over the request's pair (the kind binding the client
+   *  derived); a DANGLING provider id falls through to the request's pair
+   *  inside the loop, never errors. Absent (tests, legacy harnesses) →
+   *  every kind resolves exactly as before this seam existed. */
+  readonly resolveOwnModel?: (profile: PROFILE) => Promise<AgentOwnModelBinding | null>;
   /** Assemble the prompt (kind-owned; loads its own plans/attached context). */
   readonly assemble: (
     input: AgentAssembleSeamInput<REQ, THREAD, CTX, PROFILE>,
@@ -445,12 +458,25 @@ export async function* streamAgentTurn<
   // persistence, must never happen for a request whose provider inputs do
   // not resolve. The two loads are independent — swapping them is
   // behavior-neutral for the other modes' success paths.)
-  const profile = await deps.getProviderProfile(request.providerProfileId);
+  // DR-2 (M1): the kind's agent profile resolves FIRST (hoisted from the old
+  // step 6 — a pure read, so the move is behavior-neutral for the loads
+  // below) so its OWN model, when one is stored, can take precedence over
+  // the request's pair (see `agent-own-model.ts` for the one-line chain);
+  // with no stored own model every kind resolves exactly as before.
+  const agentProfile = await seams.resolveProfile(thread);
+  const ownModel = await resolveTurnOwnModel(agentProfile, deps, seams.resolveOwnModel);
+  const providerProfileId = ownModel?.providerProfileId ?? request.providerProfileId;
+  const profile = await deps.getProviderProfile(providerProfileId);
   if (!profile) {
-    throw notFound("ProviderProfile", `Provider profile '${request.providerProfileId}' was not found.`);
+    throw notFound("ProviderProfile", `Provider profile '${providerProfileId}' was not found.`);
   }
-  const modelName = request.model ?? profile.defaultModel ?? "gpt-4o-mini";
-  const effectiveProfile = await deps.getEffectiveProviderProfile(request.providerProfileId, modelName);
+  // The own binding owns the WHOLE pair: its null model means the OWN
+  // provider's default, never the request's model on the own provider.
+  const modelName =
+    ownModel !== null
+      ? ownModel.modelName ?? profile.defaultModel ?? "gpt-4o-mini"
+      : request.model ?? profile.defaultModel ?? "gpt-4o-mini";
+  const effectiveProfile = await deps.getEffectiveProviderProfile(providerProfileId, modelName);
 
   // ── 3. AP-9 regenerate: trim the replaced turn BEFORE the loads ──
   // The regenerated turn's input is the thread state as-is: the rows after
@@ -533,8 +559,9 @@ export async function* streamAgentTurn<
     ...storeMessagesToHistory(boundary.kept),
   ];
 
-  // ── 6. Resolve the kind's agent profile (base prompt + tools + budget) ──
-  const agentProfile = await seams.resolveProfile(thread);
+  // ── 6. The kind's agent profile resolved at step 2 (DR-2 hoist) ──
+  // `agentProfile` is already in scope — resolved before the provider so its
+  // own model (M1) could take precedence over the request's pair.
 
   // ── 7. Assemble the prompt (kind-owned) ──
   // Content mode: the new user message is appended to the prior history for
@@ -748,7 +775,7 @@ export async function* streamAgentTurn<
     await deps.store.updateContextMetrics(
       request.threadId,
       contextMetrics,
-      request.providerProfileId,
+      providerProfileId,
       modelName,
     );
   } catch (err) {

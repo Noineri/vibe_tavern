@@ -1,0 +1,1 @@
+CREATE INDEX `idx_prompt_trace_chunk_refs_chunk` ON `prompt_trace_chunk_refs` (`chunk_id`);

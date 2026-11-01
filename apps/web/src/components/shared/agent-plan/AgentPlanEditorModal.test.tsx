@@ -9,6 +9,7 @@ const { AgentPlanEditorModal } = await import("./AgentPlanEditorModal.js");
 
 const originalFetch = globalThis.fetch;
 let putBody: unknown = null;
+let lastPath = "";
 let rejectPut = false;
 
 const INITIAL_PLAN: AgentPlan = {
@@ -33,11 +34,22 @@ const fetchRouter = mock(async (input: RequestInfo | URL, init?: RequestInit): P
     if (rejectPut) return jsonResponse({ error: { message: "At most one task can be active." } }, 422);
     return jsonResponse({ plan: (putBody as { plan: AgentPlan }).plan });
   }
+  // DR-9: the branch (story-plan) route — same canned payloads, any owner.
+  if (/\/api\/agent\/chats\/[^/]+\/branches\/[^/]+\/plan$/.test(path) && method === "GET") {
+    lastPath = path;
+    return jsonResponse({ plan: INITIAL_PLAN });
+  }
+  if (/\/api\/agent\/chats\/[^/]+\/branches\/[^/]+\/plan$/.test(path) && method === "PUT") {
+    lastPath = path;
+    putBody = JSON.parse(String(init?.body ?? "{}"));
+    return jsonResponse({ plan: (putBody as { plan: AgentPlan }).plan });
+  }
   return jsonResponse({ error: { message: `unrouted ${method} ${path}` } }, 404);
 });
 
 beforeEach(() => {
   putBody = null;
+  lastPath = "";
   rejectPut = false;
   fetchRouter.mockClear();
   globalThis.fetch = fetchRouter as unknown as typeof fetch;
@@ -104,5 +116,69 @@ describe("AgentPlanEditorModal", () => {
     expect((putBody as { plan: AgentPlan }).plan.tasks.filter((task) => task.status === "active")).toHaveLength(2);
     await waitFor(() => expect(getByText("At most one task can be active.")).toBeDefined());
     expect(getByTestId("agent-plan-save")).toBeDefined();
+  });
+});
+
+// ─── DR-9 (mockup §7): the story label set for a branch owner ───────────────
+// Key-echo i18n (the default context) — every STORY key asserted present,
+// and the script keys that must NOT leak into the story editor asserted
+// absent. The save pins the owner routing: the branch route, never the
+// script one.
+describe("AgentPlanEditorModal — story labels for a branch owner (DR-9)", () => {
+  function renderStoryModal(locked = false) {
+    const onClose = mock();
+    const view = render(
+      <AgentPlanEditorModal
+        owner={{ kind: "chatBranch", chatId: "story-chat", branchId: "story-branch" }}
+        open
+        onClose={onClose}
+        locked={locked}
+      />,
+    );
+    return { ...view, onClose };
+  }
+
+  it("renders every §7 label: title, premise + hint, rules, events, body hint + placeholder", async () => {
+    const { getByLabelText, getByTestId, queryByPlaceholderText, queryAllByPlaceholderText, getAllByText, getAllByLabelText, getAllByPlaceholderText, queryByText } = renderStoryModal();
+    // Terminal state: the premise field carries the canned plan's goal.
+    await waitFor(() => expect((getByLabelText("agent_plan_story_goal") as HTMLTextAreaElement).value).toBe("Build the editor"));
+
+    // Title «План сюжета» (the sr-only Dialog.Title and the visible h2).
+    expect(getAllByText("agent_plan_story_title").length).toBeGreaterThanOrEqual(1);
+    // «Завязка» + the §7 hint under it.
+    expect(getByTestId("agent-plan-goal-hint").textContent).toBe("agent_plan_story_goal_hint");
+    // «Правила истории» / «+ Правило».
+    expect(getAllByText("agent_plan_story_constraints").length).toBeGreaterThanOrEqual(1);
+    expect(getAllByText("agent_plan_story_add_constraint")).toHaveLength(1);
+    // «События» / «+ Событие».
+    expect(getAllByText("agent_plan_story_tasks").length).toBeGreaterThanOrEqual(1);
+    expect(getAllByText("agent_plan_story_add_task")).toHaveLength(1);
+    // Body hint (one per event — 2 canned tasks) + the §7 placeholder.
+    expect(getAllByText("agent_plan_story_task_body_hint")).toHaveLength(2);
+    expect(getAllByPlaceholderText("agent_plan_story_task_body_placeholder")).toHaveLength(2);
+    expect(getAllByLabelText(/agent_plan_story_task_body/)).toHaveLength(2);
+
+    // The script editor's wording never leaks into the story editor.
+    expect(queryByText("agent_plan_constraints")).toBeNull();
+    expect(queryByText("agent_plan_add_constraint")).toBeNull();
+    expect(queryByText("agent_plan_tasks")).toBeNull();
+    expect(queryByText("agent_plan_add_task")).toBeNull();
+    expect(queryAllByPlaceholderText("agent_plan_task_body_placeholder")).toHaveLength(0);
+    // The event's status selector stays as today (§7 note).
+    expect(getByTestId("agent-plan-status-0")).toBeDefined();
+  });
+
+  it("saves the story plan through the BRANCH route (the hook's owner routing)", async () => {
+    const { getByLabelText, getByTestId, onClose } = renderStoryModal();
+    await waitFor(() => expect((getByLabelText("agent_plan_story_goal") as HTMLTextAreaElement).value).toBe("Build the editor"));
+    fireEvent.change(getByLabelText("agent_plan_story_goal"), { target: { value: "A stray cat became a young man overnight" } });
+    fireEvent.click(getByTestId("agent-plan-save"));
+
+    await waitFor(() => expect(putBody).not.toBeNull());
+    expect((putBody as { plan: AgentPlan }).plan.goal).toBe("A stray cat became a young man overnight");
+    // The hono client prefixes the gateway base ("/null" under tests) —
+    // match the route suffix, not the exact string.
+    expect(lastPath.endsWith("/api/agent/chats/story-chat/branches/story-branch/plan")).toBe(true);
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 });

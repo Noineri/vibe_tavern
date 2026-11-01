@@ -208,6 +208,25 @@ describe("GET /api/agent/threads/:threadId/events (SC-19a)", () => {
 		]);
 	});
 
+	test("the DR-12 `profile_changed` event serves onto the wire with its anchor", async () => {
+		const thread = await seedSidechatThread();
+		// The frozen payload exactly as the separator writer freezes it (the
+		// from/to ids + write-time names); the route must pass it through and
+		// anchor the row before the message that follows it.
+		const payload = {
+			from: { id: "builtin", name: "Sidechat OOC" },
+			to: { id: "builtin-director", name: "Sidechat Director" },
+		};
+		const event = await stores.experienceCopilot.appendContextEvent(thread.id, "profile_changed", payload);
+		const message = await stores.experienceCopilot.appendMessage(thread.id, { role: "user", content: "status?" });
+
+		const response = await getEvents(thread.id);
+		expect(response.status).toBe(200);
+		expect(await response.json()).toEqual([
+			{ id: event.id, kind: "profile_changed", payload, beforeMessageId: message.id },
+		]);
+	});
+
 	test("a script thread → []; a fresh chat-owned thread with no events → []", async () => {
 		const scriptThread = await stores.experienceCopilot.startNewSession("script_fixture_sc19a");
 		const scriptResponse = await getEvents(scriptThread.id);

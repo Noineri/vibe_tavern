@@ -1,5 +1,4 @@
 import { useCallback, useMemo, type Dispatch, type ReactNode, type SetStateAction } from "react";
-import { useShallow } from "zustand/react/shallow";
 import { toast } from "sonner";
 import { copyText } from "../../../lib/clipboard.js";
 import type {
@@ -12,9 +11,11 @@ import type { Attachment } from "@vibe-tavern/domain";
 import { Icons } from "../icons.js";
 import { EmptyState } from "../empty-state.js";
 import { useT } from "../../../i18n/context.js";
-import { agentThreadKey, type AgentHostContext, type AgentHostDescriptor, type AgentKind, type AgentSendOptions } from "../../../lib/agent-host-registry.js";
+import { agentThreadKey, type AgentHostContext, type AgentHostDescriptor, type AgentI18nKey, type AgentKind, type AgentSendOptions } from "../../../lib/agent-host-registry.js";
+import type { AgentBuiltinProfileHandoff, AgentBuiltinProfilePresentation } from "../../../lib/agent-builtin-profiles.js";
 import { useAgentTurnStore } from "../../../stores/agent-turn-store.js";
 import { selectAgentLiveAsk } from "../../../stores/agent-live-ask.js";
+import { TranslateErrorBoundary } from "../../layout/TranslateErrorBoundary.js";
 import type { AgentController } from "./use-agent-controller.js";
 import type { CopilotContextController } from "../../../hooks/use-copilot-context.js";
 import type { MentionAutocompleteItem } from "../mention-autocomplete-query.js";
@@ -54,8 +55,9 @@ import { AgentAttachmentActionsContext } from "./agent-attachment-actions-contex
  * logic of its own; `t` comes from the same i18n context the shell uses.
  */
 
-/** Stable empties for the AP-6 turn-store subscriptions (a fresh `[]` per
- *  selector call would defeat `useShallow` and resubscribe every render). */
+/** Stable empties for the store subscriptions' fallbacks (a fresh `[]` per
+ *  selector call would allocate per store write — the selectors below return
+ *  PRIMITIVES (the derived ask id), so the arrays are only parser inputs). */
 const EMPTY_FEED: never[] = [];
 const EMPTY_ACTIVITIES: never[] = [];
 
@@ -75,14 +77,30 @@ export interface AgentChatPaneProps {
   handleNewSession: () => Promise<void>;
   handleRenameSession: (targetThreadId: string, title: string) => Promise<void>;
   setSettingsModalOpen: Dispatch<SetStateAction<boolean>>;
+  /** DR-6: the header's profile chip (the label + quick-switch menu). The
+   *  SHELL builds this element (profile data + assignment writes live
+   *  there); the pane only forwards it into the header's slot, exactly as
+   *  it forwards the host's `leading` toolbar slot. */
+  profileChip?: ReactNode;
   copilotContext: CopilotContextController;
   ctrl: AgentController;
   sendWithOptions: (dispatch: (opts?: AgentSendOptions) => void) => void;
   planOwner: AgentPlanOwner | undefined;
+  /** DR-9 (P1): false unmounts the plan section for this pane. The SHELL
+   *  computes the distinction — the desktop sidechat drops its story-plan
+   *  section (the chat column's strip, DR-11, becomes its home), while the
+   *  mobile sidechat pane keeps it; script/mini-app hosts keep their
+   *  section on both viewports. Absent = today's rendering for every
+   *  host — one prop from the shell, the pane stays viewport-agnostic. */
+  showPlanSection?: boolean;
   inputPrefill: { text: string } | null;
   providerProfileId: string | null;
   model: string | undefined;
   handleProviderChange: (profileId: string, nextModel?: string) => void;
+  /** DR-8 (mockup §11): the profile-model caption for the composers'
+   *  pills row — null/absent when no own profile model is active (today's
+   *  composers, byte-identical). */
+  modelCaption?: string | null;
   catalog: MentionAutocompleteItem[];
   pinnedContext: AgentContextPillItem[];
   handlePinContext: (item: MentionAutocompleteItem) => void;
@@ -91,6 +109,25 @@ export interface AgentChatPaneProps {
   /** AP-18: starter-prompt pick from the empty session — the shell turns the
    *  text into a composer prefill (never sent); the pane focuses the composer. */
   onStarterPick?: (text: string) => void;
+  /** DR-7: the ACTIVE built-in profile's own empty-state presentation (the
+   *  sidechat director today) — resolved by the shell (it owns the
+   *  effective-profile read); absent = the host's own title/subtitle/icon,
+   * byte-identical to before this unit. The pane resolves the keys through
+   * `t` and swaps the icon, exactly as it resolves the host's own keys.
+   *  Built-ins only — a user profile never resolves a presentation (its
+   *  title/subtitle/icon stay the host's). */
+  emptyPresentation?: AgentBuiltinProfilePresentation;
+  /** DR-7b: the effective profile's STARTER keys — decoupled from the
+   *  presentation because a USER duplicate of a built-in inherits the
+   *  SOURCE's starters while keeping the HOST's title/subtitle/icon (owner
+   *  split ruling 2026-10-27). Resolved by the shell through the ONE
+   *  derivation (`effectiveProfileStarterKeys`); absent falls back to the
+   *  presentation's own starters (the built-in case), then the host's. */
+  starterKeysOverride?: readonly AgentI18nKey[];
+  /** DR-7: the OOC hand-off row config + the shell's profile-switch
+   *  callback (the DR-6 write). Absent = no row. The prefill rides the SAME
+   *  AP-18 starter path below (never a second send seam). */
+  handoffRow?: AgentBuiltinProfileHandoff & { onActivate: () => void };
   /** CA-4f: the shell's ONE settle refresh (`AgentShell.handleTurnSettled`'s
    *  message/events reload). Sent-attachment actions refetch through it —
    *  the same path a turn delete uses, never a second one. */
@@ -113,49 +150,53 @@ export function AgentChatPane({
   handleNewSession,
   handleRenameSession,
   setSettingsModalOpen,
+  profileChip,
   copilotContext,
   ctrl,
   sendWithOptions,
   planOwner,
+  showPlanSection = true,
   inputPrefill,
   providerProfileId,
   model,
   handleProviderChange,
+  modelCaption = null,
   catalog,
   pinnedContext,
   handlePinContext,
   handleUnpinContext,
   composerTopSlot,
   onStarterPick,
+  emptyPresentation,
+  starterKeysOverride,
+  handoffRow,
   refreshMessages,
 }: AgentChatPaneProps) {
   const { t } = useT();
 
-  // AP-6: the answering state is the SAME live ask the AP-5 send routing
-  // reads — one derivation (`selectAgentLiveAsk`), two consumers (send
-  // routing at event time via `getState()`, this visual flag at render time
-  // via a standard zustand subscription). Render-time subscription is fine
-  // here (the `getState()` rule covers async/event callbacks only); the
-  // `useShallow` + stable-empty shape mirrors the message list's.
-  const liveAskFeed = useAgentTurnStore(
-    useShallow((s) => (threadId !== null ? (s.feedByThread[agentThreadKey(kind, threadId)] ?? EMPTY_FEED) : EMPTY_FEED)),
-  );
-  const liveAskActivities = useAgentTurnStore(
-    useShallow((s) => (threadId !== null ? (s.turnsByThread[agentThreadKey(kind, threadId)] ?? EMPTY_ACTIVITIES) : EMPTY_ACTIVITIES)),
-  );
-  const answeringAsk = useMemo(
-    () =>
-      threadId !== null
-        ? selectAgentLiveAsk({
-            feed: liveAskFeed,
-            activities: liveAskActivities,
-            messages,
-            pendingAskAnswer: ctrl.pendingAskAnswer,
-            isSending: ctrl.isSending,
-          }) !== null
-        : false,
-    [threadId, kind, liveAskFeed, liveAskActivities, messages, ctrl.pendingAskAnswer, ctrl.isSending],
-  );
+  // AP-6 / LAG-3: the answering state is the SAME live ask the AP-5 send
+  // routing reads — one derivation (`selectAgentLiveAsk`), two consumers
+  // (send routing at event time via `getState()` below, this visual flag at
+  // render time). The subscription selects the derived ASK ID (a primitive),
+  // never the feed/activity arrays: a per-flush feed write re-runs the
+  // selector but the result is unchanged (while a turn streams the selector
+  // short-circuits to null), so this pane — and the header, meter and
+  // composers under it — does not re-render per flush; only the message
+  // list does (LAG-3's contract). The event-time reads below stay
+  // `getState()` (the render closure would go stale mid-stream).
+  const answeringAsk = useAgentTurnStore((s) => {
+    if (threadId === null || ctrl.isSending) return false;
+    const key = agentThreadKey(kind, threadId);
+    return (
+      selectAgentLiveAsk({
+        feed: s.feedByThread[key] ?? EMPTY_FEED,
+        activities: s.turnsByThread[key] ?? EMPTY_ACTIVITIES,
+        messages,
+        pendingAskAnswer: ctrl.pendingAskAnswer,
+        isSending: ctrl.isSending,
+      }) !== null
+    );
+  });
 
   // AP-11: the turn-row callbacks the list merges per bubble — copy through
   // the shared clipboard helper (success toasts, the TrackerConfig icon-copy
@@ -263,6 +304,7 @@ export function AgentChatPane({
         <>
           <AgentChatHeader
             leading={host.toolbarSlot?.(hostCtx)}
+            profileChip={profileChip}
             contextRing={
               <AgentContextRing
                 metrics={copilotContext.metrics}
@@ -304,49 +346,67 @@ export function AgentChatPane({
               turn streams. PM-7: todo (the thread's session) ABOVE plan (the
               owner's durable document) — each hides itself when empty.
               SC-0i: unmounted entirely when the host defines no plan owner. */}
-          {planOwner !== undefined && <AgentPlanSection owner={planOwner} locked={ctrl.isSending} />}
-          <AgentMessageList
-            kind={kind}
-            threadId={threadId}
-            messages={messages}
-            events={events}
-            pendingText={ctrl.pendingText}
-            pendingReasoning={ctrl.pendingReasoning}
-            pendingUserContent={ctrl.pendingUserContent}
-            pendingUserAttachments={ctrl.pendingUserAttachments}
-            isSending={ctrl.isSending}
-            // AP-29 follow-up 2: a regenerate in flight hides the replaced
-            // turn (the server already deleted it) and streams the new turn
-            // as a fresh turn.
-            // AP-29 follow-up 3: the recorded ids keep it hidden past the
-            // settle until the refetch lands without them (no flash of the
-            // replaced turn).
-            isRegenerating={ctrl.isRegenerating}
-            hiddenRegeneratedIds={ctrl.hiddenRegeneratedIds}
-            pendingAskAnswer={ctrl.pendingAskAnswer}
-            pendingPermissionAnswer={ctrl.pendingPermissionAnswer}
-            emptyTitle={t(host.i18n.emptyTitle)}
-            emptySub={host.i18n.emptySub !== undefined ? t(host.i18n.emptySub) : undefined}
-            onStarterPick={onStarterPick !== undefined ? handleStarterPick : undefined}
-            onAnswer={(askToolCallId, answer) => {
-              sendWithOptions((options) => void ctrl.handleAnswer(askToolCallId, answer, options));
-            }}
-            turnRow={turnRow}
-            // AP-13: the error card's live failure + retry (the failure is
-            // keyed per thread in the controller; the quiet after-reload
-            // card derives from the messages inside the list).
-            turnFailure={ctrl.turnFailure}
-            onRetryTurn={handleRetryTurn}
-            // AP-12: the inline-edit submit (delete the last exchange, then
-            // send) — straight from the controller (the same fire-and-forget
-            // shape as the onAnswer arm above).
-            onEditLast={(content) => { void ctrl.handleEditLast(content); }}
-            // AP-32: the assistant's in-place save — the controller's
-            // `handleEditAssistant` (AP-31) returns the outcome to the
-            // block, so the promise threads through untouched (failure
-            // keeps the draft open; the settle refetch shows saved text).
-            onEditAssistant={(messageId, content) => ctrl.handleEditAssistant(messageId, content)}
-          />
+          {planOwner !== undefined && showPlanSection && <AgentPlanSection owner={planOwner} locked={ctrl.isSending} />}
+          {/* LAG-5 (AGENT_SHELL_RENDER_LAG_REPORT step 6): Chrome page
+              translation wraps text nodes in <font> elements, and the LAG-4
+              prefix+tail completion removeChild's the completed block's
+              text fibers out of the reused tail paragraph — the owner's
+              2026-10-30 page crash. The EXISTING TranslateErrorBoundary
+              (the MessageScroller precedent — the one boundary class,
+              reused) wraps ONLY this list: a recovery remounts the list,
+              never the pane around it, so the composer's local draft, the
+              header and the open session survive (LAG-3's isolation is
+              untouched — the pane is not under the boundary). The live
+              stream survives by construction: LAG-3 keeps it in
+              agent-live-stream-store, so the remounted list re-renders the
+              current live text and keeps streaming. Non-DOM errors still
+              propagate — the boundary re-throws what it does not recognize
+              as translate corruption. */}
+          <TranslateErrorBoundary>
+            <AgentMessageList
+              kind={kind}
+              threadId={threadId}
+              messages={messages}
+              events={events}
+              pendingUserContent={ctrl.pendingUserContent}
+              pendingUserAttachments={ctrl.pendingUserAttachments}
+              isSending={ctrl.isSending}
+              // AP-29 follow-up 2: a regenerate in flight hides the replaced
+              // turn (the server already deleted it) and streams the new turn
+              // as a fresh turn.
+              // AP-29 follow-up 3: the recorded ids keep it hidden past the
+              // settle until the refetch lands without them (no flash of the
+              // replaced turn).
+              isRegenerating={ctrl.isRegenerating}
+              hiddenRegeneratedIds={ctrl.hiddenRegeneratedIds}
+              pendingAskAnswer={ctrl.pendingAskAnswer}
+              pendingPermissionAnswer={ctrl.pendingPermissionAnswer}
+              emptyTitle={t(emptyPresentation !== undefined ? emptyPresentation.titleKey : host.i18n.emptyTitle)}
+              emptySub={emptyPresentation !== undefined ? t(emptyPresentation.subKey) : host.i18n.emptySub !== undefined ? t(host.i18n.emptySub) : undefined}
+              emptyIcon={emptyPresentation !== undefined ? <Icons.film className="h-6 w-6 text-accent" /> : undefined}
+              starterKeysOverride={starterKeysOverride ?? emptyPresentation?.starterKeys}
+              handoffRow={handoffRow}
+              onStarterPick={onStarterPick !== undefined ? handleStarterPick : undefined}
+              onAnswer={(askToolCallId, answer) => {
+                sendWithOptions((options) => void ctrl.handleAnswer(askToolCallId, answer, options));
+              }}
+              turnRow={turnRow}
+              // AP-13: the error card's live failure + retry (the failure is
+              // keyed per thread in the controller; the quiet after-reload
+              // card derives from the messages inside the list).
+              turnFailure={ctrl.turnFailure}
+              onRetryTurn={handleRetryTurn}
+              // AP-12: the inline-edit submit (delete the last exchange, then
+              // send) — straight from the controller (the same fire-and-forget
+              // shape as the onAnswer arm above).
+              onEditLast={(content) => { void ctrl.handleEditLast(content); }}
+              // AP-32: the assistant's in-place save — the controller's
+              // `handleEditAssistant` (AP-31) returns the outcome to the
+              // block, so the promise threads through untouched (failure
+              // keeps the draft open; the settle refetch shows saved text).
+              onEditAssistant={(messageId, content) => ctrl.handleEditAssistant(messageId, content)}
+              />
+          </TranslateErrorBoundary>
           {/* AP-16: the pending-changes strip — ONE mount above BOTH composer
               arms (both sit under this pane, so a single site covers desktop
               + phone; the mockup strip is viewport-agnostic). The strip hides
@@ -363,6 +423,7 @@ export function AgentChatPane({
               providerProfileId={providerProfileId}
               model={model}
               onProviderChange={handleProviderChange}
+              modelCaption={modelCaption}
               mentionCatalog={catalog}
               pinnedContext={pinnedContext}
               onPinContext={handlePinContext}
@@ -380,6 +441,7 @@ export function AgentChatPane({
               providerProfileId={providerProfileId}
               model={model}
               onProviderChange={handleProviderChange}
+              modelCaption={modelCaption}
               mentionCatalog={catalog}
               pinnedContext={pinnedContext}
               onPinContext={handlePinContext}

@@ -9,14 +9,14 @@ import { ExperiencePlayground } from "../ExperiencePlayground.js";
 import { ExperienceFrame } from "../../../experience/ExperienceFrame.js";
 import { useT } from "../../../../i18n/context.js";
 import type { ScriptRecord } from "../../../../api/types.js";
-import { rehydrateExperienceCopilotDrafts } from "../../../../lib/experience-copilot-draft.js";
+import { streamPersistedExperienceCopilot, answerPersistedCopilotAsk, experienceCopilotRuns } from "../../../../lib/experience-copilot-draft.js";
 import { ToolbarButton } from "./experience-copilot-buttons.js";
 import { registerAgentHost, scriptOwnerId, type AgentHostBridge, type AgentKind } from "../../../../lib/agent-host-registry.js";
+import { openBuildAgent } from "../../../../lib/agent-host-navigation.js";
 import { parseAgentToolOutput } from "../../../../lib/agent-tool-output.js";
 import type { AgentToolActivity } from "../../../../stores/agent-turn-store.js";
 import {
   activateExperienceCopilotSession,
-  answerCopilotAsk,
   deleteCopilotTurn,
   editCopilotMessage,
   getExperienceCopilotActive,
@@ -25,7 +25,6 @@ import {
   renameExperienceCopilotSession,
   setExperienceCopilotContextLinks,
   startExperienceCopilotSession,
-  streamExperienceCopilot,
 } from "../../../../api/experience-copilot-api.js";
 import { AgentBufferReviewEditor } from "../../../shared/agent-shell/AgentBufferReviewEditor.js";
 import {
@@ -163,14 +162,6 @@ function ExperienceEditorPane({
     bridge,
     onCopied: () => toast.success(t("agent_result_copied")),
   });
-
-  // Draft envelope rehydration (ER-10): seeds BOTH stores (turn + review
-  // round) from the localStorage envelope on mount. Runs BEFORE the shell's
-  // own mount effect loads the session (child effects run first), preserving
-  // the pre-split guarantee that the stores are seeded before threadId lands.
-  useEffect(() => {
-    rehydrateExperienceCopilotDrafts();
-  }, []);
 
   const {
     acceptedRulesHunks,
@@ -437,6 +428,7 @@ function experienceTestCaption(activity: AgentToolActivity): { titleKey: "agent_
  */
 registerAgentHost({
   kind: EXPERIENCE_KIND,
+  open: (owner) => openBuildAgent("experience", owner),
   i18n: {
     // AS-6b2a renamed the copilot_* keys to agent_*; `experience_editor_back`
     // stays host-flavored — it is the EDITOR's shared back label, and the
@@ -476,8 +468,9 @@ registerAgentHost({
   // re-homed behind the descriptor; the registry's typeof-mirrored member
   // types keep this delegation compiler-checked).
   transport: {
-    sendStream: streamExperienceCopilot,
-    answerAsk: answerCopilotAsk,
+    sendStream: streamPersistedExperienceCopilot,
+    runs: experienceCopilotRuns,
+    answerAsk: answerPersistedCopilotAsk,
     // AP-10: the turn-delete REST call (required member — forgetting it is
     // a compile break). The thread route dispatches by thread, never kind.
     deleteTurn: deleteCopilotTurn,

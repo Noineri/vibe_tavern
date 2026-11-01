@@ -17,7 +17,7 @@ import type {
 } from "../src/domain/interactive/copilot/experience-copilot-stream.js";
 import { isDomainError, httpStatusForDomainError, domainErrorToJson } from "../src/shared/errors.js";
 import { registerAgentKind } from "../src/domain/agent/agent-kind-registry.js";
-import type { AgentKind } from "../src/domain/agent/agent-kind.js";
+import type { AgentKind, AgentBuiltinProfileSeed } from "../src/domain/agent/agent-kind.js";
 // Side-effect imports: register the built-in kinds so the script-owned
 // `experience` id resolves (the foreign-kind 400 pin needs it registered).
 import "../src/domain/agent/kinds/experience-kind.js";
@@ -55,11 +55,17 @@ import "../src/domain/agent/kinds/script-kind.js";
 const KIND_A = "sc0f-kind-a";
 const KIND_B = "sc0f-kind-b";
 const KIND_C = "sc0f-kind-c";
+/** DR-12: a fake chat kind with TWO built-in seeds — the separator tests
+ *  switch between them exactly like the real sidechat kind's
+ *  `builtin` → `builtin-director`. */
+const KIND_D = "d12-kind-pair";
+const KIND_D_DIRECTOR = "builtin-director";
 
 /** A chat-owned fake kind — the settings routes and the chain need a
  *  registered chat-owned kind; its stream wiring is irrelevant here (the hop
- *  test drives the stream function directly). */
-function makeFakeChatKind(id: string): AgentKind {
+ *  test drives the stream function directly). DR-12: `seeds` overrides the
+ *  built-in seed list (the two-seed shape the separator tests need). */
+function makeFakeChatKind(id: string, seeds?: AgentBuiltinProfileSeed[]): AgentKind {
   return {
     id,
     owner: "chat",
@@ -68,6 +74,9 @@ function makeFakeChatKind(id: string): AgentKind {
     skillRootId: id,
     toolSetSchema: z.object({ fake_tool: z.boolean().optional() }).strict(),
     defaultToolSet: { fake_tool: true },
+    // DR-1: the descriptor's built-in seed list — the standard single first
+    // seed (name = kind id, the generic seed's pre-DR-1 name).
+    builtinSeeds: seeds ?? [{ id: "builtin", name: id }],
     recencyAnchorText: "(fake kind pins no context)",
     // SC-7b: the fakes serve rp chats (this suite's chats are rp; the
     // stream-hop thread is born straight through the store anyway).
@@ -101,6 +110,9 @@ interface ChatSettingsWire {
 let stores: StoreContainer;
 let routes: Hono;
 let resolver: CopilotProfileResolver;
+/** DR-12: the adapter handle the separator tests drive (the pending
+ *  materialization rides `agentChatStartNewSession`). */
+let adapter: ExperienceCopilotAdapter;
 let characterId: string;
 const unregisterFakes: Array<() => void> = [];
 
@@ -134,10 +146,16 @@ beforeAll(async () => {
     registerAgentKind(makeFakeChatKind(KIND_A)),
     registerAgentKind(makeFakeChatKind(KIND_B)),
     registerAgentKind(makeFakeChatKind(KIND_C)),
+    registerAgentKind(
+      makeFakeChatKind(KIND_D, [
+        { id: "builtin", name: "D12 OOC Seed" },
+        { id: KIND_D_DIRECTOR, name: "D12 Director Seed" },
+      ]),
+    ),
   );
   const dataRoot = await mkdtemp(join(tmpdir(), "vt-agent-chat-settings-"));
   stores = await createStoreContainer(join(dataRoot, "agent-chat-settings.db"), dataRoot);
-  const adapter = new ExperienceCopilotAdapter(stores);
+  adapter = new ExperienceCopilotAdapter(stores);
   routes = mountDomainErrorMapping(createAgentChatSettingsRoutes(adapter));
   resolver = new CopilotProfileResolver(stores);
   const character = await stores.characters.create({ name: "Agent chat settings fixture" });
@@ -541,5 +559,135 @@ describe("the stream resolves a chat-owned thread's profile through the chat cha
     const secondTurn = await runChatThreadTurn(thread.id);
     expect(secondTurn).toContain(KIND_MARKER);
     expect(secondTurn).not.toContain(CHAT_MARKER);
+  });
+});
+
+// ─── The DR-12 profile-change separator ──────────────────────────────────────
+
+/** The pair's timeline EVENT rows (kind + payload), in stored order. */
+async function storedEvents(
+  chatId: string,
+  branchId: string,
+  kind: string,
+): Promise<Array<{ kind: string; payload: unknown }>> {
+  const thread = await stores.experienceCopilot.getActiveForChat(chatId, branchId, kind);
+  if (thread === null) return [];
+  const timeline = await stores.experienceCopilot.listTimeline(thread.id);
+  return timeline
+    .filter((entry) => entry.rowType === "event")
+    .map((entry) => ({ kind: entry.kind, payload: entry.payload }));
+}
+
+describe("PATCH writes the profile_changed separator (DR-12)", () => {
+  test("an effective change with an ACTIVE thread appends the frozen event — names at write time", async () => {
+    const chat = await newChat("D12 active thread");
+    const branchId = chat.activeBranchId as string;
+    await stores.experienceCopilot.startNewChatSession(chat.id, branchId, KIND_D);
+
+    const res = await patchSettings(chat.id, KIND_D, { profileId: KIND_D_DIRECTOR });
+    expect(res.status).toBe(200);
+
+    // The event landed in the pair's active feed with the from/to pair
+    // frozen at write time (the two seeds' server-side names).
+    expect(await storedEvents(chat.id, branchId, KIND_D)).toEqual([
+      {
+        kind: "profile_changed",
+        payload: {
+          from: { id: "builtin", name: "D12 OOC Seed" },
+          to: { id: KIND_D_DIRECTOR, name: "D12 Director Seed" },
+        },
+      },
+    ]);
+    // And no pending marker stayed behind (the event landed directly).
+    expect(await stores.chatAgentSettings.getPendingProfileChange(chat.id, KIND_D)).toBeNull();
+  });
+
+  test("every ACTIVE thread of the pair gets the event — the assignment is chat-wide", async () => {
+    const chat = await newChat("D12 two branches");
+    const branchA = chat.activeBranchId as string;
+    const anchor = await stores.messages.addMessage({
+      chatId: chat.id,
+      branchId: branchA,
+      role: "user",
+      authorType: "user",
+      content: "fork point",
+    });
+    const branchB = (await stores.chats.forkBranch(chat.id, anchor.id)).id;
+    await stores.experienceCopilot.startNewChatSession(chat.id, branchA, KIND_D);
+    await stores.experienceCopilot.startNewChatSession(chat.id, branchB, KIND_D);
+
+    const res = await patchSettings(chat.id, KIND_D, { profileId: KIND_D_DIRECTOR });
+    expect(res.status).toBe(200);
+
+    expect(await storedEvents(chat.id, branchA, KIND_D)).toHaveLength(1);
+    expect(await storedEvents(chat.id, branchB, KIND_D)).toHaveLength(1);
+  });
+
+  test("from === to (re-pinning the effective profile) writes nothing", async () => {
+    const chat = await newChat("D12 same effective");
+    const branchId = chat.activeBranchId as string;
+    await stores.experienceCopilot.startNewChatSession(chat.id, branchId, KIND_D);
+
+    // No prior row: from and to both resolve the first seed — no event, no
+    // pending marker.
+    const res = await patchSettings(chat.id, KIND_D, { profileId: "builtin" });
+    expect(res.status).toBe(200);
+    expect(await storedEvents(chat.id, branchId, KIND_D)).toEqual([]);
+    expect(await stores.chatAgentSettings.getPendingProfileChange(chat.id, KIND_D)).toBeNull();
+  });
+
+  test("no active thread → the pending change lands at session creation, exactly once", async () => {
+    const chat = await newChat("D12 no thread");
+    const branchId = chat.activeBranchId as string;
+
+    // The switch happens while the pair has NO thread anywhere.
+    const res = await patchSettings(chat.id, KIND_D, { profileId: KIND_D_DIRECTOR });
+    expect(res.status).toBe(200);
+    expect(await storedEvents(chat.id, branchId, KIND_D)).toEqual([]);
+    expect(await stores.chatAgentSettings.getPendingProfileChange(chat.id, KIND_D)).toEqual({
+      from: { id: "builtin", name: "D12 OOC Seed" },
+      to: { id: KIND_D_DIRECTOR, name: "D12 Director Seed" },
+    });
+
+    // The FIRST session born after the switch materializes the separator
+    // (the shell's bootstrap create path) — and consumes the marker.
+    const thread = await adapter.agentChatStartNewSession(chat.id, branchId, KIND_D);
+    expect(await stores.experienceCopilot.listTimeline(thread.id)).toEqual([
+      expect.objectContaining({
+        rowType: "event",
+        kind: "profile_changed",
+        payload: {
+          from: { id: "builtin", name: "D12 OOC Seed" },
+          to: { id: KIND_D_DIRECTOR, name: "D12 Director Seed" },
+        },
+      }),
+    ]);
+    expect(await stores.chatAgentSettings.getPendingProfileChange(chat.id, KIND_D)).toBeNull();
+
+    // A SECOND new session shows nothing — the marker is consumed by the
+    // first feed that landed it (bounded: one separator per switch).
+    const second = await adapter.agentChatStartNewSession(chat.id, branchId, KIND_D);
+    const secondEvents = (await stores.experienceCopilot.listTimeline(second.id)).filter(
+      (entry) => entry.rowType === "event",
+    );
+    expect(secondEvents).toEqual([]);
+  });
+
+  test("a pending change for one pair never leaks into another pair's session", async () => {
+    const chatWithPending = await newChat("D12 pending holder");
+    await patchSettings(chatWithPending.id, KIND_D, { profileId: KIND_D_DIRECTOR });
+    const other = await newChat("D12 other chat");
+
+    const thread = await adapter.agentChatStartNewSession(
+      other.id,
+      other.activeBranchId as string,
+      KIND_D,
+    );
+    const events = (await stores.experienceCopilot.listTimeline(thread.id)).filter(
+      (entry) => entry.rowType === "event",
+    );
+    expect(events).toEqual([]);
+    // The marker is still there for its own pair.
+    expect(await stores.chatAgentSettings.getPendingProfileChange(chatWithPending.id, KIND_D)).not.toBeNull();
   });
 });

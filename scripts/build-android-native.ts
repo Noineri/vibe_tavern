@@ -81,7 +81,15 @@ async function main() {
 		if (!(await Bun.file(join(WEB_SOURCE, "index.html")).exists())) {
 			throw new Error(`Frontend not found at ${WEB_SOURCE}. Build may have failed.`);
 		}
-		await cp(WEB_SOURCE, join(PAYLOAD, "web"), { recursive: true });
+		// aapt2's asset merger strips known compression suffixes, so index.js and
+		// index.js.gz collide as ONE resource ("Duplicate resources", CI
+		// 2026-11-01). The APK payload ships plain assets only — the precompressed
+		// siblings are a desktop/Docker serving optimization (APP_LOAD); the
+		// Android server extracts the payload and serves the plain files.
+		await cp(WEB_SOURCE, join(PAYLOAD, "web"), {
+			recursive: true,
+			filter: (source) => !source.endsWith(".gz") && !source.endsWith(".br"),
+		});
 		console.log(`   → ${join(PAYLOAD, "web")}`);
 	});
 

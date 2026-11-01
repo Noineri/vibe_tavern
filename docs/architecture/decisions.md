@@ -43,6 +43,13 @@ The 900ms pin did that unconditionally, overriding the position the user had cho
 
 Why the original decision missed this: the options table weighs three ways to fight Virtuoso's measurement cycle but does not separate the frequently resizing pinned surface from older virtualized history. Once those regions have different ownership, both can use their natural mechanism without racing.
 
+**Mobile reading-navigation update (2026-10-28):** a mobile variant landing is explicit reading intent, not passive content growth.
+`MessageScroller` supplies a scoped navigation callback through `MessageScrollContext`; the carousel requests it before committing the landing, and `useStickToBottom` remains the only owner of vertical scroll writes.
+The controller detaches bottom follow, reveals the variant start only if it is above the viewport, and preserves that reading position throughout the native height transition.
+After the carousel's native CSS animations settle (including cancellation), the controller recomputes the real bottom pin; a short landing can re-pin normally without a timer-based override.
+Wheel/touch/keyboard navigation, explicit bottom navigation and a chat/branch reset cancel the reading transaction; an older completion cannot override them.
+Desktop variant switching retains its portal overlay and ordinary bottom-follow rule.
+
 ---
 
 ## AD-002: True Carousel over Gesture-to-Slide for Mobile Variants
@@ -65,6 +72,25 @@ Why the original decision missed this: the options table weighs three ways to fi
 - Height is locked to the current panel and smoothly adjusted after the slide commits — avoids layout jumps during drag
 
 **Trade-off:** Three panels rendered simultaneously. Acceptable because only markdown text is rendered (no images or heavy components), and only the current panel's content is actively measured.
+
+**Engine update (2026-10-28, mobile swipe gestures report step 2):** the true carousel remains, but native horizontal overflow plus CSS scroll snap replaces Framer Motion's JavaScript drag engine.
+The old engine could commit the horizontal component of a cancelled vertical gesture, suppress text selection, and leave the track locked if a new touch interrupted its animation promise.
+The browser now owns axis arbitration, momentum, snapping and interruption; there is no drag-end velocity threshold or animation promise in `MobileVariantCarousel`.
+
+- Every variant has an equal full-width snap slot; the 12px spacing is a track gap, never padding that changes text width on landing.
+- Only current ±1 mount content, keyed by stable variant identity, so an adjacent landing preserves the overlapping Markdown panels.
+- Native `scrollend` commits the landed index; feature-detected older engines use a quiet-scroll fallback that requires snap alignment and no active touches.
+- The current slot alone drives the viewport height through `ResizeObserver`; a height-only resize does not reset horizontal scroll.
+- Busy text swipes use hidden horizontal overflow and reject queued landings; image slots retain `VariantControls`' `swipeWhileBusy` exception.
+- Non-current slots are `aria-hidden`, inert, non-interactive and excluded from translation; the current text remains natively selectable.
+
+**Feel trade-off:** a slow native drag crosses roughly half a slot to change pages (rather than the old ~22% threshold); native momentum still allows a flick to land early.
+This update covers the pager engine only; display-regex parity, smooth external chevrons and mobile scroll-to-start are separate report steps.
+
+**Chevron-arrival follow-up:** an explicit adjacent control request may commit when its named snap position is physically reached within the existing 1px rounding tolerance, without waiting for a later native `scrollend` notification.
+The former scrollend-only gate could leave the old height after the new panel was already visible.
+This fast path never infers intent from a touch gesture: new pointer/touch/wheel/keyboard input, resize, busy activation and external selection clear the request; ordinary swipes retain settle-only commits.
+Height measurement and the list-owned reading-navigation transaction still begin at the actual landing, not when the arrow is pressed; no timer or velocity threshold is added.
 
 ---
 
@@ -707,3 +733,66 @@ Threads stay **script-owned with no kind column**: `experience_copilot_threads` 
 - The thread kind is derived, never stored: no `kind` column on `experience_copilot_threads`, and client-side store keys alone are kind-qualified (`agentThreadKey`; server keys stay bare).
 
 **Revisit trigger:** A kind that needs user-defined behaviour (users authoring or installing kinds) reopens the internal-kinds ruling; a thread that must move between kinds (outliving its script's ownership, or a non-script owner like a sidechat chat thread) reopens the script-owned-thread model.
+
+---
+
+## AD-029: The Director as a Sidechat Profile Driving the Goal Tracker
+
+**Context:** The narrator design (2026-09-22) needed a director that plans a story, keeps the roleplay on it, and checks progress. Two structural questions had no defaults: where the director lives (its own agent kind? a tab beside the sidechat?) and how the plan reaches the roleplay prompt (a new injection/check layer?). The owner ruled both at once (DIRECTOR_MODE_PLAN, rulings R1 and 3a, 2026-10): the director is a built-in profile of the existing sidechat kind, and the goal tracker — already injecting and checking goals per turn — executes the plan's current event instead of a second mechanism doing the same job.
+
+**Options considered:**
+
+| Approach | Problem |
+|----------|---------|
+| A dedicated director agent kind | A second chat-owned kind means a second host, a second session list, and mode tabs — all to duplicate the sidechat's turn/review/session machinery; a kind is a species, and the director differs from «Out of character» only by prompt and tool toggles, which profiles already are. |
+| A separate injection/check layer for plan events | A second per-turn injection plus a second scheduled check would restate the goal tracker's existing task layer and completion check; two layers double the prompt cost and can disagree about what is current. |
+| **A sidechat built-in profile + the goal tracker riding the branch plan** | Chosen. `builtin-director` is a seed of `sidechat-ooc` (its own base prompt and tool set); the branch plan projects onto the tracker's goals 1:1, the tracker injects and checks the current event, and a passed check advances the plan through follow-back — no new kind, no new check machinery. |
+
+**Decision:** The director is a built-in profile (`builtin-director`, declared in `services/api/src/domain/agent/kinds/sidechat-ooc-kind.ts` beside the OOC seed since DR-1) of the one sidechat kind — not a second kind, not a tab. Ruling 3a is the tracker half: `services/api/src/domain/director/story-plan-sync.ts` projects the ACTIVE branch's plan onto the goal tracker's short-term goals (event id → goal id, premise never injected — the RP model sees only the current event), and a passed check follows back into the plan's statuses with no extra model call. The switch is gated by capability, not identity: the plan tool `propose_plan` decides it — a profile that carries it (the seed, or any user copy with the toggle on) IS the director for that chat, and `callDirector` switches the chat only when the active profile lacks the tool. The goals UI defers authoring to the plan (DR-13): while a plan has events, the tracker's config shows the muted note and hides manual goal authoring; nothing from the director reaches the plan or the tracker without the user's Accept.
+
+**Consequences:**
+- One sidechat kind serves both OOC discussion and the director through its built-in seeds — the profile chip, the assignment write, the model binding and the sessions are all shared; a per-chat choice picks which profile answers.
+- The director's tools are ordinary profile toggles (`propose_plan`, `propose_tracker_template`, `ask_user` on; `propose_objective` off — its goals come from the plan), so a user copy of the director is just a profile, and the strict tool schema keeps kinds from smuggling each other's tools.
+- While a plan drives a chat, that chat's goal tracker is occupied by the plan (accepted cost, ruling 3a): the goals section is the plan's projection, and an objective proposal becomes the next plan event instead of a tracker goal (R3).
+- Branch ownership is preserved for free: the tracker re-projects from the ACTIVE branch's plan on every branch change (R2), because the plan — not the tracker — is the source of truth for events and statuses.
+
+**Evidence:** The seeds and their tool sets are pinned by `services/api/test/sidechat-ooc-kind.test.ts` and `services/api/test/sidechat-director-tools.test.ts`; the projection/follow-back/reconcile by `services/api/test/story-plan-sync.test.ts` and `services/api/test/story-plan-wiring.test.ts`; the capability-gated switch by `apps/web/src/stores/sidechat-call-director-store.test.ts`; the plan-driven goals UI by `apps/web/src/components/build/editors/ObjectiveConfig.test.tsx`. The record-proposal registry that keeps Accept the only write path is `SIDECHAT_RECORD_PROPOSAL_REGISTRY` (`services/api/src/domain/sidechat/sidechat-objective-proposal.ts`, pinned by `services/api/test/agent-thread-proposals.test.ts`).
+
+**Revisit trigger:** A director capability that the sidechat's profile shape cannot express (per-turn model routing, several drafts with a judge — the deferred design phases) reopens the profile-not-kind ruling; a second chat-owned kind would then be the honest shape, not a workaround.
+
+---
+
+## AD-030: Assistant Turns and Chat Generations Are Server-Owned
+
+**Context:** Tying model execution to an HTTP reader made leaving an editor or closing a tab stop an assistant/RP turn, while browser-only proposal envelopes lost review recovery across devices.
+An asynchronous completion could also ingest the generating chat's snapshot after navigation and replace another chat's messages/character.
+The single-process architecture (AD-011) needs no external worker system, but the producer must outlive an individual subscriber.
+
+**Decision:** One in-process `AgentRunRegistry` implementation owns execution, cancellation and numbered retained replay; one composition-root registry serves agent threads and chat generations, with an independent instance for manual summaries so summaries never occupy a reply slot.
+Starting a second generation in the same owner key returns 409 `AGENT_RUN_ACTIVE`; other keys run concurrently.
+Disconnect/unmount unsubscribes only, while explicit Stop cooperatively aborts the owned producer and preserves the chat's existing partial-output semantics.
+Chat runs carry immutable starting-branch/operation/target context as the first event and isolate pending traces per run; native JSON calls reserve the same slot without manufacturing text deltas.
+Clients replay from zero to reconstruct local projections, never re-send preparation/checkpoints as replay side effects.
+
+**Persistence boundary:** Ordinary run logs live in memory until the next run or process restart, not in a new run table.
+A restart interrupts ordinary turns; committed history and reviews survive, but interrupted work is not silently replayed against the provider.
+`agent_review_rounds` is the sole canonical buffer-review table, with separate exactly-one thread/chat owners and shared versioned contracts.
+The producer writes finalized proposals before terminal delivery, preserving existing reviews on no-proposal/read-only turns; users still Apply/Reject/save explicitly.
+Clients persist review progress through ordered API lanes and migrate valid legacy localStorage envelopes once only when there is no server round; unsaved editor buffers keep their existing Save semantics.
+Full-replacement review CRUD is ordered/predecessor-checked within a client, not cross-client compare-and-swap.
+
+**Durable user intent:** Unlike ordinary run logs, generate-more jobs are persisted because pending requests must survive reloads, closed tabs and restarts.
+The per-chat runner reuses the detached regenerate/profile path and registry, serializes jobs, advances after failure/Stop, and leaves the standalone first regenerate outside the queue.
+Startup marks interrupted running jobs failed with a retry reason and resumes pending jobs only.
+Queue mutations use the existing per-chat `queue.updated` notification; the global `agent.run` lifecycle is the existing channel for assistant/Co-Author/reply completion.
+The web is a queue mirror, never another runner, and suppresses intermediate queue reply toasts.
+
+**Visible-state invariant:** A generation finishing in a non-active chat never ingests that chat into the visible snapshot, even when navigation happens while a refresh is awaiting HTTP.
+Returning fetches the intended chat; reattachment paints only its starting branch, and navigation alone does not auto-narrate unfinished output.
+
+**Alternatives rejected:** Keeping request-owned execution still loses work on disconnect; separate per-host registries/review stores/channels duplicate lifecycle knowledge; persisting every run log introduces restart/retry semantics that are not part of this decision; a browser queue still cannot execute after the tab closes.
+
+**Evidence:** `agent-run-registry.test.ts`, `chat-generation-background-routes.test.ts`, `chat-generation-queue.test.ts`, review producer/store suites, `chat-generation-reattach.test.ts`, queue HTTP/UI suites and `use-agent-run-events.test.ts` pin detached execution, persistence-before-settlement, branch/chat isolation, recovery and explicit navigation.
+Architecture entry points and endpoint details are in [Backend](./backend.md#server-owned-generations), [Agent Shell](./agent-shell.md#server-owned-turns-replay-and-review) and [API Reference](./api-reference.md).
+
+**Revisit trigger:** Multi-process execution, durable automatic run retries, cross-client review CAS, or a persistent notification inbox would require a new ownership/persistence decision; none is implied by background execution in one Bun process.

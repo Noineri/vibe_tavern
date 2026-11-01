@@ -17,6 +17,7 @@
  */
 
 import type { AgentKind, AgentKindId } from "./agent-kind.js";
+import { BUILTIN_PROFILE_ID } from "./agent-kind.js";
 import type { ChatMode, ScriptKind } from "@vibe-tavern/domain";
 
 /** A kind module tried to register under an id that is already taken. */
@@ -34,6 +35,23 @@ export class UnknownAgentKindError extends Error {
   constructor(readonly kindId: AgentKindId) {
     super(`No agent kind registered under "${kindId}".`);
     this.name = "UnknownAgentKindError";
+  }
+}
+
+/** A kind's `builtinSeeds` declaration violates the seed contract (DR-1):
+ *  the list must be non-empty and its FIRST entry must keep the id
+ *  `"builtin"` — the stored sentinel every already-stored profile choice
+ *  (`chat_agent_settings.profile_id`, `agent_kind_settings
+ *  .default_profile_id`) resolves through. A kind declaring any other first
+ *  id would silently break those stored values, so registration refuses the
+ *  descriptor outright. */
+export class InvalidAgentKindBuiltinSeedsError extends Error {
+  readonly code = "AGENT_KIND_INVALID_BUILTIN_SEEDS";
+  constructor(readonly kindId: AgentKindId) {
+    super(
+      `Agent kind "${kindId}" must declare a non-empty builtinSeeds list whose first entry has id "${BUILTIN_PROFILE_ID}".`,
+    );
+    this.name = "InvalidAgentKindBuiltinSeedsError";
   }
 }
 
@@ -96,6 +114,12 @@ const kinds = new Map<AgentKindId, AgentKind>();
  */
 export function registerAgentKind(kind: AgentKind): () => void {
   if (kinds.has(kind.id)) throw new AgentKindAlreadyRegisteredError(kind.id);
+  // DR-1: the seed-list contract is mechanical, not prose — a first seed id
+  // other than the stored sentinel would silently break every already-stored
+  // "builtin" choice for the kind, so a bad declaration never registers.
+  if (kind.builtinSeeds.length === 0 || kind.builtinSeeds[0]?.id !== BUILTIN_PROFILE_ID) {
+    throw new InvalidAgentKindBuiltinSeedsError(kind.id);
+  }
   kinds.set(kind.id, kind);
   return () => {
     if (kinds.get(kind.id) === kind) kinds.delete(kind.id);

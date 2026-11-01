@@ -15,6 +15,7 @@ import type {
   ThinkingMode,
 } from '@vibe-tavern/domain';
 import { sql } from 'drizzle-orm';
+import { CHAT_GENERATION_JOB_STATUSES } from '@vibe-tavern/domain';
 import { sqliteTable, text, integer, real, blob, index, uniqueIndex, primaryKey, check } from 'drizzle-orm/sqlite-core';
 
 // ─── characters ────────────────────────────────────────────────────────────────
@@ -245,6 +246,16 @@ export const copilotProfiles = sqliteTable('copilot_profiles', {
   // recreated under the right kind, never converted. Default-only migration:
   // existing rows read as 'experience' with unchanged tool sets.
   agentKind: text('agent_kind').notNull().default('experience'),
+  // DR-7b: provenance — the built-in seed id this user profile was
+  // duplicated from (null = created from scratch, no recorded source).
+  // Immutable after create, exactly like `agent_kind` above: the store
+  // never writes it and the update contract omits it (a PATCH smuggling it
+  // is strict-rejected) — provenance is recorded once at duplication and
+  // never re-pointed. A duplicate inherits its source's STARTERS only
+  // (owner split ruling 2026-10-27); name/prompt/tools stay its own
+  // snapshots. Nullable with NO backfill: existing rows have no recorded
+  // source by definition.
+  sourceBuiltinId: text('source_builtin_id'),
   // superseded: skills are ungated (EXPERIENCE_COPILOT_PLAN_MODE_PLAN PM-8) —
   // never read or written by the store; kept for legacy rows only.
   skillIdsJson: text('skill_ids_json').notNull().default('[]'),
@@ -811,6 +822,27 @@ export const messages = sqliteTable('messages', {
   branchPosition: uniqueIndex('idx_messages_branch_position').on(table.branchId, table.position),
 }));
 
+// Durable generate-more queue (BR-4e).
+
+export const chatGenerationJobs = sqliteTable('chat_generation_jobs', {
+  id: text('id').primaryKey(),
+  chatId: text('chat_id').notNull().references(() => chats.id, { onDelete: 'cascade' }),
+  messageId: text('message_id').notNull().references(() => messages.id, { onDelete: 'cascade' }),
+  model: text('model').notNull(),
+  // Frozen key, not preset ownership: deleting a preset must not delete jobs.
+  promptPresetId: text('prompt_preset_id'),
+  status: text('status', { enum: CHAT_GENERATION_JOB_STATUSES }).notNull().default('pending'),
+  variantIndex: integer('variant_index'),
+  error: text('error'),
+  enqueuedAt: integer('enqueued_at').notNull(),
+}, (table) => ({
+  chatStatusEnqueuedIdx: index('idx_chat_generation_jobs_chat_status_enqueued').on(table.chatId, table.status, table.enqueuedAt),
+  // Values come only from the fixed domain vocabulary, never user input.
+  statusCheck: check('chat_generation_jobs_status', sql`${table.status} IN (${sql.raw(CHAT_GENERATION_JOB_STATUSES.map((status) => `'${status}'`).join(', '))})`),
+  variantCheck: check('chat_generation_jobs_variant_index', sql`${table.variantIndex} IS NULL OR ${table.variantIndex} >= 0`),
+  enqueuedCheck: check('chat_generation_jobs_enqueued_at', sql`${table.enqueuedAt} >= 0`),
+}));
+
 // ─── chatSummaries ─────────────────────────────────────────────────────────────
 
 export const chatSummaries = sqliteTable('chat_summaries', {
@@ -1309,9 +1341,9 @@ export const promptTraces = sqliteTable('prompt_traces', {
   messageId: text('message_id').notNull().references(() => messages.id, { onDelete: 'cascade' }),
   model: text('model').notNull(),
   presetName: text('preset_name').notNull(),
-  assembledLayersJson: text('assembled_layers_json').notNull(),
+  assembledLayersJson: blob('assembled_layers_json', { mode: 'buffer' }).$type<Buffer | string>().notNull(),
   tokenAccountingJson: text('token_accounting_json').notNull(),
-  finalPayloadJson: text('final_payload_json').notNull().default('{}'),
+  finalPayloadJson: blob('final_payload_json', { mode: 'buffer' }).$type<Buffer | string>().notNull().default(sql`'{}'`),
   activatedLoreEntriesJson: text('activated_lore_entries_json').notNull().default('[]'),
   /** Per-entry activation reasons (JSON ActivatedLoreDetail[]). Nullable for traces saved before this column existed. */
   activatedLoreDetailJson: text('activated_lore_detail_json'),
@@ -1324,7 +1356,7 @@ export const promptTraces = sqliteTable('prompt_traces', {
   compactionSummary: text('compaction_summary'),
   latencyMs: integer('latency_ms').notNull(),
   sentConfigJson: text('sent_config_json'),
-  providerResponseJson: text('provider_response_json'),
+  providerResponseJson: blob('provider_response_json', { mode: 'buffer' }).$type<Buffer | string>(),
   /** SC-23b (SIDECHAT_PLAN Wave 5b): the swipe (message_variants row) this
    *  trace's prompt produced. Null = the producing swipe is unknown: greeting
    *  traces (no model wrote them), legacy traces the boot back-fill could not
@@ -1349,7 +1381,7 @@ export const promptTraces = sqliteTable('prompt_traces', {
 export const promptTraceChunks = sqliteTable('prompt_trace_chunks', {
   id: text('id').primaryKey(),
   byteSize: integer('byte_size').notNull(),
-  content: text('content').notNull(),
+  content: blob('content', { mode: 'buffer' }).$type<Buffer | string>().notNull(),
 });
 
 /**
@@ -1363,6 +1395,12 @@ export const promptTraceChunkRefs = sqliteTable('prompt_trace_chunk_refs', {
   chunkId: text('chunk_id').notNull(),
 }, (table) => ({
   refPk: primaryKey({ columns: [table.traceId, table.chunkId] }),
+  /** LONG_CHAT_PERFORMANCE_REPORT step 8: the chunk side of the index. The
+   *  (trace_id, chunk_id) PK's left prefix serves the trace side (deleting one
+   *  trace's refs); reclamation's "is this candidate chunk still referenced?"
+   *  per-candidate lookups run on chunk_id, which had NO index before — every
+   *  such lookup was a table scan over the whole refs table. */
+  chunkIdx: index('idx_prompt_trace_chunk_refs_chunk').on(table.chunkId),
 }));
 
 // ─── uiSettings ────────────────────────────────────────────────────────────────
@@ -2062,6 +2100,18 @@ export const agentThreadContextEvents = sqliteTable('agent_thread_context_events
   threadIdx: index('idx_agent_thread_context_events_thread').on(table.threadId),
 }));
 
+// ─── agentReviewRounds (AGENT_BACKGROUND_RUNS_PLAN BR-2a) ────────────────────
+// One complete review per thread OR Co-Author chat, not per turn. Separate
+// cascade FKs and an exactly-one CHECK prevent ambiguous/dangling ownership.
+export const agentReviewRounds = sqliteTable('agent_review_rounds', {
+  threadId: text('thread_id').unique().references(() => experienceCopilotThreads.id, { onDelete: 'cascade' }),
+  chatId: text('chat_id').unique().references(() => chats.id, { onDelete: 'cascade' }),
+  envelopeJson: text('envelope_json').notNull(),
+  updatedAt: text('updated_at').notNull(),
+}, (table) => ({
+  ownerCheck: check('agent_review_rounds_one_owner', sql`(${table.threadId} IS NOT NULL AND ${table.chatId} IS NULL) OR (${table.threadId} IS NULL AND ${table.chatId} IS NOT NULL)`),
+}));
+
 // ─── agentPlans ──────────────────────────────────────────────────────────────
 // One persisted agent plan belongs to each saved script. script_id is a soft
 // link with NO FK: deleting a script never cascade-deletes copilot data, and
@@ -2133,13 +2183,43 @@ export const agentKindSettings = sqliteTable('agent_kind_settings', {
 // the stored id dangle, and the RESOLVER falls through to the next chain step
 // at read time; the delete is never blocked. Deleting the chat cascades the
 // rows away (FK ON DELETE cascade) — the settings live and die with the chat.
+// DR-12 adds pending_profile_change_json: the profile-switch separator
+// payload that could not be materialized as a timeline event at PATCH time
+// (the pair had no active thread) — the next session creation for the pair
+// consumes it. Server-written only; never on the HTTP wire.
 export const chatAgentSettings = sqliteTable('chat_agent_settings', {
   chatId: text('chat_id').notNull().references(() => chats.id, { onDelete: 'cascade' }),
   agentKind: text('agent_kind').notNull(),
   profileId: text('profile_id'),
   updatedAt: text('updated_at').notNull(),
+  pendingProfileChangeJson: text('pending_profile_change_json'),
 }, (table) => ({
   pk: primaryKey({ columns: [table.chatId, table.agentKind] }),
+}));
+
+// ─── agentProfileModels (DIRECTOR_MODE_PLAN DR-2 / M1) ──────────────────────
+// One profile's OWN model choice. Keyed by (agent_kind, profile_id) — the
+// kind must ride the key because built-in seed ids ("builtin",
+// "builtin-director", …) are kind-SCOPED code seeds, never rows, so
+// profile_id has no table to FK against (the same reason the profile chains
+// key by kind). provider_profile_id follows the ui_settings /
+// agent_kind_settings dangling-policy precedent: NO FK — a deleted provider
+// leaves a dangling id the stream's resolution falls through to the request's
+// pair (the existing chain), never a blocked delete. A row EXISTS only while
+// an own model is set; no row = same as sidechat (the existing kind
+// chain, byte-identical). Deleting a USER profile removes its row through the
+// profile adapter's delete path; a built-in's row lives until cleared —
+// model set/clear is a setting, not an edit (the read-only guard protects
+// prompt/tools only). model_name NULL = the provider's default model at
+// turn time.
+export const agentProfileModels = sqliteTable('agent_profile_models', {
+  agentKind: text('agent_kind').notNull(),
+  profileId: text('profile_id').notNull(),
+  providerProfileId: text('provider_profile_id').notNull(),
+  modelName: text('model_name'),
+  updatedAt: text('updated_at').notNull(),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.agentKind, table.profileId] }),
 }));
 
 // ─── builtinExperienceDismissals ─────────────────────────────────────────────
@@ -2375,3 +2455,24 @@ export const imagePromptProfiles = sqliteTable('image_prompt_profiles', {
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 });
+
+// ─── tokenCounts ──────────────────────────────────────────────────────────────
+// TOKEN_COUNT_ONCE_PLAN TC-1: ONE persisted token count per (exact text,
+// tokenizer) so the server never encodes the same text twice for the same
+// tokenizer, across restarts. `textHash` is the sha256 hex of the EXACT
+// text and is OPAQUE to this table — the single derivation lives in the
+// tokenizer service (TC-2); no prefix/length/fuzzy keys, so a cached count
+// is never returned for a different string. `tokenizer` is the id of the
+// tokenizer the ladder would actually use ("tiktoken:cl100k_base",
+// "web:llama3.json", …), so a later tokenizer switch invalidates nothing by
+// hand. Writes are INSERT OR IGNORE by design: a count is deterministic per
+// (text, tokenizer), so a second write can never be a correction — first
+// writer wins, a repeated put is a no-op.
+export const tokenCounts = sqliteTable('token_counts', {
+  textHash: text('text_hash').notNull(),
+  tokenizer: text('tokenizer').notNull(),
+  tokenCount: integer('token_count').notNull(),
+  createdAt: text('created_at').notNull(),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.textHash, table.tokenizer] }),
+}));

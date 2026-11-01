@@ -28,7 +28,7 @@ import { buildCoauthorTools } from "./coauthor-tools.js";
 import { buildCoauthorWorkingDocument } from "./coauthor-working-document.js";
 import { renderReviewOutcomeSection } from "../agent/agent-review-outcome-lines.js";
 import { isLoreWorkActive } from "../coauthor/lore/lore-work-trigger.js";
-import { estimateTokens, planHistoryCompaction, setModelHint, PROMPT_LAYER_ID } from "@vibe-tavern/prompt-pipeline";
+import { countHistoryPieces, estimateTokens, planHistoryCompaction, setModelHint, PROMPT_LAYER_ID } from "@vibe-tavern/prompt-pipeline";
 import type { ToolCallPart, ToolResultPart } from "ai";
 import { asToolProviderOptions } from "../../infrastructure/ai/tool-call-provider-options.js";
 import { dirname } from "node:path";
@@ -43,8 +43,9 @@ import type { SkillCatalogEntry } from "../coauthor/skills/skill-scanner.js";
  *  carries `input` (the parsed args), a tool result carries `output`. Earlier
  *  these were built with `args`/`result` names and the mismatch was masked by
  *  `as any` at the provider mapping layer — so the provider silently dropped
- *  them. Typed here so the compiler catches any future drift. */
-type CoauthorHistoryMessage =
+ *  them. Typed here so the compiler catches any future drift. Exported so the
+ *  TC-6 token-count backfill can map rows through the SAME derivation. */
+export type CoauthorHistoryMessage =
   | { role: "user" | "assistant"; content: string; toolCalls?: ToolCallPart[]; attachments?: Attachment[]; messageId?: string }
   | { role: "tool"; content: ToolResultPart[] };
 
@@ -173,17 +174,113 @@ function renderBoundScriptsAwareness(scripts: CoauthorBoundResources["scripts"])
   ].join("\n");
 }
 
-function formatCoauthorHistoryMessages(messages: ReadonlyArray<CoauthorHistoryMessage>): string {
+/** The row shape {@link buildCoauthorHistoryMessages} reads — satisfied by
+ *  the db MessageStore's Message (the assemble loader's rows and the TC-6
+ *  backfill's rows alike), so both read the same mapping. */
+export interface CoauthorHistorySourceRow {
+  id: string;
+  role: string;
+  content: string;
+  attachmentsJson?: string | null;
+  toolCalls?: Array<{ id: string; name: string; args: unknown; providerOptions?: unknown }> | null;
+  toolCallId?: string | null;
+}
+
+/** Whether a message row rides the co-author history — the ONE role filter,
+ *  shared by the assembly and the TC-6 backfill (never a second copy). */
+export function isCoauthorHistoryRole(role: string): boolean {
+  return role === "user" || role === "assistant" || role === "tool";
+}
+
+/**
+ * ONE derivation of the DB-row → co-author history mapping (TOKEN_COUNT_ONCE_
+ * PLAN TC-3, extracted for TC-6): the prompt assembly and the token-count
+ * backfill both map message rows through here, so the counted pieces and the
+ * sent text can never drift apart. Role filter + tool-name resolution + the
+ * SDK v6 part shapes, byte-identical to the inline code this replaced. Tool
+ * results wrap the persisted string as a text output; a tool result's NAME
+ * comes from the owning assistant's toolCalls (the carrier assistant is
+ * always co-located — the tool-call/result pair invariant forbids splitting
+ * them), which Google requires non-empty on `function_response.name`.
+ */
+export function buildCoauthorHistoryMessages(
+  msgs: ReadonlyArray<CoauthorHistorySourceRow>,
+): CoauthorHistoryMessage[] {
+  const historyMsgs = msgs.filter((m) => isCoauthorHistoryRole(m.role));
+  const toolNameById = new Map<string, string>();
+  for (const m of historyMsgs) {
+    if (m.toolCalls) {
+      for (const tc of m.toolCalls) toolNameById.set(tc.id, tc.name);
+    }
+  }
+  return historyMsgs.map((m): CoauthorHistoryMessage => {
+    if (m.role === "tool") {
+      // SDK v6 ToolResultPart.output is a discriminated union
+      // (`{type:'text',value}` | `{type:'json',value}` | ...) — a plain
+      // string is NOT valid. Wrap the persisted string result as a text
+      // output.
+      return {
+        role: "tool",
+        content: [{
+          type: "tool-result",
+          toolCallId: m.toolCallId ?? "",
+          toolName: toolNameById.get(m.toolCallId ?? "") ?? "",
+          output: { type: "text", value: m.content },
+        }],
+      };
+    }
+    // SDK v6 ToolCallPart: `input` (the parsed args), not `args`.
+    const msg: CoauthorHistoryMessage = { role: m.role as "user" | "assistant", content: m.content };
+    const attachments = promptVisibleAttachmentsOf(m.attachmentsJson);
+    if (attachments?.length) {
+      msg.attachments = attachments;
+      msg.messageId = m.id;
+    }
+    if (m.toolCalls && m.toolCalls.length > 0) {
+      msg.toolCalls = m.toolCalls.map((tc) => {
+        const providerOptions = asToolProviderOptions(tc.providerOptions);
+        return {
+          type: "tool-call",
+          toolCallId: tc.id,
+          toolName: tc.name,
+          input: tc.args,
+          ...(providerOptions ? { providerOptions } : {}),
+        };
+      });
+    }
+    return msg;
+  });
+}
+
+/**
+ * ONE derivation of the co-author history pieces (TOKEN_COUNT_ONCE_PLAN
+ * TC-3): the prompt formatter and the token counter map every message
+ * through here, so the counted pieces and the sent text can never drift
+ * apart. Tool results ride as their SDK JSON — unchanged from the joined
+ * era. Exported so the TC-6 backfill and the exactness tests count the same
+ * pieces the prompt sends.
+ */
+export function formatCoauthorHistoryPieces(messages: ReadonlyArray<CoauthorHistoryMessage>): string[] {
   return messages.map((message) => {
     const content = message.role === "tool"
       ? JSON.stringify(message.content)
       : `${message.content || ""}${message.toolCalls ? JSON.stringify(message.toolCalls) : ""}`;
     return `${message.role.toUpperCase()}: ${content}`;
-  }).join("\n\n");
+  });
 }
 
-function estimateCoauthorHistoryTokens(messages: ReadonlyArray<CoauthorHistoryMessage>): number {
-  return estimateTokens(formatCoauthorHistoryMessages(messages))
+export function formatCoauthorHistoryMessages(messages: ReadonlyArray<CoauthorHistoryMessage>): string {
+  return formatCoauthorHistoryPieces(messages).join("\n\n");
+}
+
+/**
+ * The co-author history cost: the same pieces the prompt sends, counted
+ * per message through the pipeline's shared separator arithmetic
+ * (countHistoryPieces — side-aware, exact where fixture-pinned), plus
+ * visible file weights. Tool messages carry no attachment weight.
+ */
+export function estimateCoauthorHistoryTokens(messages: ReadonlyArray<CoauthorHistoryMessage>): number {
+  return countHistoryPieces(formatCoauthorHistoryPieces(messages))
     + messages.reduce((sum, message) => sum + (message.role === "tool" ? 0 : attachmentPromptTokens(message.attachments, estimateTokens)), 0);
 }
 
@@ -209,61 +306,7 @@ export async function assembleCoauthorPrompt(input: ChatModeAssembleInput): Prom
       .getMessages(chatId)
       .then((msgs) => {
         const excludeSet = new Set<string>(input.excludeMessageIds || []);
-        const historyMsgs = msgs
-          .filter((m) => !excludeSet.has(m.id))
-          .filter((m) => m.role === "user" || m.role === "assistant" || m.role === "tool");
-        // Resolve the tool NAME for each tool-result. The DB stores only the
-        // `toolCallId` on the `role:"tool"` row; the human-readable name lives
-        // on the owning assistant message's `toolCallsJson` (`{id, name, args}`).
-        // The Google provider maps `toolName` → `function_response.name`, which
-        // Gemini REQUIRES non-empty — an unresolved name here surfaces as a 400
-        // `function_response.name: Name cannot be empty` on the next turn. The
-        // carrier assistant is always co-located with its tool result (the
-        // tool-call/result pair invariant forbids splitting them), so the map
-        // lookup always hits in a well-formed history.
-        const toolNameById = new Map<string, string>();
-        for (const m of historyMsgs) {
-          if (m.toolCalls) {
-            for (const tc of m.toolCalls) toolNameById.set(tc.id, tc.name);
-          }
-        }
-        return historyMsgs.map((m): CoauthorHistoryMessage => {
-          if (m.role === "tool") {
-            // SDK v6 ToolResultPart.output is a discriminated union
-            // (`{type:'text',value}` | `{type:'json',value}` | ...) — a plain
-            // string is NOT valid. Wrap the persisted string result as a text
-            // output.
-            return {
-              role: "tool",
-              content: [{
-                type: "tool-result",
-                toolCallId: m.toolCallId ?? "",
-                toolName: toolNameById.get(m.toolCallId ?? "") ?? "",
-                output: { type: "text", value: m.content },
-              }],
-            };
-          }
-          // SDK v6 ToolCallPart: `input` (the parsed args), not `args`.
-          const msg: CoauthorHistoryMessage = { role: m.role as "user" | "assistant", content: m.content };
-          const attachments = promptVisibleAttachmentsOf(m.attachmentsJson);
-          if (attachments?.length) {
-            msg.attachments = attachments;
-            msg.messageId = m.id;
-          }
-          if (m.toolCalls && m.toolCalls.length > 0) {
-            msg.toolCalls = m.toolCalls.map((tc) => {
-              const providerOptions = asToolProviderOptions(tc.providerOptions);
-              return {
-                type: "tool-call",
-                toolCallId: tc.id,
-                toolName: tc.name,
-                input: tc.args,
-                ...(providerOptions ? { providerOptions } : {}),
-              };
-            });
-          }
-          return msg;
-        });
+        return buildCoauthorHistoryMessages(msgs.filter((m) => !excludeSet.has(m.id)));
       }),
   ]);
   // COAUTHOR_LORE_FULL_SETTINGS step 6: full lore tool schemas only while the

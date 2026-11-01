@@ -818,6 +818,7 @@ describe("ImageGenFineTuningChip — Generate button (FT-A3)", () => {
       authorType: "assistant",
       position,
       content: `message ${id}`,
+      tokenCount: 0,
       variants: [
         {
           id: brandId<MessageVariantId>(`${id}_v1`),
@@ -827,6 +828,7 @@ describe("ImageGenFineTuningChip — Generate button (FT-A3)", () => {
           isSelected: true,
           finishReason: null,
           createdAt,
+          tokenCount: 0,
         },
       ],
       selectedVariantIndex: 0,

@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { CoauthorCharacterForm } from "./CoauthorCharacterForm.js";
 import { ResizableSidePane } from "../shared/resizable-side-pane.js";
 
@@ -42,7 +43,11 @@ export const COAUTHOR_EDITOR_MIN_WIDTH = 320;
  * the pre-hoist `<aside>` exactly — below the `lg` breakpoint the column is
  * hidden (no editor on a narrow desktop window), matching prior behavior.
  */
-export function CoauthorEditorPanel() {
+// LAG-1: a memo boundary (the MessageBlock pattern — no props, so shell-root
+// re-renders, including the co-author composer's per-keystroke `draft` writes
+// that re-render the app root, stop here). The editor form reads its own
+// stores. Pinned by app-shell-render-isolation.test.tsx.
+export const CoauthorEditorPanel = memo(function CoauthorEditorPanel() {
   return (
     <div className="hidden shrink-0 lg:flex" data-testid="coauthor-editor">
       <ResizableSidePane
@@ -63,4 +68,4 @@ export function CoauthorEditorPanel() {
       </ResizableSidePane>
     </div>
   );
-}
+});

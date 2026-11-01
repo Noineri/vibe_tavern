@@ -1,4 +1,4 @@
-import { beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterAll, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
 import { wireCharacter } from "../../../test/wire-fixtures.js";
 import { useDomEnv } from "../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
@@ -46,10 +46,12 @@ const STABLE_CONTROLLER = {
   handleRenameBranch: async () => {},
 };
 
-const realChatController = await import("../../hooks/use-chat-controller.js");
-const realChatActions = await import("../../stores/api-actions/chat-actions.js");
-const realTooltip = await import("../shared/Tooltip.js");
-const realRegexApi = await import("../../api/regex-api.js");
+const realChatController = { ...await import("../../hooks/use-chat-controller.js") };
+const realChatActions = { ...await import("../../stores/api-actions/chat-actions.js") };
+const realTooltip = { ...await import("../shared/Tooltip.js") };
+const realRegexApi = { ...await import("../../api/regex-api.js") };
+const originalMatchMedia = window.matchMedia;
+afterAll(() => { window.matchMedia = originalMatchMedia; });
 
 mock.module("../../hooks/use-chat-controller.js", () => ({
   ...realChatController,
@@ -130,6 +132,9 @@ async function loadModules() {
 }
 
 beforeEach(async () => {
+  window.matchMedia = originalMatchMedia;
+  mockResolvedPresets = [];
+  mockResolveFails = false;
   // The display-preset cache is MODULE-level — without invalidation every
   // test after the first would receive the first test's cached resolution.
   const { hook } = await loadModules();
@@ -223,6 +228,35 @@ async function mountAndRead(content: string) {
 }
 
 describe("MessageBlock — RX-13 display regex seam", () => {
+  test("mobile carousel transforms current and neighboring panels without changing stored variants", async () => {
+    window.matchMedia = (q: string) => ({
+      matches: q === "(max-width: 768px)", media: q, onchange: null,
+      addEventListener: NOOP, removeEventListener: NOOP,
+      addListener: NOOP, removeListener: NOOP, dispatchEvent: () => false,
+    });
+    mockResolvedPresets = [wirePreset({ markdownOnly: true, replaceString: "{{char}} revealed" })];
+    const mods = await loadModules();
+    const message = {
+      ...makeAssistantMessage("m1", "secret current"),
+      selectedVariantIndex: 1,
+      variants: ["secret before", "secret current", "secret after"].map((content, variantIndex) => ({
+        id: `v-${variantIndex}`, variantIndex, content, isSelected: variantIndex === 1,
+        reasoning: null, reasoningDurationMs: null,
+      })),
+    } as unknown as AppMessage;
+    mods.snapshotStore.useSnapshotStore.getState().ingestSnapshot(seed([message]));
+    mods.chatStore.useChatStore.getState().setActiveChatId(CHAT);
+    const view = render(<mods.MessageBlock messageId="m1" index={0} isFirstAssistant={false} isLast prevRole={null} />);
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    const carousel = view.getByTestId("mobile-variant-carousel");
+    const panels = [...carousel.querySelectorAll("[data-variant-index]")];
+    expect(panels.map((panel) => panel.textContent)).toEqual([
+      "Char c1 revealed before", "Char c1 revealed current", "Char c1 revealed after",
+    ]);
+    expect(mods.snapshotStore.useSnapshotStore.getState().messagesById["m1"]?.variants.map((variant) => variant.content))
+      .toEqual(["secret before", "secret current", "secret after"]);
+  });
+
   test("display-mode preset transforms the render, never the store", async () => {
     mockResolvedPresets = [wirePreset({ markdownOnly: true })];
     const { text, storeContent } = await mountAndRead("a secret appears");

@@ -2,6 +2,19 @@ import { z } from "zod";
 
 export const chatSummarySourceSchema = z.enum(["manual", "auto"]);
 
+/** BR-1d: GET /chats/:chatId/summaries/generate; null means no active manual run. */
+export const manualSummaryRunStateSchema = z.object({
+  from: z.number().int().min(1),
+  to: z.number().int().min(1),
+  label: z.string(),
+  startedAt: z.number().int().nonnegative(),
+}).nullable();
+export type ManualSummaryRunState = z.infer<typeof manualSummaryRunStateSchema>;
+
+/** Stop signals the server-owned job; its cancellation event follows settlement. */
+export const manualSummaryStopResponseSchema = z.object({ stopped: z.boolean() });
+export type ManualSummaryStopResponse = z.infer<typeof manualSummaryStopResponseSchema>;
+
 export const autoSummaryConfigSchema = z.object({
   enabled: z.boolean().default(false),
   everyN: z.number().int().min(1).max(500).default(20),

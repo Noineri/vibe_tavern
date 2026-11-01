@@ -1,6 +1,17 @@
 export { pronounFormsSchema, createPersonaSchema, updatePersonaSchema, setPersonaSchema, personaExportQuerySchema, personaExportBulkQuerySchema, personaExportAvatarSchema, personaExportVtSchema, personaExportVtBulkSchema, stPronounSchema, stPersonaBackupSchema } from "./persona-schema.js";
 export { agentPlanSchema, agentPlanTaskSchema } from "./agent-plan-schema.js";
 export type { AgentPlan, AgentPlanTask } from "./agent-plan-schema.js";
+export {
+  agentToolStatusSchema, agentTodoActivityResultSchema, agentAskStateSchema,
+  agentPermissionStateSchema, agentToolActivitySchema, agentReviewActivitySchema,
+  agentReviewBufferSnapshotSchema, agentDanglingCaptureSchema,
+  agentReviewRoundSchema, agentReviewEnvelopeSchema,
+} from "./agent-review-round-schema.js";
+export type {
+  AgentToolStatus, AgentTodoActivityResult, AgentAskState, AgentPermissionState,
+  AgentToolActivity, AgentReviewBufferSnapshot, AgentDanglingCapture,
+  AgentReviewRound, AgentReviewEnvelope,
+} from "./agent-review-round-schema.js";
 export { agentChatSessionCreateSchema } from "./agent-chat-session-schema.js";
 export type { AgentChatSessionCreateRequest } from "./agent-chat-session-schema.js";
 export {
@@ -15,6 +26,8 @@ export type {
 } from "./agent-branch-sidechat-schema.js";
 export { agentThreadEventSchema } from "./agent-thread-event-schema.js";
 export type { AgentThreadEventWire } from "./agent-thread-event-schema.js";
+export { agentThreadProposalApplyRequestSchema } from "./agent-thread-proposal-schema.js";
+export type { AgentThreadProposalApplyRequest } from "./agent-thread-proposal-schema.js";
 export {
   agentKindSettingsSchema,
   agentKindSettingsPatchSchema,
@@ -27,6 +40,14 @@ export {
   agentChatSettingsSchema,
   agentChatSettingsPatchSchema,
 } from "./agent-chat-settings-schema.js";
+export {
+  agentProfileModelSchema,
+  agentProfileModelPutSchema,
+} from "./agent-profile-model-schema.js";
+export type {
+  AgentProfileModelWire,
+  AgentProfileModelPutRequest,
+} from "./agent-profile-model-schema.js";
 export type {
   AgentChatSettingsWire,
   AgentChatSettingsPatchRequest,
@@ -179,11 +200,14 @@ export {
   createChatSummarySchema,
   updateChatSummarySchema,
   generateChatSummarySchema,
+  manualSummaryRunStateSchema,
+  manualSummaryStopResponseSchema,
   reorderChatSummariesSchema,
   updateMemorySettingsSchema,
   summarizeChatSchema,
   saveChatSummarySchema,
 } from "./summarize-schema.js";
+export type { ManualSummaryRunState, ManualSummaryStopResponse } from "./summarize-schema.js";
 
 export {
   insightsConfigSchema,
@@ -316,6 +340,9 @@ export {
   experienceCopilotStepSchema,
   experienceCopilotLaunchContextSchema,
   experienceCopilotStreamRequestSchema,
+  experienceCopilotRunQuerySchema,
+  experienceCopilotStopRunResponseSchema,
+  experienceCopilotRunActiveErrorSchema,
   experienceCopilotStreamAnswerSchema,
   type ExperienceCopilotStreamAskAnswer,
   experienceCopilotStreamPermissionAnswerSchema,
@@ -348,6 +375,9 @@ export type {
   ExperienceCopilotStep,
   ExperienceCopilotLaunchContext,
   ExperienceCopilotStreamRequest,
+  ExperienceCopilotRunQuery,
+  ExperienceCopilotStopRunResponse,
+  ExperienceCopilotRunActiveError,
   ExperienceCopilotStreamAnswer,
   ExperienceCopilotThreadWire,
   ExperienceCopilotMessageWire,
@@ -411,6 +441,7 @@ export {
   experienceFinishRequestSchema,
   experienceRestartRequestSchema,
   experienceReportQueueRequestSchema,
+  experienceReportClearRequestSchema,
   // Runtime request/query envelopes (IR-32 routes)
   experienceVisualsQuerySchema,
   experienceViewerQuerySchema,

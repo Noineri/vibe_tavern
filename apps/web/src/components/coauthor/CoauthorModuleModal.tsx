@@ -4,6 +4,7 @@
 // master-list primitive (ML-8) — the fork no longer counts the list rows.
 import { useEffect, useState } from "react";
 import { MasterDetailModal, MasterDetailFooter } from "../shared/MasterDetailModal.js";
+import { MasterListTag } from "../shared/master-list/master-list-tag.js";
 import { ModuleList } from "./CoauthorModuleList.js";
 import { DestructiveConfirmModal } from "../shared/destructive-confirm-modal.js";
 import { AutoTextarea } from "../shared/auto-textarea.js";
@@ -468,8 +469,10 @@ function ModuleView({ module, t }: ModuleViewProps) {
 			<div>
 				<div className="flex flex-wrap items-center gap-2">
 					<h3 data-testid="module-detail-name" className="font-body text-[calc(var(--ui-fs)+3px)] font-semibold text-t1">{module.name}</h3>
-					<span data-testid="module-detail-tag" className="rounded bg-s3 px-1.5 py-px font-ui text-[calc(var(--ui-fs)-3px)] text-t2">
-						{module.isBuiltIn ? t("coauthor.module.built_in") : t("copilot_profile_custom_tag")}
+					<span data-testid="module-detail-tag">
+						<MasterListTag>
+							{module.isBuiltIn ? t("coauthor.module.built_in") : t("copilot_profile_custom_tag")}
+						</MasterListTag>
 					</span>
 				</div>
 				<p className="mt-1 font-ui text-[calc(var(--ui-fs)-1px)] leading-relaxed text-t2">{module.description}</p>

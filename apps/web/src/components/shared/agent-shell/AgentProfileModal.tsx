@@ -8,35 +8,41 @@
 // through the shared master-list primitive (ML-8) — this fork no longer
 // counts the list rows.
 import { useEffect, useState } from "react";
-import { arrayMove } from "@dnd-kit/sortable";
 import { MasterDetailModal, MasterDetailFooter, type MasterDetailParentBack } from "../MasterDetailModal.js";
-import { MasterList } from "../master-list/master-list.js";
-import { MasterListPhoneRow, SortableMasterListPhoneRow } from "../master-list/master-list-phone-row.js";
-import { MasterListDragOverlayRow } from "../master-list/master-list-overlay-row.js";
+import { MasterListTag } from "../master-list/master-list-tag.js";
 import { DestructiveConfirmModal } from "../destructive-confirm-modal.js";
-import { EmptyState } from "../empty-state.js";
 import { AutoTextarea } from "../auto-textarea.js";
 import { Icons } from "../icons.js";
 import { TextInput } from "../text-input.js";
-import { lblCls, listHeaderCls } from "../../../lib/field-tokens.js";
+import { lblCls } from "../../../lib/field-tokens.js";
 import { useCopilotProfileStore } from "../../../stores/copilot-profile-store.js";
 import { useT, type TFunc } from "../../../i18n/context.js";
 import { toast } from "sonner";
 import { cn } from "../../../lib/cn.js";
-import type { CopilotProfile, CopilotProfileCreate } from "@vibe-tavern/api-contracts";
+import type { CopilotProfile, CopilotProfileCreate, CopilotProfileUpdate } from "@vibe-tavern/api-contracts";
 import { getAgentHost, type AgentKind } from "../../../lib/agent-host-registry.js";
 import { AgentChatProfileFooter } from "./agent-profile-chat-footer.js";
+import { AgentProfileModelBlock } from "./AgentProfileModelBlock.js";
+import { ProfileList, type DetailMode } from "./agent-profile-list.js";
 import { resolveAgentProfileToolLabel } from "./agent-tool-labels.js";
 import { BUILTIN_PROFILE_ID, useAgentProfileAssignment } from "./use-agent-profile-assignment.js";
+import { builtinProfileDisplayName } from "../../../lib/agent-builtin-profiles.js";
 
 /** Copilot profile draft — leaner than a co-author module (no description,
  *  no openingMessage) and, since PM-8 (skills ungated), no skillIds either:
  *  a profile is name + basePrompt + toolSet. The toolSet is a loose boolean
- *  record (AS-8b: which keys are valid depends on the profile's agent kind). */
+ *  record (AS-8b: which keys are valid depends on the profile's agent kind).
+ *  DR-7b adds `sourceBuiltinId` — create-only provenance: duplicating a
+ *  BUILT-IN row records that row's id; duplicating a USER row passes its own
+ *  source through (a copy of a director copy is still a director copy); a
+ *  user row without a source stays undefined. It never rides the edit save
+ *  (`draftToUpdateInput` omits it — provenance is immutable after create). */
 interface ProfileDraft {
 	name: string;
 	basePrompt: string;
 	toolSet: Record<string, boolean>;
+	/** DR-7b: the built-in this copy came from (undefined = no source). */
+	sourceBuiltinId?: string;
 }
 
 const EMPTY_DRAFT: ProfileDraft = {
@@ -50,6 +56,10 @@ function profileToDraft(p: CopilotProfile): ProfileDraft {
 		name: p.name,
 		basePrompt: p.basePrompt,
 		toolSet: { ...p.toolSet },
+		// DR-7b: provenance rides the draft for the create that follows a
+		// duplicate — a built-in row's own id, or a user row's existing source
+		// passed through (undefined when it has none).
+		sourceBuiltinId: p.isBuiltIn ? p.id : p.sourceBuiltinId ?? undefined,
 	};
 }
 
@@ -59,10 +69,25 @@ function draftToCreateInput(d: ProfileDraft, agentKind: string): CopilotProfileC
 		basePrompt: d.basePrompt,
 		toolSet: d.toolSet,
 		agentKind,
+		// DR-7b: provenance rides the create only when the draft carries one —
+		// a from-scratch create sends NO key (byte-identical to before).
+		...(d.sourceBuiltinId !== undefined ? { sourceBuiltinId: d.sourceBuiltinId } : {}),
 	};
 }
 
-type DetailMode = "view" | "edit" | "create";
+/** The edit-save body: the create shape MINUS `agentKind` — the kind is
+ *  immutable (AS-3), and the strict update contract omits the key, so a
+ *  PATCH carrying it is rejected with a 422. The server re-validates
+ *  toolSet against the stored row's kind. DR-7b: `sourceBuiltinId` is
+ *  omitted the same way (provenance is immutable after create — the update
+ *  contract strict-rejects the key). */
+function draftToUpdateInput(d: ProfileDraft): CopilotProfileUpdate {
+	return {
+		name: d.name.trim(),
+		basePrompt: d.basePrompt,
+		toolSet: d.toolSet,
+	};
+}
 
 /**
  * Copilot profile manager (EXPERIENCE_COPILOT_PROFILES_PLAN, Wave 3 / CP-9;
@@ -103,9 +128,14 @@ export interface AgentProfileModalProps {
 	/** Optional drill-down parent (AP-27): the settings summary passes its
 	 *  own title here — absent = standalone, no back link. */
 	parentBack?: MasterDetailParentBack;
+	/** DR-8 (mockup §11): the pair the composer's pills show right now — the
+	 *  starting point when the user engages the own segment on a profile with
+	 *  no stored own model yet (they change it before anything is written).
+	 *  Absent — the revealed pills start empty. */
+	currentModel?: { providerProfileId: string | null; model?: string };
 }
 
-export function AgentProfileModal({ scriptId, chatId, agentKind, assignedProfileId, isOpen, onClose, parentBack }: AgentProfileModalProps) {
+export function AgentProfileModal({ scriptId, chatId, agentKind, assignedProfileId, isOpen, onClose, parentBack, currentModel }: AgentProfileModalProps) {
 	const { t } = useT();
 	const host = getAgentHost(agentKind);
 	const toolKeys = host.toolKeys;
@@ -192,7 +222,9 @@ export function AgentProfileModal({ scriptId, chatId, agentKind, assignedProfile
 	/** Duplicate the built-in (read-only) seed into an editable user copy. The
 	 *  draft is seeded from the RESOLVED fields — basePrompt is the inline text
 	 *  the API already materialized for the seed. Later seed changes never
-	 *  mutate the copy. */
+	 *  mutate the copy. DR-7b: the draft also records the duplicate's SOURCE
+	 *  (`profileToDraft` — the duplicated row's id for a built-in, a user
+	 *  row's own source passed through), so the create persists provenance. */
 	const handleDuplicate = (profile: CopilotProfile, openDetail?: () => void) => {
 		if (dirty) {
 			setConfirmDiscardOpen(true);
@@ -226,15 +258,14 @@ export function AgentProfileModal({ scriptId, chatId, agentKind, assignedProfile
 			toast.error(t("copilot_profile_base_prompt_required"));
 			return;
 		}
-		const input = draftToCreateInput(draft, agentKind);
 		try {
 			// The store actions wrap the profile API (create/update) and
 			// refresh the list — the modal only drives draft → save → view.
 			if (detailMode === "create") {
-				const created = await createProfile(input);
+				const created = await createProfile(draftToCreateInput(draft, agentKind));
 				setSelectedId(created.id);
 			} else if (detailMode === "edit" && selectedId) {
-				await updateProfile(selectedId, input);
+				await updateProfile(selectedId, draftToUpdateInput(draft));
 			}
 			setDetailMode("view");
 			setDirty(false);
@@ -332,6 +363,7 @@ export function AgentProfileModal({ scriptId, chatId, agentKind, assignedProfile
 						<ProfileView
 							profile={selected}
 							t={t}
+							currentModel={currentModel}
 							closeDetail={closeDetail}
 						/>
 					) : (
@@ -438,161 +470,13 @@ export function AgentProfileModal({ scriptId, chatId, agentKind, assignedProfile
 	);
 }
 
-// ─── Master list ────────────────────────────────────────────────────────
-
-interface ProfileListProps {
-	profiles: CopilotProfile[];
-	isLoading: boolean;
-	selectedId: string | null;
-	// SC-0k: the EFFECTIVE profile id for chat-target hosts (the chat's own
-	// choice when it resolves, else the kind default when it resolves, else
-	// the built-in — the modal-side mirror of the server chain, never null
-	// for a loaded list); the script path passes the assignment mirror.
-	activeProfileId: string | null;
-	// SC-0g: the kind-default profile id — undefined = script host (no badge).
-	// A chat-target host passes the raw kind default (possibly null); null
-	// marks the built-in seed, mirroring the script null→builtin fallback.
-	defaultProfileId?: string | null;
-	detailMode: DetailMode;
-	t: TFunc;
-	/** The kind under management — the reorder persist passes THIS kind
-	 *  (ML-6: order is within one kind's list). The modal already knows it
-	 *  as a prop; the list must not reorder another kind's profiles. */
-	agentKind: string;
-	onSelect: (id: string) => void;
-	onAdd: () => void;
-}
-
-// Row anatomy lives in `shared/master-list` (handle, status slot, wrapping
-// title, overlay, phone drill-down row). This list supplies data + slots:
-// the name (SC-16d: wraps, never cut) + built-in/default tags in the title
-// slot, the active dot for the effective profile in the status slot (the row rules:
-// «in use» is a marker, never a whole-row color), and the arrayMove +
-// store `reorder(kind, …)` persist (the ML-6 backend, kind-scoped).
-// The built-in seed (BUILTIN_PROFILE_ID) has no stored record, so it stays
-// pinned at the top as a handle-less `MasterListPhoneRow` — the ML-3
-// ServicePromptsPane Default-row precedent; dragging onto it is a noop.
-function ProfileList({ profiles, isLoading, selectedId, activeProfileId, defaultProfileId, detailMode, t, agentKind, onSelect, onAdd }: ProfileListProps) {
-	const reorderProfiles = useCopilotProfileStore((s) => s.reorder);
-	if (isLoading) {
-		return <div className="p-4 font-ui text-[calc(var(--ui-fs)-1px)] text-t3">{t("copilot_profile_loading")}</div>;
-	}
-	return (
-		<MasterList<CopilotProfile>
-			items={profiles}
-			getId={(p) => p.id}
-			// The pinned built-in seed is never sortable (ML-3 pattern).
-			sortableIds={profiles.filter((p) => p.id !== BUILTIN_PROFILE_ID).map((p) => p.id)}
-			onReorderItems={(activeId, overId, currentItems) => {
-				// The built-in seed has no stored record: dragging onto it
-				// is a noop (the ML-3 ServicePromptsPane Default guard).
-				if (activeId === BUILTIN_PROFILE_ID || overId === BUILTIN_PROFILE_ID) {
-					return { optimisticItems: currentItems, persist: () => {} };
-				}
-				const fromIdx = currentItems.findIndex((p) => p.id === activeId);
-				const toIdx = currentItems.findIndex((p) => p.id === overId);
-				if (fromIdx === -1 || toIdx === -1) {
-					return { optimisticItems: currentItems, persist: () => {} };
-				}
-				const reordered = arrayMove(currentItems, fromIdx, toIdx);
-				return {
-					optimisticItems: reordered,
-					persist: () => reorderProfiles(agentKind, reordered.filter((p) => !p.isBuiltIn).map((p, i) => ({ id: p.id, sortOrder: i }))),
-				};
-			}}
-			header={(
-				<div className={cn(listHeaderCls, "mb-1.5 px-4")}>
-					{t("copilot_profile_list_label")}
-				</div>
-			)}
-			emptyState={profiles.length === 0 ? (
-				<div className="flex h-full items-center justify-center px-2">
-					<EmptyState
-						icon={<Icons.Tool />}
-						title={t("copilot_profile_empty")}
-						sub={t("copilot_profile_empty_sub")}
-					/>
-				</div>
-			) : undefined}
-			renderRow={(p) => {
-				const isActive = p.id === activeProfileId;
-				const isSelected = (p.id === selectedId && detailMode === "view") || (detailMode === "edit" && p.id === selectedId);
-				// The kind-default pill (chat-target hosts only): the
-				// null default reads as the built-in seed, mirroring
-				// the script null→builtin fallback.
-				const showDefaultPill = defaultProfileId !== undefined && p.id === (defaultProfileId ?? BUILTIN_PROFILE_ID);
-				// SC-16d: the name owns line 1 alone (wraps, never cut);
-				// the pills own the line below (only when present); no id line.
-				const title = (
-					<>
-						<span
-							data-testid={`copilot-profile-row-name-${p.id}`}
-							className="whitespace-normal break-words"
-						>
-							{p.name}
-						</span>
-						{(p.isBuiltIn || showDefaultPill) && (
-							<div data-testid={`copilot-profile-row-pills-${p.id}`} className="mt-1 flex flex-wrap gap-1">
-								{p.isBuiltIn && (
-									<span className="shrink-0 rounded bg-s3 px-1.5 py-px font-ui text-[calc(var(--ui-fs)-3px)] text-t2">
-										{t("copilot_profile_built_in")}
-									</span>
-								)}
-								{showDefaultPill && (
-									<span className="shrink-0 rounded bg-s3 px-1.5 py-px font-ui text-[calc(var(--ui-fs)-3px)] text-t2">
-										{t("copilot_profile_default")}
-									</span>
-								)}
-							</div>
-						)}
-					</>
-				);
-				if (p.id === BUILTIN_PROFILE_ID) {
-					return (
-						<MasterListPhoneRow
-							rowTestId={`copilot-profile-row-${p.id}`}
-							selected={isSelected}
-							active={isActive}
-							title={title}
-							onSelect={() => onSelect(p.id)}
-						/>
-					);
-				}
-				return (
-					<SortableMasterListPhoneRow
-						sortableId={p.id}
-						rowTestId={`copilot-profile-row-${p.id}`}
-						selected={isSelected}
-						active={isActive}
-						title={title}
-						onSelect={() => onSelect(p.id)}
-					/>
-				);
-			}}
-			renderOverlayRow={(item) => (
-				<MasterListDragOverlayRow active={item.id === activeProfileId} title={item.name} />
-			)}
-			footer={(
-				<div className="shrink-0 border-t border-border px-3 pt-3">
-					<button
-						type="button"
-						data-testid="copilot-profile-new-btn"
-						className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed border-border2 py-2 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors hover:border-border hover:bg-s2 hover:text-t1"
-						onClick={() => onAdd()}
-					>
-						<Icons.Plus /> {t("copilot_profile_new")}
-					</button>
-				</div>
-			)}
-		/>
-	);
-}
-
 // ─── Read-only view (built-in + user profiles) ─────────────────────────
 
 interface ProfileViewProps {
 	profile: CopilotProfile;
 	t: TFunc;
+	/** DR-8: the composer's current pair — the own-segment reveal's starting point. */
+	currentModel?: { providerProfileId: string | null; model?: string };
 	closeDetail?: () => void;
 }
 
@@ -602,7 +486,7 @@ interface ProfileViewProps {
  *  8-line clamp — deterministic and test-pinnable. */
 const PROMPT_CLAMP_AT = 500;
 
-function ProfileView({ profile, t }: ProfileViewProps) {
+function ProfileView({ profile, t, currentModel }: ProfileViewProps) {
 	// AS-7/AS-8b: the wire tool set is a per-kind union; the read widens to a
 	// boolean record and projects through the host's keys for the profile's
 	// own kind (the script kind's toggles differ from the experience ones).
@@ -618,9 +502,11 @@ function ProfileView({ profile, t }: ProfileViewProps) {
 		<div className="flex flex-col gap-5">
 			<div>
 				<div className="flex flex-wrap items-center gap-2">
-					<h3 data-testid="copilot-profile-detail-name" className="font-body text-[calc(var(--ui-fs)+3px)] font-semibold text-t1">{profile.name}</h3>
-					<span data-testid="copilot-profile-detail-tag" className="rounded bg-s3 px-1.5 py-px font-ui text-[calc(var(--ui-fs)-3px)] text-t2">
-						{profile.isBuiltIn ? t("copilot_profile_built_in") : t("copilot_profile_custom_tag")}
+					<h3 data-testid="copilot-profile-detail-name" className="font-body text-[calc(var(--ui-fs)+3px)] font-semibold text-t1">{builtinProfileDisplayName(profile.id, profile.agentKind, profile.name, t)}</h3>
+					<span data-testid="copilot-profile-detail-tag">
+						<MasterListTag>
+							{profile.isBuiltIn ? t("copilot_profile_built_in") : t("copilot_profile_custom_tag")}
+						</MasterListTag>
 					</span>
 				</div>
 			</div>
@@ -647,6 +533,22 @@ function ProfileView({ profile, t }: ProfileViewProps) {
 						</button>
 					)}
 				</PreviewRow>
+
+				{/* DR-8 (mockup §11): the model block (the `agent_profile_model_label` row) between the prompt preview and
+				    the tools — chat-target hosts only (the sidechat's profiles; the
+				    mini-app and script copilots' modal surfaces stay byte-identical, the
+				    plan's own must-stay-true). Built-in rows included: the model is a
+				    SETTING, not an edit — the read-only guard protects prompt/tools only. */}
+				{getAgentHost(profile.agentKind).profileAssignment.target === "chat" && (
+					<PreviewRow label={t("agent_profile_model_label")}>
+						<AgentProfileModelBlock
+							agentKind={profile.agentKind}
+							profileId={profile.id}
+							currentModel={currentModel}
+							t={t}
+						/>
+					</PreviewRow>
+				)}
 
 				<PreviewRow label={t("copilot_profile_tools")}>
 					{enabledTools.length > 0 ? (

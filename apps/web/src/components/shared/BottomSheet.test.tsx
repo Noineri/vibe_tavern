@@ -34,13 +34,22 @@
  * have been caught. Under vaul the gesture moves out of reach of happy-dom, so
  * those two assertions retire to the skipped block.
  */
-import { beforeAll, describe, it, expect, mock } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, it, expect, mock } from "bun:test";
 import { useDomEnv } from "../../../test/dom-env.js";
 
 useDomEnv();
 
 let render: typeof import("@testing-library/react").render;
 let fireEvent: typeof import("@testing-library/react").fireEvent;
+let act: typeof import("@testing-library/react").act;
+const originalHitTest = Object.getOwnPropertyDescriptor(document, "elementFromPoint");
+function restoreHitTest() {
+	if (originalHitTest) Object.defineProperty(document, "elementFromPoint", originalHitTest);
+	else Reflect.deleteProperty(document, "elementFromPoint");
+}
+beforeEach(restoreHitTest);
+afterEach(restoreHitTest);
+afterAll(restoreHitTest);
 
 let BottomSheet: typeof import("./BottomSheet.js").BottomSheet;
 let getModalPortal: typeof import("./modal-helpers.js").getModalPortal;
@@ -49,7 +58,7 @@ let getApplicationModalPortal: typeof import("./modal-helpers.js").getApplicatio
 let registerOverlayPortal: typeof import("./modal-helpers.js").registerOverlayPortal;
 
 beforeAll(async () => {
-	({ render, fireEvent } = await import("@testing-library/react"));
+	({ render, fireEvent, act } = await import("@testing-library/react"));
 	({ BottomSheet } = await import("./BottomSheet.js"));
 	({ getModalPortal, getTopmostOverlayPortal, getApplicationModalPortal, registerOverlayPortal } = await import("./modal-helpers.js"));
 });
@@ -71,6 +80,57 @@ function sheetEl(doc: Document): HTMLElement {
 }
 
 describe("BottomSheet", () => {
+	function gestureSheet() {
+		const onClose = mock(() => {});
+		const onClick = mock(() => {});
+		const view = render(<BottomSheet open onClose={onClose}><button type="button" onClick={onClick}>Action</button></BottomSheet>);
+		const button = view.getByRole("button", { name: "Action" });
+		const popup = sheetEl(document);
+		Object.defineProperties(popup, { offsetHeight: { value: 200 }, offsetWidth: { value: 320 } });
+		popup.getBoundingClientRect = () => new DOMRect(0, 400, 320, 200);
+		// Layout/hit testing is the browser boundary missing from happy-dom.
+		// The real Base UI drawer and its document-capture listeners stay live.
+		document.elementFromPoint = () => button;
+		function touch(type: string, y: number, time: number) {
+			const point = { identifier: 0, clientX: 50, clientY: y, target: button };
+			const event = new Event(type, { bubbles: true, cancelable: true });
+			Object.defineProperties(event, {
+				touches: { value: type === "touchend" ? [] : [point] },
+				changedTouches: { value: [point] },
+				timeStamp: { value: time },
+			});
+			fireEvent(button, event);
+			return event;
+		}
+		return { onClose, onClick, button, touch };
+	}
+
+	it("a 2px jitter move is not claimed and leaves the button's native click eligible", async () => {
+		const s = gestureSheet();
+		s.touch("touchstart", 450, 100);
+		const move = s.touch("touchmove", 452, 120);
+		s.touch("touchend", 452, 200);
+		await act(async () => { await Promise.resolve(); });
+		// A browser suppresses the compatibility click when touchmove was
+		// cancelled. Assert that mechanism, not merely a manually fired click.
+		expect(move.defaultPrevented).toBe(false);
+		if (!move.defaultPrevented) fireEvent.click(s.button);
+		expect(s.onClick.mock.calls.length).toBe(1);
+		expect(s.onClose.mock.calls.length).toBe(0);
+	});
+
+	it("a real drag past the axis slop is still claimed and dismisses the sheet", async () => {
+		const s = gestureSheet();
+		s.touch("touchstart", 450, 100);
+		const activation = s.touch("touchmove", 458, 120);
+		s.touch("touchmove", 620, 200);
+		s.touch("touchend", 620, 250);
+		await act(async () => { await Promise.resolve(); });
+		expect(activation.defaultPrevented).toBe(true);
+		expect(s.onClose.mock.calls.length).toBe(1);
+		expect(s.onClick.mock.calls.length).toBe(0);
+	});
+
 	it("open=false renders nothing", () => {
 		render(<BottomSheet open={false} onClose={() => {}}><span>BODY</span></BottomSheet>);
 		expect(document.body.textContent).not.toContain("BODY");

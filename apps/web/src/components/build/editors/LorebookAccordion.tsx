@@ -30,7 +30,7 @@ import { ListSearchPanel } from "../../shared/ListSearchPanel.js";
 import type { LinkTarget } from "../../shared/LinkBindingPopover.js";
 import { LorebookOwnerPicker } from "./LorebookOwnerPicker.js";
 import { LorebookActivationSettings } from "./lorebook-activation-settings.js";
-import { countTokens } from "../../../utils/tokenizer.js";
+import { sumLoreEntryTokens } from "./lorebook-token-total.js";
 import type { TFunc } from "../../../i18n/locale-helpers.js";
 import type Resources from "../../../i18n/resources.js";
 
@@ -165,14 +165,9 @@ export function LorebookAccordion({
     };
   }, [lorebook.id]);
 
-  // Total estimated tokens across all entries (by content).
-  const totalTokens = useMemo(
-    () =>
-      entries.length === 0
-        ? 0
-        : countTokens(entries.map((e) => e.content).join("\n")),
-    [entries],
-  );
+  // Total estimated tokens across all entries (by content) — the SUM of
+  // per-entry cached counts (LC-5; derivation in lorebook-token-total.ts).
+  const totalTokens = useMemo(() => sumLoreEntryTokens(entries), [entries]);
 
   // Distinct activation keys across all entries — the tag pool for the
   // search combobox. Sorted for stable dropdown order.

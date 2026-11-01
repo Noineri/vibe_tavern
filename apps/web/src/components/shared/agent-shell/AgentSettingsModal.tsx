@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { getAgentHost, type AgentKind } from "../../../lib/agent-host-registry.js";
 import { useT } from "../../../i18n/context.js";
@@ -15,7 +15,10 @@ import { AgentSkillModal } from "./AgentSkillModal.js";
 import { useCopilotProfileStore } from "../../../stores/copilot-profile-store.js";
 import { useCopilotSkillStore } from "../../../stores/copilot-skill-store.js";
 import { patchAgentKindSettingsAction, useBootstrapStore } from "../../../stores/api-actions/bootstrap-actions.js";
-import { useAgentProfileAssignment } from "./use-agent-profile-assignment.js";
+import { resolveAgentProfileOwnModel, useAgentProfileModelStore } from "../../../stores/agent-profile-model-store.js";
+import { useProviderDataStore } from "../../../stores/provider-data-store.js";
+import { useParkedProfileChoice } from "./use-agent-profile-assignment.js";
+import { builtinProfileDisplayName } from "../../../lib/agent-builtin-profiles.js";
 
 /**
  * Assistant settings summary (AGENT_SHELL_POLISH AP-27, mockup §4) — the
@@ -86,18 +89,6 @@ export function AgentSettingsModal({
 
 	const [profileOpen, setProfileOpen] = useState(false);
 	const [skillOpen, setSkillOpen] = useState(false);
-	// The dropdown is one-step (choose = apply) while the assignment hook is
-	// two-step (select, then assign): the choice parks here and the commit
-	// effect below applies it through the hook once the target resolves.
-	// A FAILED write resets the park (see `onFailed`) so the trigger shows
-	// the effective profile again and choosing the same profile retries.
-	const [chosenId, setChosenId] = useState<string | null>(null);
-	// The commit edge pins the committed choice (see below) — the hook
-	// object is fresh every render, so without it the effect would re-fire
-	// the write on every parent re-render until the server round-trip
-	// clears the choice. Reset on failure and on close (a stale pin would
-	// swallow a same-profile retry, even in a later modal session).
-	const committedRef = useRef<string | null>(null);
 
 	useEffect(() => {
 		if (isOpen) {
@@ -107,41 +98,51 @@ export function AgentSettingsModal({
 		if (!isOpen) {
 			setProfileOpen(false);
 			setSkillOpen(false);
-			setChosenId(null);
-			committedRef.current = null;
 		}
 	}, [isOpen, agentKind, loadProfiles, loadSkills]);
 
-	// No in-flight choice: pass null (the hook's guards no-op on null, and
-	// neither resolution read below depends on the selection).
-	const selected = chosenId !== null ? (profiles.find((p) => p.id === chosenId) ?? null) : null;
-	const assignment = useAgentProfileAssignment({
+	// The parked-choice pattern (the one-step dropdown over the two-step
+	// assignment hook: parking state, commit pin/effect, failure reset,
+	// close reset) lives in `useParkedProfileChoice` — the DR-6b
+	// unification; its close reset was this modal's own `!isOpen` branch
+	// before the extraction.
+	const { chosenId, choose, effectiveId } = useParkedProfileChoice({
 		agentKind,
 		isChatTarget,
 		scriptId,
 		chatId,
 		assignedProfileId,
-		selected,
 		profiles,
 		isOpen,
 		t,
-		onAssigned: () => setChosenId(null),
-		onFailed: () => {
-			committedRef.current = null;
-			setChosenId(null);
-		},
 	});
-	const effectiveId = isChatTarget ? assignment.chatEffectiveProfileId : assignment.activeProfileId;
 
-	// The commit edge (see `chosenId` above): guards + writes live in the
-	// hook (`assign` / `assignHere` no-op when the choice is already active).
+	// DR-8 (mockup §11): the model row's subtitle — `agent_settings_model_own_sub`
+	// (own, naming the profile) while the EFFECTIVE profile (the parked-choice
+	// id above) answers on its own model, else today's
+	// `agent_settings_model_sub` (same as the composer input). Chat-target
+	// hosts only: the mini-app and script copilots keep today's subtitle
+	// wholesale (their kinds' surfaces stay byte-identical — the plan's own
+	// must-stay-true).
+	const providerProfiles = useProviderDataStore((s) => s.profiles);
+	const loadProfileModel = useAgentProfileModelStore((s) => s.load);
+	const activeOwnModel = useAgentProfileModelStore((s) =>
+		isChatTarget ? resolveAgentProfileOwnModel(agentKind, effectiveId, providerProfiles, s.models) : null,
+	);
 	useEffect(() => {
-		if (chosenId === null || chosenId === committedRef.current) return;
-		if (!profiles.some((p) => p.id === chosenId)) return;
-		committedRef.current = chosenId;
-		if (isChatTarget) assignment.assignHere();
-		else assignment.assign();
-	}, [chosenId, profiles, isChatTarget, assignment]);
+		if (isOpen && isChatTarget) void loadProfileModel(agentKind, effectiveId);
+	}, [isOpen, isChatTarget, agentKind, effectiveId, loadProfileModel]);
+	const modelSub =
+		activeOwnModel !== null
+			? t("agent_settings_model_own_sub", {
+					name: builtinProfileDisplayName(
+						effectiveId,
+						agentKind,
+						profiles.find((p) => p.id === effectiveId)?.name ?? effectiveId,
+						t,
+					),
+				})
+			: t("agent_settings_model_sub");
 
 	const handleAutoCompact = (enabled: boolean) => {
 		// SC-0e: the write merges the returned row into the bootstrap
@@ -204,8 +205,8 @@ export function AgentSettingsModal({
 								<>
 									<DropdownSelect
 										value={chosenId ?? effectiveId}
-										options={profiles.map((p) => ({ id: p.id, label: p.name }))}
-										onChange={(id) => setChosenId(id)}
+										options={profiles.map((p) => ({ id: p.id, label: builtinProfileDisplayName(p.id, agentKind, p.name, t) }))}
+										onChange={choose}
 										disabled={!profilesLoaded || profiles.length === 0}
 										searchable={false}
 										triggerTestId="agent-settings-profile-select"
@@ -226,7 +227,7 @@ export function AgentSettingsModal({
 							testId="agent-settings-row-model"
 							icon={<Icons.Sparkles className="h-[18px] w-[18px]" />}
 							title={t("agent_settings_model")}
-							sub={t("agent_settings_model_sub")}
+							sub={modelSub}
 							control={
 								<AgentModelPills mobile={isMobile} providerProfileId={providerProfileId} model={model} onProviderChange={onProviderChange} />
 							}
@@ -268,6 +269,7 @@ export function AgentSettingsModal({
 				chatId={chatId}
 				agentKind={agentKind}
 				assignedProfileId={assignedProfileId}
+				currentModel={{ providerProfileId, model }}
 				isOpen={profileOpen}
 				onClose={() => setProfileOpen(false)}
 				parentBack={{ label: t("agent_settings_title"), onBack: () => setProfileOpen(false) }}

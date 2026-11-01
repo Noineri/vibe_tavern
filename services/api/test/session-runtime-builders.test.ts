@@ -23,6 +23,7 @@ import { tmpdir } from "node:os";
 import { createRuntimeStore } from "../src/runtime/session/session-runtime-store.js";
 import { SessionRuntime } from "../src/runtime/session/session-runtime.js";
 import { ChatAdapter } from "../src/api/adapters/chat-adapter.js";
+import { countTokensDefault } from "../src/infrastructure/ai/tokenizer-service.js";
 import type { ChatRuntimeApi } from "../src/api/contract/runtime-api.js";
 import type { ChatId, MessageId } from "@vibe-tavern/domain";
 
@@ -111,6 +112,59 @@ describe("Wave B1.1 — per-endpoint response builder shapes", () => {
 	it("buildMessageResponse: send/delete-shape adds summaries", async () => {
 		const r = await runtime.buildMessageResponse(chatId, { summaries: true });
 		expect(sortedKeys(r)).toEqual(["messages", "promptTrace", "summaries"]);
+	});
+
+	it("LC-1: build/edit/delete responses carry the branch's NEWEST trace, payload intact (characterization)", async () => {
+		// LONG_CHAT_PERFORMANCE_REPORT D1 fix step 1 pin: MessageResponse.promptTrace
+		// is the branch's newest trace — the exact record the (unchanged) lazy
+		// history path returns first — with chunked payload columns hydrated.
+		// Self-contained runtime so the seeded traces cannot perturb the shared
+		// chatId used by the shape tests (mirror of the deleteChat test above).
+		const ctx = await createTestRuntime();
+		try {
+			const { runtime: rt, chatId: cid, stores } = ctx;
+		const snap = await rt.getSnapshot(cid);
+		const branchId = snap.activeBranch!.id as import("@vibe-tavern/domain").ChatBranchId;
+		const greetingMsgId = snap.messages[0].id;
+		// A second message to delete later: traces FK-cascade with their message,
+		// so the traced greeting must survive the delete leg.
+		const doomed = await stores.messages.addMessage({
+			chatId: cid, branchId, role: "user", authorType: "user", content: "LC-1 delete-me",
+		});
+
+			// Two authored traces; the SECOND save is newest by createdAt AND by the
+		// id tie-break (monotonic ids), so "newest" is deterministic even if both
+		// saves land in the same millisecond. The newest one carries a big text
+		// (≥ TRACE_CHUNK_THRESHOLD) so its payload is stored as chunks — the
+		// response must return it inflated.
+			const bigText = "lc1-system-prompt-" + "x".repeat(512);
+			await stores.traces.saveTrace(lc1TraceSeed(cid, branchId, greetingMsgId, "lc1-old", "old-layers"));
+			const newest = await stores.traces.saveTrace(
+				lc1TraceSeed(cid, branchId, greetingMsgId, "lc1-new", bigText),
+			);
+
+			// Oracle: the UNCHANGED lazy-history path (listPromptTraces →
+			// getTracesByChat, no limit). Its first record is the branch's newest.
+			const lazy = await rt.listPromptTraces(cid, { branchId });
+			expect(lazy[0].model).toBe("model-lc1-new");
+			expect(lazy[0].layers).toEqual([{ layer: bigText }]);
+
+			// buildMessageResponse must carry exactly that record.
+			const built = await rt.buildMessageResponse(cid);
+			expect(built.promptTrace).toEqual(lazy[0]);
+			expect(built.promptTrace!.id).toBe(newest.id);
+
+			// Same for a real mutation response (send/edit path → buildMessageResponse).
+			const edited = await rt.chatRuntime.editMessage(cid, greetingMsgId, "lc1 edited");
+			expect(edited.promptTrace).toEqual(lazy[0]);
+
+			// Same for the delete path — deleting the OTHER message, so the newest
+			// trace (bound to the greeting) survives and rides the response.
+			const deleted = await rt.chatRuntime.deleteMessage(cid, doomed.id);
+			expect(deleted.promptTrace).toEqual(lazy[0]);
+		} finally {
+			await ctx.cleanup();
+		}
 	});
 
 	// ─── Variant path ───────────────────────────────────────────────────
@@ -511,6 +565,41 @@ describe("Wave B1.1 — per-endpoint response builder shapes", () => {
 	});
 
 	// ── DICE Contract stack-audit GAP-1: message read DTO carries bound diceRolls ──
+
+	it("ERX-7: snapshot and message builders expose only bounded public reports, including legacy envelopes", async () => {
+		const ctx = await createTestRuntime();
+		try {
+			const { stores, runtime, chatId } = ctx;
+			const branchId = (await runtime.getSnapshot(chatId)).activeBranch!.id;
+			const message = await stores.messages.addMessage({ chatId, branchId, role: "user", authorType: "user", content: "Played" });
+			const events = Array.from({ length: 105 }, (_, n) => ({ type: "move", participantId: "p1", detail: `move ${n}` }));
+			const data = { chatId, branchId, sessionId: "removed-session", sessionRevision: 7, queueRevision: 1,
+				kind: "report", rulesSourceHash: "rules", hiddenStateCheckpointJson: '{"secret":"HIDDEN_ERX7"}' };
+			for (const publicEventsJson of [JSON.stringify({ title: "Cards", events,
+				participants: [{ id: "p1", label: "Player", controller: "PRIVATE_ERX7" }], private: "PRIVATE_ERX7" }),
+				JSON.stringify({ title: "Legacy", events: [{ type: "card_played", detail: { suit: "red" } }] }), "bad json"]) {
+				const attachment = await stores.experiences.queueAttachment({ ...data, publicEventsJson });
+				await stores.experiences.bindAttachment(attachment.id, message.id);
+			}
+			// An unbound queue never appears on historical messages.
+			await stores.experiences.queueAttachment({ ...data, publicEventsJson: '{"title":"UNBOUND_ERX7","events":[]}' });
+			for (const snap of [await runtime.getSnapshot(chatId), await runtime.buildChatSwitchResponse(chatId), await runtime.buildMessageResponse(chatId)]) {
+				const reports = snap.messages.find((m) => m.id === message.id)?.experienceReports;
+				expect(reports).toHaveLength(2);
+				const cards = reports?.find((r) => r.title === "Cards");
+				expect(cards?.eventCount).toBe(105);
+				expect(cards?.events).toEqual(events.slice(-100));
+				expect(cards?.participants).toEqual([{ id: "p1", label: "Player" }]);
+				expect(reports?.find((r) => r.title === "Legacy")).toEqual({ title: "Legacy", eventCount: 1,
+					events: [{ type: "card_played", detail: { suit: "red" } }] });
+				const wire = JSON.stringify(snap.messages);
+				for (const marker of ["HIDDEN_ERX7", "PRIVATE_ERX7", "UNBOUND_ERX7", "hiddenStateCheckpointJson", "rulesSourceHash"]) expect(wire).not.toContain(marker);
+				for (const other of snap.messages.filter((m) => m.id !== message.id)) expect("experienceReports" in other).toBe(false);
+			}
+		} finally {
+			await ctx.cleanup();
+		}
+	});
 	//
 	// Pins the FULL read path the frontend fetches: buildChatSwitchResponse →
 	// buildMessagesWithVariants → DiceRollStore.getRollsForMessages (the B7 batch
@@ -578,3 +667,91 @@ describe("Wave B1.1 — per-endpoint response builder shapes", () => {
 		}
 	});
 });
+
+// ─── TOKEN_COUNT_ONCE_PLAN TC-4: counts travel on every message DTO ───
+//
+// Every response family that carries messages flows through mapMessageDto
+// (getSnapshot; bootstrap's snapshot; the message/variant/branch/switch/create
+// builders; the insights scene patch — pinned separately in
+// insights-adapter.test.ts). This suite pins that each family's wire messages
+// carry `tokenCount` equal to an independent cl100k recompute of the exact
+// content, message AND variants, so no path can emit a DTO without the field.
+
+describe("TC-4: message DTOs carry tokenCount through every response family", () => {
+	it("getSnapshot, bootstrap and every message-carrying builder ship tokenCount (message + variants)", async () => {
+		const ctx = await createTestRuntime();
+		try {
+			const { runtime, chatId } = ctx;
+
+			const snapshot = await runtime.getSnapshot(chatId);
+			expect(snapshot.messages.length).toBeGreaterThan(0);
+			for (const message of snapshot.messages) {
+				expect(message.tokenCount, `snapshot ${message.id}`).toBe(countTokensDefault(message.content));
+				for (const variant of message.variants) {
+					expect(variant.tokenCount, `snapshot ${message.id}/v${variant.variantIndex}`).toBe(countTokensDefault(variant.content));
+				}
+			}
+
+			// Bootstrap rides the same getSnapshot funnel (buildBootstrapState).
+			const bootstrap = await runtime.getBootstrapState();
+			expect(bootstrap.snapshot?.messages.length).toBeGreaterThan(0);
+			for (const message of bootstrap.snapshot?.messages ?? []) {
+				expect(message.tokenCount, `bootstrap ${message.id}`).toBe(countTokensDefault(message.content));
+			}
+
+			// Every per-endpoint builder family that carries messages.
+			const families = [
+				["message", await runtime.buildMessageResponse(chatId)],
+				["variant", await runtime.buildVariantResponse(chatId)],
+				["branch", await runtime.buildBranchResponse(chatId)],
+				["switch", await runtime.buildChatSwitchResponse(chatId)],
+				["create", await runtime.buildChatCreateResponse(chatId)],
+			] as const;
+			for (const [family, response] of families) {
+				expect(response.messages.length).toBeGreaterThan(0);
+				for (const message of response.messages) {
+					expect(message.tokenCount, `${family} ${message.id}`).toBe(countTokensDefault(message.content));
+					for (const variant of message.variants) {
+						expect(variant.tokenCount, `${family} ${message.id}/v${variant.variantIndex}`).toBe(countTokensDefault(variant.content));
+					}
+				}
+			}
+		} finally {
+			await ctx.cleanup();
+		}
+	});
+});
+
+/** LC-1 trace seed: a minimal saveTrace payload with `text` embedded in every
+ *  chunkable column (layers, finalPayload, providerResponse body). */
+function lc1TraceSeed(chatId: string, branchId: string, messageId: string, tag: string, text: string) {
+	return {
+		chatId,
+		branchId,
+		messageId,
+		model: `model-${tag}`,
+		presetName: `preset-${tag}`,
+		assembledLayers: [{ layer: text }],
+		tokenAccounting: { total: 1 },
+		activatedLoreEntries: [tag],
+		activatedLoreDetail: [],
+		retrievedMemories: [],
+		scriptInjections: [],
+		latencyMs: 100,
+		prefill: `prefill-${tag}`,
+		compactionSummary: null,
+		sentConfig: null,
+		providerResponse: {
+			mode: "nonstream" as const,
+			steps: [{
+				response: {
+					id: `response-${tag}`,
+					modelId: `model-${tag}`,
+					headers: {},
+					body: { text: `reply-body-${tag}` },
+				},
+				finishReason: "stop",
+			}],
+		},
+	};
+}

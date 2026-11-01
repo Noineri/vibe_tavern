@@ -71,6 +71,7 @@ const genState = (over: Partial<ChatGenerationState> = {}): ChatGenerationState 
 	pendingUserMessageContent: null,
 	pendingUserMessageAttachments: [],
 	pendingDiceRolls: [],
+	pendingExperienceReport: null,
 	abortController: null,
 	...over,
 });
@@ -91,6 +92,7 @@ describe("CoauthorToolActivitySlot — persisted carrier + final response", () =
 			state: "complete" as const,
 			createdAt,
 			updatedAt: createdAt,
+			tokenCount: 0,
 		};
 		const editArgs = { edits: [{ search: "old trait", replace: "new trait" }], summary: "swap" };
 		const carrier: AppMessage = {
@@ -108,6 +110,7 @@ describe("CoauthorToolActivitySlot — persisted carrier + final response", () =
 				isSelected: true,
 				finishReason: null,
 				createdAt,
+				tokenCount: 0,
 				toolCalls: [{ id: "call_edit", name: "edit_personality", args: editArgs }],
 				toolCallId: null,
 			}],
@@ -128,6 +131,7 @@ describe("CoauthorToolActivitySlot — persisted carrier + final response", () =
 				isSelected: true,
 				finishReason: null,
 				createdAt,
+				tokenCount: 0,
 				toolCallId: "call_edit",
 			}],
 			selectedVariantIndex: 0,
@@ -192,6 +196,7 @@ describe("CoauthorToolActivitySlot — streaming activities stay off the committ
 			authorType: "assistant",
 			position: 0,
 			content: "Earlier turn text.",
+			tokenCount: 0,
 			variants: [],
 			selectedVariantIndex: null,
 		};
@@ -233,6 +238,7 @@ describe("CoauthorToolActivitySlot — streaming activities stay off the committ
 			authorType: "assistant",
 			position: 0,
 			content: "Final turn text.",
+			tokenCount: 0,
 			variants: [],
 			selectedVariantIndex: null,
 		};

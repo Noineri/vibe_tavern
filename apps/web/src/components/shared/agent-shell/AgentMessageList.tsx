@@ -1,4 +1,4 @@
-import { Fragment, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useMemo, type ReactNode } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { type AgentThreadEventWire, type ExperienceCopilotMessageWire } from "@vibe-tavern/api-contracts";
 import type { Attachment } from "@vibe-tavern/domain";
@@ -8,13 +8,17 @@ import {
   type AgentFeedEntry,
   type AgentToolActivity,
 } from "../../../stores/agent-turn-store.js";
+import { agentLiveReasoningOf, agentLiveTextOf, useAgentLiveStreamStore } from "../../../stores/agent-live-stream-store.js";
 import { selectAgentLiveAsk } from "../../../stores/agent-live-ask.js";
 import type { CopilotAnswerInput } from "../../../api/experience-copilot-api.js";
 import type { AgentPendingAskAnswer, AgentPendingPermissionAnswer, AgentTurnFailure } from "./use-agent-controller.js";
 import { orderMessagesWithDigests } from "../../../lib/copilot-context.js";
 import { agentFlowBoundaries } from "./agent-flow-boundaries.js";
 import { buildAgentTurnRow, type AgentTurnRowCallbacks, type AgentTurnRowResult } from "./use-agent-turn-actions.js";
-import { agentThreadKey, getAgentHost, type AgentKind, type AgentMessageAction, type AgentMessageMarkup } from "../../../lib/agent-host-registry.js";
+import { agentThreadKey, getAgentHost, type AgentI18nKey, type AgentKind, type AgentMessageAction, type AgentMessageMarkup } from "../../../lib/agent-host-registry.js";
+import type { AgentBuiltinProfileHandoff } from "../../../lib/agent-builtin-profiles.js";
+import { agentEventAnchors } from "./agent-event-anchors.js";
+import { useAgentListScroll } from "./agent-list-scroll.js";
 import { AgentMessageBlock } from "./AgentMessageBlock.js";
 import { AgentTimelineSeparator } from "./AgentTimelineSeparator.js";
 import { syntheticAgentMessage, PENDING_USER_MESSAGE_ID } from "./agent-synthetic-message.js";
@@ -52,7 +56,10 @@ const EMPTY_HIDDEN_IDS: ReadonlySet<string> = new Set();
  * reads ONLY the ephemeral turn store (the one store read allowed inside these
  * presentation components, mirroring how `CoauthorMessageList` reads its turn
  * store) and renders the current turn's ordered feed (text segments + tool
- * activity cards, TF-4/TF-5) inline.
+ * activity cards, TF-4/TF-5) inline. LAG-3: the LIVE stream text/reasoning
+ * arrive through the live-stream store's subscriptions below — NOT props —
+ * so a per-flush store write re-renders only this list (and the scroll hook
+ * through its render), never the shell root above it.
  *
  * Auto-scroll mirrors the co-author surface's bottom-pinning intent (stick to
  * the bottom while the user is already there; a jump-to-bottom button appears
@@ -66,15 +73,6 @@ export interface AgentMessageListProps {
   kind: AgentKind;
   threadId: string;
   messages: ExperienceCopilotMessageWire[];
-  /** Live assistant text accumulated this turn (cleared by the shell on settle). */
-  pendingText: string;
-  /** Live model reasoning for the pending turn — rendered with the
-   *  co-author's MessageReasoning `inline` preset on the live caption line
-   *  (AP-29 — the same preset, same place as the persisted toggle). Live-only
-   *  state: cleared on settle, when the reloaded turn carries the persisted
-   *  pair (the handover shows no gap and no duplicate — the clear precedes
-   *  the async refetch, so production never renders both at once). */
-  pendingReasoning: string;
   /** The user's just-sent message, shown optimistically while the model
    *  generates (the persisted user row only lands after the turn settles). */
   pendingUserContent: string;
@@ -154,14 +152,28 @@ export interface AgentMessageListProps {
   onRetryTurn?: () => void;
   /** AP-18: starter click → the pane prefills the composer (never sent); absent = no starters. */
   onStarterPick?: (text: string) => void;
+  /** DR-7: the ACTIVE built-in profile's empty-state icon override (the
+   *  sidechat director's film glyph) — absent = the shared sparkles, exactly
+   *  as before this unit. A plain ReactNode (resolved by the pane), like
+   *  `emptyTitle`/`emptySub` are resolved strings. */
+  emptyIcon?: ReactNode;
+  /** DR-7: the ACTIVE built-in profile's own starter keys (from
+   *  `builtinProfilePresentation`) — absent = the host's `starterPromptKeys`.
+   *  DR-7b: for a USER profile duplicated from a built-in the pane passes
+   *  the SOURCE built-in's starters instead (starters-only inheritance —
+   *  owner split ruling 2026-10-27); every user profile without a source
+   *  keeps the host's. */
+  starterKeysOverride?: readonly AgentI18nKey[];
+  /** DR-7: the OOC hand-off row under the starters (mockup §3) —
+   *  the shell resolves the config + the profile-switch callback; the
+   *  composer prefill rides the SAME onStarterPick path. Absent = no row. */
+  handoffRow?: AgentBuiltinProfileHandoff & { onActivate: () => void };
 }
 
 export function AgentMessageList({
   kind,
   threadId,
   messages,
-  pendingText,
-  pendingReasoning,
   pendingUserContent,
   pendingUserAttachments = [],
   isSending = false,
@@ -178,6 +190,9 @@ export function AgentMessageList({
   onStarterPick,
   emptyTitle,
   emptySub,
+  emptyIcon,
+  starterKeysOverride,
+  handoffRow,
   events = EMPTY_EVENTS,
 }: AgentMessageListProps) {
   const { t } = useT();
@@ -187,6 +202,15 @@ export function AgentMessageList({
   const feed = useAgentTurnStore(
     useShallow((s) => s.feedByThread[agentThreadKey(kind, threadId)] ?? EMPTY_FEED),
   );
+  // LAG-3: the live stream pair — ONE derivation, read through the
+  // live-stream store's selectors (primitive results: a flush that changes
+  // only the text never re-renders through the reasoning selector, and a
+  // store write that changes neither never re-renders this list at all).
+  // The value pair is the controller's flush target with the exact
+  // pre-LAG-3 `pendingText`/`pendingReasoning` lifecycle (appended per
+  // flush, cleared at settle/abort/failure/turn start).
+  const liveText = useAgentLiveStreamStore((s) => agentLiveTextOf(s, kind, threadId));
+  const liveReasoning = useAgentLiveStreamStore((s) => agentLiveReasoningOf(s, kind, threadId));
 
   // CD-1 (TF-5 inline form): persisted tool rows render as audit cards at their
   // chronological position, not anchored before/after a turn's final reply.
@@ -365,10 +389,6 @@ export function AgentMessageList({
     }
   }, [kind, t]);
 
-  const scrollRef = useRef<HTMLDivElement | null>(null);
-  const pinnedRef = useRef(true);
-  const [showJumpToBottom, setShowJumpToBottom] = useState(false);
-
   // CM-9 / AP-33: digest messages are APPENDED at the end by the backend
   // (anchor in `toolCallId`) and each renders at its own chronological slot —
   // where the compaction ran — with its covered-count caption derived from the
@@ -409,12 +429,12 @@ export function AgentMessageList({
   const isHiddenReplacedRow = (role: string, visibleIndex: number, messageId: string): boolean =>
     (isRegenerating && role === "assistant" && visibleIndex > lastUserVisibleIndex) ||
     activeHiddenIds.has(messageId);
-  const hasPendingText = pendingText.trim().length > 0;
+  const hasPendingText = liveText.trim().length > 0;
   // CA-4e3: the optimistic user row shows when it has text OR attachments.
   const hasPendingUserContent = pendingUserContent.trim().length > 0 || pendingUserAttachments.length > 0;
   // AP-29: live reasoning streams as text-only (no duration lands until the
   // turn persists) — the duration slot stays null like the minimal row did.
-  const hasLiveReasoning = pendingReasoning.trim().length > 0;
+  const hasLiveReasoning = liveReasoning.trim().length > 0;
 
   // AP-4 (AP-29 follow-up): one caption per assistant turn, at the TOP of
   // the turn — above its tool accordion, an ask / permission / proposal
@@ -473,56 +493,28 @@ export function AgentMessageList({
         captionBefore: turnCaptions.captionBefore,
         trailingCaption: withLiveReasoning(
           turnCaptions.trailingCaption ?? undefined,
-          pendingReasoning,
+          liveReasoning,
         ),
       };
     }
     const next = new Map(turnCaptions.captionBefore);
     next.set(
       turnCaptions.lastTurnSlotId,
-      withLiveReasoning(next.get(turnCaptions.lastTurnSlotId), pendingReasoning),
+      withLiveReasoning(next.get(turnCaptions.lastTurnSlotId), liveReasoning),
     );
     return { captionBefore: next, trailingCaption: turnCaptions.trailingCaption };
-  }, [liveJoinsLastTurn, hasLiveReasoning, turnCaptions, pendingReasoning]);
+  }, [liveJoinsLastTurn, hasLiveReasoning, turnCaptions, liveReasoning]);
 
   // SC-19b: frozen events interleave as separators BEFORE their anchor
-  // message; a null anchor — or an anchor naming no visible row — trails at
-  // the end, after the persisted rows (before the live pending rows, which
-  // only exist mid-turn and are cleared on the settle+refetch that refreshes
-  // these events).
-  const { eventAnchors, trailingEvents } = useMemo(() => {
-    const anchors = new Map<string, AgentThreadEventWire[]>();
-    const trailing: AgentThreadEventWire[] = [];
-    if (events.length === 0) return { eventAnchors: anchors, trailingEvents: trailing };
-    const visibleIds = new Set(visibleMessages.map((entry) => entry.message.id));
-    for (const event of events) {
-      const anchor = event.beforeMessageId;
-      if (anchor !== null && visibleIds.has(anchor)) {
-        const list = anchors.get(anchor);
-        if (list) list.push(event);
-        else anchors.set(anchor, [event]);
-      } else {
-        trailing.push(event);
-      }
-    }
-    return { eventAnchors: anchors, trailingEvents: trailing };
-  }, [events, visibleMessages]);
+  // message (the grouping lives in `agent-event-anchors.ts` — extracted
+  // under the file-size ratchet).
+  const { eventAnchors, trailingEvents } = useMemo(
+    () => agentEventAnchors(events, new Set(visibleMessages.map((entry) => entry.message.id))),
+    [events, visibleMessages],
+  );
 
   const renderEventSeparators = (list: readonly AgentThreadEventWire[] | undefined) =>
     list?.map((event) => <AgentTimelineSeparator key={event.id} event={event} />);
-
-  const scrollToBottom = () => {
-    const el = scrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  };
-
-  const handleScroll = () => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
-    pinnedRef.current = nearBottom;
-    setShowJumpToBottom(!nearBottom);
-  };
 
   const contentCount =
     visibleMessages.length +
@@ -530,21 +522,32 @@ export function AgentMessageList({
     (hasPendingUserContent ? 1 : 0) +
     feed.length;
 
-  useLayoutEffect(() => {
-    if (pinnedRef.current) scrollToBottom();
-  }, [contentCount, pendingText, feed.length]);
+  // Bottom-pinning auto-scroll (the co-author surface's intent; the hook
+  // is `agent-list-scroll.ts` — extracted under the file-size ratchet).
+  // LAG-3: the scroll hook's text input is the store-derived live text —
+  // the hook stays param-driven off THIS render, so it fires per flush
+  // (this list's own re-render) without any store subscription of its own.
+  const { scrollRef, showJumpToBottom, handleScroll, jump } = useAgentListScroll(contentCount, liveText, feed.length);
 
   const isEmpty =
     visibleMessages.length === 0 &&
     events.length === 0 &&
     !hasPendingUserContent &&
     !hasPendingText &&
-    !pendingReasoning &&
+    !liveReasoning &&
     feed.length === 0;
 
   if (isEmpty) {
     return (
-      <AgentEmptyState kind={kind} title={emptyTitle ?? t("agent_title")} sub={emptySub ?? t("agent_subtitle")} onStarterPick={onStarterPick} />
+      <AgentEmptyState
+        kind={kind}
+        title={emptyTitle ?? t("agent_title")}
+        sub={emptySub ?? t("agent_subtitle")}
+        icon={emptyIcon}
+        starterKeys={starterKeysOverride}
+        handoffRow={handoffRow}
+        onStarterPick={onStarterPick}
+      />
     );
   }
 
@@ -673,14 +676,14 @@ export function AgentMessageList({
             hostTitle !== null &&
             (hasPendingText || hasLiveReasoning) &&
             !liveJoinsLastTurn && (
-              <AgentHostCaption title={hostTitle} reasoning={hasLiveReasoning ? pendingReasoning : null} />
+              <AgentHostCaption title={hostTitle} reasoning={hasLiveReasoning ? liveReasoning : null} />
             )}
           {/* AP-29 follow-up 2: the fallback live row (no host title) is
               the bare reasoning toggle — no avatar anywhere in the feed
               (AP-4). */}
           {hasLiveReasoning && hostTitle === null && (
             <div className="flex flex-wrap items-center gap-2.5" data-role="assistant" data-testid="copilot-pending-reasoning-row">
-              <MessageReasoning reasoning={pendingReasoning} reasoningDurationMs={null} variant="inline" />
+              <MessageReasoning reasoning={liveReasoning} reasoningDurationMs={null} variant="inline" />
             </div>
           )}
 
@@ -726,8 +729,9 @@ export function AgentMessageList({
                 }
                 continue;
               }
-              // Post-settle: the controller clears `pendingText`, so feed text
-              // is suppressed while refetched history owns the persisted rows.
+              // Post-settle: the live-stream store is cleared (LAG-3 — the
+              // settle clear drops the live pair), so feed text is suppressed
+              // while refetched history owns the persisted rows.
               // AP-29: live text never carries its own caption — the hoisted
               // live caption above (fresh turn) or the joined turn caption
               // (continuation) owns it (one site, never duplicated).
@@ -735,6 +739,7 @@ export function AgentMessageList({
               const segment = (
                 <AgentMessageBlock
                   messageMarkup={messageMarkup}
+                  isStreaming={!entry.closed}
                   message={syntheticAgentMessage({
                     id: entry.id,
                     threadId,
@@ -752,11 +757,12 @@ export function AgentMessageList({
             const pendingBlock = (
               <AgentMessageBlock
                 messageMarkup={messageMarkup}
+                isStreaming
                 message={syntheticAgentMessage({
                   id: "__pending-assistant",
                   threadId,
                   role: "assistant",
-                  content: pendingText,
+                  content: liveText,
                 })}
               />
             );
@@ -782,10 +788,7 @@ export function AgentMessageList({
         <button
           type="button"
           className="absolute bottom-4 right-4 z-10 flex h-10 w-10 items-center justify-center rounded-full bg-accent text-on-accent shadow-lg transition-transform hover:scale-110 active:scale-95"
-          onClick={() => {
-            pinnedRef.current = true;
-            scrollToBottom();
-          }}
+          onClick={jump}
         >
           <Icons.Caret direction="d" />
         </button>

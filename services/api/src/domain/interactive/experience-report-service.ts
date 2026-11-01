@@ -3,7 +3,7 @@ import type { AtomicReportData, ExperienceAttachmentRow, ExperienceSessionRow, E
 import type { ExperienceActionDescriptor, ExperienceParticipant, ExperiencePublicReport, ExperienceReportEvent } from "@vibe-tavern/domain";
 
 import type { ExperienceQueuedAttachmentView } from "./experience-service.js";
-import { storeAttachmentToReportSnapshot } from "./experience-report-snapshot.js";
+import { readReportParticipants, storeAttachmentToReportSnapshot } from "./experience-report-snapshot.js";
 import type { ExperienceApiError, ExperienceResult } from "./experience-shared.js";
 import { err, ok } from "./experience-shared.js";
 
@@ -14,8 +14,7 @@ export interface ExperienceReportStatus {
   queuedAttachment: ExperienceQueuedAttachmentView | null;
 }
 
-export interface StartReportProjection {
-  projection: unknown;
+export interface StartReportContext {
   legalActions: readonly ExperienceActionDescriptor[];
   participants: readonly ExperienceParticipant[];
 }
@@ -28,24 +27,19 @@ export interface StartReportProjection {
 export class ExperienceReportService {
   constructor(private readonly stores: StoreContainer) {}
 
-  buildStartReport(session: ExperienceSessionRow, source: StartReportProjection): AtomicReportData {
+  buildStartReport(session: ExperienceSessionRow, source: StartReportContext): AtomicReportData {
+    const participants = readReportParticipants(source.participants) ?? [];
+    const labels = participants.map((participant) => participant.label || participant.id);
+    const firstId = source.legalActions[0]?.participantId;
+    const first = participants.find((participant) => participant.id === firstId);
+    const firstLabel = first?.label || first?.id;
+    // System-owned prose only: arbitrary projections have no shared narrative
+    // schema. Game-specific setup facts belong in the rules' own public events.
     const event: ExperienceReportEvent = {
       type: "experience_started",
-      detail: {
-        name: session.manifestName,
-        participants: source.participants.map((participant) => ({
-          id: participant.id,
-          label: participant.label,
-          controller: participant.controller,
-        })),
-        projection: source.projection,
-        legalActions: source.legalActions.map((action) => ({
-          type: action.type,
-          ...(action.label !== undefined ? { label: action.label } : {}),
-          ...(action.participantId !== undefined ? { participantId: action.participantId } : {}),
-        })),
-        ...(source.legalActions[0]?.participantId !== undefined ? { firstActor: source.legalActions[0].participantId } : {}),
-      },
+      detail: `${session.manifestName} began.`
+        + (labels.length > 0 ? ` Participants: ${labels.join(", ")}.` : "")
+        + (firstLabel ? ` First to act: ${firstLabel}.` : ""),
     };
     return this.freezeData(session, { title: session.manifestName, events: [event] });
   }
@@ -81,9 +75,23 @@ export class ExperienceReportService {
     });
   }
 
+  async getQueuedAttachment(sessionId: string): Promise<ExperienceResult<ExperienceQueuedAttachmentView | null>> {
+    const session = await this.stores.experiences.getSessionById(sessionId);
+    if (session === null) return this.sessionNotFound(sessionId);
+    const attachment = await this.stores.experiences.getQueuedAttachmentForSession(sessionId);
+    return ok(attachment ? toQueuedAttachmentView(attachment) : null);
+  }
+
+  async clearQueue(sessionId: string, body: { chatId: string; branchId: string; expectedRevision: number }): Promise<ExperienceResult<null>> {
+    const session = await this.stores.experiences.getSessionById(sessionId);
+    if (session === null || session.chatId !== body.chatId || session.branchId !== body.branchId) return this.sessionNotFound(sessionId);
+    if (session.revision !== body.expectedRevision) return this.staleRevision(body.expectedRevision, session.revision);
+    this.stores.experiences.purgeUnboundAttachments(sessionId);
+    return ok(null);
+  }
+
   /** LB-2 (lobby report): `finishDetail` overrides the public system event
-   * text of a manual finish (restart uses it to say the match was restarted
-   * rather than simply ended); omitted = the default user-ended wording.
+   * text of a manual finish; omitted = the default user-ended wording.
    *
    * `quiet` (pending queue pos 2): end an active session WITHOUT any public
    * artifact — no report is built, no `experience_finished` step, no terminal
@@ -161,13 +169,16 @@ export class ExperienceReportService {
   private atomicData(session: ExperienceSessionRow, report: ExperiencePublicReport): AtomicReportData {
     return {
       kind: "report",
-      publicEventsJson: JSON.stringify(report),
+      publicEventsJson: JSON.stringify({
+        ...report,
+        participants: readReportParticipants(parseStoredJson(session.participantsJson)) ?? [],
+      }),
       hiddenStateCheckpointJson: JSON.stringify({
         version: 1,
         identity: { sessionId: session.id, chatId: session.chatId, branchId: session.branchId },
         revision: session.revision,
         status: session.status,
-        currentState: parseCheckpointState(session.currentStateJson),
+        currentState: parseStoredJson(session.currentStateJson),
         random: { seed: session.randomSeed, cursor: session.randomCursor },
         sources: {
           rules: { id: session.rulesId, revision: session.rulesRevision, hash: session.rulesSourceHash },
@@ -217,12 +228,16 @@ function publicEvents(values: readonly unknown[]): ExperienceReportEvent[] {
   for (const value of values) {
     const parsed = experienceEventSchema.safeParse(value);
     if (!parsed.success || parsed.data.visibility !== "public") continue;
-    events.push(parsed.data.detail === undefined ? { type: parsed.data.type } : { type: parsed.data.type, detail: parsed.data.detail });
+    events.push({
+      type: parsed.data.type,
+      ...(parsed.data.participantId !== undefined ? { participantId: parsed.data.participantId } : {}),
+      ...(parsed.data.detail !== undefined ? { detail: parsed.data.detail } : {}),
+    });
   }
   return events;
 }
 
-function parseCheckpointState(json: string): unknown {
+function parseStoredJson(json: string): unknown {
   try {
     return JSON.parse(json);
   } catch {
@@ -243,6 +258,7 @@ export function toQueuedAttachmentView(attachment: ExperienceAttachmentRow): Exp
     publicReport: snapshot === null ? null : {
       title: snapshot.title,
       ...(snapshot.summary !== undefined ? { summary: snapshot.summary } : {}),
+      ...(snapshot.participants !== undefined ? { participants: snapshot.participants } : {}),
       events: snapshot.events,
     },
     rulesSourceHash: attachment.rulesSourceHash,

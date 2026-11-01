@@ -1,0 +1,1 @@
+ALTER TABLE `chat_agent_settings` ADD `pending_profile_change_json` text;

@@ -391,6 +391,53 @@ describe("MessageBlock — render isolation invariant", () => {
     probeA.unmount();
   });
 
+  test("NEGATIVE: typing into B's edit field does NOT re-render A; B shows every keystroke (LAG-1)", async () => {
+    const { MessageBlock, snapshotStore, chatStore } = await loadModules();
+    snapshotStore.useSnapshotStore.getState().ingestSnapshot(
+      seed([makeAssistantMessage("m1"), makeAssistantMessage("m2", "old m2")]),
+    );
+    chatStore.useChatStore.getState().setActiveChatId(asChatId(CHAT));
+
+    const probeA = await mountBlockForCounting("m1");
+    expect(probeA.commits).toBe(1);
+
+    // Mount B with a Profiler AND DOM access — B is the positive control
+    // (its controlled textarea must move on every keystroke).
+    let bCommits = 0;
+    const b = render(
+      <Profiler id="m2" onRender={() => { bCommits++; }}>
+        <MessageBlock messageId="m2" index={1} isFirstAssistant={false} isLast={false} prevRole="assistant" />
+      </Profiler>,
+    );
+    expect(bCommits).toBe(1); // mount
+
+    // Enter edit mode on B (the editingMessageId flip is the enter-edit
+    // TRANSITION, not a keystroke — it legitimately re-renders every block).
+    act(() => { chatStore.useChatStore.getState().setEditingMessageId("m2"); });
+    await act(async () => { await Promise.resolve(); });
+    const editField = () => b.container.querySelector("textarea");
+    expect(editField()).not.toBeNull(); // B's edit field mounted
+    expect((editField() as HTMLTextAreaElement).value).toBe("");
+    probeA.reset();
+    bCommits = 0;
+
+    // Keystrokes into B's edit field — A must stay at 0 commits.
+    act(() => { chatStore.useChatStore.getState().setEditingDraft("k"); });
+    await act(async () => { await Promise.resolve(); });
+    expect((editField() as HTMLTextAreaElement).value).toBe("k");
+    act(() => { chatStore.useChatStore.getState().setEditingDraft("ke"); });
+    await act(async () => { await Promise.resolve(); });
+    expect((editField() as HTMLTextAreaElement).value).toBe("ke");
+    act(() => { chatStore.useChatStore.getState().setEditingDraft("key"); });
+    await act(async () => { await Promise.resolve(); });
+    expect((editField() as HTMLTextAreaElement).value).toBe("key");
+
+    expect(bCommits).toBeGreaterThanOrEqual(3); // B re-rendered per keystroke — graph is active
+    expect(probeA.commits).toBe(0); // A untouched by B's edit keystrokes
+    b.unmount();
+    probeA.unmount();
+  });
+
   test("Objective headers are chat-global live views without subscribing to unrelated chat fields", async () => {
     const { snapshotStore, chatStore } = await loadModules();
     const objectiveState: ObjectiveState = {

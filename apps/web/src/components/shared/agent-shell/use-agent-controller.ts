@@ -10,19 +10,17 @@ import {
   type CopilotAnswerInput,
   type CopilotStreamOpts,
 } from "../../../lib/agent-host-registry.js";
-import {
-  useAgentTurnStore,
-  parseTodoToolResult,
-  parseTodoToolArgs,
-  parseAgentAskState,
-  parseAgentPermissionState,
-} from "../../../stores/agent-turn-store.js";
-import { parseAgentPlanToolResult } from "../../../hooks/use-agent-plan.js";
+import type { RevealScheduler } from "../../../lib/streaming-reveal.js";
+import { useAgentDeltaBuffer } from "./use-agent-delta-buffer.js";
+import { useAgentTurnStore } from "../../../stores/agent-turn-store.js";
+import { useAgentStreamingStore } from "../../../stores/agent-streaming-store.js";
+import { useAgentLiveStreamStore } from "../../../stores/agent-live-stream-store.js";
 import { toSendAttachment } from "../../../lib/send-attachments.js";
+import { createAgentStreamCallbacks } from "./agent-stream-callbacks.js";
+import { guardAgentStreamCallbacks } from "./agent-stream-guard.js";
+import { useAgentRunAttachment } from "./use-agent-run-attachment.js";
 import type { Attachment } from "@vibe-tavern/domain";
 import {
-  coauthorSkillReadOutputSchema,
-  experienceCopilotToolOutputSchema,
   experienceCopilotContextMetricsSchema,
   type ExperienceCopilotContextMetrics,
   type CopilotTodoItem,
@@ -40,13 +38,20 @@ import {
  * the RP-chat `useChatController`. This hook ports the stream half of
  * `executeStreamAction`, retargeted and simplified: the copilot is stream-only,
  * with no dice/attachments/variants/regenerate/non-stream/insights and no
- * StreamingReveal — `pendingText` is a plain accumulated string.
+ * StreamingReveal — the live stream text/reasoning accumulate in the
+ * live-stream store (LAG-3), written once per FRAME (LAG-2: deltas buffer
+ * in refs and flush through the same `RevealScheduler` seam
+ * `lib/streaming-reveal.ts` owns; the buffering lives in
+ * `use-agent-delta-buffer.ts`).
  *
- * State is LOCAL (no new Zustand store): the copilot editor shell owns a single
- * controller instance and threads values down via props/context (ER-11c/11d).
- * The hook feeds the ER-8 turn store from the SSE tool events (exactly what the
- * shell renders as activity cards) and signals `onTurnSettled` so the shell can
- * refetch persisted messages once a turn settles.
+ * State is LOCAL except the live stream pair (LAG-3: it lives in the
+ * live-stream store so a flush re-renders only the message list, never
+ * this hook's host — the AgentShell root): the copilot editor shell owns a
+ * single controller instance and threads values down via props/context
+ * (ER-11c/11d). The hook feeds the ER-8 turn store from the SSE tool events
+ * (exactly what the shell renders as activity cards) and signals
+ * `onTurnSettled` so the shell can refetch persisted messages once a turn
+ * settles.
  */
 
 export interface UseAgentControllerArgs {
@@ -59,6 +64,8 @@ export interface UseAgentControllerArgs {
    *  Typed through the registry so this module imports no kind-specific
    *  client. */
   transport: AgentHostTransport;
+  /** BR-2c: flush host review state before clearing activities / opening a run. */
+  prepareTurn?: (threadId: string, signal: AbortSignal) => void | Promise<void>;
   threadId: string | null;
   providerProfileId: string | null;
   model?: string;
@@ -90,6 +97,19 @@ export interface UseAgentControllerArgs {
    *  pattern above), never a fetch. Omitted (undefined) leaves edit-last
    *  without a resolvable target — the shell wires this to `messages`. */
   threadMessages?: ExperienceCopilotMessageWire[];
+  /** DR-11 (DIRECTOR_MODE_PLAN): when set, the controller publishes its
+   *  `isSending` into `useAgentStreamingStore` under this key (the shell's
+   *  `agentOwnerKey`) — a ONE-WAY mirror so readers OUTSIDE the shell (the
+   *  story strip's call-director button disable while a sidechat turn
+   *  streams) can subscribe without owning the turn. The controller stays
+   *  the only truth; nothing ever reads the mirror back here. */
+  streamingMirrorKey?: string;
+  /** LAG-2 (AGENT_SHELL_RENDER_LAG_REPORT, fix step 3): schedules the
+   *  frame-coalesced stream-delta flush — ONE `appendTextDelta` (the feed)
+   *  and ONE `appendLiveDeltas` (the live-stream store) per frame. Defaults
+   *  to the rAF scheduler exported from `lib/streaming-reveal.ts`; tests
+   *  inject a manual stepper for deterministic flush timing. */
+  scheduler?: RevealScheduler;
 }
 
 /** AS-6c-ii: re-exported from the host registry (which owns the type —
@@ -103,15 +123,10 @@ export type { AgentPendingAskAnswer, AgentPendingPermissionAnswer, AgentTurnFail
 
 export interface AgentController extends AgentTurnActions {
   isSending: boolean;
-  /** Live assistant text accumulated from text-deltas this turn (cleared on settle). */
-  pendingText: string;
-  /** Live model reasoning accumulated from reasoning-deltas this turn,
-   *  rendered with the co-author's MessageReasoning `inline` preset on the
-   *  live caption line (AP-29). Cleared on settle alongside pendingText —
-   *  the settle+refetch handover replaces it with the persisted caption
-   *  toggle (the clear precedes the async refetch, so the handover shows
-   *  no gap and no duplicate: production never renders both at once). */
-  pendingReasoning: string;
+  // LAG-3: the live stream text/reasoning are NOT on this contract — they
+  // live in the live-stream store (`agent-live-stream-store.ts`, the ONE
+  // derivation) so a flush never re-renders this hook's host. The message
+  // list subscribes to the store directly.
   /** The user's just-sent message, shown optimistically while the model
    *  generates — the persisted user row only appears after the turn settles
    *  and the shell refetches, so without this the user's own message is
@@ -152,26 +167,12 @@ export interface AgentController extends AgentTurnActions {
   pendingPermissionAnswer: AgentPendingPermissionAnswer | null;
 }
 
-/**
- * Best-effort string summary of a tool-result `output`. The SSE parser hands
- * `output` already JSON-parsed (never circular), so `JSON.stringify` cannot
- * throw here and no try/catch is needed. Mirrors the persisted path's
- * `summary: message.content` (the raw tool-result string).
- */
-function summarizeToolOutput(output: unknown): string {
-  if (typeof output === "string") return output;
-  if (output === null || output === undefined) return "";
-  return JSON.stringify(output);
-}
-
 export function useAgentController(
   args: UseAgentControllerArgs,
 ): AgentController {
-  const { kind, transport, threadId, providerProfileId, model, onTurnSettled, onMetrics, applyPlanToolResult, threadTodo, threadMessages } = args;
+  const { kind, transport, threadId, providerProfileId, model, onTurnSettled, onMetrics, applyPlanToolResult, threadTodo, threadMessages, streamingMirrorKey, scheduler } = args;
 
   const [isSending, setIsSending] = useState(false);
-  const [pendingText, setPendingText] = useState("");
-  const [pendingReasoning, setPendingReasoning] = useState("");
   // Optimistic user message: shown immediately on send so the user sees their
   // own message while the model generates (the persisted row only arrives
   // after the turn settles + the shell refetches). Cleared in `finally` so
@@ -190,6 +191,53 @@ export function useAgentController(
   // so a rapid double-send in the same tick would otherwise both pass the
   // guard. Mirrors the RP controller reading generation state synchronously.
   const isSendingRef = useRef(false);
+  const currentThreadRef = useRef(threadId);
+  currentThreadRef.current = threadId;
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
+  const prepareTurn = useCallback((id: string, signal: AbortSignal): void | Promise<void> => {
+    attachment.preparing();
+    const checkTarget = () => {
+      signal.throwIfAborted();
+      if (!mountedRef.current || currentThreadRef.current !== id) {
+        // No POST has opened yet. Release any host-owned preparation lease,
+        // without turning an unmount into a stop of an already-running turn.
+        if (abortRef.current?.signal === signal) abortRef.current.abort();
+        throw new Error("Agent host changed during turn preparation");
+      }
+    };
+    const prepared = args.prepareTurn?.(id, signal);
+    // Preserve synchronous hosts: even awaiting undefined adds a microtask,
+    // which can collapse a short stream's sending edge into its settlement.
+    if (prepared) return prepared.then(checkTarget);
+    checkTarget();
+  }, [args.prepareTurn]);
+
+  // LAG-2: frame-coalesced stream deltas — the buffering derivation lives in
+  // its own module (the file-size ratchet); this hook drains the returned
+  // flush handle before every tool event (via the stream callbacks below)
+  // and every settle/abort/failure clear. LAG-3: the flush writes land in
+  // the stores (feed + live-stream), never hook state — no flush render
+  // reaches this hook's host.
+  const { pushStreamDelta, flushDeltaBuffer } = useAgentDeltaBuffer({
+    kind,
+    scheduler,
+  });
+
+  // DR-11: publish the local streaming flag into the shared mirror store —
+  // a derived copy only (see `streamingMirrorKey`). The cleanup drops the
+  // flag so an owner switch or unmount can never leave a stuck "streaming"
+  // key behind; the effect body then re-publishes the current value.
+  useEffect(() => {
+    if (streamingMirrorKey === undefined) return;
+    useAgentStreamingStore.getState().setStreaming(streamingMirrorKey, isSending);
+    return () => {
+      useAgentStreamingStore.getState().setStreaming(streamingMirrorKey, false);
+    };
+  }, [streamingMirrorKey, isSending]);
 
   // TAG-7 (restored PM-7): seed/reset the session-scoped todo panel state
   // from the persisted thread wire (the durable truth — `todo_json` on the
@@ -235,183 +283,52 @@ export function useAgentController(
     });
   }, []);
 
-  // TAG-9: ONE builder for the SSE→store callbacks, shared by handleSend and
-  // handleAnswer. The live tool routing must stay field-for-field with the
-  // persisted extraction (CD-1), so both entry points drive the IDENTICAL
-  // wiring; `sawStreamEvent` lets the answer path distinguish a pre-stream
-  // failure (backend never rewrote the ask row) from a mid-stream one.
-  const buildStreamCallbacks = (
-    activeThreadId: string,
-    sawStreamEvent: { current: boolean },
-  ): CopilotStreamOpts => ({
-    onStatus: (status) => {
-      if (status === "streaming") sawStreamEvent.current = true;
+  // TAG-9: ONE builder for the SSE→store callbacks, shared by every entry
+  // point (field-for-field with the persisted extraction, CD-1); it lives in
+  // `agent-stream-callbacks.ts` (the file-size ratchet).
+  const createStreamCallbacks = (activeThreadId: string, sawStreamEvent: { current: boolean }): CopilotStreamOpts =>
+    createAgentStreamCallbacks({
+      kind, pushStreamDelta, flushDeltaBuffer, applyPlanToolResult,
+      onObserving: () => attachment.observing(),
+    }, activeThreadId, sawStreamEvent);
+  const buildStreamCallbacks = (id: string, saw: { current: boolean }): CopilotStreamOpts => {
+    const controller = abortRef.current;
+    return guardAgentStreamCallbacks(createStreamCallbacks(id, saw),
+      () => controller !== null && !controller.signal.aborted && attachment.isCurrent(controller, id));
+  };
+
+  const attachment = useAgentRunAttachment({
+    kind, threadId, transport, abortRef, isSendingRef,
+    setIsSending,
+    buildCallbacks: buildStreamCallbacks,
+    clearOptimistic: () => {
+      setPendingUserContent("");
+      setPendingUserAttachments([]);
+      setPendingAskAnswer(null);
+      setPendingPermissionAnswer(null);
     },
-    onChunk: (delta) => {
-      setPendingText((p) => p + delta);
-      useAgentTurnStore.getState().appendTextDelta(kind, activeThreadId, delta);
+    reset: () => {
+      // LAG-2/LAG-3: drain, then drop the live pair; the store outlives a
+      // remount, and a replay rebuilds the text from cursor zero.
+      flushDeltaBuffer();
+      if (threadId !== null) useAgentLiveStreamStore.getState().clearLiveStreamText(kind, threadId);
+      setIsSending(false);
+      setPendingUserContent("");
+      setPendingUserAttachments([]);
     },
-    onReasoningChunk: (delta) => {
-      setPendingReasoning((p) => p + delta);
-    },
-    onToolCall: (info) => {
-      useAgentTurnStore.getState().closeTextSegment(kind, activeThreadId);
-      useAgentTurnStore.getState().appendActivityRef(kind, activeThreadId, info.toolCallId);
-      useAgentTurnStore.getState().upsertActivity(kind, activeThreadId, {
-        toolCallId: info.toolCallId,
-        toolName: info.toolName,
-        args: info.args,
-        status: "streaming",
-      });
-      // TAG-7 (restored PM-7): full-rewrite semantics — the todo tool-call's
-      // args ARE the new session checklist (Cline-style), so the panel
-      // updates immediately while the call streams; the tool-result envelope
-      // below re-confirms the same list. Object shape `{items}` (incident
-      // fix 2026-08-21); ill-formed/partial args → null, silently skipped
-      // (the result envelope is the fallback path).
-      if (info.toolName === "todo") {
-        const todo = parseTodoToolArgs(info.args);
-        if (todo !== null) {
-          useAgentTurnStore.getState().setTodo(kind, activeThreadId, todo);
-        }
-      }
-    },
-    onToolInputStart: (info) => {
-      useAgentTurnStore.getState().closeTextSegment(kind, activeThreadId);
-      useAgentTurnStore.getState().appendActivityRef(kind, activeThreadId, info.toolCallId);
-      useAgentTurnStore.getState().upsertActivity(kind, activeThreadId, {
-        toolCallId: info.toolCallId,
-        toolName: info.toolName,
-        status: "streaming",
-      });
-    },
-    onToolResult: (info) => {
-      useAgentTurnStore.getState().closeTextSegment(kind, activeThreadId);
-      useAgentTurnStore.getState().appendActivityRef(kind, activeThreadId, info.toolCallId);
-      // This routing MUST stay field-for-field with ER-8's
-      // `extractPersistedAgentActivities` so live activities
-      // === persisted activities on snapshot refetch. The only addition
-      // is the live-only `isError` signal, OR'd into the error status.
-      if (info.toolName === "read_skill_file") {
-        const read = coauthorSkillReadOutputSchema.safeParse(info.output);
-        useAgentTurnStore.getState().upsertActivity(kind, activeThreadId, {
-          toolCallId: info.toolCallId,
-          toolName: info.toolName,
-          status: info.isError || !read.success ? "error" : "done",
-          ...(read.success ? { readPath: read.data.path } : { summary: summarizeToolOutput(info.output) }),
-        });
-        return;
-      }
-      if (info.toolName === "write_buffer" || info.toolName === "edit_buffer") {
-        const output = experienceCopilotToolOutputSchema.safeParse(info.output);
-        useAgentTurnStore.getState().upsertActivity(kind, activeThreadId, {
-          toolCallId: info.toolCallId,
-          toolName: info.toolName,
-          status: info.isError || !output.success ? "error" : "done",
-          ...(output.success
-            ? {
-                summary: output.data.summary,
-                target: output.data.target,
-                proposed: output.data.proposed,
-              }
-            : { summary: summarizeToolOutput(info.output) }),
-        });
-        return;
-      }
-      // TAG-7 (restored PM-7): a todo result is the {ok, items, activeTitle,
-      // remaining} envelope. A successful envelope carries the card payload
-      // AND confirms the panel state (same list the tool-call args already
-      // upserted); a failed save (ok:false — not an isError) renders the
-      // error card and leaves the panel at the optimistic value (the model
-      // retries the rewrite next step). Must stay field-for-field with the
-      // persisted extraction's `todo` branch.
-      if (info.toolName === "todo") {
-        const todo = parseTodoToolResult(info.output);
-        if (todo) {
-          useAgentTurnStore.getState().setTodo(kind, activeThreadId, todo.items);
-        }
-        useAgentTurnStore.getState().upsertActivity(kind, activeThreadId, {
-          toolCallId: info.toolCallId,
-          toolName: info.toolName,
-          status: info.isError || !todo ? "error" : "done",
-          ...(todo ? { todo } : { summary: summarizeToolOutput(info.output) }),
-        });
-        return;
-      }
-      // PM-6: a plan result is the {ok, activeTitle?, remaining?} envelope
-      // from createAgentPlanTools. The carrier args captured by onToolCall
-      // are read back from the streaming placeholder (the same recovery the
-      // ask_user branch uses) and routed — with the envelope — into the
-      // shell's useAgentPlan applyToolResult, which replaces the script-owned
-      // plan cache only when BOTH parse. The card itself carries no summary
-      // on success (CopilotActivityCard labels plan cards via i18n); a failed
-      // save (ok:false — not an isError) renders the error card with the raw
-      // content, the write_buffer branch's failure shape. This routing must
-      // stay field-for-field with the persisted extraction's `plan` branch.
-      if (info.toolName === "plan") {
-        const result = parseAgentPlanToolResult(info.output);
-        const liveArgs = useAgentTurnStore
-          .getState()
-          .getActivities(kind, activeThreadId)
-          .find((activity) => activity.toolCallId === info.toolCallId)?.args;
-        applyPlanToolResult?.(liveArgs, info.output);
-        useAgentTurnStore.getState().upsertActivity(kind, activeThreadId, {
-          toolCallId: info.toolCallId,
-          toolName: info.toolName,
-          status: info.isError || !result ? "error" : "done",
-          ...(!result ? { summary: summarizeToolOutput(info.output) } : {}),
-        });
-        return;
-      }
-      // TAG-7: an ask result is the awaiting marker (the only ask
-      // output a live turn ever sees — answered/skipped rewrites only
-      // exist in persisted rows). The carrier args captured by
-      // onToolCall are read back from the streaming placeholder so
-      // this branch stays field-for-field with the persisted
-      // extraction (the parser prefers the output's verbatim echo and
-      // falls back to the args for question/options/recommended).
-      if (info.toolName === "ask_user") {
-        const liveArgs = useAgentTurnStore
-          .getState()
-          .getActivities(kind, activeThreadId)
-          .find((activity) => activity.toolCallId === info.toolCallId)?.args;
-        const ask = parseAgentAskState(liveArgs, info.output);
-        useAgentTurnStore.getState().upsertActivity(kind, activeThreadId, {
-          toolCallId: info.toolCallId,
-          toolName: info.toolName,
-          status: info.isError || !ask ? "error" : "done",
-          ...(ask ? { ask } : { summary: summarizeToolOutput(info.output) }),
-        });
-        return;
-      }
-      // SC-23f: a permission result is the awaiting marker (the only
-      // permission output a live turn ever sees — granted/denied rewrites
-      // only exist in persisted rows). Parsed by the ONE parser the
-      // persisted extraction shares, so live === persisted field-for-field.
-      if (info.toolName === "read_message_prompt") {
-        const permission = parseAgentPermissionState(info.output);
-        useAgentTurnStore.getState().upsertActivity(kind, activeThreadId, {
-          toolCallId: info.toolCallId,
-          toolName: info.toolName,
-          status: info.isError || !permission ? "error" : "done",
-          ...(permission ? { permission } : { summary: summarizeToolOutput(info.output) }),
-        });
-        return;
-      }
-      // run_test / run_simulate / suggest_visual_binding — non-proposal
-      // informational digests (never parsed as a proposal). Always a
-      // done card with a best-effort string summary.
-      useAgentTurnStore.getState().upsertActivity(kind, activeThreadId, {
-        toolCallId: info.toolCallId,
-        toolName: info.toolName,
-        status: "done",
-        summary: summarizeToolOutput(info.output),
-      });
+    settled: (result, error) => {
+      if (threadId === null) return;
+      writeTurnFailure(agentThreadKey(kind, threadId), error ? copilotTurnFailureOf(error) : null);
+      const metrics = experienceCopilotContextMetricsSchema.safeParse(result?.metrics);
+      onMetrics?.(metrics.success ? metrics.data : null);
+      onTurnSettled?.(error === undefined && result !== null && result.finishReason !== "cancelled");
     },
   });
 
   const handleSend = useCallback(
     async (content: string, opts?: AgentSendOptions): Promise<void> => {
+      const discovery = threadId ? attachment.waitForDiscovery(threadId) : undefined;
+      if (discovery && !await discovery) return;
       const trimmed = content.trim();
       // CA-4e3: an attachment-only send is legal (the schema allows content
       // OR non-empty attachments; an empty string is refused — content is
@@ -428,30 +345,29 @@ export function useAgentController(
         return;
       }
 
-      // Start the turn fresh: drop the previous turn's tool activities (same
-      // rationale as the RP controller's co-author clearTurn). Also drop any
-      // stale optimistic ask resolution (TAG-9) — by now the persisted rows
-      // carry the true ask state. SC-23f: the permission override drops with
-      // it (same truth — the persisted rows). AP-13: the stale failure drops
-      // with them — a new turn supersedes the card while it runs (its
-      // failure replaces the card in the catch below).
-      useAgentTurnStore.getState().clearTurn(kind, threadId);
-      setPendingAskAnswer(null);
-      setPendingPermissionAnswer(null);
-      const failureKey = agentThreadKey(kind, threadId);
-      writeTurnFailure(failureKey, null);
-
       const controller = new AbortController();
       abortRef.current = controller;
       isSendingRef.current = true;
-      setIsSending(true);
-      setPendingText("");
-      setPendingReasoning("");
-      setPendingUserContent(trimmed);
-      setPendingUserAttachments(attachments);
+      const failureKey = agentThreadKey(kind, threadId);
+      const start = async () => {
+        const prepared = prepareTurn(threadId, controller.signal);
+        if (prepared) await prepared;
+        // Preparation is durable before the old activities disappear or the
+        // rising-edge effect takes the next turn's snapshot.
+        useAgentTurnStore.getState().clearTurn(kind, threadId);
+        setPendingAskAnswer(null);
+        setPendingPermissionAnswer(null);
+        writeTurnFailure(failureKey, null);
 
-      try {
-        const streamResult = await transport.sendStream(
+        setIsSending(true);
+        // LAG-2: drain anything still buffered before the turn-start clear
+        // (a settled turn already drained; this is the no-drop belt-and-braces).
+        flushDeltaBuffer();
+        useAgentLiveStreamStore.getState().clearLiveStreamText(kind, threadId);
+        setPendingUserContent(trimmed);
+        setPendingUserAttachments(attachments);
+
+        return transport.sendStream(
           threadId,
           {
             // CA-4e3: an attachment-only send omits `content` (the schema
@@ -483,6 +399,10 @@ export function useAgentController(
             ...buildStreamCallbacks(threadId, { current: false }),
           },
         );
+      };
+      try {
+        const streamResult = await start().catch((error: unknown) => attachment.followExisting(error, threadId, controller, buildStreamCallbacks(threadId, { current: false })));
+        if (!attachment.isCurrent(controller, threadId)) return;
 
         // CM-7: surface the finish event's segmented metrics to the meter.
         // The stream return value carries `metrics` (unknown from the parser);
@@ -493,14 +413,17 @@ export function useAgentController(
           : null;
         onMetrics?.(parsedMetrics?.success ? parsedMetrics.data : null);
 
-        setPendingText("");
-        setPendingReasoning("");
+        // LAG-2: drain before the settle clear — the last frame's buffered
+        // deltas land in the feed so the persisted/live text stays identical.
+        flushDeltaBuffer();
+        useAgentLiveStreamStore.getState().clearLiveStreamText(kind, threadId);
         setIsSending(false);
         isSendingRef.current = false;
         // AP-13: the turn answered — the card clears with the failure.
         writeTurnFailure(failureKey, null);
-        onTurnSettled?.(true);
+        onTurnSettled?.(streamResult.finishReason !== "cancelled");
       } catch (error) {
+        if (!attachment.isCurrent(controller, threadId)) return;
         if (controller.signal.aborted) {
           toast.info(getT()("generation_cancelled"));
         } else {
@@ -508,24 +431,31 @@ export function useAgentController(
           // category description, so the toast is gone.
           writeTurnFailure(failureKey, copilotTurnFailureOf(error));
         }
-        setPendingText("");
-        setPendingReasoning("");
+        // LAG-2: drain before the failure/abort clear — buffered deltas land
+        // in the feed (byte-identical to per-token writes), the frame is
+        // cancelled, and nothing can write after the clear.
+        flushDeltaBuffer();
+        useAgentLiveStreamStore.getState().clearLiveStreamText(kind, threadId);
         setIsSending(false);
         isSendingRef.current = false;
         // A cancelled turn is NOT a success (SC-18): the pending chips stay
         // for a retry — same as a failure.
         onTurnSettled?.(false);
       } finally {
-        abortRef.current = null;
-        setPendingUserContent("");
-        setPendingUserAttachments([]);
+        if (attachment.isCurrent(controller, threadId)) {
+          abortRef.current = null;
+          setPendingUserContent("");
+          setPendingUserAttachments([]);
+        }
       }
     },
-    [kind, threadId, providerProfileId, model, transport, onTurnSettled, onMetrics, applyPlanToolResult],
+    [kind, threadId, providerProfileId, model, transport, onTurnSettled, onMetrics, applyPlanToolResult, pushStreamDelta, flushDeltaBuffer, prepareTurn],
   );
 
   const handleAnswer = useCallback(
     async (toolCallId: string, answer: CopilotAnswerInput, opts?: AgentSendOptions): Promise<void> => {
+      const discovery = threadId ? attachment.waitForDiscovery(threadId) : undefined;
+      if (discovery && !await discovery) return;
       // SC-23f: the decision is just another answer-union member on this
       // SAME path — `decision` present = the permission family, absent =
       // the ask family. The wire union members are both `.strict()`, so a
@@ -548,43 +478,37 @@ export function useAgentController(
         return;
       }
 
-      // The answer resumes the question turn (style B): clear the live turn
-      // so the awaiting activity yields to the persisted row (TAG-7 note),
-      // and drop any stale override from a previous answer. AP-13: the
-      // stale failure drops with them (the answer is a new turn attempt —
-      // same supersede rule as a send).
-      useAgentTurnStore.getState().clearTurn(kind, threadId);
-      const failureKey = agentThreadKey(kind, threadId);
-      writeTurnFailure(failureKey, null);
-
       const controller = new AbortController();
       abortRef.current = controller;
       isSendingRef.current = true;
-      setIsSending(true);
-      setPendingText("");
-      setPendingReasoning("");
-      // NO pendingUserContent — the answer has no user row (it replaces the
-      // awaiting tool-result row server-side).
-      // Optimistic flip: the card shows the resolution immediately instead of
-      // waiting for the settle+refetch round-trip. The decision flips the
-      // permission card; the ask flip is untouched (one family per call —
-      // the guard above refused mixed bodies, so nulling the other family's
-      // override cannot drop a live value).
-      if (decision !== undefined) {
-        setPendingAskAnswer(null);
-        setPendingPermissionAnswer({ toolCallId, decision });
-      } else {
-        setPendingPermissionAnswer(null);
-        setPendingAskAnswer({
-          toolCallId,
-          status: skipped ? "skipped" : "answered",
-          ...(text ? { answer: text } : {}),
-        });
-      }
-
+      const failureKey = agentThreadKey(kind, threadId);
       const sawStreamEvent = { current: false };
-      try {
-        const streamResult = await transport.answerAsk(
+      const start = async () => {
+        const prepared = prepareTurn(threadId, controller.signal);
+        if (prepared) await prepared;
+        // Both split-turn answer families obey the same durable barrier.
+        useAgentTurnStore.getState().clearTurn(kind, threadId);
+        writeTurnFailure(failureKey, null);
+
+        setIsSending(true);
+        // LAG-2: drain anything still buffered before the turn-start clear
+        // (same belt-and-braces as the send path).
+        flushDeltaBuffer();
+        useAgentLiveStreamStore.getState().clearLiveStreamText(kind, threadId);
+        // No new user row; flip only the submitted answer family.
+        if (decision !== undefined) {
+          setPendingAskAnswer(null);
+          setPendingPermissionAnswer({ toolCallId, decision });
+        } else {
+          setPendingPermissionAnswer(null);
+          setPendingAskAnswer({
+            toolCallId,
+            status: skipped ? "skipped" : "answered",
+            ...(text ? { answer: text } : {}),
+          });
+        }
+
+        return transport.answerAsk(
           threadId,
           {
             answer: {
@@ -617,6 +541,10 @@ export function useAgentController(
             ...buildStreamCallbacks(threadId, sawStreamEvent),
           },
         );
+      };
+      try {
+        const streamResult = await start().catch((error: unknown) => attachment.followExisting(error, threadId, controller, buildStreamCallbacks(threadId, sawStreamEvent)));
+        if (!attachment.isCurrent(controller, threadId)) return;
 
         // Same CM-7 metrics surfacing as handleSend.
         const rawMetrics = streamResult.metrics;
@@ -625,14 +553,16 @@ export function useAgentController(
           : null;
         onMetrics?.(parsedMetrics?.success ? parsedMetrics.data : null);
 
-        setPendingText("");
-        setPendingReasoning("");
+        // LAG-2: drain before the settle clear (the send path's invariant).
+        flushDeltaBuffer();
+        useAgentLiveStreamStore.getState().clearLiveStreamText(kind, threadId);
         setIsSending(false);
         isSendingRef.current = false;
         // AP-13: the turn answered — the card clears with the failure.
         writeTurnFailure(failureKey, null);
-        onTurnSettled?.(true);
+        onTurnSettled?.(streamResult.finishReason !== "cancelled");
       } catch (error) {
+        if (!attachment.isCurrent(controller, threadId)) return;
         // A failure BEFORE the stream opened (validation 400, network) means
         // the backend never rewrote the ask row — roll the optimistic flip
         // back so the card returns to interactive. A failure after the SSE
@@ -650,22 +580,28 @@ export function useAgentController(
           // category description, so the toast is gone.
           writeTurnFailure(failureKey, copilotTurnFailureOf(error));
         }
-        setPendingText("");
-        setPendingReasoning("");
+        // LAG-2: drain before the failure/abort clear (the send path's
+        // invariant — nothing can write after the clear).
+        flushDeltaBuffer();
+        useAgentLiveStreamStore.getState().clearLiveStreamText(kind, threadId);
         setIsSending(false);
         isSendingRef.current = false;
         onTurnSettled?.(false);
       } finally {
-        abortRef.current = null;
+        if (attachment.isCurrent(controller, threadId)) abortRef.current = null;
       }
     },
-    [kind, threadId, providerProfileId, model, transport, onTurnSettled, onMetrics, applyPlanToolResult],
+    [kind, threadId, providerProfileId, model, transport, onTurnSettled, onMetrics, applyPlanToolResult, pushStreamDelta, flushDeltaBuffer, prepareTurn],
   );
 
   // AP-10: the turn actions live in their own module (the file-size
   // ratchet) — fed with the controller's send, callback builder, and turn
   // state, re-exposed on the controller's contract below.
   const turnActions = useAgentTurnActions({
+    waitForDiscovery: attachment.waitForDiscovery,
+    isCurrentTurn: attachment.isCurrent,
+    followExistingRun: attachment.followExisting,
+    prepareTurn,
     kind,
     transport,
     threadId,
@@ -681,8 +617,14 @@ export function useAgentController(
       isSendingRef,
       abortRef,
       setIsSending,
-      setPendingText,
-      setPendingReasoning,
+      // LAG-3: the live stream pair clears through the live-stream store
+      // (bound to the CURRENT thread — the regenerate guards it non-null).
+      clearLiveStreamText: () => {
+        if (threadId !== null) useAgentLiveStreamStore.getState().clearLiveStreamText(kind, threadId);
+      },
+      // LAG-2: the turn actions drain the shared buffer before their clears —
+      // the ONE buffering derivation stays here in the controller.
+      flushDeltaBuffer,
       setPendingAskAnswer,
       setPendingPermissionAnswer,
       // AP-13: the regenerate path writes the same per-thread failure the
@@ -694,10 +636,7 @@ export function useAgentController(
     },
   });
 
-  const handleCancel = useCallback((): void => {
-    abortRef.current?.abort();
-    toast.info(getT()("cancelling_generation"));
-  }, []);
+  const handleCancel = attachment.cancel;
 
-  return { isSending, pendingText, pendingReasoning, pendingUserContent, pendingUserAttachments, pendingAskAnswer, pendingPermissionAnswer, turnFailure, handleSend, handleAnswer, handleRegenerate: turnActions.handleRegenerate, handleDeleteTurn: turnActions.handleDeleteTurn, handleEditAssistant: turnActions.handleEditAssistant, handleEditLast: turnActions.handleEditLast, pendingDelete: turnActions.pendingDelete, requestDeleteTurn: turnActions.requestDeleteTurn, confirmDeleteTurn: turnActions.confirmDeleteTurn, cancelDeleteTurn: turnActions.cancelDeleteTurn, isRegenerating: turnActions.isRegenerating, hiddenRegeneratedIds: turnActions.hiddenRegeneratedIds, handleCancel };
+  return { isSending, pendingUserContent, pendingUserAttachments, pendingAskAnswer, pendingPermissionAnswer, turnFailure, handleSend, handleAnswer, handleRegenerate: turnActions.handleRegenerate, handleDeleteTurn: turnActions.handleDeleteTurn, handleEditAssistant: turnActions.handleEditAssistant, handleEditLast: turnActions.handleEditLast, pendingDelete: turnActions.pendingDelete, requestDeleteTurn: turnActions.requestDeleteTurn, confirmDeleteTurn: turnActions.confirmDeleteTurn, cancelDeleteTurn: turnActions.cancelDeleteTurn, isRegenerating: turnActions.isRegenerating, hiddenRegeneratedIds: turnActions.hiddenRegeneratedIds, handleCancel };
 }

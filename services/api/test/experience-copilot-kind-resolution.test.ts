@@ -27,6 +27,7 @@ import "../src/domain/agent/kinds/script-kind.js";
 import type {
   ExperienceCopilotRuntimeApi,
 } from "../src/api/contract/runtime-api.js";
+import { ExperienceCopilotRunAdapter } from "../src/api/adapters/experience-copilot-run-adapter.js";
 
 /**
  * AS-2c — kind resolution at the stream-turn start. The adapter resolves the
@@ -246,15 +247,13 @@ describe("ExperienceCopilotAdapter.experienceCopilotStartNewSession auto-compact
 // ─── Route-level: the 400 mapping at the stream-turn start ───────────────────
 
 function makeRouteApp(throwFromAssert: Error | null) {
-  const runtime = {
-    experienceCopilotAssertStreamKind: async () => {
-      if (throwFromAssert) throw throwFromAssert;
-    },
-    experienceCopilotStream: async function* () {
+  const runtime = new ExperienceCopilotRunAdapter({ getById: async () => makeThread() }, async () => {
+    if (throwFromAssert) throw throwFromAssert;
+    return async function* () {
       yield { event: "finish", data: JSON.stringify({ finishReason: "stop" }) };
-    },
-  } as unknown as ExperienceCopilotRuntimeApi;
-  return createExperienceCopilotRoutes(runtime);
+    };
+  });
+  return createExperienceCopilotRoutes(runtime as unknown as ExperienceCopilotRuntimeApi);
 }
 
 describe("POST /api/experience-copilot/:threadId/stream kind-resolution mapping (AS-2c)", () => {
@@ -404,6 +403,15 @@ function makeStreamAdapter(thread: ExperienceCopilotThread, script: ScriptRow | 
   const stores = {
     experienceCopilot: store,
     agentPlans: { get: async () => null, save: async () => {} },
+    // BR-2b: these dispatch-only provider replies contain no buffer proposals.
+    agentReviewRounds: {
+      get: async () => null,
+      put: async () => { throw new Error("A non-proposal dispatch turn must not write a review"); },
+    },
+    // DR-2 (M1): the provider-deps wiring reads the own-model store on
+    // every turn now — null = no row, the pre-DR-2 resolution these dispatch
+    // tests pin.
+    agentProfileModels: { get: async () => null },
     scripts: {
       async getById(scriptId: string) {
         return script && script.id === scriptId ? script : null;
@@ -492,6 +500,9 @@ function makeUnwiredFakeKind(): AgentKind {
     skillRootId: "kr-fake",
     toolSetSchema: {},
     defaultToolSet: {},
+    // DR-1: the descriptor's built-in seed list (the cast hides the field
+    // from the compiler — registration refuses a kind without it).
+    builtinSeeds: [{ id: "builtin", name: "kr-fake-unwired" }],
   } as unknown as AgentKind;
 }
 
@@ -576,6 +587,12 @@ describe("ExperienceCopilotAdapter script stream - context cards and script-libr
     const stores = {
       experienceCopilot: store,
       agentPlans: { get: async () => null, save: async () => {} },
+      agentReviewRounds: {
+        get: async () => null,
+        put: async () => { throw new Error("A context-card/skill-only turn must not write a review"); },
+      },
+      // DR-2 (M1): as above — the own-model read fires on every turn.
+      agentProfileModels: { get: async () => null },
       scripts: {
         async getById(scriptId: string) {
           return script && script.id === scriptId ? script : null;

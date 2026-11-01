@@ -1,91 +1,24 @@
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import type { ChatRuntimeApi } from "../contract/runtime-api.js";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import { streamSSE } from "hono/streaming";
 import { logSendDebug } from "../../shared/send-debug-log.js";
 import * as schemas from "@vibe-tavern/api-contracts";
-import { DiceBindError, ExperienceBindError } from "@vibe-tavern/db";
-import { extractProviderErrorMessage } from "../../infrastructure/ai/provider-error-message.js";
-import { classifyProviderError } from "../../infrastructure/ai/provider-error-classifier.js";
 import { userMessageSavedFlag } from "../../domain/chat/user-message-saved.js";
+import { AgentRunActiveError } from "../../domain/agent/agent-run-registry.js";
+import type { ChatGenerationTurn } from "../contract/chat-runtime-contracts.js";
+import { createRouteAbortBridge, writeAgentSseEvents } from "./agent-sse-transport.js";
 
-type ChatStreamEvent = { event: string; data: string };
-type RouteAbortBridge = ReturnType<typeof createRouteAbortBridge>;
-type SseStreamWriter = {
-  aborted: boolean;
-  onAbort: (callback: () => void) => void;
-  writeSSE: (options: ChatStreamEvent) => Promise<void>;
-};
-
-function createRouteAbortBridge(requestSignal: AbortSignal, label: string, meta: Record<string, unknown>) {
-  const controller = new AbortController();
-  const abort = (source: string) => {
-    if (controller.signal.aborted) return;
-    logSendDebug(`${label}.abort`, { ...meta, source });
-    controller.abort(new DOMException("Client closed generation stream", "AbortError"));
-  };
-  const onRequestAbort = () => abort("request");
-
-  if (requestSignal.aborted) {
-    abort("request-preaborted");
-  } else {
-    requestSignal.addEventListener("abort", onRequestAbort, { once: true });
-  }
-
-  return {
-    signal: controller.signal,
-    abort,
-    cleanup: () => requestSignal.removeEventListener("abort", onRequestAbort),
-  };
-}
-
-async function writeChatSseEvents(
-  stream: SseStreamWriter,
-  events: AsyncIterable<ChatStreamEvent>,
-  abortBridge: RouteAbortBridge,
-): Promise<void> {
-  stream.onAbort(() => abortBridge.abort("sse"));
+async function startChatGenerationSse(c: Context, runtime: ChatRuntimeApi, chatId: string, operation: schemas.ChatGenerationOperation, turn: ChatGenerationTurn) {
+  const bridge = createRouteAbortBridge(c.req.raw.signal, "api.route.chat-generation", { chatId });
   try {
-    for await (const event of events) {
-      if (stream.aborted) {
-        abortBridge.abort("sse-aborted-flag");
-        break;
-      }
-      await stream.writeSSE({ event: event.event, data: event.data });
-    }
-  } catch (err) {
-    if (abortBridge.signal.aborted || stream.aborted) {
-      abortBridge.abort("sse-write-error");
-      return;
-    }
-
-    const message = extractProviderErrorMessage(err);
-    const category = classifyProviderError(err);
-    // Send-path bind conflicts (DICE-B11 / IR-70H, stream arm): a dice commit
-    // conflict (stale lane revision / unresolved choose) or an experience
-    // attachment bind conflict (not_found / already_bound / stale_queue /
-    // stale_session) throws DiceBindError / ExperienceBindError inside the
-    // generator during the for-await above. Streaming headers are already sent
-    // (HTTP 200), so this cannot become a 409 — surface the structured typed
-    // `code` on the SSE error event instead so the client can tell a retryable
-    // bind conflict (refresh pending + keep the draft) from a provider failure.
-    // `code` is authoritative for client recovery; `category` stays on the wire
-    // for parity but is NOT an actionable provider signal here (it resolves to
-    // "unknown" for a plain bind error). The non-stream arm maps the same
-    // errors to a real 409 in the global onError.
-    const bindCode =
-      err instanceof DiceBindError ? err.code :
-      err instanceof ExperienceBindError ? err.code :
-      undefined;
-    logSendDebug("api.route.sse.error", { message, category, ...(bindCode ? { code: bindCode } : {}) });
-    try {
-      await stream.writeSSE({ event: "error", data: JSON.stringify({ message, category, ...(bindCode ? { code: bindCode } : {}) }) });
-    } catch {
-      abortBridge.abort("sse-error-write-failed");
-    }
-  } finally {
-    abortBridge.cleanup();
+    const events = await runtime.startChatGeneration(chatId, operation, turn, bridge.signal);
+    return streamSSE(c, (stream) => writeAgentSseEvents(stream, events, bridge));
+  } catch (error) {
+    bridge.cleanup();
+    if (error instanceof AgentRunActiveError) return c.json({ error: error.message, code: error.code }, 409);
+    throw error;
   }
 }
 
@@ -94,6 +27,12 @@ export function createChatRoutes(runtime: ChatRuntimeApi) {
     .get("/api/chats/:chatId", async (c) => {
       return c.json(await runtime.getChatSnapshot(c.req.param("chatId")));
     })
+    .get("/api/chats/:chatId/queue", async (c) => c.json(await runtime.getGenerationQueue(c.req.param("chatId"))))
+    .post("/api/chats/:chatId/queue", zValidator("json", schemas.enqueueChatGenerationJobSchema), async (c) =>
+      c.json(await runtime.enqueueGenerationJob(c.req.param("chatId"), c.req.valid("json")), 201))
+    .delete("/api/chats/:chatId/queue/:jobId", async (c) =>
+      c.json(await runtime.cancelGenerationJob(c.req.param("chatId"), c.req.param("jobId"))))
+    .post("/api/chats/:chatId/queue/clear", async (c) => c.json(await runtime.clearGenerationQueue(c.req.param("chatId"))))
     .get("/api/chats/:chatId/image-route", async (c) => {
       return c.json(await runtime.getImageRoute(c.req.param("chatId")));
     })
@@ -132,6 +71,10 @@ export function createChatRoutes(runtime: ChatRuntimeApi) {
       const body = c.req.valid("json");
       return c.json(await runtime.applyCoauthorDraft(c.req.param("chatId"), body));
     })
+    .get("/api/chats/:chatId/coauthor/review", async (c) => c.json(await runtime.getCoauthorReview(c.req.param("chatId"))))
+    .put("/api/chats/:chatId/coauthor/review", zValidator("json", schemas.coauthorReviewEnvelopeSchema), async (c) =>
+      c.json(await runtime.putCoauthorReview(c.req.param("chatId"), c.req.valid("json"))))
+    .delete("/api/chats/:chatId/coauthor/review", async (c) => c.json(await runtime.deleteCoauthorReview(c.req.param("chatId"))))
     .post("/api/chats/:chatId/clone", async (c) => {
       return c.json(await runtime.cloneChat(c.req.param("chatId")));
     })
@@ -199,9 +142,7 @@ export function createChatRoutes(runtime: ChatRuntimeApi) {
       const messageId = c.req.param("messageId");
       const override = c.req.valid("json");
       logSendDebug("api.route.regenerate-stream.start", { chatId, messageId });
-      const abortBridge = createRouteAbortBridge(c.req.raw.signal, "api.route.regenerate-stream", { chatId, messageId });
-      const gen = runtime.regenerateMessageStream(chatId, messageId, override, abortBridge.signal);
-      return streamSSE(c, async (stream) => writeChatSseEvents(stream, gen, abortBridge));
+      return startChatGenerationSse(c, runtime, chatId, { operation: "regenerate", messageId }, (signal) => runtime.regenerateMessageStream(chatId, messageId, override, signal));
     })
     .post("/api/chats/:chatId/messages/:messageId/continue", async (c) => {
       // LS-4a: continue the last assistant reply from its selected variant's
@@ -217,9 +158,7 @@ export function createChatRoutes(runtime: ChatRuntimeApi) {
       const chatId = c.req.param("chatId");
       const messageId = c.req.param("messageId");
       logSendDebug("api.route.continue-stream.start", { chatId, messageId });
-      const abortBridge = createRouteAbortBridge(c.req.raw.signal, "api.route.continue-stream", { chatId, messageId });
-      const gen = runtime.continueMessageStream(chatId, messageId, abortBridge.signal);
-      return streamSSE(c, async (stream) => writeChatSseEvents(stream, gen, abortBridge));
+      return startChatGenerationSse(c, runtime, chatId, { operation: "continue", messageId }, (signal) => runtime.continueMessageStream(chatId, messageId, signal));
     })
     .post("/api/chats/:chatId/messages/:messageId/variants/:variantIndex/select", async (c) => {
       return c.json(
@@ -332,9 +271,7 @@ export function createChatRoutes(runtime: ChatRuntimeApi) {
       const chatId = c.req.param("chatId");
       const body = c.req.valid("json");
       logSendDebug("api.route.messages-stream.post", { chatId, contentLength: body.content?.length ?? 0 });
-      const abortBridge = createRouteAbortBridge(c.req.raw.signal, "api.route.messages-stream", { chatId });
-      const gen = runtime.sendMessageStream(chatId, body, abortBridge.signal);
-      return streamSSE(c, async (stream) => writeChatSseEvents(stream, gen, abortBridge));
+      return startChatGenerationSse(c, runtime, chatId, { operation: "send", messageId: null }, (signal) => runtime.sendMessageStream(chatId, body, signal));
     })
     .get("/api/chats/:chatId/summaries", async (c) => {
       return c.json(await runtime.listChatSummaries(c.req.param("chatId")));
@@ -352,8 +289,17 @@ export function createChatRoutes(runtime: ChatRuntimeApi) {
       const chatId = c.req.param("chatId");
       const body = c.req.valid("json");
       logSendDebug("api.route.summaries.generate", { chatId, providerProfileId: body.providerProfileId, model: body.model ?? null, from: body.summarizedFrom, to: body.summarizedTo });
-      return c.json(await runtime.generateChatSummary(chatId, body, c.req.raw.signal));
+      try {
+        return c.json(await runtime.generateChatSummary(chatId, body));
+      } catch (error) {
+        if (error instanceof AgentRunActiveError) return c.json({ error: error.message, code: error.code }, 409);
+        throw error;
+      }
     })
+    .get("/api/chats/:chatId/summaries/generate", (c) =>
+      c.json(runtime.getManualSummaryRun(c.req.param("chatId"))))
+    .post("/api/chats/:chatId/summaries/generate/stop", (c) =>
+      c.json(runtime.stopManualSummary(c.req.param("chatId"))))
     .put("/api/chats/:chatId/summaries/reorder", zValidator("json", schemas.reorderChatSummariesSchema), async (c) => {
       // SUM-3b: manual summary-list order (store-side transactional rewrite
       // over the ACTIVE branch, matching listChatSummaries' branch scope).
@@ -384,10 +330,16 @@ export function createChatRoutes(runtime: ChatRuntimeApi) {
     .post("/api/chats/:chatId/generate-reply/stream", async (c) => {
       const chatId = c.req.param("chatId");
       logSendDebug("api.route.generate-reply-stream.post", { chatId });
-      const abortBridge = createRouteAbortBridge(c.req.raw.signal, "api.route.generate-reply-stream", { chatId });
-      const gen = runtime.generateReplyStream(chatId, abortBridge.signal);
-      return streamSSE(c, async (stream) => writeChatSseEvents(stream, gen, abortBridge));
+      return startChatGenerationSse(c, runtime, chatId, { operation: "generate", messageId: null }, (signal) => runtime.generateReplyStream(chatId, signal));
     })
+    .get("/api/chats/:chatId/generation", zValidator("query", schemas.experienceCopilotRunQuerySchema), (c) => {
+      const chatId = c.req.param("chatId");
+      const bridge = createRouteAbortBridge(c.req.raw.signal, "api.route.chat-generation-replay", { chatId });
+      const events = runtime.subscribeChatGeneration(chatId, c.req.valid("query").after, bridge.signal);
+      if (!events) { bridge.cleanup(); return c.body(null, 204); }
+      return streamSSE(c, (stream) => writeAgentSseEvents(stream, events, bridge));
+    })
+    .post("/api/chats/:chatId/generation/stop", (c) => c.json(runtime.stopChatGeneration(c.req.param("chatId"))))
     .post("/api/chats/:chatId/set-persona", zValidator("json", schemas.setPersonaSchema), async (c) => {
       const body = c.req.valid("json");
       return c.json(await runtime.setChatPersona(c.req.param("chatId"), body.personaId));

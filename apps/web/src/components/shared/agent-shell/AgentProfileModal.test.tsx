@@ -7,7 +7,12 @@
  *   - user profiles show edit + delete affordances;
  *   - "+ New profile" opens a blank editor; empty name blocks save (no RPC);
  *   - "Duplicate" on the built-in seed opens a create editor with a copy suffix;
+ *   - DR-7b: the duplicate's create body records provenance — the built-in's
+ *     own id, a user row's source passed through, no key without a source;
  *   - editing a user profile populates the editor and Save calls update;
+ *     the PATCH body carries name/basePrompt/toolSet but NEVER agentKind
+ *     (the update contract omits the immutable kind — owner-report edit 422),
+ *     while the create body KEEPS it;
  *   - NO skill toggles render and the skill catalog is never fetched (PM-8 —
  *     skills are ungated, so the profile editor has no skill surface);
  *   - assigning a user profile calls setCopilotProfile(scriptId, id); assigning
@@ -36,6 +41,7 @@ const { act, fireEvent, render, waitFor, within } = await import("@testing-libra
 import { useCopilotProfileStore } from "../../../stores/copilot-profile-store.js";
 import { useCopilotSkillStore } from "../../../stores/copilot-skill-store.js";
 import { useBootstrapStore } from "../../../stores/api-actions/bootstrap-actions.js";
+import { useAgentProfileModelStore } from "../../../stores/agent-profile-model-store.js";
 import { wireUiSettings } from "../../../../test/wire-fixtures.js";
 import { COPILOT_TOOL_KEYS, SCRIPT_AGENT_TOOL_KEYS, type CopilotProfile, type CopilotProfileCreate, type CopilotProfileUpdate } from "@vibe-tavern/api-contracts";
 
@@ -43,6 +49,9 @@ import { COPILOT_TOOL_KEYS, SCRIPT_AGENT_TOOL_KEYS, type CopilotProfile, type Co
 const realProfileApi = await import("../../../api/copilot-profile-api.js");
 const realMasterDetailModal = await import("../MasterDetailModal.js");
 const realDestructiveConfirmModal = await import("../destructive-confirm-modal.js");
+// R15 LOAD-TIME COPY: the pills stub below spreads a copy taken at first
+// import, immune to a later co-loader's in-place slot rewrite.
+const realModelPillsModule = { ...(await import("./AgentModelPills.js")) };
 const realDndKit = await import("@dnd-kit/core");
 type RealDndContextProps = ComponentProps<typeof realDndKit.DndContext>;
 type RealDragOverlayProps = ComponentProps<typeof realDndKit.DragOverlay>;
@@ -92,6 +101,11 @@ const createCopilotProfile = mock(async (_input: CopilotProfileCreate) => USER);
 const updateCopilotProfile = mock(async (_id: string, _input: CopilotProfileUpdate) => USER);
 const deleteCopilotProfile = mock(async (_id: string) => undefined);
 const setCopilotProfile = mock(async (_scriptId: string, _profileId: string | null) => undefined);
+// DR-8: the own-model client family — the block's read/writes ride these.
+const getCopilotProfileModel = mock(async (_kind: string, _profileId: string) => null as { providerProfileId: string; modelName: string | null } | null);
+const setCopilotProfileModel = mock(async (_kind: string, _profileId: string, input: { providerProfileId: string; modelName?: string | null }) =>
+	({ providerProfileId: input.providerProfileId, modelName: input.modelName ?? null }));
+const clearCopilotProfileModel = mock(async (_kind: string, _profileId: string) => undefined);
 // ML-8: the store `reorder(kind, …)` persist — the in-memory server keeps the
 // built-in seed first (it has no stored record) and orders users by payload.
 let serverProfiles: CopilotProfile[] = [];
@@ -136,6 +150,28 @@ mock.module("../../../api/copilot-profile-api.js", () => ({
 	deleteCopilotProfile,
 	setCopilotProfile,
 	reorderCopilotProfiles: reorderCopilotProfilesMock,
+	getCopilotProfileModel,
+	setCopilotProfileModel,
+	clearCopilotProfileModel,
+}));
+
+// DR-8: the block's pills stub — the settings-summary pattern (capture real
+// first, spread): exposes the received pair + a change arm so the PUT
+// boundary is pinned without driving the real DropdownSelect popups.
+mock.module("./AgentModelPills.js", () => ({
+	...realModelPillsModule,
+	AgentModelPills: ({ providerProfileId, model, onProviderChange, mobile }: {
+		providerProfileId: string | null;
+		model?: string;
+		onProviderChange: (profileId: string, model?: string) => void;
+		mobile?: boolean;
+	}) => (
+		<div data-testid="profile-model-pills" data-provider={providerProfileId ?? ""} data-model={model ?? ""} data-mobile={mobile === true ? "true" : "false"}>
+			<button type="button" data-testid="profile-model-change" onClick={() => onProviderChange("p2", "m2")}>
+				change
+			</button>
+		</div>
+	),
 }));
 
 // Shape-identical with master-list.test.tsx (the co-load contract: the dnd
@@ -335,6 +371,15 @@ beforeEach(() => {
 	updateCopilotProfile.mockResolvedValue(USER);
 	deleteCopilotProfile.mockResolvedValue(undefined);
 	setCopilotProfile.mockResolvedValue(undefined);
+	// DR-8: the own-model client + store start clean (no stored binding).
+	getCopilotProfileModel.mockReset();
+	getCopilotProfileModel.mockResolvedValue(null);
+	setCopilotProfileModel.mockReset();
+	setCopilotProfileModel.mockImplementation(async (_kind: string, _profileId: string, input: { providerProfileId: string; modelName?: string | null }) =>
+		({ providerProfileId: input.providerProfileId, modelName: input.modelName ?? null }));
+	clearCopilotProfileModel.mockReset();
+	clearCopilotProfileModel.mockResolvedValue(undefined);
+	useAgentProfileModelStore.setState({ models: {} });
 	// SC-0g: the chat-variant wiring starts empty — no chat-row override, no
 	// kind default (the built-in seed is the effective default).
 	getAgentChatSettings.mockReset();
@@ -363,6 +408,7 @@ afterEach(() => {
 	useCopilotProfileStore.setState({ profiles: [], isLoading: false, hasLoaded: false });
 	useCopilotSkillStore.setState({ catalogs: {}, isLoading: false });
 	useBootstrapStore.setState({ data: null, personas: null, isLoading: false });
+	useAgentProfileModelStore.setState({ models: {} });
 });
 
 // SC-0g: seed the bootstrap kind-settings map's default for the fixture chat
@@ -477,11 +523,12 @@ describe("CopilotProfileModal — name never cut (SC-16d)", () => {
 		expect(nameEl.textContent).toContain("Experience Authoring");
 		expect(pillsEl.textContent).toContain("copilot_profile_built_in");
 		// Separate lines: neither element contains the other; both hang off
-		// the primitive's title slot (ML-8 was: two sibling divs off the row
-		// container — the slot still stacks them, name first).
+		// the primitive's title column (ML-12 was: the pills sat inside the
+		// title slot next to the name; now the primitive's tags slot renders
+		// them on its own line under the title — name first).
 		expect(nameEl.contains(pillsEl)).toBe(false);
 		expect(pillsEl.contains(nameEl)).toBe(false);
-		expect(nameEl.parentElement).toBe(pillsEl.parentElement);
+		expect(nameEl.parentElement!.parentElement).toBe(pillsEl.parentElement!.parentElement);
 	});
 
 	it("the name element wraps (no truncate)", async () => {
@@ -539,6 +586,53 @@ describe("CopilotProfileModal — duplicate built-in", () => {
 		expect(value).toContain("Experience Authoring");
 		// The suffix key is returned verbatim by the mocked useT.
 		expect(value).toContain("copilot_profile_duplicate_suffix");
+	});
+});
+
+describe("CopilotProfileModal — duplicate provenance (DR-7b)", () => {
+	it("seeds the create body's sourceBuiltinId: built-in → its id; user-with-source → passthrough; user-without → no key", async () => {
+		// A user row that is itself a duplicate (source recorded on the wire).
+		const SOURCED: CopilotProfile = {
+			id: "cprof_sourced",
+			name: "My grim director",
+			isBuiltIn: false,
+			basePrompt: "You direct.",
+			toolSet: { write_buffer: true },
+			agentKind: "experience",
+			sourceBuiltinId: "builtin",
+		};
+		listCopilotProfiles.mockResolvedValue([BUILTIN, SOURCED, USER]);
+		const { getByTestId, getByText } = renderModal();
+		await flush(getByTestId);
+
+		// 1) Duplicate the built-in seed → save: the create body records the seed's id.
+		fireEvent.pointerDown(getByTestId("copilot-profile-row-builtin"));
+		await waitFor(() => expect(getByText("copilot_profile_duplicate")).toBeDefined());
+		fireEvent.click(getByText("copilot_profile_duplicate"));
+		await waitFor(() => expect(getByTestId("copilot-profile-editor")).toBeDefined());
+		fireEvent.click(getByTestId("copilot-profile-save-btn"));
+		await waitFor(() => expect(createCopilotProfile).toHaveBeenCalledTimes(1));
+		expect(createCopilotProfile.mock.calls[0]![0].sourceBuiltinId).toBe("builtin");
+
+		// 2) Duplicate the SOURCED user row → save: the source passes through
+		//    (a copy of a duplicate is still a duplicate of the source).
+		fireEvent.pointerDown(getByTestId("copilot-profile-row-cprof_sourced"));
+		await waitFor(() => expect(getByText("copilot_profile_duplicate")).toBeDefined());
+		fireEvent.click(getByText("copilot_profile_duplicate"));
+		await waitFor(() => expect(getByTestId("copilot-profile-editor")).toBeDefined());
+		fireEvent.click(getByTestId("copilot-profile-save-btn"));
+		await waitFor(() => expect(createCopilotProfile).toHaveBeenCalledTimes(2));
+		expect(createCopilotProfile.mock.calls[1]![0].sourceBuiltinId).toBe("builtin");
+
+		// 3) Duplicate the source-less user row → save: NO source key at all
+		//    (from-scratch shapes stay byte-identical for old payloads).
+		fireEvent.pointerDown(getByTestId("copilot-profile-row-cprof_1"));
+		await waitFor(() => expect(getByText("copilot_profile_duplicate")).toBeDefined());
+		fireEvent.click(getByText("copilot_profile_duplicate"));
+		await waitFor(() => expect(getByTestId("copilot-profile-editor")).toBeDefined());
+		fireEvent.click(getByTestId("copilot-profile-save-btn"));
+		await waitFor(() => expect(createCopilotProfile).toHaveBeenCalledTimes(3));
+		expect("sourceBuiltinId" in createCopilotProfile.mock.calls[2]![0]).toBe(false);
 	});
 });
 
@@ -617,6 +711,45 @@ describe("CopilotProfileModal — edit user profile", () => {
 		expect(getByText("copilot_profile_tools")).toBeDefined();
 		// The skill catalog RPC was profile-toggle-only wiring — never called.
 		expect(listCopilotSkills).not.toHaveBeenCalled();
+	});
+});
+
+describe("CopilotProfileModal — PATCH body shape (owner-report edit 422)", () => {
+	// AS-3: `agentKind` is immutable — the create contract takes it, the
+	// update contract (`.strict()` through omit/partial on zod 4.4.3) rejects
+	// it, so the edit save must send a body without the key. The owner repro
+	// path: duplicate the built-in seed → save (create) → edit the copy →
+	// save (update) — both payloads pinned at the API seam (the suite's mock
+	// family; the store itself stays real).
+	it("edit save sends name/basePrompt/toolSet with NO agentKind; create keeps agentKind", async () => {
+		const { getByTestId, getByText } = renderModal();
+		await flush(getByTestId);
+		// Duplicate the built-in seed and save — the create RPC fires.
+		fireEvent.pointerDown(getByTestId("copilot-profile-row-builtin"));
+		await waitFor(() => expect(getByText("copilot_profile_duplicate")).toBeDefined());
+		fireEvent.click(getByText("copilot_profile_duplicate"));
+		await waitFor(() => expect(getByTestId("copilot-profile-editor")).toBeDefined());
+		fireEvent.click(getByTestId("copilot-profile-save-btn"));
+		await waitFor(() => expect(createCopilotProfile).toHaveBeenCalledTimes(1));
+		// The created copy (the create mock returns USER) is selected in view
+		// mode — edit it and save, firing the update RPC.
+		await waitFor(() => expect(getByText("copilot_profile_edit")).toBeDefined());
+		fireEvent.click(getByText("copilot_profile_edit"));
+		await waitFor(() => expect(getByTestId("copilot-profile-editor")).toBeDefined());
+		fireEvent.click(getByTestId("copilot-profile-save-btn"));
+		await waitFor(() => expect(updateCopilotProfile).toHaveBeenCalledTimes(1));
+
+		// Create keeps the kind (guards against over-stripping the fix).
+		const createInput = createCopilotProfile.mock.calls[0]![0];
+		expect(createInput.agentKind).toBe("experience");
+
+		// The PATCH body: no agentKind key at all, editable fields intact.
+		const [updateId, updateInput] = updateCopilotProfile.mock.calls[0]!;
+		expect(updateId).toBe("cprof_1");
+		expect("agentKind" in updateInput).toBe(false);
+		expect(updateInput.name).toBe("Card games");
+		expect(updateInput.basePrompt).toBe("You help author card-game experiences.");
+		expect(updateInput.toolSet).toEqual({ write_buffer: true, run_test: true });
 	});
 });
 
@@ -788,16 +921,22 @@ describe("CopilotProfileModal — chat-target host (SC-0g)", () => {
 	});
 
 	it("a chat-target built-in default row shows both pills on the pill line (SC-16d)", async () => {
-		const { getByTestId } = renderChatModal(null, null);
+		const { getByTestId, getAllByTestId } = renderChatModal(null, null);
 		await flush(getByTestId);
 		// Null kind default → the built-in seed is the default (SC-0g mirror)
 		// AND built-in: both pills render, on their own line below the name.
 		const nameEl = getByTestId("copilot-profile-row-name-builtin");
-		const pillsEl = getByTestId("copilot-profile-row-pills-builtin");
-		expect(pillsEl.textContent).toContain("copilot_profile_built_in");
-		expect(pillsEl.textContent).toContain("copilot_profile_default");
-		expect(nameEl.contains(pillsEl)).toBe(false);
-		expect(pillsEl.contains(nameEl)).toBe(false);
+		// ML-12: each pill is its own `MasterListTag` carrying the row's
+		// pills testid (was: one pills div under the name held them all).
+		const pills = getAllByTestId("copilot-profile-row-pills-builtin");
+		expect(pills).toHaveLength(2);
+		const pillsText = pills.map((el) => el.textContent).join(" ");
+		expect(pillsText).toContain("copilot_profile_built_in");
+		expect(pillsText).toContain("copilot_profile_default");
+		for (const pillsEl of pills) {
+			expect(nameEl.contains(pillsEl)).toBe(false);
+			expect(pillsEl.contains(nameEl)).toBe(false);
+		}
 	});
 
 	it("each button swaps to its state label when the selection already holds that state", async () => {
@@ -1177,6 +1316,120 @@ describe("CopilotProfileModal — drag reorder (ML-8)", () => {
 			"copilot-profile-row-cprof_1",
 			"copilot-profile-row-cprof_2",
 		]));
+		view.unmount();
+	});
+});
+
+// ── DR-8 (mockup §11): the profile's own model block ────────────────────
+// Pins: the block renders between the prompt preview and the tools for a
+// chat-target host (and ONLY there — the mini-app/script modals stay
+// byte-identical), the segment defaults to «Как в сайдчате», engaging
+// «Своя» reveals the pills (seeded from the composer's current pair)
+// without a write, a pill change PUTs (kind + profile id — the built-in
+// row included), a stored binding renders «Своя» + its pair, and back to
+// «Как в сайдчате» DELETEs. The pills are the stubbed shared component
+// (settings-summary pattern) — the PUT boundary, not the popup, is what
+// this suite owns.
+
+describe("CopilotProfileModal — the own model block (DR-8)", () => {
+	function renderChatModalWithModel(over: Partial<React.ComponentProps<typeof AgentProfileModal>> = {}) {
+		listCopilotProfiles.mockResolvedValue(CHAT_PROFILES);
+		getAgentChatSettings.mockResolvedValue(chatSettingsRow(null));
+		seedKindDefault(null);
+		return renderModal({ agentKind: CHAT_KIND, chatId: CHAT_ID, assignedProfileId: null, ...over });
+	}
+
+	async function selectBuiltIn(getByTestId: (id: string) => HTMLElement) {
+		await flush(getByTestId);
+		fireEvent.pointerDown(getByTestId("copilot-profile-row-builtin"));
+		await waitFor(() => expect(getByTestId("copilot-profile-prompt-preview")).toBeDefined());
+		await waitFor(() => expect(getByTestId("copilot-profile-model-block")).toBeDefined());
+	}
+
+	it("renders between the prompt preview and the tools (chat kind); hidden for script kinds", async () => {
+		const chat = renderChatModalWithModel();
+		await selectBuiltIn(chat.getByTestId);
+		const container = chat.getByTestId("md-detail");
+		const order = (id: string) => container.innerHTML.indexOf(id);
+		expect(order("copilot-profile-prompt-preview")).toBeGreaterThan(-1);
+		expect(order("copilot-profile-prompt-preview")).toBeLessThan(order("copilot-profile-model-block"));
+		expect(order("copilot-profile-model-block")).toBeLessThan(order("copilot_profile_tools"));
+		chat.unmount();
+
+		// The experience (script-target) modal keeps today's detail wholesale.
+		listCopilotProfiles.mockResolvedValue(ALL_PROFILES);
+		const exp = renderModal();
+		await flush(exp.getByTestId);
+		fireEvent.pointerDown(exp.getByTestId("copilot-profile-row-builtin"));
+		await waitFor(() => expect(exp.getByTestId("copilot-profile-prompt-preview")).toBeDefined());
+		expect(exp.queryByTestId("copilot-profile-model-block")).toBeNull();
+		expect(getCopilotProfileModel).not.toHaveBeenCalledWith("experience", "builtin");
+		exp.unmount();
+	});
+
+	it("defaults to «Как в сайдчате»; «Своя» reveals the pills from the composer's pair and writes nothing", async () => {
+		const view = renderChatModalWithModel({ currentModel: { providerProfileId: "p1", model: "m1" } });
+		await selectBuiltIn(view.getByTestId);
+		// The block reads its row through the client (kind + profile id).
+		await waitFor(() => expect(getCopilotProfileModel).toHaveBeenCalledWith(CHAT_KIND, "builtin"));
+		// Default: «Как в сайдчате» checked, no pills, no hint.
+		expect(view.getByRole("radio", { name: "agent_profile_model_mode_sidechat" }).getAttribute("aria-checked")).toBe("true");
+		expect(view.queryByTestId("profile-model-pills")).toBeNull();
+		expect(view.queryByTestId("copilot-profile-model-hint")).toBeNull();
+
+		fireEvent.click(view.getByRole("radio", { name: "agent_profile_model_mode_own" }));
+		await waitFor(() => expect(view.getByTestId("profile-model-pills")).toBeDefined());
+		expect(view.getByRole("radio", { name: "agent_profile_model_mode_own" }).getAttribute("aria-checked")).toBe("true");
+		// The revealed pills start from the composer's current pair.
+		expect(view.getByTestId("profile-model-pills").getAttribute("data-provider")).toBe("p1");
+		expect(view.getByTestId("profile-model-pills").getAttribute("data-model")).toBe("m1");
+		// The hint renders with the pills.
+		expect(view.getByTestId("copilot-profile-model-hint").textContent).toBe("agent_profile_model_hint");
+		// Engaging alone wrote nothing.
+		expect(setCopilotProfileModel).not.toHaveBeenCalled();
+		view.unmount();
+	});
+
+	it("a pill change PUTs the whole pair with kind + profile id (built-in row)", async () => {
+		const view = renderChatModalWithModel();
+		await selectBuiltIn(view.getByTestId);
+		fireEvent.click(view.getByRole("radio", { name: "agent_profile_model_mode_own" }));
+		await waitFor(() => expect(view.getByTestId("profile-model-change")).toBeDefined());
+		fireEvent.click(view.getByTestId("profile-model-change"));
+		await waitFor(() =>
+			expect(setCopilotProfileModel).toHaveBeenCalledWith(CHAT_KIND, "builtin", { providerProfileId: "p2", modelName: "m2" }),
+		);
+		// The optimistic store flip repoints the pills; the segment stays «Своя».
+		await waitFor(() => expect(view.getByTestId("profile-model-pills").getAttribute("data-provider")).toBe("p2"));
+		expect(view.getByRole("radio", { name: "agent_profile_model_mode_own" }).getAttribute("aria-checked")).toBe("true");
+		view.unmount();
+	});
+
+	it("a stored own model renders «Своя» with its pair; back to «Как в сайдчате» DELETEs", async () => {
+		getCopilotProfileModel.mockResolvedValue({ providerProfileId: "p1", modelName: "m1" });
+		const view = renderChatModalWithModel();
+		await selectBuiltIn(view.getByTestId);
+		await waitFor(() => expect(view.getByTestId("profile-model-pills")).toBeDefined());
+		expect(view.getByRole("radio", { name: "agent_profile_model_mode_own" }).getAttribute("aria-checked")).toBe("true");
+		expect(view.getByTestId("profile-model-pills").getAttribute("data-provider")).toBe("p1");
+		expect(view.getByTestId("profile-model-pills").getAttribute("data-model")).toBe("m1");
+
+		fireEvent.click(view.getByRole("radio", { name: "agent_profile_model_mode_sidechat" }));
+		await waitFor(() => expect(clearCopilotProfileModel).toHaveBeenCalledWith(CHAT_KIND, "builtin"));
+		await waitFor(() => expect(view.queryByTestId("profile-model-pills")).toBeNull());
+		expect(view.queryByTestId("copilot-profile-model-hint")).toBeNull();
+		view.unmount();
+	});
+
+	it("selecting another row re-reads its binding and drops the reveal", async () => {
+		const view = renderChatModalWithModel();
+		await selectBuiltIn(view.getByTestId);
+		fireEvent.click(view.getByRole("radio", { name: "agent_profile_model_mode_own" }));
+		await waitFor(() => expect(view.getByTestId("profile-model-pills")).toBeDefined());
+		// Switch to the here-choice row: fresh read, «Как в сайдчате» again.
+		fireEvent.pointerDown(view.getByTestId("copilot-profile-row-cprof_here"));
+		await waitFor(() => expect(getCopilotProfileModel).toHaveBeenCalledWith(CHAT_KIND, "cprof_here"));
+		await waitFor(() => expect(view.queryByTestId("profile-model-pills")).toBeNull());
 		view.unmount();
 	});
 });

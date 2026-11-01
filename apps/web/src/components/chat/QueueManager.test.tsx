@@ -1,11 +1,13 @@
 import { afterAll, beforeEach, describe, expect, test } from "bun:test";
-import type { AppMessage } from "../../api/types.js";
+import type { AppMessage, AppSnapshot } from "../../api/types.js";
+import type { ChatGenerationJob } from "@vibe-tavern/api-contracts";
 import { brandId, type ChatId } from "@vibe-tavern/domain";
 import { useDomEnv } from "../../../test/dom-env.js";
 import { useChatStore } from "../../stores/chat-store.js";
 import { useGenerationQueueStore } from "../../stores/generation-queue-store.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { enqueueGenerateMore, useGenerationQueue } from "../../hooks/use-generation-queue.js";
+import { refreshGenerationQueue } from "../../lib/chat-generation-queue-client.js";
 
 useDomEnv();
 
@@ -25,6 +27,8 @@ const initialChatState = useChatStore.getState();
 const initialQueueState = useGenerationQueueStore.getState();
 const initialSnapshotState = useSnapshotStore.getState();
 const originalMatchMedia = window.matchMedia;
+const originalFetch = globalThis.fetch;
+let serverJobs: ChatGenerationJob[] = [];
 let mobileViewport = false;
 
 function matchMedia(query: string): MediaQueryList {
@@ -45,11 +49,22 @@ afterAll(async () => {
   useGenerationQueueStore.setState(initialQueueState, true);
   useSnapshotStore.setState(initialSnapshotState, true);
   window.matchMedia = originalMatchMedia;
+  globalThis.fetch = originalFetch;
   await i18next.changeLanguage("en");
 });
 
 beforeEach(() => {
   mobileViewport = false;
+  globalThis.fetch = originalFetch;
+  serverJobs = [];
+  globalThis.fetch = (async (_input, init) => {
+    if (init?.method === "POST") {
+      const input = JSON.parse(String(init.body));
+      const job: ChatGenerationJob = { ...input, id: `server-${serverJobs.length}`, chatId: CHAT_A, enqueuedAt: 1, status: serverJobs.length ? "pending" : "running" };
+      serverJobs = [...serverJobs, job]; return Response.json(job, { status: 201 });
+    }
+    return Response.json(serverJobs);
+  }) as typeof fetch;
   window.matchMedia = matchMedia;
   useChatStore.setState({ activeChatId: CHAT_A });
   useGenerationQueueStore.setState({ jobsByChat: {}, batchesByChat: {}, recordsByChat: {} });
@@ -60,7 +75,7 @@ function setVisibleTarget(messageId: string, variantIds: string[]): void {
   useSnapshotStore.setState({
     messageOrder: [messageId],
     messagesById: {
-      [messageId]: { id: messageId, variants: variantIds.map((id, variantIndex) => ({ id, variantIndex, isSelected: variantIndex === 0 })) } as AppMessage,
+      [messageId]: { id: messageId, role: "assistant", variants: variantIds.map((id, variantIndex) => ({ id, variantIndex, isSelected: variantIndex === 0 })) } as AppMessage,
     },
   });
 }
@@ -69,21 +84,8 @@ function renderQueueManager() {
   return render(<LocaleProvider initialLocale="en"><QueueManager /></LocaleProvider>);
 }
 
-function parked<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
-  let resolve!: (value: T) => void;
-  return { promise: new Promise<T>((done) => { resolve = done; }), resolve };
-}
-
-async function flushUntil(predicate: () => boolean): Promise<void> {
-  for (let attempt = 0; attempt < 30; attempt += 1) {
-    if (predicate()) return;
-    await Promise.resolve();
-  }
-  expect(predicate()).toBe(true);
-}
-
-function QueueRunner({ runJob }: { runJob: Parameters<typeof useGenerationQueue>[0] }): null {
-  useGenerationQueue(runJob);
+function QueueRunner(): null {
+  useGenerationQueue();
   return null;
 }
 
@@ -141,31 +143,25 @@ describe("QueueManager QS-3 batch summary", () => {
     expectCounter(getByRole, "1 of 2");
   });
 
-  test("keeps completed variants visible when the real pump hands off to the next queued job", async () => {
-    const b = parked<"done">();
-    const c = parked<"done">();
-    const calls: string[] = [];
+  test("keeps completed variants visible when the server hands off to the next queued job", async () => {
     setVisibleTarget(TARGET_A, ["a"]);
+    useSnapshotStore.setState({ activeChat: { id: CHAT_A } as AppSnapshot["activeChat"] });
     const view = render(
       <LocaleProvider initialLocale="en">
         <QueueManager />
-        <QueueRunner runJob={async (_chatId, _messageId, override) => {
-          calls.push(override?.model ?? "");
-          return calls.length === 1 ? b.promise : c.promise;
-        }} />
+        <QueueRunner />
       </LocaleProvider>,
     );
 
     await act(async () => {
-      enqueueGenerateMore(TARGET_A, "model-b", null);
-      enqueueGenerateMore(TARGET_A, "model-c", null);
-      await flushUntil(() => calls.length === 1);
+      await enqueueGenerateMore(TARGET_A, "model-b", null);
+      await enqueueGenerateMore(TARGET_A, "model-c", null);
     });
 
     await act(async () => {
       setVisibleTarget(TARGET_A, ["a", "b"]);
-      b.resolve("done");
-      await flushUntil(() => calls.length === 2);
+      serverJobs = serverJobs.map((job, index) => index === 0 ? { ...job, status: "done", variantIndex: 1 } : { ...job, status: "running" });
+      await refreshGenerationQueue(CHAT_A);
     });
 
     const running = useGenerationQueueStore.getState().recordsByChat[CHAT_A]?.find((record) => record.status === "running");
@@ -183,7 +179,11 @@ describe("QueueManager QS-3 batch summary", () => {
       expect.stringContaining("Writing"),
     ]);
 
-    c.resolve("done");
+    await act(async () => {
+      setVisibleTarget(TARGET_A, ["a", "b", "c"]);
+      serverJobs = serverJobs.map((job) => ({ ...job, status: "done" }));
+      await refreshGenerationQueue(CHAT_A);
+    });
     view.unmount();
   });
 

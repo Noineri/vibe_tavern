@@ -1,6 +1,6 @@
 import type { AssemblePromptResponse, Message, PromptTrace, ProviderResponseTrace } from "@vibe-tavern/domain";
 import { brandId, type ChatBranchId, type ChatId, type MessageId, type PromptPresetId } from "@vibe-tavern/domain";
-import type { ChatStore, MessageStore, PromptTraceStore, DiceRollStore, UiSettingsStore, ExperienceStore } from "@vibe-tavern/db";
+import type { ChatStore, MessageStore, PromptTraceStore, DiceRollStore, UiSettingsStore, ExperienceStore, StoreContainer } from "@vibe-tavern/db";
 import type { ToolSet } from "ai";
 import type { ChatApplicationService } from "../../domain/chat/chat-application-service.js";
 import type { SendMessageRequest } from "../../domain/chat/chat-application-types.js";
@@ -18,6 +18,10 @@ import type { ChatModeAssembleResult } from "../../domain/chat/chat-mode-strateg
 import type { SessionPromptAssemblyOptions } from "./session-runtime-prompt-assembly.js";
 import { logSendDebug } from "../../shared/send-debug-log.js";
 import { notFound } from "../../shared/errors.js";
+import { AsyncLocalStorage } from "node:async_hooks";
+import { CoauthorReviewService, type CoauthorReviewResult } from "../../domain/chat/coauthor-review-service.js";
+import { CoauthorReviewPersistence } from "../../domain/chat/coauthor-review-persistence.js";
+import { persistAgentBufferReviewStream } from "../../domain/agent/agent-buffer-review-persistence.js";
 
 export interface PreparedLiveTurn {
   prompt: AssemblePromptResponse;
@@ -54,6 +58,7 @@ interface PendingPromptTraceTurn {
 }
 
 export interface ChatRuntimeDeps {
+  persistCoauthorReview?: (chatId: string, results: readonly CoauthorReviewResult[]) => Promise<void>;
   chats: ChatStore;
   messages: MessageStore;
   traces: PromptTraceStore;
@@ -97,7 +102,35 @@ export interface ChatRuntimeDeps {
  */
 export class ChatRuntime {
   private readonly deps: ChatRuntimeDeps;
-  private readonly pendingPromptTraceByChat = new Map<ChatId, PendingPromptTraceTurn>();
+  private readonly idlePromptTraces = new Map<ChatId, PendingPromptTraceTurn>();
+  private readonly generationScope = new AsyncLocalStorage<{
+    chatId: ChatId; branchId: ChatBranchId; traces: Map<ChatId, PendingPromptTraceTurn>; collectReview: boolean;
+  }>();
+
+  private get pendingPromptTraceByChat() {
+    return this.generationScope.getStore()?.traces ?? this.idlePromptTraces;
+  }
+
+  private generationBranch(chatId: ChatId): ChatBranchId | undefined {
+    const scope = this.generationScope.getStore();
+    return scope?.chatId === chatId ? scope.branchId : undefined;
+  }
+
+  /** Bind EVERY iterator pull, not just generator creation: lazy bodies execute
+   * on next(). Navigation/preview requests keep their own idle trace state and
+   * cannot erase or retarget a detached producer's prompt/partial/final reply. */
+  withGenerationScope<T extends { event: string; data: string }>(chatId: ChatId, branchId: ChatBranchId, events: AsyncIterable<T>, collectReview = true): AsyncIterable<T> {
+    const scope = { chatId, branchId, traces: new Map<ChatId, PendingPromptTraceTurn>(), collectReview };
+    const stream = collectReview && this.deps.persistCoauthorReview
+      ? persistAgentBufferReviewStream(events, new CoauthorReviewPersistence(chatId, this.deps.persistCoauthorReview)) : events;
+    const iterator = this.generationScope.run(scope, () => stream[Symbol.asyncIterator]());
+    return {
+      [Symbol.asyncIterator]: () => ({
+        next: () => this.generationScope.run(scope, () => iterator.next()),
+        return: () => this.generationScope.run(scope, () => iterator.return?.() ?? Promise.resolve({ done: true, value: undefined })),
+      }),
+    };
+  }
 
   constructor(deps: ChatRuntimeDeps) {
     this.deps = deps;
@@ -117,7 +150,7 @@ export class ChatRuntime {
     const trimmed = content.trim();
     const hasAttachments = !!(attachments && attachments.length > 0);
     if (!trimmed && !hasAttachments) {
-      const assembled = await assemblePrompt(chatId, undefined, { model, responseReserve, coauthorEditorState });
+      const assembled = await assemblePrompt(chatId, this.generationBranch(chatId), { model, responseReserve, coauthorEditorState });
       return {
         prompt: assembled.prompt,
         tools: assembled.tools,
@@ -132,11 +165,11 @@ export class ChatRuntime {
       attachments,
       diceCommit,
       experienceCommit,
-    });
+    }, this.generationBranch(chatId));
 
     let assembled;
     try {
-      assembled = await assemblePrompt(chatId, undefined, { model, responseReserve, coauthorEditorState });
+      assembled = await assemblePrompt(chatId, this.generationBranch(chatId), { model, responseReserve, coauthorEditorState });
     } catch (err) {
       try {
         // DICE-B11 / IR-51: release any Dice rolls AND any experience
@@ -219,7 +252,7 @@ export class ChatRuntime {
   ): Promise<AppendedAssistantReply> {
     const { chats, messages, traces, buildMessageResponse } = this.deps;
     const chat = (await chats.getById(chatId))!;
-    const branchId = chat.activeBranchId as ChatBranchId;
+    const branchId = this.generationBranch(chatId) ?? chat.activeBranchId as ChatBranchId;
 
     const pending = this.consumePendingPromptTrace(chatId, branchId);
 
@@ -330,6 +363,7 @@ export class ChatRuntime {
       .filter(o => o.alert)
       .map(o => ({ name: o.name, dropped: o.dropped }));
 
+    await this.persistUnscopedReview(chatId, reasoningData?.toolResults ?? []);
     return {
       response,
       branchId,
@@ -354,11 +388,12 @@ export class ChatRuntime {
     const { chats, messages, traces, buildMessageResponse } = this.deps;
     const trimmed = input.content.trim();
     if (!trimmed) {
+      await this.persistUnscopedReview(chatId, input.toolResults ?? []);
       return await buildMessageResponse(chatId);
     }
 
     const chat = (await chats.getById(chatId))!;
-    const pending = this.consumePendingPromptTrace(chatId, chat.activeBranchId as ChatBranchId);
+    const pending = this.consumePendingPromptTrace(chatId, this.generationBranch(chatId) ?? chat.activeBranchId as ChatBranchId);
 
     const newVariant = await messages.addVariant(
       messageId,
@@ -410,6 +445,7 @@ export class ChatRuntime {
       .filter(o => o.alert)
       .map(o => ({ name: o.name, dropped: o.dropped }));
     const response = await buildMessageResponse(chatId);
+    await this.persistUnscopedReview(chatId, input.toolResults ?? []);
     return overflowAlerts.length > 0 ? { ...response, overflowAlerts } : response;
   }
 
@@ -493,9 +529,13 @@ export class ChatRuntime {
   }
 
   async deleteMessage(chatId: ChatId, messageId: string): Promise<MessageResponse> {
+    // Step 8: capture the traces that die with this message (FK cascade on
+    // prompt_traces.message_id) BEFORE the delete — their ids are gone after.
+    const dyingTraceIds = await this.deps.traces.listTraceIds({ chatId, messageId });
     await this.deps.chatApp.deleteMessage(messageId);
-    // Traces died with the message (FK cascade) — reclaim chunks they alone referenced.
-    await this.deps.traces.sweepOrphanedChunks();
+    // Traces died with the message (FK cascade) — reclaim chunks they alone
+    // referenced (scoped; the global sweep lives at boot now).
+    await this.deps.traces.reclaimChunksForTraces(dyingTraceIds);
     return await this.deps.buildMessageResponse(chatId, { summaries: true });
   }
 
@@ -531,8 +571,11 @@ export class ChatRuntime {
   async deleteBranch(chatId: string, branchId: string): Promise<BranchResponse> {
     const typedChatId = brandId<ChatId>(chatId);
     const typedBranchId = brandId<ChatBranchId>(branchId);
+    // Step 8: capture the branch's traces BEFORE the delete (FK cascades on
+    // prompt_traces.branch_id and message_id remove them with the branch).
+    const dyingTraceIds = await this.deps.traces.listTraceIds({ chatId: typedChatId, branchId: typedBranchId });
     await this.deps.chatApp.deleteBranch(typedChatId, typedBranchId);
-    await this.deps.traces.sweepOrphanedChunks();
+    await this.deps.traces.reclaimChunksForTraces(dyingTraceIds);
     this.pendingPromptTraceByChat.delete(typedChatId);
     return await this.deps.buildBranchResponse(typedChatId);
   }
@@ -553,10 +596,13 @@ export class ChatRuntime {
 
   async deleteChat(chatId: string): Promise<ChatListResponse> {
     const typedChatId = brandId<ChatId>(chatId);
+    // Step 8: capture the chat's traces BEFORE the delete (FK cascade on
+    // prompt_traces.chat_id removes them with the chat).
+    const dyingTraceIds = await this.deps.traces.listTraceIds({ chatId: typedChatId });
     this.deps.chatOrder.remove(typedChatId);
     this.pendingPromptTraceByChat.delete(typedChatId);
     await this.deps.chats.delete(typedChatId);
-    await this.deps.traces.sweepOrphanedChunks();
+    await this.deps.traces.reclaimChunksForTraces(dyingTraceIds);
     // Return the refreshed chats list so the sidebar deterministically drops
     // the deleted chat. Previously the route returned 204 with no body, so the
     // frontend relied on a racy fire-and-forget bootstrap to refresh the list
@@ -578,7 +624,7 @@ export class ChatRuntime {
       setPendingTrace?: boolean },
   ): Promise<AssemblePromptResponse & { tools?: ToolSet; maxSteps?: number; coauthorModuleId?: string; coauthorSkillId?: string | null }> {
     const { assemblePrompt } = this.deps;
-    const assembled = await assemblePrompt(chatId, undefined, {
+    const assembled = await assemblePrompt(chatId, this.generationBranch(chatId), {
       excludeMessageIds: options.excludeMessageId ? [options.excludeMessageId] : [],
       model: options.model,
       contextBudget: options.contextBudget,
@@ -615,4 +661,21 @@ export class ChatRuntime {
   peekPendingPresetName(chatId: ChatId): string | null {
     return this.pendingPromptTraceByChat.get(chatId)?.draft.presetName ?? null;
   }
+
+  private async persistUnscopedReview(chatId: ChatId, results: readonly CoauthorReviewResult[]) {
+    // Detached streams flush their collector once, after exhaustion. Native
+    // non-streaming/raw callers commit from the exact append input instead.
+    if (!this.generationScope.getStore()?.collectReview) await this.deps.persistCoauthorReview?.(chatId, results);
+  }
+}
+
+/** Core composition extracted so SessionRuntime does not grow beyond its ratchet. */
+export function createChatRuntime(stores: StoreContainer, deps: Omit<ChatRuntimeDeps,
+  "chats" | "messages" | "traces" | "diceRolls" | "uiSettings" | "experiences" | "persistCoauthorReview">): ChatRuntime {
+  const reviews = new CoauthorReviewService(stores);
+  return new ChatRuntime({ ...deps,
+    chats: stores.chats, messages: stores.messages, traces: stores.traces,
+    diceRolls: stores.diceRolls, uiSettings: stores.uiSettings, experiences: stores.experiences,
+    persistCoauthorReview: (chatId, results) => reviews.persistResults(chatId, results),
+  });
 }

@@ -64,6 +64,9 @@ function makeFakeChatKind(): AgentKind {
     skillRootId: FAKE_CHAT_KIND_ID,
     toolSetSchema: z.object({ fake_tool: z.boolean().optional() }).strict(),
     defaultToolSet: { fake_tool: true },
+    // DR-1: the descriptor's built-in seed list — the standard single first
+    // seed (name = kind id, the generic seed's pre-DR-1 name).
+    builtinSeeds: [{ id: "builtin", name: FAKE_CHAT_KIND_ID }],
     recencyAnchorText: "(fake kind pins no context)",
     // Post-split fake: no legacy copilot-pair inheritance (SC-7).
     inheritsLegacyCopilotPair: false,

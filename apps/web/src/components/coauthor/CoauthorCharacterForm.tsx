@@ -60,7 +60,6 @@ import {
   buildCoauthorReviewSelectionInputFromProposal,
   EMPTY_COAUTHOR_ACTIVITIES,
   EMPTY_COAUTHOR_CONTEXT_LINKS,
-  resolveCoauthorReview,
   settleCoauthorAppliedReview,
   useCoauthorEditorRegistration,
   useCoauthorPendingReview,
@@ -70,6 +69,8 @@ import {
 } from "../../lib/coauthor-editor-snapshot.js";
 import { selectLoreBundle } from "../../lib/lore-selection.js";
 import { applyCoauthorDraft } from "../../api/chat-api.js";
+import { coauthorReviews } from "../../lib/coauthor-draft.js";
+import { rejectCoauthorReview } from "../../lib/coauthor-review-resolution.js";
 import type { AppCharacter, LorebookRecord, ScriptRecord, AppCharacterEntry } from "../../api/types.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useIsSending } from "../../stores/chat-store.js";
@@ -468,6 +469,11 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
         brandId<ChatId>(chatId),
         request,
       );
+      // Character Apply already committed even if review cleanup fails. Keep
+      // its snapshot/ledger authoritative and leave the review for retry.
+      let reviewCleared = true;
+      try { await coauthorReviews.resolve(chatId, activities); }
+      catch (error) { reviewCleared = false; toast.error(error instanceof Error ? error.message : t("request_failed")); }
       // Apply is the authoritative boundary. Record success before optional
       // refreshes, which may fail independently, and before clearing the turn.
       // Resolve the originating turn even after navigation, without dropping a
@@ -476,8 +482,8 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
         cardApplied: request.profileMd !== undefined || request.firstMessage !== undefined,
         loreApplied: request.loreBundle !== undefined,
         trackerApplied: request.trackerTemplate !== undefined,
-      }));
-      markResolved(frozenReviewSignature);
+      }), { clearTurn: reviewCleared });
+      if (reviewCleared) markResolved(frozenReviewSignature);
       const active = useSnapshotStore.getState();
       if (active.activeChat?.id !== chatId || active.character?.id !== character.id) return;
       useSnapshotStore.getState().ingestSnapshot(snapshot);
@@ -506,15 +512,9 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
     }
   }
 
-  function handleReject(): void {
-    if (!chatId) return;
-    // Discard the proposal; the editor is unchanged (it was locked for the whole
-    // turn, so it still shows the pre-turn canonical). Clearing the turn store
-    // drops hasProposal → editorState returns to idle (editable).
-    resolveCoauthorReview(chatId, character.id, buildCoauthorRejectedReview(reviewInput));
-    markResolved(reviewSignature);
-    useCoauthorTurnStore.getState().clearTurn(chatId);
-  }
+  const handleReject = () => rejectCoauthorReview({ chatId, characterId: character.id, activities, liveActivities,
+    review: buildCoauthorRejectedReview(reviewInput), applying, setApplying, markResolved: () => markResolved(reviewSignature),
+  });
 
   const isDirty = formState.isDirty;
   const canSave = (form.watch("name") || "").trim().length > 0;

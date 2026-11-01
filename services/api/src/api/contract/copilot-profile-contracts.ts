@@ -24,4 +24,23 @@ export interface CopilotProfileRuntimeApi {
 	 *  return that kind's full merged list (seed first, then user rows in
 	 *  stored order) — the same list `listCopilotProfiles` serves. */
 	reorderCopilotProfiles: (kind: string, updates: Array<{ id: string; sortOrder: number }>) => Promise<import("@vibe-tavern/api-contracts").CopilotProfile[]>;
+	// ── DR-2 (owner ruling M1): a profile's own model ─────────────────────
+	/** Read the (kind, profile) own-model binding — `model: null` is no own
+	 *  model (same as sidechat; no row). Addressable for built-in seed ids of
+	 *  the kind and user rows of the kind alike; anything else is the shared
+	 *  404. */
+	getCopilotProfileModel: (
+		kind: string,
+		profileId: string,
+	) => Promise<{ model: import("@vibe-tavern/api-contracts").AgentProfileModelWire | null }>;
+	/** Set/replace the binding (a whole row, never a merge). The provider link
+	 *  is soft: a dangling id stores fine and falls through to the chain at
+	 *  turn time (the stream never errors on it). */
+	setCopilotProfileModel: (
+		kind: string,
+		profileId: string,
+		input: import("@vibe-tavern/api-contracts").AgentProfileModelPutRequest,
+	) => Promise<{ model: import("@vibe-tavern/api-contracts").AgentProfileModelWire }>;
+	/** Clear the binding (back to same as sidechat). Idempotent. */
+	clearCopilotProfileModel: (kind: string, profileId: string) => Promise<{ ok: true }>;
 }

@@ -1014,6 +1014,29 @@ Owns the 6 px `col-resize` drag line (GalleryViewer mousedown → window mousemo
 
 ---
 
+## StoryPlanStrip
+
+**File:** `chat/sidechat/StoryPlanStrip.tsx` — the chat column's story-plan row (DR-11): the active branch's plan as a compact, constant-height strip pinned above the message list, mounted as the first child of `PlayModeChatPane` (so the desktop surface and the mobile «Chat» pane share it).
+
+- Composition, not a fork: a thin mount of the shared `AgentPlanSection` in curtain presentation — the SAME `useAgentPlan` chatBranch cache, editor modal and revert write the sidechat pane uses — plus the strip's own extras: no editor button in the collapsed row, the goal tracker's manual check («Check now», `story_plan_check_now`) through the panel's `headerActionsBefore` slot, and the call-director button through the `actions` slot (disabled while a sidechat turn streams).
+- Renders NOTHING while the active branch's plan is empty (without a plan the chat pane is byte-identical); after the last event completes the strip stays with the done label (A8).
+- The row refreshes the plan entry (`refreshAgentPlan`) whenever the chat's objective state changes in the snapshot — the server's follow-back writes completed statuses into the plan, and the re-GET is how the row learns the next event (no second fetch path, no second objective derivation).
+- Passed-check flash (R4): a goal-status transition of the plan's current event IS «the check passed this event» (the projection copies ids 1:1), so the strip shows the passed label on the success tint for ~6 s (`STORY_PLAN_FLASH_MS`), then the next event — no toast.
+- The call-director default handler runs the `callDirector` store action (open + optional profile switch + one queued message, DR-12); `onCallDirector` stays an override for tests.
+
+---
+
+## Sidechat proposal cards
+
+**Files:** `chat/sidechat/ObjectiveProposalCard.tsx` (source), `StoryPlanProposalCard.tsx` (fork #1, DR-10a), `TrackerSceneProposalCard.tsx` (fork #2, DR-10b) — the review cards for the sidechat's three record proposals, registered in the sidechat host's `recordProposalRenderers` (`objective`, `story-plan`, `tracker-scene`).
+
+- The Objective card is the fork source: it is itself fork #1 of the shell's `RecordProposalFallbackCard`, carries the fork count (`forks: 2`) in its header, and each fork's header carries its own correspondence map (the house fork rule).
+- The StoryPlan card shows the model's summary, the proposed events as a pure diff by id against the stored branch plan (new / changed / removed markers, the current event's body), the goals-replacement warning only when Accept will replace goals not from the plan, and the auto-check toggle (only while the tracker's frequency is 0, off by default, sent with Accept).
+- The TrackerScene card shows the generated scene half through the shared `TrackerTemplateSchemaPreview` — the objective half never rides it (goals come from the plan).
+- The Objective card itself gained a plan mode (R3): while the active branch plan has events it retitles («New story-plan event», «will go next, after …») and Accept inserts the goal as the next plan event; with no plan events it is exactly the original goal card.
+
+---
+
 ## CopilotTodoSection
 
 **File:** `build/editors/copilot/CopilotTodoSection.tsx` + `CopilotTodoPanel.tsx` — the Experience Copilot's mount of the session-scoped todo mechanic (restored PM-7, owner ruling 2026-10-11: todo = the thread's session; plan = the script), part of the [copilot subsystem](./experience-copilot.md). Pinned directly below the context meter and directly ABOVE `CopilotPlanSection` — it does not scroll with the feed.

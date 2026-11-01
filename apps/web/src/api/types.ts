@@ -68,6 +68,7 @@ import type {
 	experiencePromptOverrideContentSchema,
 	experienceRecalculateRequestSchema,
 	experienceReportQueueRequestSchema,
+	experienceReportClearRequestSchema,
 	experienceStartRequestSchema,
 	experienceTestRunRequestSchema,
 	experienceTestSimulateRequestSchema,
@@ -102,7 +103,8 @@ export type {
 type WireSessionSnapshot = NonNullable<RpcData<Api["bootstrap"]["$get"]>["snapshot"]>;
 
 /** Message with variant data. `sceneTracker` mirrors the selected variant (swapped
- *  locally on selection); `diceRolls` is present only on user messages with bound rolls. */
+ *  locally on selection); `diceRolls` / `experienceReports` are inferred public
+ *  projections present only on user messages with bound attachments. */
 export type AppMessage = WireSessionSnapshot["messages"][number] & {
   /**
    * IG-CF10: client shadow of the message ROW's attachment set (the
@@ -313,6 +315,7 @@ export type ExperienceFinishRequest = ExperienceFinishRequestDto;
 export type ExperienceRestartRequest = ExperienceRestartRequestDto;
 /** POST /sessions/:id/reports/queue body (`{ expectedRevision }`). */
 export type ExperienceReportQueueRequest = z.input<typeof experienceReportQueueRequestSchema>;
+export type ExperienceReportClearRequest = z.input<typeof experienceReportClearRequestSchema>;
 /** POST /sessions/:id/undo body (`{ targetRevision }`). */
 export type ExperienceUndoRequest = z.input<typeof experienceUndoRequestSchema>;
 /** POST /sessions/:id/recalculate body (`{ rulesCode }`). */

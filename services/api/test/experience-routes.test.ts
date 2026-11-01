@@ -829,7 +829,60 @@ describe("Experience routes — IR-70A session discovery (integration)", () => {
 });
 
 describe("Experience routes — IR-70C report lifecycle (real VM + DB + HTTP)", () => {
-	test("starts atomically with a projected public setup report and no checkpoint leak", async () => {
+  test("ERX-5: clear is scope/revision checked, idempotent, and preserves bound reports and the journal frontier", async () => {
+    const { stores, resources, app } = await setupIntegration();
+    const { chatId, branchId } = await seedChatAndScript(stores, resources, REPORT_SOURCE);
+    const post = (path: string, body: unknown) => app.request(path, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+    });
+    const start = await post(`/api/chats/${chatId}/experience/sessions`, { branchId });
+    expect(start.status).toBe(200);
+    const sid = (await jsonBody(start)).sessionId;
+    const base = `/api/experience/sessions/${sid}`;
+    const initial = await stores.experiences.getQueuedAttachmentForSession(sid);
+    if (!initial) throw new Error("expected start report");
+    const message = await stores.messages.addMessage({ chatId, branchId, role: "user", authorType: "user", content: "Played" });
+    await stores.experiences.bindAttachment(initial.id, message.id);
+    const boundBefore = await stores.experiences.getAttachmentById(initial.id);
+    expect((await post(`${base}/actions`, { type: "advance", requestId: "clear-a1", expectedRevision: 0 })).status).toBe(200);
+    expect((await post(`${base}/reports/queue`, { expectedRevision: 1 })).status).toBe(200);
+    const queueBefore = await stores.experiences.getQueuedAttachmentForSession(sid);
+    const sessionBefore = await stores.experiences.getSessionById(sid);
+    const clear = (sessionId: string, body: unknown) => app.request(`/api/experience/sessions/${sessionId}/reports/queue`, {
+      method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+    });
+    const request = { chatId, branchId, expectedRevision: 1 };
+    for (const body of [{ ...request, chatId: "foreign" }, { ...request, branchId: "foreign" }]) {
+      const foreign = await clear(sid, body);
+      expect(foreign.status).toBe(404);
+      expect((await jsonBody(foreign)).error.details.code).toBe("session_not_found");
+    }
+    expect((await clear("missing", request)).status).toBe(404);
+    const stale = await clear(sid, { ...request, expectedRevision: 0 });
+    expect(stale.status).toBe(409);
+    expect((await jsonBody(stale)).error.details.code).toBe("stale_revision");
+    for (const body of [{}, { ...request, expectedRevision: -1 }, { ...request, extra: true }]) {
+      expect((await clear(sid, body)).status).toBe(400);
+    }
+    expect(await stores.experiences.getQueuedAttachmentForSession(sid)).toEqual(queueBefore);
+    for (let i = 0; i < 2; i++) {
+      const cleared = await clear(sid, request);
+      expect(cleared.status).toBe(200);
+      expect(await jsonBody(cleared)).toEqual({ ok: true });
+    }
+    expect(await stores.experiences.getQueuedAttachmentForSession(sid)).toBeNull();
+    expect(await stores.experiences.getAttachmentById(initial.id)).toEqual(boundBefore);
+    expect(await stores.experiences.getSessionById(sid)).toEqual(sessionBefore);
+    expect((await post(`${base}/reports/queue`, { expectedRevision: 1 })).status).toBe(422);
+    // Only later events, not the cleared snapshot, can enter the next freeze.
+    expect((await post(`${base}/actions`, { type: "double", requestId: "clear-a2", expectedRevision: 1 })).status).toBe(200);
+    const later = await post(`${base}/reports/queue`, { expectedRevision: 2 });
+    expect(later.status).toBe(200);
+    expect((await jsonBody(later)).publicReport.events.map((event: { type: string }) => event.type)).toEqual(["advanced", "bonus"]);
+  });
+
+	// 2026-10-27 ERX-12: prose replaces projection JSON on new automatic starts.
+	test("starts atomically with a readable public setup report and no projection or checkpoint leak", async () => {
 		const { stores, resources, app } = await setupIntegration();
 		const { chatId, branchId } = await seedChatAndScript(stores, resources, REPORT_SOURCE);
 		const start = await app.request(`/api/chats/${chatId}/experience/sessions`, {
@@ -845,7 +898,8 @@ describe("Experience routes — IR-70C report lifecycle (real VM + DB + HTTP)", 
 		expect(raw).not.toContain("PRIVATE_MARKER_70C");
 		const body = JSON.parse(raw);
 		expect(body.sessionRevision).toBe(0);
-		expect(body.publicReport.events[0].detail.projection).toEqual({ setup: "ready", n: 0 });
+		expect(body.publicReport.events[0]).toEqual({ type: "experience_started", detail: "Report began." });
+		expect(raw).not.toContain('"projection"');
 		expect((await stores.experiences.getSessionById(sid))?.reportFrontier).toBe(0);
 	});
 

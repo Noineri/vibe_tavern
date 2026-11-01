@@ -487,8 +487,8 @@ export class ExperienceService {
     const cursorAfterCreate = createRng.totalDraws();
 
     // `create()` emits state rather than reportable events. The revision-zero
-    // attachment therefore records only an explicit public setup projection,
-    // never the authoritative state supplied to the store below.
+    // attachment records a readable public roster/first-actor summary, never a
+    // projection or authoritative state. Keep observer validation before start.
     const startViewer: ExperienceViewer = { kind: EXPERIENCE_VIEWER_KIND.observer };
     const startCaps = this.buildCaps(grants, enrichedParticipants, undefined, createEphemeralRandom());
     const startProjection = runProject(rules.code, rules.scriptName, initialState, startViewer, startCaps);
@@ -520,7 +520,6 @@ export class ExperienceService {
       randomSeed: seed,
       randomCursor: cursorAfterCreate,
     }, (session) => this.reports.buildStartReport(session, {
-      projection: startProjection.value,
       legalActions: startActions.value,
       participants: enrichedParticipants,
     }));
@@ -539,7 +538,7 @@ export class ExperienceService {
    * Restart a session as a NEW match on the same chat+branch (lobby report
    * LB-2 / Track B — "play again" / "change settings"). A restart is a
    * NEW session id, never a replay: the successor runs a fresh `create` under
-   * a NEW random seed; the source match's journal and reports are preserved.
+   * a NEW random seed; the source match's journal and bound reports are preserved.
    *
    * Resolution semantics:
    *  - settings/participants default to the source session's frozen snapshots
@@ -550,12 +549,12 @@ export class ExperienceService {
    *    context): an author's rule fix or grant change lands in the new match;
    *    a disabled or dangling script is the typed not_enabled error. The
    *    source's pinned rules snapshot is NOT replayed — new match, new rules.
-   *  - An ACTIVE source is finished first: interrupted with a public
-   *    «restarted» system step + frozen final report, the slot released
-   *    atomically with the report freeze (revision CAS — a concurrent action
+   *  - A slot-holding source is finished quietly: no public system step or
+   *    final report, and its unbound queue is purged with slot release
+   *    atomically (revision CAS — a concurrent action
    *    races to stale_revision, the caller retries); its still-pending
    *    effects are cancelled so nothing wakes into the dead match. A
-   *    completed/interrupted source is left untouched.
+   *    source with an already-released slot is left untouched.
    */
   async restartSession(sessionId: string, override?: {
     settings?: unknown;
@@ -575,7 +574,7 @@ export class ExperienceService {
 
     if (source.activeSlot !== null) {
       const finished = await this.reports.finish(sessionId, source.revision, {
-        finishDetail: "The user restarted the game — this match was ended.",
+        quiet: true,
       });
       if (!finished.ok) return finished;
       // Cancel still-pending effects of the dead match: timers would wake
@@ -935,15 +934,11 @@ export class ExperienceService {
   async getQueuedAttachment(
     sessionId: string,
   ): Promise<ExperienceResult<ExperienceQueuedAttachmentView | null>> {
-    const session = await this.stores.experiences.getSessionById(sessionId);
-    if (session === null) {
-      return err({ status: 404, code: "session_not_found", message: `Session '${sessionId}' not found` });
-    }
-    const attachment = await this.stores.experiences.getQueuedAttachmentForSession(sessionId);
-    if (attachment === null) {
-      return ok(null);
-    }
-    return ok(toQueuedAttachmentView(attachment));
+    return this.reports.getQueuedAttachment(sessionId);
+  }
+
+  clearReportQueue(...args: Parameters<ExperienceReportService["clearQueue"]>) {
+    return this.reports.clearQueue(...args);
   }
 
   /** Explicitly freeze the public journal frontier the user selected. */

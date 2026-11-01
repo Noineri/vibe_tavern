@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { createApp } from "../src/server/app-factory.js";
 import { DiceBindError } from "@vibe-tavern/db";
 import type { RuntimeApi } from "../src/api/contract/runtime-api.js";
+import { ChatGenerationRunAdapter } from "../src/api/adapters/chat-generation-run-adapter.js";
 
 /**
  * DICE-B11 send-path gap — HTTP/SSE-level contract for dice commit conflicts.
@@ -31,7 +32,11 @@ const SEND_BODY = { content: "roll for me", diceMode: "normal", pendingRevision:
 // RuntimeApi is decomposed per-feature by createApiRouter (createChatRoutes
 // (runtime.chat)), so the stub nests the send methods under `chat`.
 function runtimeWithSend(send: { sendMessage?: RuntimeApi["chat"]["sendMessage"]; sendMessageStream?: RuntimeApi["chat"]["sendMessageStream"] }): RuntimeApi {
-  return { chat: send } as unknown as RuntimeApi;
+  const runs = new ChatGenerationRunAdapter({
+    chats: { getById: async () => ({ id: "chat_1", characterId: "char_1", activeBranchId: "branch_1", mode: "rp", title: "Dice" }) },
+    characters: { getById: async () => ({ name: "Dice" }) },
+  } as unknown as ConstructorParameters<typeof ChatGenerationRunAdapter>[0]);
+  return { chat: { ...send, startChatGeneration: runs.startChatGeneration } } as unknown as RuntimeApi;
 }
 
 function postJson(url: string): RequestInit {

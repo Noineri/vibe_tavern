@@ -48,6 +48,7 @@ import { formatRelativeTime, summarizeCharacterChats, summarizeChatsByCharacter,
 import type { CharacterTab } from "../app-shell-types.js";
 import { CharacterChatsPanel } from "./character-chats-panel.js";
 import type { BranchActionsController } from "./character-chats-branches.js";
+import { CharacterActivityBadge } from "../sections/character-activity-badge.js";
 
 /** The slice of a character the browser reads — a list entry or a tab both fit. */
 export type RailBrowserCharacter = Pick<CharacterTab, "id" | "name" | "avatarAssetId" | "avatarExt" | "updatedAt">;
@@ -212,8 +213,11 @@ function CharactersScreen({
 							)}
 							onClick={() => onOpenCharacter(c.id)}
 						>
-							<span className={cn("flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg", selected ? "bg-accent text-on-accent" : "bg-s3 text-t2")}>
-								{avatarSrc ? <img className="h-full w-full object-cover" src={avatarSrc} alt={c.name} /> : initials(c.name)}
+							<span className="relative h-9 w-9 shrink-0">
+								<span className={cn("flex h-9 w-9 items-center justify-center overflow-hidden rounded-lg", selected ? "bg-accent text-on-accent" : "bg-s3 text-t2")}>
+									{avatarSrc ? <img className="h-full w-full object-cover" src={avatarSrc} alt={c.name} /> : initials(c.name)}
+								</span>
+								<CharacterActivityBadge characterId={c.id} />
 							</span>
 							{/* Name = user data (ellipsizes); line 2 = authored copy (wraps, never cut). */}
 							<span className="flex min-w-0 flex-1 flex-col">

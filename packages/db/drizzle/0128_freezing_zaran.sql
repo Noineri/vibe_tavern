@@ -1,0 +1,1 @@
+ALTER TABLE `copilot_profiles` ADD `source_builtin_id` text;

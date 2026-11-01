@@ -23,61 +23,19 @@
 import { z } from "zod";
 import { boundedJsonValue } from "./bounded-json.js";
 
-// ─── Enums (canonical — mirror packages/domain/src/platform-constants.ts) ────
-
-export const experienceCapabilitySchema = z.enum([
-  "participants",
-  "deterministic_random",
-  "model",
-  "rp_context",
-  "rp_attachment",
-]);
-
-export const experienceControllerSchema = z.enum(["human", "script", "model"]);
-
-export const experienceViewerKindSchema = z.enum([
-  "human",
-  "script",
-  "model",
-  "observer",
-]);
-
-export const experienceSessionStatusSchema = z.enum([
-  "active",
-  "completed",
-  "interrupted",
-]);
-
-/**
- * Reducer-output session status — a deliberate subset of session status: a
- * reducer may keep the game `active` or end it `completed`. `interrupted` is
- * host-only (an explicit user end recorded as a system transition), so a script
- * returning it is rejected before persistence.
- */
-export const experienceReducerStatusSchema = z.enum(["active", "completed"]);
-
-export const experienceEventVisibilitySchema = z.enum(["public", "private"]);
-
-export const experienceEffectStatusSchema = z.enum([
-  "pending",
-  "running",
-  "succeeded",
-  "failed",
-  "cancelled",
-  "unknown",
-]);
-
-export const experienceEffectKindSchema = z.enum(["model", "timer"]);
-
-export const experienceContextModeSchema = z.enum([
-  "none",
-  "current_branch",
-  "recent",
-  "summaries_recent",
-  "compact_summary",
-]);
-
-export const experienceStarterKindSchema = z.enum(["rules", "visual"]);
+import {
+  experienceCapabilitySchema,
+  experienceControllerSchema,
+  experienceViewerKindSchema,
+  experienceSessionStatusSchema,
+  experienceReducerStatusSchema,
+  experienceEventVisibilitySchema,
+  experienceEffectStatusSchema,
+  experienceEffectKindSchema,
+  experienceContextModeSchema,
+  experienceStarterKindSchema,
+} from "./interactive-enums.js";
+export * from "./interactive-enums.js";
 
 // ─── Bounds ──────────────────────────────────────────────────────────────────
 //
@@ -347,6 +305,7 @@ export const experienceActionSchema = z.object({
 export const experienceEventSchema = z.object({
   visibility: experienceEventVisibilitySchema,
   type: boundedId,
+  participantId: boundedId.optional(),
   detail: boundedPayload.optional(),
 });
 
@@ -681,6 +640,13 @@ export const experienceRestartRequestSchema = z.object({
 export const experienceReportQueueRequestSchema = z.object({
   expectedRevision: boundedRevision,
 });
+
+/** Clear only the selected scope's queue, without rewinding its frozen frontier. */
+export const experienceReportClearRequestSchema = z.object({
+  chatId: boundedId,
+  branchId: boundedId,
+  expectedRevision: boundedRevision,
+}).strict();
 
 // ─── Runtime request envelopes (IR-32 routes) ───────────────────────────────
 

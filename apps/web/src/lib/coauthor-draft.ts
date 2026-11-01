@@ -1,49 +1,19 @@
-/**
- * CA-15 — cross-session persistence of unapplied co-author proposals (the
- * "draft" that survives a page reload).
- *
- * The co-author turn store (`coauthor-turn-store.ts`) is deliberately ephemeral:
- * it holds a turn's tool activities in memory with no `persist` middleware,
- * because the backend does not persist tool calls onto the message record. The
- * consequence was that a page reload wiped any in-review proposal, so the user
- * lost the diff + Apply affordance and had to re-run the turn. CA-15 persists
- * just the FINALIZED proposed-producing activities (the subset `hasProposal`
- * derives from) to localStorage, keyed by chatId, and rehydrates them on boot.
- *
- * WHY ONLY THE FINALIZED SUBSET. Streaming placeholders and errors are
- * transient and carry no reviewable content. Persisting them would rehydrate a
- * dead "AI is editing…" state pointing at a stream that no longer exists. The
- * persisted set is exactly what `aggregateCoauthorProposal` consumes, so
- * rehydration reconstructs the same diff + Apply request with ZERO new UI —
- * Apply/Reject (which already clear the turn store) also clear the persisted
- * draft via the `clearTurn` → `clearDraft` hook.
- *
- * WHAT DOESN'T CLEAR IT. `clearTurn` is called only at turn-start, on Apply,
- * and on Reject — NOT on chat switch (verified in code; the store doc comment
- * is aspirational). So the turn store's per-chat dict already keeps a proposal
- * alive across chat switches in-memory; CA-15 additionally keeps it alive
- * across reloads. The two compose without conflict.
- *
- * VERSIONING. The envelope carries `_v`. A version mismatch on load (e.g.
- * after a schema change) discards the entry rather than seeding incompatible
- * data — the user simply sees no draft, same as before CA-15. Malformed JSON
- * is likewise discarded (best-effort: persistence is a convenience, never a
- * correctness constraint — the canonical card is the backend's source of truth).
- *
- * REHYDRATION CORRECTNESS. The reviewing diff is `canonical → proposed`, where
- * `canonical` is read LIVE from the freshly-loaded snapshot character. If the
- * card changed between the proposal and the reload, the diff base shifts —
- * which is the honest behavior (review the proposal against the current card).
- * Apply sends the full proposed document regardless, so it is self-contained.
- */
-import { coauthorLoreBundleSchema } from "@vibe-tavern/api-contracts";
+/** Server-owned Co-Author reviews (BR-4d). LocalStorage is a one-time CA-15
+ * migration source only; live/replayed tool activities are never browser PUTs.
+ * The producer commits canonical envelopes to agent_review_rounds before EOF;
+ * Apply/Reject resolution uses the ordered API lane and never auto-applies.
+ * The diff continues to compare the restored proposal against the current card. */
+import { buildCoauthorReviewEnvelope, coauthorReviewActivitySchema, type CoauthorReviewActivity, type CoauthorReviewEnvelope } from "@vibe-tavern/api-contracts";
 import type { CoauthorToolActivity } from "../stores/coauthor-turn-store.js";
 import { useCoauthorTurnStore } from "../stores/coauthor-turn-store.js";
+import { getCoauthorReview, putCoauthorReview, deleteCoauthorReview } from "../api/coauthor-review-api.js";
+import { isChatGenerationRunning } from "../api/chat-generation-api.js";
+import { clearCoauthorRemoteReview } from "./coauthor-editor-snapshot.js";
 
 const DRAFT_PREFIX = "vt:coauthor-draft:";
 const DRAFT_VERSION = 1;
 
-/** localStorage envelope — versioned so a future schema change can migrate/discard. */
+/** Legacy localStorage envelope, read only for successful one-time upload. */
 interface DraftEnvelope {
   _v: number;
   activities: unknown[];
@@ -55,23 +25,8 @@ interface DraftEnvelope {
  * subset is exactly what the aggregator consumes. Defensive: a value that
  * fails any clause is dropped on load (corruption / version-skew defense).
  */
-export function isFinalizedActivity(x: unknown): x is CoauthorToolActivity {
-  if (typeof x !== "object" || x === null) return false;
-  const a = x as Record<string, unknown>;
-  if (
-    a.status !== "done"
-    || typeof a.toolCallId !== "string"
-    || typeof a.toolName !== "string"
-  ) return false;
-  const profileOrGreeting =
-    (a.target === "profile" || a.target === "greeting")
-    && typeof a.proposed === "string"
-    && a.proposed.length > 0;
-  // CTX-L3: lore activities carry a typed cumulative bundle instead of the
-  // profile/greeting target+proposed pair. Validate the persisted JSON through
-  // the canonical contract schema before rehydrating it into the review store.
-  const lore = coauthorLoreBundleSchema.safeParse(a.loreBundle).success;
-  return profileOrGreeting || lore;
+export function isFinalizedActivity(x: unknown): x is CoauthorReviewActivity {
+  return coauthorReviewActivitySchema.safeParse(x).success;
 }
 
 /**
@@ -80,16 +35,7 @@ export function isFinalizedActivity(x: unknown): x is CoauthorToolActivity {
  * store's own upsert-merge semantics. Pure: no I/O.
  */
 export function finalizeForPersistence(activities: CoauthorToolActivity[]): CoauthorToolActivity[] {
-  // Map (not Set) so a later duplicate toolCallId OVERWRITES the value while
-  // preserving the first occurrence's POSITION — mirroring both the store's
-  // upsert-merge (later fields win) and `aggregateCoauthorProposal`'s
-  // finalizedActivities dedup. Map iteration is insertion order.
-  const byId = new Map<string, CoauthorToolActivity>();
-  for (const a of activities) {
-    if (!isFinalizedActivity(a)) continue;
-    byId.set(a.toolCallId, a);
-  }
-  return [...byId.values()];
+  return buildCoauthorReviewEnvelope(activities)?.activities ?? [];
 }
 
 /**
@@ -129,6 +75,7 @@ function key(chatId: string): string {
 }
 
 /**
+ * Legacy CA-15 writer, retained for migration fixtures; new turns never call it.
  * Persist a chat's activities (filtered to the finalized subset). If none
  * qualify, the key is removed instead. Best-effort: any localStorage failure
  * (quota / disabled / absent) is swallowed — the in-memory proposal still
@@ -160,7 +107,7 @@ export function loadDraft(chatId: string): CoauthorToolActivity[] | null {
   return parseDraft(raw);
 }
 
-/** Remove a chat's persisted draft (Apply / Reject / turn-start). No-op without localStorage. */
+/** Remove a migrated/resolved legacy key. Turn-start never calls this. */
 export function clearDraft(chatId: string): void {
   if (typeof localStorage === "undefined") return;
   try {
@@ -171,7 +118,7 @@ export function clearDraft(chatId: string): void {
 }
 
 /**
- * Load ALL persisted drafts (for boot rehydration). Iterates localStorage keys
+ * Inspect ALL legacy drafts (migration characterization). Iterates localStorage keys
  * with the draft prefix; returns a map keyed by chatId. Malformed / versioned /
  * empty entries are pruned so they don't linger. No-op without localStorage.
  */
@@ -214,14 +161,86 @@ export function loadAllDrafts(): Record<string, CoauthorToolActivity[]> {
   return out;
 }
 
-/**
- * Boot rehydration: seed the turn store with any persisted drafts from a
- * previous session. Merges into the existing dict (additive; on a fresh page
- * load the store is empty). Safe to call multiple times. No-op without
- * localStorage. Called once from app bootstrap (`app.tsx`).
- */
-export function rehydrateCoauthorDrafts(): void {
-  const drafts = loadAllDrafts();
-  if (Object.keys(drafts).length === 0) return;
-  useCoauthorTurnStore.setState((s) => ({ turnsByChat: { ...s.turnsByChat, ...drafts } }));
+/** Injectable boundaries; production uses the typed API and per-chat store. */
+export interface CoauthorReviewPersistenceDeps {
+  get: (id: string) => Promise<CoauthorReviewEnvelope | null>;
+  put: (id: string, envelope: CoauthorReviewEnvelope) => Promise<CoauthorReviewEnvelope>;
+  delete: (id: string) => Promise<void>;
+  isRunning: (id: string) => Promise<boolean>;
+  read: (id: string) => CoauthorToolActivity[] | undefined;
+  apply: (id: string, envelope: CoauthorReviewEnvelope | null) => void;
+  readLegacy: (id: string) => CoauthorToolActivity[] | null;
+  removeLegacy: (id: string) => void;
 }
+
+/** Ordered per-chat consumer lane. Only legacy migration writes a proposal;
+ * ordinary turns always recover the producer's final review, including no-op
+ * turns that must retain an older proposal. No cross-client CAS is claimed. */
+export class CoauthorReviewPersistence {
+  private readonly tails = new Map<string, Promise<unknown>>();
+  constructor(private readonly deps: CoauthorReviewPersistenceDeps) {}
+
+  private enqueue<T>(id: string, work: () => Promise<T>): Promise<T> {
+    const result = (this.tails.get(id) ?? Promise.resolve()).then(work);
+    const tail = result.catch(() => undefined);
+    this.tails.set(id, tail);
+    void tail.then(() => { if (this.tails.get(id) === tail) this.tails.delete(id); });
+    return result;
+  }
+
+  hydrate(id: string, isCurrent = () => true): Promise<void> {
+    return this.enqueue(id, async () => {
+      if (!isCurrent()) return;
+      const before = this.deps.read(id);
+      if (await this.deps.isRunning(id)) return;
+      let envelope = await this.deps.get(id);
+      if (!isCurrent() || this.deps.read(id) !== before) return;
+      const legacy = this.deps.readLegacy(id);
+      if (envelope === null && legacy !== null) {
+        // Recheck before the sole browser upload. A running producer owns the
+        // review; failure leaves the key intact so the next visit can retry.
+        if (await this.deps.isRunning(id) || !isCurrent() || this.deps.read(id) !== before) return;
+        const migration = buildCoauthorReviewEnvelope(legacy);
+        if (migration) envelope = await this.deps.put(id, migration);
+      }
+      this.deps.removeLegacy(id);
+      if (isCurrent() && this.deps.read(id) === before) this.deps.apply(id, envelope);
+    });
+  }
+
+  /** Resolve the exact offered proposal, not whatever a later turn produced.
+   * GET/DELETE is best-effort predecessor protection, not cross-client CAS. */
+  resolve(id: string, origin: readonly CoauthorToolActivity[]): Promise<void> {
+    return this.enqueue(id, async () => {
+      const before = this.deps.read(id);
+      if (await this.deps.isRunning(id)) throw new Error("Co-Author generation still owns this review");
+      const remote = await this.deps.get(id);
+      if (remote !== null && JSON.stringify(remote) !== JSON.stringify(buildCoauthorReviewEnvelope(origin))) {
+        if (this.deps.read(id) === before) this.deps.apply(id, remote);
+        return;
+      }
+      if (await this.deps.isRunning(id)) throw new Error("Co-Author generation still owns this review");
+      if (this.deps.read(id) !== before) return;
+      await this.deps.delete(id);
+      this.deps.removeLegacy(id);
+    });
+  }
+}
+
+export const coauthorReviews = new CoauthorReviewPersistence({
+  get: getCoauthorReview, put: putCoauthorReview, delete: deleteCoauthorReview,
+  isRunning: isChatGenerationRunning,
+  read: (id) => useCoauthorTurnStore.getState().turnsByChat[id],
+  apply: (id, envelope) => {
+    if (envelope === null) clearCoauthorRemoteReview(id);
+    useCoauthorTurnStore.setState((s) => {
+    const current = s.turnsByChat[id] ?? [];
+    if (envelope !== null && JSON.stringify(buildCoauthorReviewEnvelope(current)) === JSON.stringify(envelope)) return s;
+    // Keep the current turn's read/error cards; only reviewable proposals are
+    // replaced by the server round. Equal proposals keep their UI identity.
+    const reviewIds = new Set(envelope?.activities.map((a) => a.toolCallId));
+    return { turnsByChat: { ...s.turnsByChat, [id]: [...current.filter((a) => !isFinalizedActivity(a) && !reviewIds.has(a.toolCallId)), ...(envelope?.activities ?? [])] } };
+    });
+  },
+  readLegacy: loadDraft, removeLegacy: clearDraft,
+});

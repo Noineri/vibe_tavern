@@ -29,6 +29,7 @@ useDomEnv();
 const { act, renderHook, waitFor } = await import("@testing-library/react");
 const { useBootstrapStore } = await import("../../../stores/api-actions/bootstrap-actions.js");
 const { useProviderDataStore } = await import("../../../stores/provider-data-store.js");
+const { useAgentProfileModelStore } = await import("../../../stores/agent-profile-model-store.js");
 const { wireUiSettings } = await import("../../../../test/wire-fixtures.js");
 const {
 	getAgentHost,
@@ -49,12 +50,36 @@ type FetchImplementation = (
 
 let capturedCalls: Array<{ url: string; init?: RequestInit }> = [];
 
+const jsonResponse = (payload: unknown) =>
+	new Response(JSON.stringify(payload), { status: 200, headers: { "Content-Type": "application/json" } });
+
+// DR-8: the profile own-model rows the in-memory server below serves per
+// `${kind}:${profileId}` — seeded per test; absent = no own model.
+let profileModelRows: Record<string, { providerProfileId: string; modelName: string | null }> = {};
+
 function installFetch(): void {
 	capturedCalls = [];
 	globalThis.fetch = Object.assign(
 		mock<FetchImplementation>(async (input, init) => {
 			const url = input.toString();
 			capturedCalls.push({ url, init });
+			// DR-8: the own-model family — GET/PUT/DELETE against the in-memory
+			// rows; everything else keeps the kind-settings echo below.
+			const modelMatch = url.match(/\/api\/agent\/kinds\/([^/]+)\/profiles\/([^/]+)\/model$/);
+			if (modelMatch) {
+				const key = `${modelMatch[1]}:${modelMatch[2]}`;
+				const method = (init?.method ?? "GET").toUpperCase();
+				if (method === "PUT") {
+					const body = JSON.parse(String(init?.body ?? "{}")) as { providerProfileId?: string; modelName?: string | null };
+					profileModelRows[key] = { providerProfileId: body.providerProfileId ?? "", modelName: body.modelName ?? null };
+					return jsonResponse({ model: profileModelRows[key] });
+				}
+				if (method === "DELETE") {
+					delete profileModelRows[key];
+					return jsonResponse({ ok: true });
+				}
+				return jsonResponse({ model: profileModelRows[key] ?? null });
+			}
 			// Echo the PATCH body back as the updated row (the real server
 			// upserts and returns the row; the hook's action merges it).
 			const body = JSON.parse(String(init?.body ?? "{}")) as {
@@ -62,16 +87,13 @@ function installFetch(): void {
 				modelName?: string | null;
 			};
 			const kind = url.split("/api/agent/kinds/")[1]?.split("/")[0] ?? "unknown";
-			return new Response(
-				JSON.stringify({
+			return jsonResponse({
 					agentKind: kind,
 					providerProfileId: body.providerProfileId ?? null,
 					modelName: body.modelName ?? null,
 					defaultProfileId: null,
 					updatedAt: "2026-02-02T00:00:00.000Z",
-				}),
-				{ status: 200, headers: { "Content-Type": "application/json" } },
-			);
+				});
 		}),
 		{ preconnect: originalFetch.preconnect },
 	);
@@ -119,6 +141,10 @@ const hookOwner: AgentThreadOwner = { kind: "script", scriptId: "s-hook" };
 const hookSpy = mock((_ctx: AgentDefaultModelContext): AgentDefaultModelBinding => ({ providerProfileId: "p2", modelName: "m2" }));
 let unsubHookHost = (): void => {};
 let unsubDanglingHookHost = (): void => {};
+// DR-8: the own-model arm's fixture chat-target host + owner.
+const DR8_CHAT_KIND = "dr8-chat";
+let unsubDr8ChatHost = (): void => {};
+const dr8ChatOwner: AgentThreadOwner = { kind: "chat", chatId: "chat-1", branchId: "branch-1", agentKind: DR8_CHAT_KIND };
 
 beforeAll(async () => {
 	// Self-register the built-in script-owned hosts (module init side effect —
@@ -182,12 +208,40 @@ beforeAll(async () => {
 		recordProposalRenderers: {},
 		defaultModelBinding: () => ({ providerProfileId: "deleted-profile", modelName: "mX" }),
 	});
+	// DR-8: the chat-target fixture host (the own-model arm's gate — a
+	// script-target host must stay on today's path even when the caller
+	// passes an id by mistake). Registered once like the hosts above.
+	unsubDr8ChatHost = registerAgentHost({
+		kind: DR8_CHAT_KIND,
+		i18n: {
+			title: "agent_title",
+			kindLabel: "agent_kind_sidechat",
+			placeholder: "agent_input_placeholder",
+			loading: "agent_loading",
+			emptyTitle: "agent_title",
+		},
+		starterPromptKeys: [
+			"agent_starter_sidechat_recap",
+			"agent_starter_sidechat_feelings",
+			"agent_starter_sidechat_twists",
+			"agent_starter_sidechat_pacing",
+		],
+		toolKeys: [],
+		profileAssignment: { target: "chat" },
+		messageMarkup: "plain",
+		bufferSpecs: [],
+		transport: experienceTransport,
+		buildSendOptions: () => ({}),
+		recordProposalRenderers: {},
+	});
 });
 
 beforeEach(() => {
 	installFetch();
 	mock.clearAllMocks();
 	seedStores({});
+	profileModelRows = {};
+	useAgentProfileModelStore.setState({ models: {} });
 });
 
 afterEach(() => {
@@ -198,8 +252,10 @@ afterAll(() => {
 	globalThis.fetch = originalFetch;
 	unsubHookHost();
 	unsubDanglingHookHost();
+	unsubDr8ChatHost();
 	useBootstrapStore.setState({ data: null });
 	useProviderDataStore.setState({ profiles: [] });
+	useAgentProfileModelStore.setState({ models: {} });
 });
 
 describe("use-agent-model-binding — saved pair and fallback (SC-0e)", () => {
@@ -289,5 +345,89 @@ describe("use-agent-model-binding — descriptor hook (SC-0e)", () => {
 		const { result } = renderHook(() => useAgentModelBinding("sc0e-hook-dangling", hookOwner));
 		expect(result.current.providerProfileId).toBe("p1");
 		expect(result.current.model).toBe("m1");
+	});
+});
+
+// ── DR-8 (mockup §11, P5): the effective profile's own model ────────────
+// A chat-target host whose effective profile carries an own model: the
+// displayed pair IS the own binding (the pills always show the model that
+// will answer), a pill change PUTs the profile's model (never the kind
+// binding), the caption names the profile. No own model, a dangling own
+// provider, or a missing effective-profile id: exactly today's hook.
+
+describe("use-agent-model-binding — the profile's own model (DR-8)", () => {
+	it("an own model overrides the displayed pair and raises the caption", async () => {
+		profileModelRows[`${DR8_CHAT_KIND}:cprof-1`] = { providerProfileId: "p2", modelName: "m2" };
+		const { result } = renderHook(() => useAgentModelBinding(DR8_CHAT_KIND, dr8ChatOwner, "cprof-1"));
+		await waitFor(() => expect(result.current.providerProfileId).toBe("p2"));
+		expect(result.current.model).toBe("m2");
+		expect(result.current.models.map((m) => m.id)).toEqual(["m2"]);
+		// The caption is non-null (this file has no i18n provider, so t
+		// echoes the key verbatim — the interpolation is pinned in the
+		// settings/modal suites).
+		expect(result.current.ownModelCaption).toBe("agent_model_profile_caption");
+	});
+
+	it("a pill change PUTs the profile's model — never the kind binding", async () => {
+		profileModelRows[`${DR8_CHAT_KIND}:cprof-1`] = { providerProfileId: "p2", modelName: "m2" };
+		const { result } = renderHook(() => useAgentModelBinding(DR8_CHAT_KIND, dr8ChatOwner, "cprof-1"));
+		await waitFor(() => expect(result.current.providerProfileId).toBe("p2"));
+
+		act(() => {
+			result.current.handleProviderChange("p1", "m1");
+		});
+
+		const put = await waitFor(() => {
+			const call = capturedCalls.find(
+				(c) => c.url.endsWith("/model") && (c.init?.method ?? "GET").toUpperCase() === "PUT",
+			);
+			expect(call).toBeDefined();
+			return call!;
+		});
+		expect(put.url).toContain(`/api/agent/kinds/${DR8_CHAT_KIND}/profiles/cprof-1/model`);
+		expect(JSON.parse(String(put.init?.body))).toEqual({ providerProfileId: "p1", modelName: "m1" });
+		// The kind-binding PATCH never fired, and no kind-settings row exists.
+		expect(capturedCalls.some((c) => c.url.includes("/settings"))).toBe(false);
+		expect(useBootstrapStore.getState().data?.agentKindSettings?.[DR8_CHAT_KIND]).toBeUndefined();
+		// The displayed pair followed the optimistic write in the same frame.
+		expect(result.current.providerProfileId).toBe("p1");
+		expect(result.current.model).toBe("m1");
+	});
+
+	it("no own model → today's behavior: the kind pair resolves and a pill change PATCHes kind settings", async () => {
+		const { result } = renderHook(() => useAgentModelBinding(DR8_CHAT_KIND, dr8ChatOwner, "cprof-1"));
+		await waitFor(() => expect(result.current.providerProfileId).toBe("p1"));
+		expect(result.current.model).toBe("m1");
+		expect(result.current.ownModelCaption).toBeNull();
+
+		act(() => {
+			result.current.handleProviderChange("p2", "m2");
+		});
+
+		await waitFor(() =>
+			expect(capturedCalls.some((c) => c.url.includes(`/api/agent/kinds/${DR8_CHAT_KIND}/settings`))).toBe(true),
+		);
+	});
+
+	it("a dangling own provider falls through to the kind chain (the server's agent-own-model rule)", async () => {
+		profileModelRows[`${DR8_CHAT_KIND}:cprof-1`] = { providerProfileId: "deleted-provider", modelName: "mX" };
+		const { result } = renderHook(() => useAgentModelBinding(DR8_CHAT_KIND, dr8ChatOwner, "cprof-1"));
+		await waitFor(() => expect(result.current.providerProfileId).toBe("p1"));
+		expect(result.current.model).toBe("m1");
+		expect(result.current.ownModelCaption).toBeNull();
+	});
+
+	it("without the effective-profile id the arm never fires (script-target hosts stay byte-identical)", () => {
+		const { result } = renderHook(() => useAgentModelBinding(DR8_CHAT_KIND, dr8ChatOwner));
+		expect(result.current.providerProfileId).toBe("p1");
+		expect(result.current.ownModelCaption).toBeNull();
+		expect(capturedCalls.some((c) => c.url.includes("/model"))).toBe(false);
+	});
+
+	it("a chat-target id passed for a SCRIPT-target host still never fires the arm (the host gate)", () => {
+		const { result } = renderHook(() => useAgentModelBinding("experience", experienceOwner, "cprof-1"));
+		expect(result.current.providerProfileId).toBe("p1");
+		expect(result.current.ownModelCaption).toBeNull();
+		expect(capturedCalls.some((c) => c.url.includes("/model"))).toBe(false);
 	});
 });

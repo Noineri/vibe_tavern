@@ -25,7 +25,10 @@ beforeAll(async () => {
 	deps = {
 		chats: stores.chats, characters: stores.characters, messages: stores.messages,
 		traces: stores.traces, chatSummaries: stores.chatSummaries,
-		experienceCopilot: stores.experienceCopilot, presets: stores.presets, assembly,
+		experienceCopilot: stores.experienceCopilot,
+		// DR-4b: the branch-plan read for the <story_plan> section.
+		agentPlans: stores.agentPlans,
+		presets: stores.presets, assembly,
 	};
 });
 

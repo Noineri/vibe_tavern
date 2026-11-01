@@ -1,5 +1,5 @@
 import React from 'react';
-import { Globe, Brain, Crop, Dices, FileText, Flame, Grip, Images, Repeat, Send, Settings, Sparkles, Star, Volume2, VolumeX, Square, AudioLines, Play, Pause } from 'lucide-react';
+import { Globe, Brain, Crop, Dices, FileText, Film, Flame, Grip, Images, Repeat, Send, Settings, Sparkles, Star, Volume2, VolumeX, Square, AudioLines, Play, Pause } from 'lucide-react';
 
 // Props forwarded so call sites passing `className` (e.g. "h-5 w-5 text-t3")
 // actually apply — the previous `() => <svg/>` no-arg shape silently dropped
@@ -117,6 +117,15 @@ export const Ic = {
   clipboard:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="1.5" width="6" height="2.5" rx="0.5"/><path d="M10.5 2.5h2v12h-9v-12h2"/><path d="M5.5 8h5M5.5 11h3"/></svg>,
   // Checkmark in a circle — the Objective Tracker section icon (INS-2).
   checkCircle:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="8" cy="8" r="6"/><polyline points="5 8 7 10 11 6"/></svg>,
+  // Checklist — a check beside a three-line list (the mockup's ti-list-check).
+  // The story-plan proposal card's header glyph (DIRECTOR_MODE_DR-10a, mock
+  // §1/§6) — a plan under review, distinct from the objective card's target.
+  listCheck:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="1,4 3,6 6.2,2"/><line x1="8.5" y1="4" x2="15" y2="4"/><line x1="8.5" y1="8.5" x2="15" y2="8.5"/><line x1="8.5" y1="13" x2="15" y2="13"/></svg>,
+  // Layout list — a leading square with a line beside it and two full lines
+  // (the mockup's ti-layout-list reduced to the listCheck three-row rhythm).
+  // The tracker-scene proposal card's header glyph (DIRECTOR_MODE DR-10b,
+  // mock §6) — scene fields under review.
+  layoutList:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="1" width="4.5" height="4.5" rx="1"/><line x1="8" y1="3.25" x2="15" y2="3.25"/><line x1="1" y1="8.5" x2="15" y2="8.5"/><line x1="1" y1="13.5" x2="15" y2="13.5"/></svg>,
   // Dice / Fate Die (DICE-F6) — D20 hexagon outline with an inner triangle facet.
   dice:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M8 1.33 L13.67 4.67 L13.67 11.33 L8 14.67 L2.33 11.33 L2.33 4.67 Z"/><path d="M8 5 L11 10 L5 10 Z" strokeOpacity="0.45"/></svg>,
   // Progress ring — a faint full track with a partial arc drawn over it. The
@@ -158,6 +167,12 @@ export const Ic = {
   play: (props?: { className?: string }) => <Play size={13} strokeWidth={2} {...props} />,
   // Lucide `Pause` — the playing twin of `play`.
   pause: (props?: { className?: string }) => <Pause size={13} strokeWidth={2} {...props} />,
+  // Lucide `Film` — the director's film-strip glyph (DIRECTOR_MODE_PLAN DR-7,
+  // mockup §3's ti-movie; owner ruling 2026-10-27: Film, not Clapperboard).
+  // Used by the director's empty state (h-6 w-6, accent) and the OOC
+  // hand-off row icon; adopts through the registry's usual lucide path
+  // (native size/stroke, className passthrough).
+  film: (props?: { className?: string }) => <Film size={13} strokeWidth={2} {...props} />,
 };
 
 // Icon props actually used at call sites: `className` (any icon) and `direction`

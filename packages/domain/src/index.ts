@@ -11,6 +11,7 @@ export * from "./image-route.js";
 // the builtins via the explicit subpath `@vibe-tavern/domain/builtins`.
 export * from "./character-asset.js";
 export * from "./chat-json-config.js";
+export * from "./chat-generation-queue.js";
 export * from "./chat-notification.js";
 export * from "./coauthor-generation-settings.js";
 export * from "./coauthor-transport-capabilities.js";
@@ -28,8 +29,10 @@ export * from "./extract-thinking-tags.js";
 export * from "./generation-format.js";
 export * from "./experience-helpers.js";
 export * from "./experience-launch-context.js";
+export * from "./experience-message-report.js";
 export * from "./experience-payload-schema.js";
 export * from "./experience-random.js";
+export * from "./experience-report-lines.js";
 export * from "./experience-round-limits.js";
 export * from "./ids.js";
 export * from "./is-record.js";

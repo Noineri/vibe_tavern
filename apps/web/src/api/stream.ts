@@ -1,6 +1,6 @@
 import { getGatewayBaseUrl, getMobileToken } from "./client.js";
 import { appendTokenQuery } from "../lib/mobile-token.js";
-import { parseSSEStream } from "../lib/sse-parser.js";
+import { parseSSEStream, type ParseSSEStreamOptions } from "../lib/sse-parser.js";
 import type { ProviderErrorCategory, RegenerateOverride } from "@vibe-tavern/api-contracts";
 import { ProviderStreamError } from "./provider-stream-error.js";
 import type { ChatGenerationStatus, DiceMode } from "./types.js";
@@ -12,7 +12,11 @@ import { useSnapshotStore } from "../stores/snapshot-store.js";
 import type { GenerationMetadata } from "../lib/generation-metadata.js";
 
 export interface StreamOpts {
+  onGenerationContext?: ParseSSEStreamOptions["onGenerationContext"];
+  onUserMessageSaved?: ParseSSEStreamOptions["onUserMessageSaved"];
+  waitForStreamEnd?: boolean;
   signal?: AbortSignal;
+  onEventId?: (id: string) => boolean | void;
   onStatus: (status: ChatGenerationStatus) => void;
   onChunk: (delta: string) => void;
   onReasoningChunk?: (delta: string) => void;
@@ -33,18 +37,19 @@ export async function streamChatEndpoint(
   url: string,
   body: unknown,
   opts: StreamOpts,
+  method: "POST" | "GET" = "POST",
 ): Promise<{ finishReason: string; usage?: Record<string, number>; metrics?: unknown }> {
   const baseUrl = getGatewayBaseUrl();
   const token = getMobileToken();
   opts.onStatus("preparing");
 
   const response = await fetch(appendTokenQuery(`${baseUrl}${url}`), {
-    method: "POST",
+    method,
     headers: {
       "Content-Type": "application/json",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
-    body: JSON.stringify(body),
+    ...(method === "POST" ? { body: JSON.stringify(body) } : {}),
     signal: opts.signal,
   });
 
@@ -72,13 +77,17 @@ export async function streamChatEndpoint(
     const category = typeof errorObj?.details?.category === "string"
       ? (errorObj.details.category as ProviderErrorCategory)
       : "unknown";
-    throw new ProviderStreamError(message, category);
+    const code = errorObj?.code ?? (errBody as { code?: string } | null)?.code;
+    throw new ProviderStreamError(message, category, code);
   }
+
+  if (response.status === 204) { opts.onStatus("idle"); return { finishReason: "not-running" }; }
 
   opts.onStatus("streaming");
   return parseSSEStream({
     response,
     signal: opts.signal,
+    onEventId: opts.onEventId,
     onStatus: opts.onStatus,
     onChunk: opts.onChunk,
     onReasoningChunk: opts.onReasoningChunk,
@@ -89,7 +98,25 @@ export async function streamChatEndpoint(
     onToolResult: opts.onToolResult,
     onCoauthorModule: opts.onCoauthorModule,
     onGenerationMetadata: opts.onGenerationMetadata,
+    onGenerationContext: opts.onGenerationContext,
+    onUserMessageSaved: opts.onUserMessageSaved,
+    waitForStreamEnd: opts.waitForStreamEnd,
   });
+}
+
+/** One cursor gate for every GET replay consumer. Never re-POST on reconnect. */
+export function streamReplayEndpoint(url: string, after: number, opts: StreamOpts) {
+  if (!Number.isSafeInteger(after) || after < 0) throw new RangeError("Invalid replay cursor");
+  let cursor = after;
+  return streamChatEndpoint(`${url}?after=${after}`, undefined, {
+    ...opts,
+    onEventId: (id) => {
+      const seq = Number(id);
+      if (!Number.isSafeInteger(seq) || seq <= cursor) return false;
+      cursor = seq;
+      return opts.onEventId?.(id);
+    },
+  }, "GET");
 }
 
 /** Convenience: send message stream */

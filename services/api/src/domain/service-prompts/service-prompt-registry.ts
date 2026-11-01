@@ -35,7 +35,7 @@ export const SERVICE_PROMPT_ASSET_FILES: Record<ServicePromptFieldKey, string> =
   objective_generate_goals: "objective-generate-goals.md",
   objective_check: "objective-check.md",
   scene_generate: "scene-generate.md",
-  // bases (11)
+  // bases (12)
   coauthor_base: "coauthor/base.md",
   coauthor_summary: "coauthor/summary.md",
   copilot_base: "experience-copilot/base.md",
@@ -44,6 +44,7 @@ export const SERVICE_PROMPT_ASSET_FILES: Record<ServicePromptFieldKey, string> =
   script_agent_compaction: "agent-script/compaction.md",
   sidechat_ooc_base: "agent-sidechat/ooc.md",
   sidechat_ooc_digest: "agent-sidechat/ooc-digest.md",
+  sidechat_director_base: "agent-sidechat/director.md",
   copilot_user_flow: "experience-copilot/user-flow.md",
   interactive_rules: "interactive-rules.md",
   interactive_visual: "interactive-visual.md",

@@ -1924,6 +1924,8 @@ export interface ExperienceAction {
 export interface ExperienceEvent {
   visibility: ExperienceEventVisibility;
   type: string;
+  /** Optional actor id; report rendering resolves its label from the frozen roster. */
+  participantId?: string;
   detail?: unknown;
 }
 
@@ -2047,8 +2049,10 @@ export interface ExperienceEffect {
 export interface ExperienceReportEvent {
   /** Bounded event type id from the reducer (e.g. "round", "move", "score"). */
   type: string;
+  /** Optional actor id, independent of the human-readable detail payload. */
+  participantId?: string;
   /** Optional bounded detail payload — the script's prompt-efficient prose or
-   *  structured facts for this event. Rendered verbatim by the formatter. */
+   *  structured facts for this event. String details are prefixed with the actor label. */
   detail?: unknown;
 }
 
@@ -2066,6 +2070,8 @@ export interface ExperiencePublicReport {
   title: string;
   /** Optional one-line setup/context line (e.g. "Round 3 — X to move"). */
   summary?: string;
+  /** Frozen actor labels; absent on legacy report envelopes. */
+  participants?: ReadonlyArray<{ id: string; label: string }>;
   /** Ordered public events the Writer narrates as authoritative facts. */
   events: ReadonlyArray<ExperienceReportEvent>;
 }
@@ -2088,6 +2094,8 @@ export interface ExperienceReportSnapshot {
   title: string;
   /** Optional one-line summary, lifted from the report envelope. */
   summary?: string;
+  /** Frozen actor labels, lifted from the report envelope when present. */
+  participants?: ReadonlyArray<{ id: string; label: string }>;
   /** Public events the Writer narrates. */
   events: ReadonlyArray<ExperienceReportEvent>;
 }
@@ -2480,6 +2488,11 @@ export interface ObjectiveState {
   longTermGoal: ObjectiveLongTermGoal | null;
   /** Goals mode: flat list of independent short-term goals (one active at a time). */
   shortTermGoals: ObjectiveShortTermGoal[];
+  /** DR-3a (story-plan sync): the id of the branch whose plan currently drives
+   *  the goals (`null` = the tracker is NOT plan-driven — manual/foreign goals;
+   *  follow-back and reconcile skip it). Always present after
+   *  `normalizeObjectiveState`; in-memory literals may omit it (treated as null). */
+  planProjectedFromBranchId?: string | null;
   /** How often to auto-check completion (in qualifying assistant events). 0 = manual only. */
   autoCheckFrequency: number;
   /** Persisted qualifying assistant events accumulated since the last completed auto-check. */

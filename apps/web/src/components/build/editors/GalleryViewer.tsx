@@ -256,12 +256,13 @@ function MobileLightbox({
   onClose: () => void;
 }) {
   const { t } = useT();
-  const { scale, translate, isPinching, touchHandlers, handleTap } = useImageZoomPan();
+  const { containerRef, imageRef, imageStyle, touchHandlers, handleTap } = useImageZoomPan();
 
   useKeyDown("Escape", onClose);
 
   return (
     <div
+      ref={containerRef}
       className="fixed inset-0 z-[600] flex items-center justify-center bg-black/95"
       // touch-action none: see the matching comment in AvatarPanel's lightbox.
       style={{ touchAction: "none" }}
@@ -279,13 +280,11 @@ function MobileLightbox({
         <Icons.close />
       </button>
       <img
+        ref={imageRef}
         src={src}
         alt={alt}
         className="max-h-full max-w-full select-none object-contain"
-        style={{
-          transform: `scale(${scale}) translate(${translate.x}px, ${translate.y}px)`,
-          transition: isPinching ? "none" : "transform 0.15s ease-out",
-        }}
+        style={imageStyle}
         draggable={false}
         onClick={(e) => { e.stopPropagation(); handleTap(); }}
       />

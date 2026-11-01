@@ -192,6 +192,62 @@ describe("CopilotProfileStore agent_kind (AS-3)", () => {
   });
 });
 
+// ─── DR-7b: source_builtin_id (provenance) ───────────────────────────────
+// Create persists the duplicate's source; reads emit it (null = no
+// source); update NEVER writes it — the same immutability pin the
+// agent_kind describe above holds at the lowest layer.
+
+describe("CopilotProfileStore source_builtin_id (DR-7b)", () => {
+  test("create persists an explicit source; round-trip emits it", async () => {
+    const { store } = await mkStore();
+    const created = await store.create({ ...PAYLOAD, sourceBuiltinId: "builtin-director" });
+    expect(created.sourceBuiltinId).toBe("builtin-director");
+    expect((await store.getById(created.id))?.sourceBuiltinId).toBe("builtin-director");
+  });
+
+  test("create without a source stores null (no default — absent = no source)", async () => {
+    const { store } = await mkStore();
+    const created = await store.create(PAYLOAD);
+    expect(created.sourceBuiltinId).toBeNull();
+    expect((await store.getById(created.id))?.sourceBuiltinId).toBeNull();
+  });
+
+  test("a pre-DR-7b row (column omitted) reads as null — default-only migration", async () => {
+    const { store, db } = await mkStore();
+    await db
+      .insert(copilotProfiles)
+      .values({
+        id: "cprof_legacy",
+        name: "Legacy",
+        basePrompt: "Legacy prompt.",
+        toolSetJson: JSON.stringify({ write_buffer: true }),
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      })
+      .run();
+    expect((await store.getById("cprof_legacy"))?.sourceBuiltinId).toBeNull();
+  });
+
+  test("update never writes source_builtin_id (immutable after create)", async () => {
+    const { store, db } = await mkStore();
+    const created = await store.create({ ...PAYLOAD, sourceBuiltinId: "builtin" });
+    // The update data may carry the key (the loose store type allows it,
+    // like agentKind) — the store must ignore it, never re-point or clear.
+    const updated = await store.update(created.id, {
+      name: "Renamed",
+      sourceBuiltinId: "builtin-director",
+    });
+    expect(updated.name).toBe("Renamed");
+    expect(updated.sourceBuiltinId).toBe("builtin");
+    const raw = await db
+      .select({ sourceBuiltinId: copilotProfiles.sourceBuiltinId })
+      .from(copilotProfiles)
+      .where(eq(copilotProfiles.id, created.id))
+      .get();
+    expect(raw?.sourceBuiltinId).toBe("builtin");
+  });
+});
+
 // ─── ML-6: stored order (within one agent kind's list) ───────────────────
 
 // The ML-6 order lives WITHIN one kind's list (the master list is per

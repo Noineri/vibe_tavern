@@ -9,12 +9,11 @@
  *    localStorage round-trips. These need a DOM (happy-dom), so the file uses
  *    useDomEnv; the pure tests are unaffected by its presence.
  *
- * Plus an integration check that `rehydrateExperienceCopilotDrafts` seeds the
- * turn store from localStorage — the reload half of the contract. The
- * store→persistence half (`upsertActivity`/`clearTurn` → `saveDraft`/`clearDraft`)
- * is WIRED IN WAVE 4 and intentionally not tested here.
+ * Integration also drives real stores and RPC/fetch: server reload, legacy
+ * upload, degraded anchors and store→PUT/DELETE synchronization (BR-2c).
  */
-import { describe, it, expect, beforeEach } from "bun:test";
+import { describe, it, expect, beforeEach, afterAll } from "bun:test";
+import type { AgentReviewEnvelope } from "@vibe-tavern/api-contracts";
 import { useDomEnv } from "../../test/dom-env.js";
 import {
 	isFinalizedActivity,
@@ -34,6 +33,14 @@ import { EMPTY_REVIEW_ROUND, useAgentReviewRoundStore, type AgentReviewRound } f
 import type { AgentToolActivity } from "../stores/agent-turn-store.js";
 
 useDomEnv();
+const originalFetch = globalThis.fetch;
+const originalTurns = useAgentTurnStore.getState();
+const originalRounds = useAgentReviewRoundStore.getState();
+afterAll(() => {
+  globalThis.fetch = originalFetch;
+  useAgentTurnStore.setState(originalTurns, true);
+  useAgentReviewRoundStore.setState(originalRounds, true);
+});
 
 function rulesActivity(toolCallId: string, proposed: string, summary = "Made rules assertive."): AgentToolActivity {
 	return { toolCallId, toolName: "write_buffer", status: "done", target: "rules", proposed, summary };
@@ -254,14 +261,26 @@ describe("experience-copilot-draft — localStorage I/O", () => {
 });
 
 describe("experience-copilot-draft — store rehydration (the reload contract)", () => {
+  let reviews: Map<string, AgentReviewEnvelope>;
 
-	beforeEach(() => {
+  beforeEach(() => {
+    globalThis.fetch = originalFetch;
+    reviews = new Map();
+    globalThis.fetch = (async (input, init) => {
+      const path = new URL(String(input), "http://gateway.test").pathname;
+      if (path.endsWith("/api/agent-runs")) return Response.json([]);
+      const id = path.match(/\/experience-copilot\/([^/]+)\/review$/)?.[1];
+      if (!id) throw new Error(`Unexpected draft request: ${path}`);
+      if (init?.method === "PUT") reviews.set(id, JSON.parse(String(init.body)));
+      if (init?.method === "DELETE") { reviews.delete(id); return Response.json({ ok: true }); }
+      return Response.json(reviews.get(id) ?? null);
+    }) as typeof fetch;
 		localStorage.clear();
 		useAgentTurnStore.setState({ turnsByThread: {} });
 		useAgentReviewRoundStore.setState({ roundsByThread: {} });
 	});
 
-	it("rehydrateExperienceCopilotDrafts seeds BOTH stores from localStorage (the reload)", () => {
+  it("rehydrateExperienceCopilotDrafts uploads legacy data and seeds BOTH stores", async () => {
 		// Simulate a previous session having persisted a proposal + review round.
 		const round: AgentReviewRound = {
 			snapshots: [{ id: 1, rules: RULES_A, visual: VISUAL_A }],
@@ -278,38 +297,66 @@ describe("experience-copilot-draft — store rehydration (the reload contract)",
 		// Fresh page load: both stores start empty.
 		useAgentTurnStore.setState({ turnsByThread: {} });
 		useAgentReviewRoundStore.setState({ roundsByThread: {} });
-		rehydrateExperienceCopilotDrafts();
+    await rehydrateExperienceCopilotDrafts("thread_1");
 		const acts = useAgentTurnStore.getState().getActivities("experience", "thread_1");
 		expect(acts.map((a) => a.toolCallId)).toEqual(["c1", "c2"]);
 		expect(acts[0].proposed).toBe(RULES_A);
-		expect(useAgentReviewRoundStore.getState().roundsByThread["thread_1"]).toEqual(round);
-	});
+    expect(useAgentReviewRoundStore.getState().roundsByThread["thread_1"]).toEqual(round);
+    expect(reviews.get("thread_1")!.round).toEqual(round);
+    expect(loadDraft("thread_1")).toBeNull();
+  });
 
-	it("rehydrateExperienceCopilotDrafts is a no-op when nothing is persisted", () => {
+  it("rehydrateExperienceCopilotDrafts is a no-op for other threads when nothing is persisted", async () => {
 		useAgentTurnStore.setState({ turnsByThread: { thread_x: [rulesActivity("c9", RULES_A)] } });
 		const before = useAgentTurnStore.getState().turnsByThread;
-		rehydrateExperienceCopilotDrafts();
+    await rehydrateExperienceCopilotDrafts("empty_thread");
 		// Merge of {} is a no-op → dict reference unchanged.
 		expect(useAgentTurnStore.getState().turnsByThread).toBe(before);
 	});
 
-	it("syncPersistedCopilotRound mirrors both stores into the key (the write side)", () => {
+  it("syncPersistedCopilotRound mirrors both stores into the API and deletes a cleared round", async () => {
+    await rehydrateExperienceCopilotDrafts("write_thread");
 		// A pending proposal + a half-reviewed round in the stores.
 		useAgentTurnStore.setState({
-			turnsByThread: { thread_1: [rulesActivity("c1", RULES_A)] },
+      turnsByThread: { write_thread: [rulesActivity("c1", RULES_A)] },
 		});
-		useAgentReviewRoundStore.getState().pushSnapshot("experience", "thread_1", { rules: RULES_A, visual: VISUAL_A });
-		useAgentReviewRoundStore.getState().setAcceptedHunks("experience", "thread_1", "rules", [0]);
-		syncPersistedCopilotRound("thread_1");
-		const back = loadDraft("thread_1");
+    useAgentReviewRoundStore.getState().pushSnapshot("experience", "write_thread", { rules: RULES_A, visual: VISUAL_A });
+    useAgentReviewRoundStore.getState().setAcceptedHunks("experience", "write_thread", "rules", [0]);
+    await syncPersistedCopilotRound("write_thread");
+    const back = reviews.get("write_thread");
 		expect(back?.activities.map((a) => a.toolCallId)).toEqual(["c1"]);
 		expect(back?.round?.snapshots).toHaveLength(1);
 		expect(back?.round?.acceptedRules).toEqual([0]);
 
 		// Once both sides resolve (activities cleared, no dangling), the key goes.
 		useAgentTurnStore.setState({ turnsByThread: {} });
-		useAgentReviewRoundStore.getState().resetRound("experience", "thread_1");
-		syncPersistedCopilotRound("thread_1");
-		expect(loadDraft("thread_1")).toBeNull();
-	});
+    useAgentReviewRoundStore.getState().resetRound("experience", "write_thread");
+    await syncPersistedCopilotRound("write_thread");
+    expect(reviews.has("write_thread")).toBe(false);
+  });
+
+  it("reload recovers a server-only round after both browser stores were discarded", async () => {
+    const round: AgentReviewRound = { ...EMPTY_REVIEW_ROUND, snapshots: [{ id: 1, rules: RULES_A, visual: VISUAL_A }], nextSnapshotId: 2, acceptedRules: [0], dismissedVisual: [1], rulesKey: `${RULES_A}\0${RULES_B}`, dangling: { visual: "Pending", baseRules: RULES_A, baseVisual: VISUAL_A } };
+    const saved: AgentReviewEnvelope = { _v: 2, activities: [rulesActivity("reload", RULES_B)], round };
+    reviews.set("server_only", saved);
+    await rehydrateExperienceCopilotDrafts("server_only");
+    useAgentTurnStore.setState({ turnsByThread: {} });
+    useAgentReviewRoundStore.setState({ roundsByThread: {} });
+    await rehydrateExperienceCopilotDrafts("server_only");
+    expect(useAgentTurnStore.getState().getActivities("experience", "server_only")).toEqual(saved.activities);
+    expect(useAgentReviewRoundStore.getState().roundsByThread.server_only).toEqual(round);
+    expect(localStorage.length).toBe(0);
+  });
+
+  for (const version of ["v1", "malformed-round"] as const) {
+    it(`migrates ${version} without inventing a review anchor`, async () => {
+      const id = `legacy_${version}`;
+      localStorage.setItem(`vt:experience-copilot-draft:${id}`, JSON.stringify({ _v: version === "v1" ? 1 : 2, activities: [rulesActivity("legacy", RULES_A)], round: { snapshots: "bad" } }));
+      await rehydrateExperienceCopilotDrafts(id);
+      expect(reviews.get(id)!.round).toBeNull();
+      expect(useAgentTurnStore.getState().getActivities("experience", id)).toHaveLength(1);
+      expect(useAgentReviewRoundStore.getState().roundsByThread[id]?.snapshots ?? []).toEqual([]);
+      expect(loadDraft(id)).toBeNull();
+    });
+  }
 });

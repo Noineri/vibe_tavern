@@ -54,7 +54,7 @@ const image: Attachment = { id: "image", assetId: "asset-image", name: "a.png", 
 function seed(attachments: Attachment[]) {
   useSnapshotStore.getState().ingestSnapshot({ messages: [{
     id: brandId<MessageId>("message"), chatId: brandId<ChatId>("chat"), branchId: brandId<ChatBranchId>("branch"), role: "user", authorType: "user", position: 0,
-    content: "Read this", state: "complete", createdAt: "0", updatedAt: "0", variants: [],
+    content: "Read this", state: "complete", createdAt: "0", updatedAt: "0", tokenCount: 0, variants: [],
     selectedVariantIndex: null, modelId: null, sceneTracker: null, coauthorModuleId: null, coauthorSkillId: null, attachments,
   } satisfies AppMessage] });
 }

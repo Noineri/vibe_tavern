@@ -497,11 +497,16 @@ function hookArgs(over: { threadId?: string | null } = {}) {
       isSendingRef: { current: false },
       abortRef: { current: null },
       setIsSending: mock(() => {}),
-      setPendingText: mock(() => {}),
-      setPendingReasoning: mock(() => {}),
+      // LAG-3: the live-stream store's clear — never buffered in this
+      // suite (no stream runs here), so the stub only satisfies the
+      // contract (the LAG-2 flush-handle note below).
+      clearLiveStreamText: mock(() => {}),
       setPendingAskAnswer: mock(() => {}),
       setPendingPermissionAnswer: mock(() => {}),
       setTurnFailure: mock(() => {}),
+      // LAG-2: the controller's flush handle — never buffered in this suite
+      // (no stream runs here), so the stub only satisfies the contract.
+      flushDeltaBuffer: mock(() => {}),
     },
   };
 }

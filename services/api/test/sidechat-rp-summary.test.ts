@@ -18,7 +18,7 @@ import { estimateHistoryTokens } from "../src/domain/agent/agent-prompt.js";
 import { syncBeforeUserMessage, type RpSyncDeps } from "../src/domain/sidechat/rp-sync.js";
 import {
 	assembleSidechatPrompt,
-} from "../src/domain/sidechat/sidechat-stream.js";
+} from "../src/domain/sidechat/sidechat-assembly.js";
 import {
 	loadSidechatContext,
 	type SidechatContextDeps,
@@ -69,6 +69,12 @@ beforeAll(async () => {
 		traces: stores.traces,
 		chatSummaries: stores.chatSummaries,
 		experienceCopilot: stores.experienceCopilot,
+		// DR-4b: the branch-plan read for the <story_plan> section (the loader
+		// deps gained it with DR-4b; this suite's fixture had lagged behind —
+		// the plan stays EMPTY throughout, so the section stays null exactly
+		// as this suite's assertions always pinned).
+		agentPlans: stores.agentPlans,
+		presets: stores.presets,
 		assembly,
 	};
 	syncDeps = {

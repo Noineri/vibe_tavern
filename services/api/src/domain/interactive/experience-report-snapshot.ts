@@ -18,11 +18,11 @@
  *     assembly — a single bad attachment must not break the user's RP turn.
  */
 
-import type { ExperienceReportSnapshot } from "@vibe-tavern/domain";
+import { isRecord, type ExperiencePublicReport, type ExperienceReportEvent, type ExperienceReportSnapshot } from "@vibe-tavern/domain";
 import type { ExperienceAttachmentRow } from "@vibe-tavern/db";
 
 /** A minimal structural check on the parsed `publicEventsJson` envelope. */
-function isPublicReportEnvelope(value: unknown): value is { title: string; summary?: string; events: unknown[] } {
+function isPublicReportEnvelope(value: unknown): value is { title: string; summary?: string; participants?: unknown; events: unknown[] } {
   if (typeof value !== "object" || value === null) return false;
   const rec = value as Record<string, unknown>;
   if (typeof rec.title !== "string") return false;
@@ -31,12 +31,27 @@ function isPublicReportEnvelope(value: unknown): value is { title: string; summa
   return true;
 }
 
+/** The one public-roster projection for report writes and defensive reads. */
+export function readReportParticipants(value: unknown): ExperiencePublicReport["participants"] {
+  if (!Array.isArray(value)) return undefined;
+  const participants: { id: string; label: string }[] = [];
+  for (const participant of value) {
+    if (!isRecord(participant) || typeof participant.id !== "string" || typeof participant.label !== "string") continue;
+    participants.push({ id: participant.id, label: participant.label });
+  }
+  return participants;
+}
+
 /** Coerce one parsed event into the snapshot shape (type must be a string). */
-function coerceEvent(event: unknown): { type: string; detail?: unknown } | null {
+function coerceEvent(event: unknown): ExperienceReportEvent | null {
   if (typeof event !== "object" || event === null) return null;
   const rec = event as Record<string, unknown>;
   if (typeof rec.type !== "string") return null;
-  return rec.detail !== undefined ? { type: rec.type, detail: rec.detail } : { type: rec.type };
+  return {
+    type: rec.type,
+    ...(typeof rec.participantId === "string" ? { participantId: rec.participantId } : {}),
+    ...(rec.detail !== undefined ? { detail: rec.detail } : {}),
+  };
 }
 
 /**
@@ -59,16 +74,18 @@ export function storeAttachmentToReportSnapshot(
     return null;
   }
   if (!isPublicReportEnvelope(parsed)) return null;
-  const events: { type: string; detail?: unknown }[] = [];
+  const events: ExperienceReportEvent[] = [];
   for (const raw of parsed.events) {
     const coerced = coerceEvent(raw);
     if (coerced) events.push(coerced);
   }
+  const participants = readReportParticipants(parsed.participants);
   return {
     kind: attachment.kind,
     sessionRevision: attachment.sessionRevision,
     title: parsed.title,
     ...(parsed.summary !== undefined ? { summary: parsed.summary } : {}),
+    ...(participants !== undefined ? { participants } : {}),
     events,
   };
 }

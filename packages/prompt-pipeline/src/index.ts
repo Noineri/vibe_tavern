@@ -23,7 +23,8 @@ export { buildAssemblyVariableContext } from "./assembly-variable-context.js";
 export { MacroVariableScope } from "./macro-variable-scope.js";
 export { PROMPT_LAYER_ID, PROMPT_LAYER_PRIORITY, PROMPT_LAYER_SOURCE_TYPE, PROMPT_FORMAT, createLoreLayerId } from "./prompt-layer-constants.js";
 export { formatSceneHistory, escapeXml, type SceneInjectionEntry, type SceneInjectionFormat } from "./scene-injection.js";
-export { setTokenCountFn, setModelHint, estimateMessageArrayTokens, findSafeCompactionBoundary, planHistoryCompaction, estimateTokens } from "./compaction.js";
+export { setTokenCountFn, setModelHint, setSeparatorSideFn, estimateMessageArrayTokens, findSafeCompactionBoundary, planHistoryCompaction, estimateTokens, type SeparatorSide } from "./compaction.js";
+export { countHistoryPieces, countHistoryTokens, formatHistoryPiece, formatRecentMessages } from "./history-token-count.js";
 // ─── Experience model-effect prompt (IR-41, Wave 4) ───────────────────────────
 // Pure frozen-RP-context construction + budget reduction, and fixed-order model
 // prompt assembly → AssemblePromptResponse. No I/O; the experience services

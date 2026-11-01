@@ -9,7 +9,7 @@ import { installRadixPopoverSeam } from "../../../../../test/radix-popover-seam.
 import { installToggleSeam } from "../../../../../test/toggle-seam.js";
 import { expectReviewOutcomeFixture, type ReviewOutcomeFixture } from "../../../../../test/review-outcome-fixtures.js";
 import type { AgentPlan, ExperienceCopilotContextLink, ExperienceCopilotContextMetrics, ExperienceCopilotMessageWire, ExperienceCopilotThreadWire } from "@vibe-tavern/api-contracts";
-import { experienceCopilotStreamRequestSchema } from "@vibe-tavern/api-contracts";
+import { experienceCopilotStreamRequestSchema, agentReviewEnvelopeSchema, buildAgentReviewEnvelope } from "@vibe-tavern/api-contracts";
 import { useAgentReviewOutcomeStore } from "../../../../stores/agent-review-outcome-store.js";
 import { useProviderDataStore } from "../../../../stores/provider-data-store.js";
 import { useSnapshotStore } from "../../../../stores/snapshot-store.js";
@@ -112,6 +112,13 @@ function makeDigest(threadId: string): ExperienceCopilotMessageWire {
 const fetchRouter = mock(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
   const path = new URL(String(input), "http://gateway.test").pathname;
   const method = (init?.method ?? "GET").toUpperCase();
+  if (method === "GET" && path.endsWith("/api/agent-runs")) return jsonResponse([]);
+  const reviewId = path.match(/\/api\/experience-copilot\/([^/]+)\/review$/)?.[1];
+  if (reviewId) {
+    if (method === "PUT") serverReviews.set(reviewId, JSON.parse(String(init?.body)));
+    if (method === "DELETE") { serverReviews.delete(reviewId); return jsonResponse({ ok: true }); }
+    return jsonResponse(serverReviews.get(reviewId) ?? null);
+  }
   if (method === "GET" && /\/api\/experience-copilot\/script\/[^/]+\/active$/.test(path)) {
     return jsonResponse(router.activeThread);
   }
@@ -214,6 +221,7 @@ function apiCalls(
 }
 
 const streamCalls = () => apiCalls("POST", /\/api\/experience-copilot\/[^/]+\/stream$/);
+let serverReviews = new Map<string, unknown>();
 
 // Markdown is heavy and its internals are pinned elsewhere; the shell test
 // cares only that message text reaches the list.
@@ -428,10 +436,11 @@ function hasHiddenClass(el: HTMLElement): boolean {
 }
 
 beforeEach(() => {
+  serverReviews = new Map();
   mobileOverride = false;
   useAgentTurnStore.setState({ turnsByThread: {}, todoByThread: {} });
   useAgentReviewOutcomeStore.setState({ outcomesByThread: outcomesBeforeShellSuite, supersededByThread: supersededBeforeShellSuite });
-  // The review round + the persisted localStorage draft now SURVIVE shell
+  // The review round + the persisted server review now SURVIVE shell
   // unmounts (the whole point of the round store) — reset both, or a
   // previous test's hanging review leaks into the next mount.
   useAgentReviewRoundStore.setState({ roundsByThread: {} });
@@ -2729,7 +2738,7 @@ describe("ExperienceCopilotShell — round survives unmount/remount (the hanging
     expect(second.container.querySelector<HTMLButtonElement>(".cm-copilotDiffAccept")!.dataset.hunkId).toBe("1");
   });
 
-  it("restores the round after a full reload path (localStorage envelope v2)", async () => {
+  it("restores the round after a full reload path (server envelope v2)", async () => {
     // Session 1: proposal lands, one hunk accepted.
     const onRulesChange = mock();
     const first = renderShell({ rulesCode: BASE, onRulesChange });
@@ -2760,21 +2769,53 @@ describe("ExperienceCopilotShell — round survives unmount/remount (the hanging
     await waitFor(() => expect(onRulesChange).toHaveBeenCalledWith(HYBRID));
 
     // F5: the shell unmounts first, THEN both in-memory stores die with the
-    // page; only the localStorage draft remains. (Unmounting before the wipe
+    // page; only the server review remains. (Unmounting before the wipe
     // matters: a still-mounted shell's sync effect would see the emptied
-    // stores and CLEAR the persisted key — on a real reload nothing is
+    // stores and DELETE the persisted row — on a real reload nothing is
     // mounted when the stores die.)
     first.unmount();
     useAgentTurnStore.setState({ turnsByThread: {} });
     useAgentReviewRoundStore.setState({ roundsByThread: {} });
 
-    // Fresh page load: the shell's mount effect rehydrates from localStorage.
+    // Fresh page load: hydration reads the server, with no browser draft key.
     const second = renderShell({ rulesCode: HYBRID, onRulesChange: mock() });
     await flushSessionLoad();
 
     await waitFor(() => expect(second.getByTestId("copilot-review-bar")).toBeDefined());
     await waitFor(() => expect(second.container.querySelectorAll(".cm-copilotDiffAccept")).toHaveLength(1));
     expect(second.container.querySelector<HTMLButtonElement>(".cm-copilotDiffAccept")!.dataset.hunkId).toBe("1");
+  });
+
+  it("flushes prior hunk progress before POST and persists exactly one new checkpoint after a no-proposal turn", async () => {
+    const id = "server-review-ordered-turn";
+    const seed = buildAgentReviewEnvelope(null, [{ toolCallId: "prior", toolName: "write_buffer", status: "done", target: "rules", proposed: PROPOSED }], { rules: BASE, visual: "" })!;
+    serverReviews.set(id, seed);
+    router.newSession = thread(id);
+    router.holdStreamOpen = true;
+    const utils = renderShell({ rulesCode: BASE });
+    try {
+      await flushSessionLoad();
+      await waitFor(() => expect(utils.container.querySelectorAll(".cm-copilotDiffAccept")).toHaveLength(2));
+      fireEvent.click(utils.container.querySelector<HTMLButtonElement>(".cm-copilotDiffAccept")!);
+      await waitFor(() => expect(utils.container.querySelectorAll(".cm-copilotDiffAccept")).toHaveLength(1));
+      fireEvent.change(utils.container.querySelector("textarea")!, { target: { value: "explain the remaining change" } });
+      fireEvent.click(utils.getByTestId("copilot-send-btn"));
+      await waitFor(() => expect(streamCalls()).toHaveLength(1));
+      const beforeFinish = agentReviewEnvelopeSchema.parse(serverReviews.get(id));
+      expect(beforeFinish.round!.acceptedRules).toEqual([0]);
+      expect(beforeFinish.round!.snapshots).toHaveLength(1);
+      expect(useAgentReviewRoundStore.getState().roundsByThread[id]!.snapshots).toHaveLength(2);
+      await act(async () => { const release = router.releaseStream; router.releaseStream = null; release?.(); });
+      await waitFor(() => expect(agentReviewEnvelopeSchema.parse(serverReviews.get(id)).round!.snapshots).toHaveLength(2));
+      const settled = agentReviewEnvelopeSchema.parse(serverReviews.get(id));
+      expect(settled.activities).toEqual([]);
+      expect(settled.round!.acceptedRules).toEqual([0]);
+      expect(settled.round!.dangling!.baseRules).toBe(BASE);
+      expect(localStorage.getItem(`vt:experience-copilot-draft:${id}`)).toBeNull();
+    } finally {
+      await act(async () => { const release = router.releaseStream; router.releaseStream = null; release?.(); });
+      utils.unmount();
+    }
   });
 });
 

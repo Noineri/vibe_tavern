@@ -8,10 +8,14 @@ import * as schema from './db-schema.js';
 import { runBootDataPasses } from './boot-data-passes.js';
 import {
   errorMessage,
+  errorMessageChain,
+  hasPendingMigrations,
+  healPartialMigrations,
   preBackfillPendingRebuilds,
   quoteSqlIdentifier,
   repairSkippedRebuilds,
   splitMigrationStatements,
+  stageRenameSafeMigrationsFolder,
   stampMigrationAtWhen,
   type MigrationJournal,
 } from './db-migration-repair.js';
@@ -655,92 +659,6 @@ async function ensureAlterColumns(sqlite: Database, migrationsFolder: string): P
   }
 }
 
-/**
- * Heal partial migration state caused by previous runs where ensureAlterColumns()
- * added columns before migrate() ran, leaving the migration unstamped.
- *
- * Splits each unstamped migration's SQL into individual statements, runs each
- * one tolerating "already exists" / "duplicate column" errors, and stamps the
- * migration hash so the subsequent migrate() call skips it.
- */
-async function healPartialMigrations(sqlite: Database, migrationsFolder: string): Promise<void> {
-  const journalPath = resolve(migrationsFolder, 'meta', '_journal.json');
-  if (!await Bun.file(journalPath).exists()) return;
-  const journal = JSON.parse(await Bun.file(journalPath).text());
-
-  // Drizzle's migrator resumes from a single high-water mark, NOT by hash
-  // membership: SQLiteSyncDialect.migrate reads the ONE row with the greatest
-  // created_at and runs every journal entry whose folderMillis (`when`) exceeds
-  // it. So "applied" here means `when <= MAX(created_at)` — the same notion.
-  // Checking hash membership instead is a trap: when a migration is regenerated
-  // with identical SQL (identical hash) but a new `when` — e.g. a branch-merge
-  // reconciliation renumbering/re-dating it — existing DBs keep the stamp at the
-  // OLD created_at. The hash is "present", so a hash-based heal would skip
-  // re-stamping, yet that orphan row's created_at sits below the new
-  // folderMillis, so migrate() re-runs the migration and dies on "table already
-  // exists". Mirror drizzle's watermark exactly to stay self-consistent with it.
-  let watermark = 0;
-  try {
-    const row = sqlite.prepare('SELECT created_at FROM __drizzle_migrations ORDER BY created_at DESC LIMIT 1').get() as { created_at: number } | undefined;
-    watermark = row ? Number(row.created_at) : 0;
-  } catch {
-    return; // No meta table yet — nothing to heal
-  }
-
-  let healed = 0;
-  for (const entry of journal.entries) {
-    if (entry.when <= watermark) continue; // at/below the watermark — migrate() will skip it too
-
-    const sqlPath = resolve(migrationsFolder, `${entry.tag}.sql`);
-    const sqlContent = await Bun.file(sqlPath).text();
-    const hash = new Bun.CryptoHasher('sha256').update(sqlContent).digest('hex');
-
-    // Rebuild migrations (CREATE TABLE `__new_<x>` ... DROP ... RENAME) must
-    // NEVER run through this statement-by-statement path. It is not atomic,
-    // and a partial run leaves a stray `__new_<x>` table that, on the next
-    // heal attempt, makes the rebuild copy from / drop the wrong table and
-    // destroys row data (`lorebooks` was emptied this way in June 2026: the
-    // rebuild healed piecemeal, `lore_entries` survived only because a
-    // DROP TABLE does not fire FK cascade). Rebuilds are only safe via
-    // migrate()'s own (transactional) execution. If that failed, leave this
-    // migration unstamped and let the retry migrate() below surface a real
-    // error — a loud boot failure is strictly better than silent data loss.
-    const isRebuild = /CREATE\s+TABLE\s+[`"']?__new_/i.test(sqlContent);
-    if (isRebuild) {
-      console.warn(`[db] Heal: migration ${entry.tag} is a table-rebuild — not safely retryable piecemeal, skipping heal (letting migrate() handle it).`);
-      continue;
-    }
-
-    const statements = splitMigrationStatements(sqlContent);
-
-    let allOk = true;
-    for (const stmt of statements) {
-      try {
-        sqlite.exec(stmt + ';');
-      } catch (err: unknown) {
-        const msg = errorMessage(err).toLowerCase();
-        if (msg.includes('already exists') || msg.includes('duplicate column')) {
-          // Tolerate — column/table already present from a previous partial run
-        } else {
-          console.error(`[db] Heal: unexpected error in ${entry.tag}:`, errorMessage(err) || err);
-          allOk = false;
-        }
-      }
-    }
-
-    if (allOk) {
-      stampMigrationAtWhen(sqlite, hash, entry.when);
-      watermark = entry.when; // advance so later entries are evaluated against the new high-water mark
-      healed++;
-      console.log(`[db] Heal: stamped migration ${entry.tag}`);
-    }
-  }
-
-  if (healed > 0) {
-    console.log(`[db] Heal: repaired ${healed} partial migration(s).`);
-  }
-}
-
 export async function createDb(dbPath: string, migrationsFolderOverride?: string, options?: CreateDbOptions): Promise<AppDb> {
   // TS-1 test fast path (see db-template.ts): with the switch enabled by a
   // test preload, an eligible call — no override folder, no { realMigrations }
@@ -801,6 +719,16 @@ export async function createDb(dbPath: string, migrationsFolderOverride?: string
   // Workaround (upstream-recommended): flip FK OFF on the raw handle BEFORE
   // migrate() opens its BEGIN, then restore ON for normal app queries.
   sqlite.exec('PRAGMA foreign_keys = OFF');
+  // The folder migrate() runs from: when work is pending, a temp copy whose
+  // rebuild CHECK constraints carry unqualified column references —
+  // rename-safe on every SQLite ≥ 3.25 (normalizeDunderCheckReferences;
+  // bun's macOS/arm64 build links a pre-3.46 SQLite whose RENAME leaves the
+  // `"__new_x"."col"` CHECK references dangling, CI 2026-11-01). Committed
+  // migration files are never edited; the temp copy exists only for this
+  // migrate() and is removed in the finally below. Boots with nothing pending
+  // — the steady state — read the official folder with zero staging cost.
+  let migrateFolder = migrationsFolder;
+  let stagedFolder: string | null = null;
   try {
     await baselineLegacyDb(sqlite, migrationsFolder);
     await rebaseToBaseline(sqlite, migrationsFolder);
@@ -810,17 +738,25 @@ export async function createDb(dbPath: string, migrationsFolderOverride?: string
     // (which is what produced the scary "migrate() failed … healing" boot).
     await preBackfillPendingRebuilds(sqlite, migrationsFolder);
 
+    if (await hasPendingMigrations(sqlite, migrationsFolder)) {
+      stagedFolder = await stageRenameSafeMigrationsFolder(migrationsFolder);
+      migrateFolder = stagedFolder;
+    }
+
     // Try normal migration first
     try {
-      migrate(db, { migrationsFolder });
+      migrate(db, { migrationsFolder: migrateFolder });
     } catch (migrateErr: unknown) {
       // migrate() can fail when a previous ensureAlterColumns() pre-flight
       // already added columns but didn't stamp the migration, leaving partial state.
       // Heal by splitting unstamped migrations into individual statements
       // and tolerating "already exists" / "duplicate column" errors.
-      console.warn(`[db] migrate() failed (${errorMessage(migrateErr) || String(migrateErr)}), healing partial state...`);
+      // The chain includes the SQLite cause under drizzle's wrapper message
+      // ("Failed to run the query '…'" alone hides the real reason — the
+      // 2026-11-01 macOS smoke failure was undiagnosable from the wrapper text).
+      console.warn(`[db] migrate() failed (${errorMessageChain(migrateErr)}), healing partial state...`);
       await healPartialMigrations(sqlite, migrationsFolder);
-      migrate(db, { migrationsFolder });
+      migrate(db, { migrationsFolder: migrateFolder });
     }
 
     // Post-migration integrity checks
@@ -838,6 +774,7 @@ export async function createDb(dbPath: string, migrationsFolderOverride?: string
     // mid-pass just re-runs it on the next boot.
     runBootDataPasses(sqlite);
   } finally {
+    if (stagedFolder) await rm(stagedFolder, { recursive: true, force: true });
     // Restore FK enforcement for normal app queries (the OFF above was scoped
     // to the migration phase only). See the #5782 note above for why this is
     // the correct place to flip it back on.

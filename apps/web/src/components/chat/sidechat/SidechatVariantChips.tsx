@@ -8,13 +8,14 @@ import {
 /**
  * The sidechat composer's attached-variant chips (SIDECHAT_PLAN, Wave 5 /
  * SC-18) — the pending list the «Discuss in the sidechat» RP-message entry
- * parked, rendered as removable chips above the textarea.
+ * parked, rendered as removable chips above the composer card (DR-15's
+ * attached row, mockup §9).
  *
- * Chrome mirrors `AgentContextPills` (the pinned-context pills sharing this
- * card): the same row, the same chip shape, an × per chip. Copy is
- * `#N · selected-variant-text` / `#N · alternative-text` (`N` = the variant
- * number the RP shows, `variantIndex + 1`) through the `sidechat_chip_*`
- * keys. Renders nothing when empty.
+ * Chrome mirrors `AgentContextPills` (the pinned-context pills sharing
+ * that attached row): the same row, the same chip shape, an × per chip.
+ * Copy is `#N · selected-variant-text` / `#N · alternative-text`
+ * (`N` = the variant number the RP shows, `variantIndex + 1`) through the
+ * `sidechat_chip_*` keys. Renders nothing when empty.
  */
 export function SidechatVariantChips({ chatId, branchId }: {
   chatId: string;
@@ -27,7 +28,7 @@ export function SidechatVariantChips({ chatId, branchId }: {
     <div
       role="list"
       aria-label={t("sidechat_chips_label")}
-      className="flex flex-wrap items-center gap-1.5 px-4 pt-2.5"
+      className="flex flex-wrap items-center gap-1.5"
     >
       {chips.map((chip) => {
         const label = chip.selected

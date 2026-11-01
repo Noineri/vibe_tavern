@@ -20,6 +20,8 @@
  */
 import { SIDECHAT_OOC_TOOL_KEYS } from "@vibe-tavern/api-contracts";
 import type { AgentThreadOwner } from "@vibe-tavern/domain";
+import { agentThreadRuns } from "../../../api/agent-run-api.js";
+import { openSidechatAgent } from "../../../lib/agent-host-navigation.js";
 import {
   chatOwnerTriple,
   registerAgentHost,
@@ -53,6 +55,8 @@ import {
 } from "../../../stores/sidechat-variant-attachments-store.js";
 import { Icons } from "../../shared/icons.js";
 import { ObjectiveProposalCard } from "./ObjectiveProposalCard.js";
+import { STORY_PLAN_RECORD_TYPE, StoryPlanProposalCard } from "./StoryPlanProposalCard.js";
+import { TRACKER_SCENE_RECORD_TYPE, TrackerSceneProposalCard } from "./TrackerSceneProposalCard.js";
 import { SidechatVariantChips } from "./SidechatVariantChips.js";
 
 /**
@@ -157,6 +161,7 @@ function copySidechatReplyToComposer(text: string): void {
 export { SIDECHAT_OPEN_KEY_PREFIX } from "../../../stores/sidechat-open-store.js";
 
 registerAgentHost({
+  open: openSidechatAgent,
   kind: SIDECHAT_AGENT_KIND,
   i18n: {
     title: "agent_title",
@@ -165,7 +170,10 @@ registerAgentHost({
     kindLabel: "agent_kind_sidechat",
     placeholder: "sidechat_input_placeholder",
     loading: "agent_loading",
-    emptyTitle: "agent_title",
+    // DR-7 (owner 2026-10-27, mock §3): the OOC empty state's title reads the
+    // kind label «Сайдчат»/"Sidechat" — the panel HEADER keeps the generic
+    // agent title above.
+    emptyTitle: "agent_kind_sidechat",
     emptySub: "sidechat_empty_hint",
   },
   // AP-17: the empty-session starter prompts (mockup §3, sidechat row) —
@@ -191,6 +199,7 @@ registerAgentHost({
   // the SC-0c chat client's owner-keyed members (chat owners route to the
   // SC-0b routes, narrowed back to chat+branch+kind in one line each).
   transport: {
+    runs: agentThreadRuns,
     sendStream: streamExperienceCopilot,
     answerAsk: answerCopilotAsk,
     // AP-10: the turn-delete REST call — the experience client's
@@ -241,7 +250,8 @@ registerAgentHost({
     const triple = chatOwnerTriple(ctx.owner);
     useSidechatVariantAttachmentsStore.getState().clearVariantAttachments(triple.chatId, triple.branchId);
   },
-  // SC-18: the pending chips row inside the composer's input card.
+  // SC-18 / DR-15: the pending chips row above the composer's input card
+  // (the shell's attached row renders it after the pinned-context pills).
   composerTopSlot: (ctx) => {
     const triple = chatOwnerTriple(ctx.owner);
     return <SidechatVariantChips chatId={triple.chatId} branchId={triple.branchId} />;
@@ -254,18 +264,28 @@ registerAgentHost({
   },
   toolCaption: (activity) => sidechatToolCaption(activity),
   defaultModelBinding: (ctx) => sidechatDefaultModelBinding(ctx),
-  // SC-0j: the kind-provided meter segment labels — the five SC-9 segment
+  // SC-0j + DR-4b: the kind-provided meter segment labels — the SC-9 segment
   // keys with their i18n keys (the meter resolves each through `useT`).
+  // `story_plan` (DR-4b) meters the <story_plan> context section.
   meterSegmentLabels: {
     context: "sidechat_meter_context",
+    story_plan: "sidechat_meter_story_plan",
     rp_summaries: "sidechat_meter_rp_summaries",
     rp_messages: "sidechat_meter_rp_messages",
     digest: "sidechat_meter_digest",
     discussion: "sidechat_meter_discussion",
   },
   // SC-13c: the objective proposal card renders `recordType: "objective"`
-  // in place; every other recordType still falls back to the AS-5 card.
-  recordProposalRenderers: { objective: ObjectiveProposalCard },
+  // in place; DR-10a adds the story-plan card for the `propose_plan` tool's
+  // record type and DR-10b the tracker-scene card for
+  // `propose_tracker_template`'s (the record-type strings' home is the
+  // proposal domain — the card modules pin the web-side spellings). Every
+  // other recordType still falls back to the AS-5 card.
+  recordProposalRenderers: {
+    objective: ObjectiveProposalCard,
+    [STORY_PLAN_RECORD_TYPE]: StoryPlanProposalCard,
+    [TRACKER_SCENE_RECORD_TYPE]: TrackerSceneProposalCard,
+  },
   // AP-2: RP colors without RP sizes for the sidechat's bubbles.
   messageMarkup: "rp-colors",
   // SC-16: «В поле ввода РП» under each assistant reply — the RP row's copy

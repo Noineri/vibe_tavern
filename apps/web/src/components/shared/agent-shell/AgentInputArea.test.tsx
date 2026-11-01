@@ -193,6 +193,22 @@ function renderInput(over: Partial<Parameters<typeof AgentInputArea>[0]> = {}) {
   return { ...utils, props };
 }
 
+/** Spies BEFORE render: `useAttachmentDraft` binds its upload seam as a
+ *  default parameter evaluated at hook-call (render) time, so the spy must
+ *  be in place before the composer mounts (same ordering as the CA-1h2/3
+ *  co-author tests). Renders, attaches one .md, waits for its chip. Shared
+ *  by the CA-4e2 attachments describe and the DR-15 attached-row tests. */
+async function renderWithTextFile(over: Partial<Parameters<typeof AgentInputArea>[0]> = {}) {
+  const upload = spyOn(assets, "uploadAsset").mockResolvedValue({ assetId: "file", url: "file", tokenCount: 42 });
+  spies.push(upload);
+  const view = renderInput(over);
+  fireEvent.change(view.container.querySelector('input[type="file"]')!, {
+    target: { files: [new File(["notes"], "notes.md", { type: "" })] },
+  });
+  await waitFor(() => expect(view.getByTestId("file-attachment-chip")).toBeDefined());
+  return view;
+}
+
 describe("ExperienceCopilotInputArea", () => {
   it("disables send while empty and enables it once text is typed", () => {
     const { getByTestId, getByPlaceholderText } = renderInput();
@@ -288,6 +304,25 @@ describe("ExperienceCopilotInputArea", () => {
 
     expect(getByPlaceholderText("agent_input_answering_placeholder")).toBeDefined();
     expect(queryByPlaceholderText("agent_input_placeholder")).toBeNull();
+  });
+
+  it("DR-8: the model caption renders above the pills row when passed; absent → no caption", () => {
+    // With the caption (an own profile model active): the «модель профиля»
+    // line sits above the pills, inside the composer card. The caption prop
+    // is opaque here (the RU copy is pinned in the locale files).
+    const withCaption = renderInput({ modelCaption: "profile model caption" });
+    const caption = withCaption.getByTestId("copilot-model-caption");
+    expect(caption.textContent).toBe("profile model caption");
+    // Above = the caption node precedes the pills row in the card.
+    expect(
+      caption.compareDocumentPosition(withCaption.getByTestId("copilot-provider-pill")) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    withCaption.unmount();
+
+    // Without the caption (today's composer): the line does not render.
+    const withoutCaption = renderInput();
+    expect(withoutCaption.queryByTestId("copilot-model-caption")).toBeNull();
+    withoutCaption.unmount();
   });
 
   it("without answeringAsk the ordinary placeholder stays (AP-6)", () => {
@@ -411,21 +446,6 @@ describe("ExperienceCopilotInputArea — pinned context (CX-6)", () => {
 // ─── AP-19: Escape stops the streaming turn ──────────────────────────────────
 
 describe("ExperienceCopilotInputArea — attachments (CA-4e2)", () => {
-  /** Spies BEFORE render: `useAttachmentDraft` binds its upload seam as a
-   *  default parameter evaluated at hook-call (render) time, so the spy must
-   *  be in place before the composer mounts (same ordering as the CA-1h2/3
-   *  co-author tests). Renders, attaches one .md, waits for its chip. */
-  async function renderWithTextFile(over: Partial<Parameters<typeof AgentInputArea>[0]> = {}) {
-    const upload = spyOn(assets, "uploadAsset").mockResolvedValue({ assetId: "file", url: "file", tokenCount: 42 });
-    spies.push(upload);
-    const view = renderInput(over);
-    fireEvent.change(view.container.querySelector('input[type="file"]')!, {
-      target: { files: [new File(["notes"], "notes.md", { type: "" })] },
-    });
-    await waitFor(() => expect(view.getByTestId("file-attachment-chip")).toBeDefined());
-    return view;
-  }
-
   it("attaching through the file input renders a removable chip", async () => {
     const view = await renderWithTextFile();
     expect(view.getByTitle("notes.md")).toBeDefined();
@@ -481,6 +501,73 @@ describe("ExperienceCopilotInputArea — attachments (CA-4e2)", () => {
     await waitFor(() => expect(fetchRoute).toHaveBeenCalledWith("p1", "m1"));
     await waitFor(() => expect(view.getByText("attachment_vision_warning")).toBeDefined());
     expect((view.getByTestId("copilot-send-btn") as HTMLButtonElement).disabled).toBe(false);
+  });
+});
+
+// ─── DR-15: attached row above the composer card (mockup §9) ─────────────────
+// behavior change: chips inside the card → above it, basis owner 2026-10-29.
+
+describe("ExperienceCopilotInputArea — attached row above the card (DR-15)", () => {
+  const cardOf = (view: ReturnType<typeof renderInput>) =>
+    (view.getByTestId("copilot-chat-input") as HTMLTextAreaElement).closest("div.rounded-lg")!;
+
+  it("pinned pills render OUTSIDE the card, in the attached row above it", () => {
+    const view = renderInput({ pinnedContext: [{ targetType: "character", targetId: "c1", label: "Alice" }] });
+    const row = view.getByTestId("agent-attached-row");
+    const card = cardOf(view);
+
+    // Not inside the card — and directly above it (the card follows the row).
+    expect(card.contains(row)).toBe(false);
+    expect(row.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // The pill itself lives in the row, not in the card.
+    expect(row.contains(view.getByTestId("copilot-context-pill-character-c1"))).toBe(true);
+    expect(card.contains(view.getByTestId("copilot-context-pill-character-c1"))).toBe(false);
+  });
+
+  it("one wrapping row below the warnings: context pills → host topSlot → file chips", async () => {
+    const view = await renderWithTextFile({
+      pinnedContext: [{ targetType: "character", targetId: "c1", label: "Alice" }],
+      topSlot: <span data-testid="host-top-slot">#14 variant</span>,
+      contextMetrics: { totalTokens: 90, budgetTokens: 100 },
+    });
+    const row = view.getByTestId("agent-attached-row");
+    const pill = view.getByTestId("copilot-context-pill-character-c1");
+    const slot = view.getByTestId("host-top-slot");
+    const chip = view.getByTestId("file-attachment-chip");
+
+    // Below the vision/overflow warnings (mockup §9 note).
+    const warning = view.getByText("attachments_overflow_warning");
+    expect(warning.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    // All three attached kinds live in the ONE row, in the binding order
+    // context → variants → files.
+    for (const el of [pill, slot, chip]) expect(row.contains(el)).toBe(true);
+    expect(pill.compareDocumentPosition(slot) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(slot.compareDocumentPosition(chip) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    // Nothing attached stays inside the card.
+    expect(cardOf(view).contains(chip)).toBe(false);
+
+    // The row wraps (mockup .attrow); the chip group slots inline through
+    // its COMPOSED class string — the baked base plus the agent appends
+    // (CF13: the composed string, not the appended fragment, is the truth).
+    expect(row.className).toContain("flex-wrap");
+    const chipGroup = row.querySelector("div.scrollbar-hide")!;
+    expect(chipGroup.className).toContain("w-full");
+    expect(chipGroup.className).toContain("overflow-x-auto");
+    expect(chipGroup.className).toContain("!w-auto");
+    expect(chipGroup.className).toContain("!p-0");
+    expect(chipGroup.className).toContain("!gap-1.5");
+    expect(chipGroup.className).toContain("flex-wrap");
+  });
+
+  it("nothing attached → the row stays empty and hidden (no gap)", () => {
+    const view = renderInput();
+    const row = view.getByTestId("agent-attached-row");
+    expect(row.children).toHaveLength(0);
+    // `empty:hidden` is the mechanism (the host slot's emptiness is only
+    // knowable after render, so the row is not conditionally mounted).
+    expect(row.className).toContain("empty:hidden");
   });
 });
 

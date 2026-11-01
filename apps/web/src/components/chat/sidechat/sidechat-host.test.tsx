@@ -56,6 +56,8 @@ import { useBootstrapStore } from "../../../stores/api-actions/bootstrap-actions
 import { selectSidechatServedChatModes, SIDECHAT_AGENT_KIND } from "../../../api/agent-kind-served-modes.js";
 import { selectSidechatOwner } from "./sidechat-host.js";
 import { ObjectiveProposalCard } from "./ObjectiveProposalCard.js";
+import { STORY_PLAN_RECORD_TYPE, StoryPlanProposalCard } from "./StoryPlanProposalCard.js";
+import { TRACKER_SCENE_RECORD_TYPE, TrackerSceneProposalCard } from "./TrackerSceneProposalCard.js";
 
 useDomEnv();
 
@@ -307,31 +309,57 @@ async function flushSessionLoad() {
 // ── Registration + selectors ────────────────────────────────────────────────
 
 describe("sidechat-host — registration (SC-13b)", () => {
-  it("registers the chat-only host with the kind's six toggles and chat assignment", () => {
+  it("registers the chat-only host with the kind's nine toggles and chat assignment", () => {
     const host = getAgentHost(SIDECHAT_AGENT_KIND);
     expect(host.kind).toBe("sidechat-ooc");
     // Chat-only: no editor pane (the shell renders its chat pane).
     expect(host.renderEditorPane).toBeUndefined();
+    // Behavior change (DR-4b): was the 8 DR-4a toggles → now 9, `ask_user`
+    // appended (owner ruling 2026-10-27, DIRECTOR_MODE_PLAN DR-4b ruling B —
+    // off in the OOC seed, on in the director seed), basis: the wire
+    // contract (SIDECHAT_OOC_TOOL_KEYS) gained the key.
     expect([...host.toolKeys].sort()).toEqual(
-      ["propose_objective", "read_context_item", "read_message_prompt", "read_plan", "search_context", "todo"].sort(),
+      [
+        "propose_objective",
+        "propose_plan",
+        "propose_tracker_template",
+        "read_context_item",
+        "read_message_prompt",
+        "read_plan",
+        "search_context",
+        "todo",
+        "ask_user",
+      ].sort(),
     );
     expect(host.profileAssignment).toEqual({ target: "chat" });
     // AP-2: the sidechat renders RP colors without RP sizes.
     expect(host.messageMarkup).toBe("rp-colors");
-    // SC-13c: the objective card renders `recordType: "objective"` in place.
-    expect(Object.keys(host.recordProposalRenderers)).toEqual(["objective"]);
+    // SC-13c + DR-10a + DR-10b: the objective card renders
+    // `recordType: "objective"` in place; the story-plan card renders the
+    // `propose_plan` tool's record type and the tracker-scene card
+    // `propose_tracker_template`'s (the web-side pins of the proposal
+    // domain's constants).
+    expect(Object.keys(host.recordProposalRenderers)).toEqual(["objective", "story-plan", "tracker-scene"]);
     expect(host.recordProposalRenderers.objective).toBe(ObjectiveProposalCard);
+    expect(host.recordProposalRenderers["story-plan"]).toBe(StoryPlanProposalCard);
+    expect(host.recordProposalRenderers["tracker-scene"]).toBe(TrackerSceneProposalCard);
+    expect(STORY_PLAN_RECORD_TYPE).toBe("story-plan");
+    expect(TRACKER_SCENE_RECORD_TYPE).toBe("tracker-scene");
   });
 
-  it("carries the branch plan owner and the five meter labels", () => {
+  it("carries the branch plan owner and the six meter labels", () => {
     const host = getAgentHost(SIDECHAT_AGENT_KIND);
     expect(host.planOwner?.({ owner: CHAT_OWNER })).toEqual({
       kind: "chatBranch",
       chatId: "chat-1",
       branchId: "branch-1",
     });
+    // Behavior change (DR-4b): was the five SC-9 labels → now six,
+    // `story_plan` after `context` (the <story_plan> context section's own
+    // meter segment), basis: DIRECTOR_MODE_PLAN DR-4b.
     expect(host.meterSegmentLabels).toEqual({
       context: "sidechat_meter_context",
+      story_plan: "sidechat_meter_story_plan",
       rp_summaries: "sidechat_meter_rp_summaries",
       rp_messages: "sidechat_meter_rp_messages",
       digest: "sidechat_meter_digest",
@@ -343,6 +371,14 @@ describe("sidechat-host — registration (SC-13b)", () => {
     const host = getAgentHost(SIDECHAT_AGENT_KIND);
     expect(host.i18n.placeholder).toBe("sidechat_input_placeholder");
     expect(host.i18n.emptySub).toBe("sidechat_empty_hint");
+  });
+
+  it("labels its empty state with the kind label, not the generic assistant title (DR-7, owner 2026-10-27)", () => {
+    // Mock §3: the OOC empty state's title reads «Сайдчат»/"Sidechat" — the
+    // kind label — while the panel header keeps the generic agent title.
+    const host = getAgentHost(SIDECHAT_AGENT_KIND);
+    expect(host.i18n.emptyTitle).toBe("agent_kind_sidechat");
+    expect(host.i18n.title).toBe("agent_title");
   });
 });
 

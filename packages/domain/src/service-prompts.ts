@@ -43,7 +43,7 @@ export const SERVICE_PROMPT_FIELDS = {
   objective_generate_goals: { family: SERVICE_PROMPT_FIELD_FAMILIES.insights },
   objective_check: { family: SERVICE_PROMPT_FIELD_FAMILIES.insights },
   scene_generate: { family: SERVICE_PROMPT_FIELD_FAMILIES.insights },
-  // bases (11)
+  // bases (12)
   coauthor_base: { family: SERVICE_PROMPT_FIELD_FAMILIES.bases },
   coauthor_summary: { family: SERVICE_PROMPT_FIELD_FAMILIES.bases },
   copilot_base: { family: SERVICE_PROMPT_FIELD_FAMILIES.bases },
@@ -52,6 +52,7 @@ export const SERVICE_PROMPT_FIELDS = {
   script_agent_compaction: { family: SERVICE_PROMPT_FIELD_FAMILIES.bases },
   sidechat_ooc_base: { family: SERVICE_PROMPT_FIELD_FAMILIES.bases },
   sidechat_ooc_digest: { family: SERVICE_PROMPT_FIELD_FAMILIES.bases },
+  sidechat_director_base: { family: SERVICE_PROMPT_FIELD_FAMILIES.bases },
   copilot_user_flow: { family: SERVICE_PROMPT_FIELD_FAMILIES.bases },
   interactive_rules: { family: SERVICE_PROMPT_FIELD_FAMILIES.bases },
   interactive_visual: { family: SERVICE_PROMPT_FIELD_FAMILIES.bases },
@@ -89,6 +90,7 @@ export const SERVICE_PROMPT_FIELD_KEYS = [
   "script_agent_compaction",
   "sidechat_ooc_base",
   "sidechat_ooc_digest",
+  "sidechat_director_base",
   "copilot_user_flow",
   "interactive_rules",
   "interactive_visual",

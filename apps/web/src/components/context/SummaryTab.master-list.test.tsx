@@ -1,4 +1,4 @@
-import { beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterAll, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { ComponentProps } from "react";
 import type { ChatId } from "@vibe-tavern/domain";
 import { useDomEnv } from "../../../test/dom-env.js";
@@ -6,6 +6,14 @@ import { useDomEnv } from "../../../test/dom-env.js";
 useDomEnv();
 
 const { act, fireEvent, render, waitFor, within } = await import("@testing-library/react");
+const originalFetch = globalThis.fetch;
+async function runStateFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const path = new URL(input instanceof Request ? input.url : String(input), "http://localhost").pathname.replace(/^\/null/, "");
+  const method = init?.method ?? (input instanceof Request ? input.method : "GET");
+  if (method === "GET" && path === "/api/chats/chat/summaries/generate") return Response.json(null);
+  throw new Error(`Unexpected fetch: ${method} ${path}`);
+}
+afterAll(() => { globalThis.fetch = originalFetch; });
 const realChatActions = await import("../../stores/api-actions/chat-actions.js");
 const realMasterDetailModal = await import("../shared/MasterDetailModal.js");
 const realDndKit = await import("@dnd-kit/core");
@@ -121,6 +129,8 @@ function dragEnd(activeId: string, overId: string): void {
 
 describe("SummaryTab master list (ML-4 primitive)", () => {
   beforeEach(() => {
+    globalThis.fetch = originalFetch;
+    globalThis.fetch = Object.assign(runStateFetch, { preconnect: originalFetch.preconnect });
     mock.clearAllMocks();
     dndHandlers = null;
     server = [

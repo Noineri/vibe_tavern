@@ -171,7 +171,7 @@ function MediaLightbox({
 }) {
   const { t } = useT();
   const src = serveCharacterAssetUrl(characterId, asset.id as string);
-  const { scale, translate, isPinching, touchHandlers, handleTap } = useImageZoomPan();
+  const { containerRef, imageRef, imageStyle, touchHandlers, handleTap } = useImageZoomPan();
   // Escape closes the lightbox (not the whole modal).
   useKeyDown("Escape", onClose);
 
@@ -198,16 +198,14 @@ function MediaLightbox({
       {/* overflow-hidden + the footer's z-10: a zoomed image visually scales
           past its box (transform ignores layout) — clip it at the image area so
           it cannot cover the send bar or the close button. */}
-      <div className="flex flex-1 items-center justify-center overflow-hidden p-3">
+      <div ref={containerRef} className="flex flex-1 items-center justify-center overflow-hidden p-3">
         <img
+          ref={imageRef}
           src={src}
           alt={asset.caption || "Gallery image"}
           className="max-h-full max-w-full select-none object-contain"
           draggable={false}
-          style={{
-            transform: `scale(${scale}) translate(${translate.x}px, ${translate.y}px)`,
-            transition: isPinching ? "none" : "transform 0.15s ease-out",
-          }}
+          style={imageStyle}
           onClick={(e) => { e.stopPropagation(); handleTap(); }}
         />
       </div>

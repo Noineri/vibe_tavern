@@ -3,6 +3,7 @@ import { join, relative, resolve } from "node:path";
 import tailwindPlugin from "bun-plugin-tailwind";
 import { buildConfigPlugin, resolveWebBuildEnv } from "../apps/web/bun-plugin-build-config.js";
 import { webAssetsPlugin } from "../apps/web/bun-plugin-web-assets.js";
+import { precompressWebAssets } from "./precompress-web-assets.js";
 
 const ROOT = resolve(import.meta.dir, "..");
 const WEB_DIR = join(ROOT, "apps", "web");
@@ -78,6 +79,8 @@ async function main(): Promise<void> {
 	}
 
 	await cp(PUBLIC_DIR, OUT_DIR, { recursive: true });
+	const compressedCount = await precompressWebAssets(OUT_DIR);
+	console.log(`  Precompressed ${compressedCount} asset variants (Brotli/gzip).`);
 
 	for (const output of result.outputs) {
 		console.log(`  ✅ ${relative(ROOT, output.path)}`);

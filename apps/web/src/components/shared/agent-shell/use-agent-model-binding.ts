@@ -15,6 +15,12 @@ import {
   patchAgentKindSettingsAction,
   useBootstrapStore,
 } from "../../../stores/api-actions/bootstrap-actions.js";
+import {
+  resolveAgentProfileOwnModel,
+  useAgentProfileModelStore,
+} from "../../../stores/agent-profile-model-store.js";
+import { builtinProfileDisplayName } from "../../../lib/agent-builtin-profiles.js";
+import { useCopilotProfileStore } from "../../../stores/copilot-profile-store.js";
 
 /**
  * Per-kind provider/model binding (SIDECHAT_PLAN SC-0e) — extracted from
@@ -39,12 +45,30 @@ import {
  * set, later store arrivals never clobber it — only an explicit picker
  * change writes. Store reads inside the async write callback go through
  * `useBootstrapStore.getState()` — render closures hold pre-action state.
+ *
+ * DR-8 (mockup §11, P5): for CHAT-TARGET hosts (the sidechat) the shell also
+ * passes the EFFECTIVE profile id — the profile the server would answer
+ * through. When that profile carries an own model (the DR-2 rows, read
+ * through `agent-profile-model-store.ts`), the returned pair IS that binding
+ * (the pills always show the model that will answer), the write path becomes
+ * the profile's model (PUT — never the kind binding), and `ownModelCaption`
+ * names the profile for the composer's profile-model caption line. Without the
+ * param (script-target hosts: the mini-app and script copilots), or with no
+ * own model stored, everything is exactly as before this hook knew profiles
+ * existed — the internal resolution machine below never branches on it.
  */
-export function useAgentModelBinding(kind: AgentKind, owner: AgentThreadOwner): {
+export function useAgentModelBinding(
+  kind: AgentKind,
+  owner: AgentThreadOwner,
+  effectiveProfileId?: string | null,
+): {
   providerProfileId: string | null;
   model: string | undefined;
   models: ProviderModel[];
   handleProviderChange: (profileId: string, nextModel?: string) => void;
+  /** DR-8: the profile-model caption text (`agent_model_profile_caption`), or null (no caption) —
+   *  non-null only while an own profile model is actually active. */
+  ownModelCaption: string | null;
 } {
   const { t } = useT();
   const host = getAgentHost(kind);
@@ -154,5 +178,71 @@ export function useAgentModelBinding(kind: AgentKind, owner: AgentThreadOwner): 
     [kind, t],
   );
 
-  return { providerProfileId, model, models, handleProviderChange };
+  // ── DR-8: the effective profile's own model (chat-target hosts only) ─────
+  // The gate is the caller's `effectiveProfileId` AND a chat-target host
+  // descriptor: script-target hosts (the mini-app and script copilots) keep
+  // today's behavior wholesale — their shells never arm this branch, and an
+  // id passed by mistake still cannot (the host check below).
+  const ownProfileId =
+    host.profileAssignment.target === "chat" && typeof effectiveProfileId === "string"
+      ? effectiveProfileId
+      : null;
+  const loadProfileModel = useAgentProfileModelStore((s) => s.load);
+  const setProfileModel = useAgentProfileModelStore((s) => s.set);
+  const ownModel = useAgentProfileModelStore((s) =>
+    resolveAgentProfileOwnModel(kind, ownProfileId, profiles, s.models),
+  );
+  useEffect(() => {
+    if (ownProfileId === null) return;
+    void loadProfileModel(kind, ownProfileId);
+  }, [ownProfileId, kind, loadProfileModel]);
+
+  // The own provider's model list — the displayed pair's stand-in when the
+  // binding pins the provider's DEFAULT model (`modelName: null`, resolved
+  // at turn time): the first model, the same stand-in the saved-pair machine
+  // uses for a dangling saved model. Inert (no fetch) without an own model.
+  const { models: ownProviderModels } = useProviderModels(ownModel?.providerProfileId ?? null);
+
+  const ownModelActive = ownModel !== null && ownProfileId !== null;
+
+  // A pill change while an own model is active writes THE PROFILE's model
+  // (PUT — P5), never the kind binding: every chat the profile answers in
+  // follows. The store updates optimistically, so the returned pair (and
+  // every subscribed surface) follows the same frame; a failed PUT reverts
+  // and rethrows here for the toast — the kind chain below stays untouched.
+  const handleOwnProviderChange = useCallback(
+    (profileId: string, nextModel?: string) => {
+      if (ownProfileId === null) return;
+      void setProfileModel(kind, ownProfileId, {
+        providerProfileId: profileId,
+        ...(nextModel !== undefined ? { modelName: nextModel } : {}),
+      }).catch(() => {
+        toast.error(t("agent_binding_save_error"));
+      });
+    },
+    [kind, ownProfileId, setProfileModel, t],
+  );
+
+  // The caption names the effective profile — built-ins through the ONE
+  // name derivation (`builtinProfileDisplayName`), user rows through the
+  // loaded list (raw id as the dangling fallback, the pinned-context rule).
+  const copilotProfiles = useCopilotProfileStore((s) => s.profiles);
+  const ownModelCaption = ownModelActive
+    ? t("agent_model_profile_caption", {
+        name: builtinProfileDisplayName(
+          ownProfileId,
+          kind,
+          copilotProfiles.find((p) => p.id === ownProfileId)?.name ?? ownProfileId,
+          t,
+        ),
+      })
+    : null;
+
+  return {
+    providerProfileId: ownModelActive ? ownModel.providerProfileId : providerProfileId,
+    model: ownModelActive ? (ownModel.modelName ?? ownProviderModels[0]?.id) : model,
+    models: ownModelActive ? ownProviderModels : models,
+    handleProviderChange: ownModelActive ? handleOwnProviderChange : handleProviderChange,
+    ownModelCaption,
+  };
 }

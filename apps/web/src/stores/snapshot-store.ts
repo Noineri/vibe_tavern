@@ -3,6 +3,7 @@ import { immer } from "zustand/middleware/immer";
 import { useShallow } from "zustand/react/shallow";
 import type { AppSnapshot, AppMessage, AppCharacter, AppPersona, AppCharacterEntry, ChatListItem, InsightsCompletionPatchResponse, SceneTargetResponse } from "../api/types.js";
 import { parseStoredAttachments, type ChatBranch, type PromptTraceRecordDto, type PronounForms } from "@vibe-tavern/domain";
+import { addKnownTokenCounts, replaceKnownTokenCounts } from "../utils/tokenizer.js";
 
 // ── Macro context (derived from character + persona) ──────────────────
 
@@ -72,6 +73,9 @@ interface SnapshotActions {
    *
    * Immer's structural sharing preserves object references for unchanged
    * data — components only re-render when their specific values change.
+   * The per-entry dedup comparisons read the plain PRE-INGEST state
+   * (`base`, captured via `get()` before `set`) — never the draft — so an
+   * unchanged entry costs no Immer proxy walk (LC-3 / D3).
    */
   ingestSnapshot(snapshot: AppSnapshot): void;
 
@@ -222,13 +226,51 @@ function sameStringArray(a: string[], b: string[]): boolean {
   return a.every((value, index) => value === b[index]);
 }
 
+/**
+ * TC-5 (TOKEN_COUNT_ONCE_PLAN Wave 3): token counts the SERVER already
+ * computed for one message DTO — the row's `content` → its `tokenCount`,
+ * plus EVERY variant's `content` → the variant's own `tokenCount` (both
+ * ride the wire since TC-4, derived from the same cl100k ladder the
+ * browser's tokenizer uses, so a seeded entry equals a local encode's
+ * result — the browser skips the work, never changes the number).
+ *
+ * Called on exactly the paths below that write a SERVER message DTO into
+ * `messagesById`: ingestSnapshot (REPLACE semantics — a snapshot carrying
+ * messages carries the whole current message set, so the previous chat's
+ * texts drop with the switch) and the two patch appliers (ADD semantics —
+ * a patch touches one message of the already-seeded snapshot). This is the
+ * single seeding site — never a consumer, never a selector. Local-only
+ * mutations (optimistic updateMessage, selectVariant, locally-built pending
+ * rows) NEVER seed: a local row's `tokenCount` field is not a promise, only
+ * a server DTO's is. A non-number count (legacy payload / cast test
+ * fixture) is skipped, never seeded as garbage.
+ */
+function serverKnownTokenCounts(msg: AppMessage): Array<[string, number]> {
+  const entries: Array<[string, number]> = [];
+  if (typeof msg.tokenCount === "number") entries.push([msg.content, msg.tokenCount]);
+  for (const variant of msg.variants) {
+    if (typeof variant.tokenCount === "number") entries.push([variant.content, variant.tokenCount]);
+  }
+  return entries;
+}
+
 // ── Store ──────────────────────────────────────────────────────────────
 
 export const useSnapshotStore = create<SnapshotStore>()(
   immer((set, get) => ({
     ...initialState,
 
-    ingestSnapshot: (snapshot) =>
+    ingestSnapshot: (snapshot) => {
+      // LC-3: the dedup comparisons below read the PRE-INGEST plain state,
+      // never the draft — comparing through `draft` proxy-walks every nested
+      // object the comparator touches (Immer creates and finalizes proxies
+      // for the whole stored message tree per entry: 600 messages × 4.7 MB on
+      // every delete/edit/swipe/send; D3 in LONG_CHAT_PERFORMANCE_REPORT).
+      // Reading the plain base is behaviorally identical for comparison —
+      // ids are unique within one snapshot, so no write in this ingest ever
+      // changes a value a later comparison re-reads — and only the write
+      // path goes through the draft.
+      const base = get();
       set((draft) => {
         // ── Absence pipeline (Phase 3.4.1) ──
         // Every field is written ONLY when present in the snapshot. Absence
@@ -245,7 +287,8 @@ export const useSnapshotStore = create<SnapshotStore>()(
             if (!nextChatIds.has(id)) delete draft.chatsById[id];
           }
           for (const chat of snapshot.chats) {
-            if (!deepEqual(draft.chatsById[chat.id], chat)) {
+            // LC-3: compare against the plain base — no draft proxy walk.
+            if (!deepEqual(base.chatsById[chat.id], chat)) {
               draft.chatsById[chat.id] = chat;
             }
           }
@@ -265,6 +308,14 @@ export const useSnapshotStore = create<SnapshotStore>()(
         // ── Messages: dictionary (keyed by id) + order (present only) ──
         // Absence is preserved — chat switching clears via clearMessages().
         if (Array.isArray(snapshot.messages)) {
+          // TC-5: snapshot messages are SERVER DTOs — their counts are
+          // promises. Replace semantics: the new snapshot's texts REPLACE
+          // the map wholesale (dropping the previous chat's entries).
+          const knownEntries: Array<[string, number]> = [];
+          for (const msg of snapshot.messages) {
+            for (const entry of serverKnownTokenCounts(msg)) knownEntries.push(entry);
+          }
+          replaceKnownTokenCounts(knownEntries);
           const nextMessageIds = new Set<string>(snapshot.messages.map((msg) => msg.id));
           for (const id of Object.keys(draft.messagesById)) {
             if (!nextMessageIds.has(id)) delete draft.messagesById[id];
@@ -272,9 +323,10 @@ export const useSnapshotStore = create<SnapshotStore>()(
           for (const msg of snapshot.messages) {
             // IG-CF10: stamp the message-level attachment shadow BEFORE the
             // dedup comparison — a re-ingested identical snapshot keeps both
-            // its reference (Wave B2) and its shadow.
-            const stamped = withMessageLevelShadow(draft.messagesById[msg.id], msg);
-            if (!deepEqual(draft.messagesById[msg.id], stamped)) {
+            // its reference (Wave B2) and its shadow. The stamp reads its
+            // `prev` off the plain base, same as the comparison (LC-3).
+            const stamped = withMessageLevelShadow(base.messagesById[msg.id], msg);
+            if (!deepEqual(base.messagesById[msg.id], stamped)) {
               draft.messagesById[msg.id] = stamped;
             }
           }
@@ -324,7 +376,8 @@ export const useSnapshotStore = create<SnapshotStore>()(
             draft.allCharacters = snapshot.allCharacters;
           }
         }
-      }),
+      });
+    },
 
     applyInsightsCompletionPatch: (response) => {
       const current = get();
@@ -367,6 +420,8 @@ export const useSnapshotStore = create<SnapshotStore>()(
             draft.messagesById[target.messageId],
             patch.message,
           );
+          // TC-5: this path writes a SERVER DTO — add its known counts.
+          addKnownTokenCounts(serverKnownTokenCounts(patch.message));
         }
       });
       return true;
@@ -398,6 +453,8 @@ export const useSnapshotStore = create<SnapshotStore>()(
             draft.messagesById[target.messageId],
             message,
           );
+          // TC-5: this path writes a SERVER DTO — add its known counts.
+          addKnownTokenCounts(serverKnownTokenCounts(message));
         }
       });
       return true;
@@ -406,12 +463,18 @@ export const useSnapshotStore = create<SnapshotStore>()(
     clear: () =>
       set((draft) => {
         Object.assign(draft, initialState);
+        // TC-5: no current snapshot texts remain — drop their known counts
+        // (keeps the map holding exactly the current snapshot's texts).
+        replaceKnownTokenCounts([]);
       }),
 
     clearMessages: () =>
       set((draft) => {
         draft.messagesById = {};
         draft.messageOrder = [];
+        // TC-5: same as clear() for the message texts specifically — the
+        // follow-up ingest re-seeds.
+        replaceKnownTokenCounts([]);
       }),
 
     updateMessage: (id, partial) =>

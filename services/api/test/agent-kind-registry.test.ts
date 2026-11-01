@@ -55,6 +55,9 @@ function makeFakeKind(id: string, servesScriptKinds: readonly ScriptKind[]): Age
     skillRootId: id,
     toolSetSchema: z.object({ fake_tool: z.boolean().optional() }).strict(),
     defaultToolSet: { fake_tool: true },
+    // DR-1: the descriptor's built-in seed list — the standard single first
+    // seed (name = kind id, the generic seed's pre-DR-1 name).
+    builtinSeeds: [{ id: "builtin", name: id }],
     recencyAnchorText: "(fake kind pins no context)",
     // Post-split fake: no legacy copilot-pair inheritance (SC-7).
     inheritsLegacyCopilotPair: false,
@@ -78,6 +81,9 @@ function makeFakeChatKind(id: string, servesChatModes: readonly ChatMode[]): Age
     skillRootId: id,
     toolSetSchema: z.object({ fake_tool: z.boolean().optional() }).strict(),
     defaultToolSet: { fake_tool: true },
+    // DR-1: the descriptor's built-in seed list — the standard single first
+    // seed (name = kind id, the generic seed's pre-DR-1 name).
+    builtinSeeds: [{ id: "builtin", name: id }],
     recencyAnchorText: "(fake kind pins no context)",
     inheritsLegacyCopilotPair: false,
     renderContextPackage: () => "",

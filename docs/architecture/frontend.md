@@ -102,7 +102,7 @@ MessageBlock (memo)
 │   ├── Header (avatar, name, greeting counter)
 │   ├── Content area
 │   │   ├── Desktop: AnimatePresence variant slide
-│   │   └── Mobile: MobileVariantCarousel (3-panel drag)
+│   │   └── Mobile: MobileVariantCarousel (native scroll snap, current ±1 content)
 │   ├── MessageReasoning (collapsible thinking block)
 │   ├── MessageMetadata (token count, model, timestamp)
 │   └── Actions
@@ -114,6 +114,11 @@ MessageBlock (memo)
 ### Assistant context header insight scope
 
 Objective zones are intentionally chat-global live views: every mounted assistant header reads the same current Objective route from `activeChat.insightsObjectiveState`, so a route edit or completion updates all Objective headers. Their primitive selectors still isolate them from unrelated `activeChat` changes. Scene zones are different by contract: Scene data is selected-variant scoped, and changing message A's tracker must not commit message B; INS-11 carries the required real-slot profiler test for that invariant.
+
+#### Objective zone under a story plan (DR-13)
+
+While the active branch's story plan has events, the goal tracker defers authoring to the plan: the objective zone (`message-slots/objective-zone.tsx`) is not resolved at all (assistant headers revert to identity/Scene), and the goals section in `ObjectiveConfig.tsx` (`components/build/editors/`) shows the muted note «The director's story plan drives these goals» with the manual add-goal and generate-goals controls hidden — status controls stay.
+Without a plan, both render exactly as before; the plan fact comes through the same `useAgentPlan` chatBranch cache seam, never a second derivation.
 
 #### Scene header zone — focused latest-header control
 
@@ -161,29 +166,33 @@ The portal overlay remains load-bearing and should still be tested in both direc
 
 ### Mobile Variant Carousel (`MobileVariantCarousel`)
 
-A **true 3-panel carousel** for switching variants on mobile via horizontal drag.
+A **true native scroll-snap carousel** for switching variants on mobile via horizontal touch scrolling.
 
 **Why a carousel (not gesture-to-slide):** A true carousel renders previous/current/next panels side-by-side. The content follows the finger during drag. This feels premium and native. Gesture-to-slide (where the current panel slides out and the next slides in after a threshold) feels cheaper because the content isn't visible during the gesture.
 
 **Architecture:**
 
 ```
-motion.div (viewport, overflow: hidden, height: locked)
-└── motion.div (track, width: 300%, flex, items-start)
-    ├── Panel 1: previous variant (w-1/3)
-    ├── Panel 2: current variant  (w-1/3, ref for height measurement)
-    └── Panel 3: next variant     (w-1/3)
+div (viewport + flex track, overflow-x: auto, overflow-y: hidden, snap-x mandatory)
+├── Full-width snap slots for all variant positions, separated by a track gap
+├── Only current ±1 mount Markdown or image content, keyed by variant identity
+└── Current slot ref drives the viewport height; other slots are inert/aria-hidden
 ```
 
 **Key details:**
 
 - **`items-start` on the track** — CRITICAL. Default flex stretch forces all panels to the tallest panel's height. `items-start` lets each panel be its natural height, which is needed for correct current-panel height measurement.
 - **Height management:** The viewport height is locked to the current panel's measured height via `ResizeObserver`. After a swipe commits, the height smoothly transitions (`transition: height 180ms ease`) to the new panel's height.
-- **Drag handling:** `drag="x"` with `dragDirectionLock` — Framer only captures the gesture once horizontal movement wins. CSS `touchAction: "pan-y"` leaves normal vertical scrolling to the browser.
-- **Snap logic:** `handleDragEnd` checks threshold (22% of viewport width, min 55px, max 120px) OR velocity (>650px/s). If neither threshold is met, snaps back to center via spring animation.
-- **Commit flow:** After animation completes (`.then()`), calls `onSelectVariant(targetIndex, direction)`, then instantly resets track position (`controls.set({ x: -viewportWidth })`) for the next swipe.
+- **Gesture ownership:** Native scrolling owns axis arbitration, momentum, snapping and interruptions; no JS drag handlers or selection suppression remain in the carousel.
+- **Geometry:** Equal full-width slots use `snap-start` and `snap-always`; spacing belongs to the track gap, whose computed CSS value is included in index calculations.
+- **Commit flow:** `variant-scroll-snap.ts` observes native `scrollend`, or a feature-detected quiet-scroll fallback on older browsers; the fallback requires an aligned snap point and all touches ending.
+- **Busy lock:** Hidden horizontal overflow and a settle-time guard apply the same `isBusy && !swipeWhileBusy` rule as the arrows; pure image slots retain their busy exception.
+- **Accessibility and translation:** Only the current slot is interactive and translated; neighbors are inert, `aria-hidden` and `translate="no"`.
+- **Chevron requests:** A narrow ref handle starts native `scrollTo({ behavior: "smooth" })`, or `"auto"` under reduced motion, without changing the selected variant or height before arrival; reaching the explicitly requested snap position commits immediately instead of waiting for a delayed `scrollend`.
+- **External selection:** Structural changes and jump-list choices outside the adjacent render window still align instantly.
+- **Display text:** Static content and carousel panels share `deriveVariantDisplayText`; canonical variant text and metadata are not rewritten by display regex.
 
-**Greeting carousel:** The same `MobileVariantCarousel` is reused for greeting messages, which use `greetingCarouselVariants` (array of `{ content }` objects built from `alternateGreetings`).
+**Greeting carousel:** Greeting messages use the same message-variant array and carousel branch in `MessageBlock`; the existing `canSwitchVariant` gate still applies.
 
 ### Markdown Rendering
 
@@ -207,7 +216,7 @@ Quoted dialogue highlighting deliberately works on the HAST tree instead of raw 
 | `MessageMetadata` | Token count, model ID, timestamp display |
 | `DesktopMessageActions` | Hover-reveal action bar: copy, edit, branch, regenerate, delete, variant arrows |
 | `MobileMessageActions` | Three-dot menu with action items: copy, edit, branch, resend, regenerate, variant counter |
-| `MobileVariantCarousel` | 3-panel drag carousel (see above) |
+| `MobileVariantCarousel` | Native scroll-snap carousel with current ±1 content (see above) |
 | `VariantControls` | Arrow buttons for variant switching (used both inline and in the portal overlay) |
 | `VariantJumpList` | Dropdown jump-list for hopping between many variants at once |
 | `PendingUserMessage` / `PendingAssistantMessage` | Optimistic/streaming cells appended to the stable recent tail |
@@ -224,11 +233,15 @@ The streaming layer separates three concerns that used to be conflated: **which 
 
 ```ts
 interface ChatGenerationState {
+  context?: ChatGenerationContext | null;
+  branchId?: string | null;
+  requestStop?: (() => void) | null;    // server Stop, not reader cancellation
   isSending: boolean;
   streamingMessageId: string | null;   // which message the stream targets (see below)
-  streamingText: string;                // full accumulated text so far
   streamingRevealedText: string;        // throttled view fed to the UI
   streamingReasoningText: string;
+  modelId: string | null;
+  presetName: string | null;
   generationStatus: ChatGenerationStatus;
   pendingUserMessageContent: string | null;
   pendingUserMessageAttachments: Attachment[];
@@ -240,7 +253,7 @@ interface ChatGenerationState {
 
 ### `streamingMessageId` vs `messageActionId`
 
-These are deliberately separate so a future sequential queue can hold long-lived streaming state without it rendering as a transient action spinner:
+These are deliberately separate so sequential queue replay can hold long-lived streaming state without rendering as a transient action spinner:
 
 | Field | Meaning | Read by |
 |-------|---------|---------|
@@ -277,6 +290,18 @@ User sends message
 ### Regeneration
 
 For regenerate, `startGeneration` is called with a `streamingMessageId` pointing at the existing assistant message. Only that one `MessageBlock` (the one where `useIsStreamingTarget(id)` is true) swaps its stored content for the live streaming text; every other message renders normally. Previously this was driven by overloading `messageActionId === messageId`, which made every assistant message show as loading during a regen — the split above is the fix.
+
+### Detached execution and recovery
+
+The server owns the producer; an HTTP reader only subscribes to its numbered log.
+`generation-context` is the first event and supplies immutable run/chat/starting-branch/operation/target identity; `user-message-saved` reconciles committed sends with canonical history instead of recreating speculative rows.
+One AppShell `useChatGenerationAttachment` discovers active runs and feeds GET replay into the same controller callbacks/reveal as live sends, starting from `after=0` to rebuild local state.
+A local live reader can survive a chat switch; an attachment cleanup detaches only its GET and never stops the server.
+Explicit Stop calls the server and leaves the reader attached until partial persistence and EOF.
+Branch-aware selectors prevent a retained run from painting another branch.
+Every asynchronous completion refresh checks active chat ownership after the await: a non-active chat never ingests its snapshot into the visible one; return uses the ordinary fresh fetch.
+Detached unfinished output is not auto-narrated.
+Manual-summary recovery in the memory modal follows the summary status/Stop API and the same retained per-chat notification channel, not the reply-generation slot.
 
 ---
 
@@ -325,25 +350,38 @@ LorebookEditor
 
 `EXPERIENCE_COPILOT_PLAN_MODE_PLAN` — the web side of the script-owned agent plan (backend mechanics: [backend doc](./backend.md#agent-plan-mechanic)). One plan per script, shared by the copilot's `plan`/`read_plan` tools and the user-facing editor. PM-7 (owner ruling 2026-10-11) restored the todo mechanic BESIDE it: **todo = the thread's session quick checklist; plan = the script's durable document surviving sessions** — both render in the copilot column, todo ABOVE plan, each hiding itself when its data is empty.
 
-- **One data source** — `useAgentPlan(owner)` (`hooks/use-agent-plan.ts`) is the ONLY web-side plan state: a module-level cache per owner (`kind: "script"`, keyed by scriptId), one lazy GET on the first consumer's mount, `save` (PUT), and `applyToolResult(args, output)` — the live tool-event seam that replaces the cached plan only when the streamed args AND the success envelope both parse. Every consumer (panel, editor modal, the copilot shell's controller) reads this one hook.
-- **Shared UI, no copilot coupling** — `components/shared/agent-plan/AgentPlanPanel.tsx` (the pinned collapsible summary: current task + pulsing live glyph + remaining count; expanded shows every task but only the active task's body) and `AgentPlanEditorModal.tsx` (goal / constraints / task rows with status, reorder, remove; saves through PUT; shows the server's 422 for two active tasks). Both are prop-driven and import nothing from the copilot dirs.
+- **One data source** — `useAgentPlan(owner)` (`hooks/use-agent-plan.ts`) is the ONLY web-side plan state: a module-level cache per owner (keyed by the owner — `kind: "script"` by scriptId, `kind: "chatBranch"` by chat + branch), one lazy GET on the first consumer's mount, `save` (PUT), and `applyToolResult(args, output)` — the live tool-event seam that replaces the cached plan only when the streamed args AND the success envelope both parse. The same module exports the NON-HOOK seam — `readAgentPlan(owner)` / `subscribeAgentPlan(owner, listener)` — for non-React consumers (the proposal cards read the stored plan through it; never a second fetch path). Every consumer (panel, editor modal, the copilot shell's controller) reads this one hook.
+- **Shared UI, no copilot coupling** — `components/shared/agent-plan/AgentPlanPanel.tsx` (the pinned collapsible summary: current task + pulsing live glyph + remaining count; expanded shows every task but only the active task's body) and `AgentPlanEditorModal.tsx` (goal / constraints / task rows with status, reorder, remove; saves through PUT; shows the server's 422 for two active tasks). Both are prop-driven and import nothing from the copilot dirs. DR-9 widened the panel for the story plan: `presentation="curtain"` (the expanded part as an overlay below the row — no layout shift, closes on outside click / Esc / chevron), `actions` (end of the collapsed row and the expanded header), `headerActionsBefore` (expanded-header actions before the editor button — wraps to its own row on the phone), `showEditorInCollapsedRow` (default true), `onRevertTask` («return to work» on completed events in curtain mode), and `flashTitle` (the passed-check flash on the success tint, curtain only). `AgentPlanSection` (the shell's mount) forwards the set and picks the labels from the owner kind — a `chatBranch` owner renders the story labels and the curtain; script owners stay byte-identical inline panels.
 - **Copilot mount** — `CopilotPlanSection` pins the panel directly below the todo section (never scrolling with the feed) and owns the modal's open state; the shell's controller routes `plan` tool results into the same cache via `applyPlanToolResult`, so the panel updates live during a turn.
 - **Todo twin** — the restored session checklist rides the turn store (`todoByThread`, seeded from the thread wire by the controller, rewritten live by `todo` tool events) and renders through `CopilotTodoSection` → `CopilotTodoPanel` (read-only, objective-tracker glyphs, hidden until the first `todo` call). It never touches the plan cache; the plan cache never touches it.
 - **Locked during streams** — the shell passes `locked={isSending}` down: the panel's editor button disables and the modal locks every field + save (with a visible reason line) while a turn streams, so the model's rewrite and the user's edit can never race. If the modal is open when a turn starts it locks in place.
 - **Tool-activity cards** — a `plan` tool call renders through the ordinary card mechanism labelled by the "Plan updated" i18n key (`agent_plan_updated`); `read_plan` cards read "Plan" (`agent_plan_title`). Raw envelopes/plan JSON never reach a card title.
 
-**Adding a new host**: one owner arm in `AgentPlanOwner` + one column mount (the panel/modal beside the host's surface) + pass `owner` and the host's `locked` flag. Nothing else changes.
+**Adding a new host**: one owner arm in `AgentPlanOwner` + one column mount (the panel/modal beside the host's surface) + pass `owner` and the host's `locked` flag. Nothing else changes — the chatBranch arm (the sidechat's story plan) landed exactly this way.
 
 ---
 
 ## Generation Queue
 
-A per-chat **sequential regeneration queue** lets the user enqueue several "generate more" jobs without waiting. The queue lives in `useGenerationQueueStore` (the ordered job list + per-job status); the runner is `use-generation-queue.ts`, registered once in the app shell.
+A per-chat **server-owned sequential regeneration queue** lets the user enqueue several "generate more" jobs without waiting.
+SQLite `chat_generation_jobs` is authoritative; `useGenerationQueueStore` mirrors its ordered jobs and projects the existing batch/timeline records.
+`use-generation-queue.ts` only sends enqueue/cancel/clear intent and hydrates on chat/branch entry; it contains no browser pump or generation callback registration.
+Typed RPC lives in `api/chat-generation-queue-api.ts`, with an ordered per-chat read/write lane in `lib/chat-generation-queue-client.ts` so a slow hydration cannot overwrite a later mutation.
 
 **Invariants:**
-- Exactly one in-flight generation per chat. The pump pops the next pending job only after the current one resolves.
-- The queue STATE is separate from the streaming seam: it asks "what is the queue's progress?", while `useChatStore.streamingMessageId` (above) answers "which message is streaming right now?". The runner writes streaming-target identity through `startGeneration`, the same path a manual regenerate uses.
-- `enqueueGenerateMore` / `cancelQueueJob` / `clearQueuePending` are plain module-level functions any component can import; `QueueManager.tsx` (rendered in `PlayMode`/the chat footer) renders the queue's progress.
+- Exactly one generation per chat occupies the server registry, including the standalone first regenerate and native JSON calls; queue jobs wait for it rather than becoming another client execution path.
+- Pending jobs survive reload/closed tabs and appear on another device; switching chats does not pause them.
+- Failure retains its server error and advances; Stop keeps a partial variant and advances; Clear removes pending work only.
+- `queue.updated` and reconnect `ready` notifications refresh canonical jobs through the existing authenticated per-chat channel; active queues retain that channel while another chat is visible.
+- Server job IDs supply local record correlation, so restoring a queue requires no browser-only timeline ID; saved variants remain the finished rows and standalone records keep their existing lifecycle.
+- Queue progress is separate from the streaming target: BR-4c replay writes `streamingMessageId` through `startGeneration`, while the mirror supplies status to the unchanged QueueManager pill, desktop popover and mobile sheet.
+- The attachment owner wakes on a new running-job identity and after the prior local reader settles, so a next job starting before the previous reveal ends is not missed; it never re-POSTs generation.
+- `use-agent-run-events.ts` shows one RP reply toast after the final successful job only when that chat is not on screen; canonical queue reads plus lifecycle revisions prevent late earlier-job checks from duplicating it.
+- The same lifecycle channel feeds `chat-run-activity-store.ts` for the navigation writing badges (native RP/Co-Author only, not side agents); each `ready` reconciles `/api/agent-runs`, overlaying newer events so reload/reconnect and slow discovery cannot resurrect a completed run.
+- `CharacterActivityBadge` overlays only character avatars (bottom-right, expanded/collapsed desktop and mobile navigation); chat rows deliberately have no indicators, while names and action buttons retain their geometry.
+- The avatar circle uses theme `s3` with an animated accent pencil while writing, or solid `success` with a white check when ready; a surface-colored outer separator keeps it distinct from the image, status text lives in a shared tooltip/accessible label, and reduced motion disables the pencil animation.
+- Successful background completion changes the overlay to a static check and `ready` until that exact chat is opened in play mode; RP waits for the canonical queue to drain, while errors/stops/asking never create a ready marker.
+- Ready markers are browser-local UI state persisted across reloads, not server read receipts; writing takes priority without acknowledging older unread results, and opening a chat invalidates even in-flight completion checks.
 
 ---
 
@@ -420,6 +458,8 @@ Reserved-but-unimplemented modes (`novel`, `group`) have no package entry and fa
 `PlayMode.tsx` is the chat-focused layout (as opposed to Build Mode's editor layout). It composes `MessageList` + `QueueManager` + `InputArea`. PlayMode is selected by the shell dispatch when the active chat's package resolves its `play` surface (see [Shell Dispatch & Chat Modes](#shell-dispatch--chat-modes) above).
 
 A deliberate remount detail: `MessageList` is keyed by `${chatId}|${branchId}` so message-local UI and Virtuoso's old-history cache reset at the branch boundary. `useStickToBottom` receives the same scope and establishes the native bottom position in a layout effect.
+
+The story-plan strip (`components/chat/sidechat/StoryPlanStrip.tsx`, DR-11) mounts as the FIRST child of `PlayModeChatPane` — the shared chat pane behind both the desktop chat column and the mobile «Chat» tab — so both viewports show the same row: the active branch's story plan in curtain presentation, nothing while the plan is empty, the passed-check flash after a check, and the call-director / check-now actions (component details: [components doc](./components.md#storyplanstrip)).
 
 ---
 

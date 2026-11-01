@@ -74,6 +74,7 @@ import {
 import { buildReadSkillFileTool } from "../../coauthor/skills/skill-read-tool.js";
 import { createAgentPlanTools } from "../../agent-plan/agent-plan-tools.js";
 import { createBufferTools } from "../../agent/agent-buffer-tools.js";
+import { createAskUserTool, type AgentAskUserResult } from "../../agent/agent-ask-user-tool.js";
 import { createCopilotTodoTool } from "./copilot-todo-tool.js";
 
 /** Structured log for every experience-copilot tool call — the observability
@@ -213,13 +214,10 @@ export type ExperienceCopilotBufferOutput = ExperienceCopilotToolOutput & {
  *  does NOT wait — it only marks the turn as awaiting an answer. TAG-5's
  *  stop-condition and the frontend read this envelope; the question/options/
  *  recommended are echoed verbatim (options is a flat string list; `recommended`
- *  names one of them). */
-export interface ExperienceCopilotAskResult {
-  readonly status: "awaiting_answer";
-  readonly question: string;
-  readonly options?: readonly string[];
-  readonly recommended?: string;
-}
+ *  names one of them). Alias of the ONE shared result type
+ *  (`domain/agent/agent-ask-user-tool.ts`) kept for this module's historical
+ *  export surface. */
+export type ExperienceCopilotAskResult = AgentAskUserResult;
 
 // ─── SS-4B trust gate (SCRIPT_SAFETY_PLAN decisions 10/13) ───────────────────
 //
@@ -608,45 +606,11 @@ export function buildExperienceCopilotTools(opts: {
 
     todo: createCopilotTodoTool({ save: saveTodo }),
 
-    // forks: 1 — agent/script-agent/script-agent-tools.ts (AS-7: the script kind's
-    // ask_user — description/schema/refine byte-identical to this original).
-    ask_user: tool({
-      description:
-        "Ask the user ONE clarifying question and end your turn. Provide option chips when the answer space is small (mark your recommended option via `recommended`), or omit options for open questions. " +
-        "The user may answer with a chip, answer freely, or skip.",
-      inputSchema: z
-        .object({
-          question: z.string().min(1).describe("The single clarifying question to ask."),
-          options: z
-            .array(z.string().min(1))
-            .max(6)
-            .optional()
-            .describe("Optional answer chips for a small answer space. Omit for an open question."),
-          recommended: z
-            .string()
-            .min(1)
-            .optional()
-            .describe("Optional: which option you recommend. Must be one of `options` when present."),
-        })
-        .refine(
-          (data) =>
-            data.recommended === undefined ||
-            (data.options !== undefined && data.options.includes(data.recommended)),
-          {
-            message: "`recommended` must be one of `options` (omit both for a free-text-only question)",
-            path: ["recommended"],
-          },
-        ),
-      execute: async ({ question, options, recommended }): Promise<ExperienceCopilotAskResult> => {
-        logger.info("ask_user IN options=%d recommended=%s", options?.length ?? 0, recommended ?? "(none)");
-        return {
-          status: "awaiting_answer",
-          question,
-          ...(options !== undefined ? { options } : {}),
-          ...(recommended !== undefined ? { recommended } : {}),
-        };
-      },
-    }),
+    // ask_user — the ONE shared factory (`domain/agent/agent-ask-user-tool.ts`,
+    // unified at the third consumer 2026-10-27): description/schema/refine/
+    // execute byte-identical to the inline tool this replaced (AS-7's script
+    // fork dissolved with it — no copies remain).
+    ask_user: createAskUserTool(),
   };
 
   // read_skill_file is always available (the universal read-only skill channel,

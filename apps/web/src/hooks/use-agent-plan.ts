@@ -88,6 +88,56 @@ function loadPlan(owner: AgentPlanOwner, entry: AgentPlanCacheEntry): void {
     });
 }
 
+/** DR-13 (DIRECTOR_MODE_PLAN): non-hook read of one owner's cached plan
+ *  through the SAME cache entry `useAgentPlan` serves — for visibility
+ *  predicates that run as plain functions (message-slot `visible` /
+ *  `visibility.getSnapshot`), where mounting the hook is impossible. The
+ *  read never starts a fetch: `entryFor` only reads (creating an empty
+ *  entry at most), and loading stays with the hook's consumers — in play
+ *  mode the story strip is always mounted and owns the branch GET. */
+export function readAgentPlan(owner: AgentPlanOwner): AgentPlan {
+  return entryFor(owner).plan;
+}
+
+/** DR-13: non-hook subscription to one owner's cache entry — the same
+ *  listener set the hook subscribes to; fires on every load/replace of that
+ *  entry (GET completions, ingested proposal companions, streamed tool
+ *  results), so imperative consumers re-run their predicates exactly when a
+ *  hook consumer would re-render. */
+export function subscribeAgentPlan(owner: AgentPlanOwner, listener: () => void): () => void {
+  const entry = entryFor(owner);
+  entry.listeners.add(listener);
+  return () => {
+    entry.listeners.delete(listener);
+  };
+}
+
+/** Push a plan the SERVER already persisted (an accepted story-plan
+ *  proposal's refreshed `plan` companion — DIRECTOR_MODE_PLAN DR-10a) into
+ *  the owner's cache entry: every mounted consumer of that owner (the mobile
+ *  sidechat plan section, the story strip) re-renders with the new plan
+ *  without a second fetch. The response is authoritative — the same trust as
+ *  `applyToolResult`'s streamed replace; an entry that has not loaded yet
+ *  simply starts from this value (its lazy GET re-reads the same row). */
+export function ingestAgentPlan(owner: AgentPlanOwner, plan: AgentPlan): void {
+  replacePlan(entryFor(owner), plan);
+}
+
+/** DR-11 (DIRECTOR_MODE_PLAN): re-run the owner's GET through the SAME
+ *  cache entry (`loadPlan`) — never a second fetch path, the one path
+ *  re-run. The story strip calls this whenever the chat's objective state
+ *  changes in the snapshot: the goal tracker executes the current event and
+ *  the server's follow-back writes completed statuses into the plan row, so
+ *  the re-GET is how mounted consumers learn the next current event. A GET
+ *  already in flight wins (its result is at least as fresh as now); the next
+ *  objective change re-runs this, so nothing is lost. */
+export function refreshAgentPlan(owner: AgentPlanOwner): void {
+  const entry = entryFor(owner);
+  if (entry.loadPromise) return;
+  entry.loaded = false;
+  loadPlan(owner, entry);
+}
+
 /** Parse the complete plan sent as a streamed `plan` tool-call argument. */
 export function parseAgentPlanToolArgs(args: unknown): AgentPlan | null {
   if (typeof args !== "object" || args === null) return null;

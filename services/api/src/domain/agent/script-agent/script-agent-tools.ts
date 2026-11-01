@@ -45,6 +45,7 @@ import {
 import { buildReadSkillFileTool } from "../../coauthor/skills/skill-read-tool.js";
 import { createAgentPlanTools } from "../../agent-plan/agent-plan-tools.js";
 import { createBufferTools } from "../agent-buffer-tools.js";
+import { createAskUserTool } from "../agent-ask-user-tool.js";
 
 /** Structured log for every script-agent tool call — the observability channel
  *  for a path whose tool I/O and validation verdicts are otherwise invisible
@@ -271,51 +272,11 @@ export function buildScriptAgentTools(opts: {
 
     ...agentPlanTools,
 
-    // fork #2 of ask_user (services/api/src/domain/interactive/copilot/experience-copilot-tools.ts)
-    // — description, schema, and `recommended`-refine are byte-identical; only
-    // the kind-owned result type differs. Source carries the reciprocal count.
-    ask_user: tool({
-      description:
-        "Ask the user ONE clarifying question and end your turn. Provide option chips when the answer space is small (mark your recommended option via `recommended`), or omit options for open questions. " +
-        "The user may answer with a chip, answer freely, or skip.",
-      inputSchema: z
-        .object({
-          question: z.string().min(1).describe("The single clarifying question to ask."),
-          options: z
-            .array(z.string().min(1))
-            .max(6)
-            .optional()
-            .describe("Optional answer chips for a small answer space. Omit for an open question."),
-          recommended: z
-            .string()
-            .min(1)
-            .optional()
-            .describe("Optional: which option you recommend. Must be one of `options` when present."),
-        })
-        .refine(
-          (data) =>
-            data.recommended === undefined ||
-            (data.options !== undefined && data.options.includes(data.recommended)),
-          {
-            message: "`recommended` must be one of `options` (omit both for a free-text-only question)",
-            path: ["recommended"],
-          },
-        ),
-      execute: async ({ question, options, recommended }): Promise<{
-        readonly status: "awaiting_answer";
-        readonly question: string;
-        readonly options?: readonly string[];
-        readonly recommended?: string;
-      }> => {
-        logger.info("ask_user IN options=%d recommended=%s", options?.length ?? 0, recommended ?? "(none)");
-        return {
-          status: "awaiting_answer",
-          question,
-          ...(options !== undefined ? { options } : {}),
-          ...(recommended !== undefined ? { recommended } : {}),
-        };
-      },
-    }),
+    // ask_user — the ONE shared factory (`domain/agent/agent-ask-user-tool.ts`,
+    // unified at the third consumer 2026-10-27): this AS-7 fork dissolved —
+    // description, schema, `recommended`-refine and execute are the shared
+    // factory's, byte-identical to what stood here.
+    ask_user: createAskUserTool(),
   };
 
   // read_skill_file is always available (the universal read-only skill channel,

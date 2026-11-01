@@ -1,7 +1,7 @@
 import { memo, useState } from "react";
 import { useChatStore, useIsSending } from "../../stores/index.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
-import { useDisplayMessage, useMessageAuthor, useIsStreamingTarget, useStreamingRevealedFor } from "../../stores/chat-selectors.js";
+import { useDisplayMessage, useMessageAuthor, useIsStreamingTarget, useStreamingRevealedFor, useEditingDraftFor } from "../../stores/chat-selectors.js";
 import { MessageShell, type MessageShellAuthorInfo } from "../chat/MessageShell.js";
 import type { MessageMetaContext } from "../../lib/message-meta-registry.js";
 import { DestructiveConfirmModal } from "../shared/destructive-confirm-modal.js";
@@ -18,6 +18,7 @@ import { countTokens } from "../../utils/tokenizer.js";
 import { useChatController } from "../../hooks/use-chat-controller.js";
 import { useShallow } from "zustand/react/shallow";
 import { copyText } from "../../lib/clipboard.js";
+import { useIsGenerationVisible, usePendingUserContent } from "../../stores/chat-store.js";
 
 export const CoauthorTurnShell = memo(function CoauthorTurnShell({
   turnId,
@@ -32,11 +33,9 @@ export const CoauthorTurnShell = memo(function CoauthorTurnShell({
   const chat = useChatController();
   const authorInfo = useMessageAuthor();
   const isSending = useIsSending();
+  const isGenerationVisible = useIsGenerationVisible();
   
-  const pendingUserMessageContent = useChatStore(s => {
-    if (!s.activeChatId) return null;
-    return s.generations[s.activeChatId]?.pendingUserMessageContent ?? null;
-  });
+  const pendingUserMessageContent = usePendingUserContent();
 
   const turnMessageIds = useSnapshotStore(useShallow((state) => {
     const order = state.messageOrder;
@@ -75,7 +74,7 @@ export const CoauthorTurnShell = memo(function CoauthorTurnShell({
 
   if (!authorInfo || turnMessageIds.length === 0) return null;
 
-  const isGenerating = isSending && !pendingUserMessageContent && isLastTurn;
+  const isGenerating = isGenerationVisible && !pendingUserMessageContent && isLastTurn;
 
   const characterAvatarUrl = resolveEntityAvatarUrl({
     kind: "characters",
@@ -256,7 +255,10 @@ const CoauthorTurnPart = memo(function CoauthorTurnPart({ messageId, chatId }: {
   const streamingReveal = useStreamingRevealedFor(messageId);
   const chat = useChatController();
   const isEditingThisPart = useChatStore(s => s.editingMessageId === messageId);
-  const editingDraft = useChatStore(s => s.editingDraft);
+  // LAG-1: edit text reaches only the part being edited — sibling parts get
+  // the stable "" and never re-render per keystroke (shared derivation with
+  // MessageBlock in chat-selectors.ts).
+  const editingDraft = useEditingDraftFor(messageId);
   const isSending = useIsSending();
   const isMessageAction = useChatStore(s => s.messageActionId === messageId);
   const isBusy = isSending || isMessageAction;

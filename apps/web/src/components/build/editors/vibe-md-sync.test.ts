@@ -117,6 +117,33 @@ describe("pinBodyFields / applyBodyToDraft: extraction", () => {
       mesExample: "",
     });
   });
+  test("a foreign H1 pasted under # PERSONALITY folds into description instead of zeroing it (MD_HEADING_LOSS_REPORT)", () => {
+    // Owner incident shape: prose that begins with its own H1 heading pasted
+    // under # PERSONALITY. The codec folds the unknown section into the
+    // preceding known one — description keeps the pasted text (heading line
+    // included); greetings are untouched.
+    const body = [
+      "# PERSONALITY",
+      "# KEITH ALLEN",
+      "## SUMMARY",
+      "Keith Allen is a senior analyst.",
+      "",
+      "# SCENARIO",
+      "Late-night office.",
+      "",
+      "# EXAMPLES",
+      "{{char}}: Evening.",
+      "",
+      "# GREETINGS",
+      "Hello there.",
+    ].join("\n");
+    expect(pinBodyFields(body)).toEqual({
+      description: "# KEITH ALLEN\n## SUMMARY\nKeith Allen is a senior analyst.",
+      scenario: "Late-night office.",
+      mesExample: "{{char}}: Evening.",
+    });
+    expect(pinGreetingsFields(body)).toEqual({ firstMessage: "Hello there.", alternateGreetings: [] });
+  });
   test("applyBodyToDraft preserves non-body fields; body fields are overwritten", () => {
     // The body owns description/scenario/mesExample + firstMessage/alternateGreetings
     // (via # GREETINGS). A body with no GREETINGS clears firstMessage/alternates.

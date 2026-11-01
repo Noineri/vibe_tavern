@@ -1,4 +1,4 @@
-import { type StoreContainer, type PromptPreset, type DiceRoll } from "@vibe-tavern/db";
+import { type StoreContainer, type PromptPreset } from "@vibe-tavern/db";
 import type { PromptPresetDto, PromptTraceRecordDto } from "@vibe-tavern/domain";
 import { effectiveContextBudget } from "@vibe-tavern/domain";
 import { providerTokenContextFromProfile, runWithProviderTokenContext } from "../../infrastructure/ai/token-count-cache.js";
@@ -21,7 +21,9 @@ import {
 } from "../../shared/errors.js";
 import type { CoauthorApplyRequest } from "@vibe-tavern/api-contracts";
 import { PromptAssemblyService } from "../../domain/prompt/prompt-assembly-service.js";
-import { storeRollToSnapshot } from "../../domain/dice/dice-service.js";
+import { buildMessagesWithVariants } from "./session-runtime-messages.js";
+import { buildChatListItems } from "./session-runtime-chat-list.js";
+import { getPromptTraceHistory, listPromptTraces } from "./session-runtime-traces.js";
 import { StaticPromptResolver } from "../../domain/prompt/prompt-resolver.js";
 import { RegexHookService } from "../../domain/regex/regex-hook-service.js";
 import { createLoreDelegate } from "../../domain/coauthor/lore/lore-delegate.js";
@@ -39,7 +41,6 @@ import { assembleSessionPrompt, type SessionPromptAssemblyOptions } from "./sess
 import {
 	mapChatBranch,
 	mapChatDto,
-	mapMessageDto,
 	mapPromptTraceRecord,
 } from "./session-runtime-dto.js";
 
@@ -93,7 +94,7 @@ import {
 	CharacterRuntime,
 } from "../../domain/character/character-runtime.js";
 import { type PersonaRecord, PersonaRuntime } from "../../domain/persona/persona-runtime.js";
-import { ChatRuntime } from "./session-runtime-chat.js";
+import { createChatRuntime, type ChatRuntime } from "./session-runtime-chat.js";
 import { ChatOrderService } from "./session-runtime-chat-order.js";
 import { ChatLifecycleRuntime } from "./session-runtime-chat-lifecycle.js";
 import * as importExportModule from "./session-runtime-import-export.js";
@@ -150,14 +151,8 @@ import type { ImportStreamEvent } from "../../shared/st-directory-scanner.js";
 		this.getSkillCatalog =
 			options?.getSkillCatalog ?? (async () => []);
 		this.chatOrder = new ChatOrderService(stores.chats);
-		this.chatRuntime = new ChatRuntime({
-			chats: stores.chats,
-			messages: stores.messages,
-			traces: stores.traces,
+		this.chatRuntime = createChatRuntime(stores, {
 			chatApp: this.chatApp,
-			diceRolls: stores.diceRolls,
-			uiSettings: stores.uiSettings,
-			experiences: stores.experiences,
 			assemblePrompt: (chatId, branchId, opts) =>
 				this.assemblePrompt(chatId, branchId, opts),
 			getSnapshot: (chatId) => this.getSnapshot(chatId),
@@ -258,7 +253,7 @@ import type { ImportStreamEvent } from "../../shared/st-directory-scanner.js";
 				this.resolver.getPersona(
 					chat.personaId ?? await this.persona.resolveDefaultId(),
 				),
-				Promise.all(this.chatOrder.items.map((id) => this.mapChatToListItem(id))),
+				this.fetchChatList(),
 				this.getAllCharacterEntries(),
 			]);
 
@@ -344,11 +339,13 @@ import type { ImportStreamEvent } from "../../shared/st-directory-scanner.js";
 		const [messagesWithVariants, latestTrace] = await Promise.all([
 			this.buildMessagesWithVariants(messages, branchId),
 			// Latest single trace only — the full history is lazy-loaded (TRACE_LAZY_LOADING).
-			this.getPromptTraceHistory(chatId, branchId, 1),
+			// LC-1: one row in SQL — getTracesByChat + slice loaded and inflated
+			// every trace of the branch to return one (D1, LONG_CHAT_PERFORMANCE_REPORT).
+			this.stores.traces.getLatestTraceByChat(chatId, branchId),
 		]);
 		const response: MessageResponse = {
 			messages: messagesWithVariants,
-			promptTrace: latestTrace[0] ?? null,
+			promptTrace: latestTrace ? mapPromptTraceRecord(latestTrace) : null,
 		};
 		if (opts?.summaries) {
 			response.summaries = await this.fetchSummaries(chatId, branchId);
@@ -507,27 +504,7 @@ import type { ImportStreamEvent } from "../../shared/st-directory-scanner.js";
 		messages: import("@vibe-tavern/db").Message[],
 		branchId: ChatBranchId,
 	): Promise<SessionSnapshot["messages"]> {
-		// Batch-load bound Dice rolls for user messages in ONE query (the B7 batch
-		// read already used by prompt assembly). Assistant messages never carry
-		// Dice; user messages without bound rolls get nothing (field absent).
-		const userMessageIds = messages.filter((m) => m.role === "user").map((m) => m.id);
-		const [variantsByMessage, diceRollsByMessage] = await Promise.all([
-			this.stores.messages.getVariantsByBranch(branchId),
-			userMessageIds.length > 0
-				? this.stores.diceRolls.getRollsForMessages(userMessageIds)
-				: Promise.resolve(new Map<string, DiceRoll[]>()),
-		]);
-		return messages.map((message) => {
-			if (message.role !== "user") {
-				return mapMessageDto(message, variantsByMessage.get(message.id) ?? []);
-			}
-			const rolls = diceRollsByMessage.get(message.id);
-			return mapMessageDto(
-				message,
-				variantsByMessage.get(message.id) ?? [],
-				rolls && rolls.length > 0 ? rolls.map(storeRollToSnapshot) : undefined,
-			);
-		});
+		return buildMessagesWithVariants(this.stores, messages, branchId);
 	}
 
 	/** All branches for a chat, each annotated with its message count. */
@@ -550,9 +527,10 @@ import type { ImportStreamEvent } from "../../shared/st-directory-scanner.js";
 		}));
 	}
 
-	/** Ordered sidebar chat list (derived from the in-memory chat order). */
+	/** Ordered sidebar chat list (derived from the in-memory chat order). LC-2:
+	 * one aggregate read — see session-runtime-chat-list.ts. */
 	private async fetchChatList(): Promise<SessionSnapshot["chats"]> {
-		return Promise.all(this.chatOrder.items.map((id) => this.mapChatToListItem(id)));
+		return buildChatListItems(this.stores, this.chatOrder.items);
 	}
 
 	async getPromptTraceHistory(
@@ -560,22 +538,14 @@ import type { ImportStreamEvent } from "../../shared/st-directory-scanner.js";
 		branchId?: ChatBranchId,
 		limit = 12,
 	): Promise<PromptTraceRecordDto[]> {
-		const traces = await this.stores.traces.getTracesByChat(chatId, branchId);
-		return traces.slice(0, limit).map(mapPromptTraceRecord);
+		return getPromptTraceHistory(this.stores, chatId, branchId, limit);
 	}
 
 	async listPromptTraces(
 		chatId: ChatId,
 		opts?: { messageId?: string; branchId?: string },
 	): Promise<PromptTraceRecordDto[]> {
-		// Server-side filtering only — the route's query params flow straight to
-		// the store so the frontend never receives traces outside its scope.
-		const traces = await this.stores.traces.getTracesByChat(
-			chatId,
-			opts?.branchId,
-			opts?.messageId,
-		);
-		return traces.map(mapPromptTraceRecord);
+		return listPromptTraces(this.stores, chatId, opts);
 	}
 
 	async rebuildChatOrder(): Promise<void> {
@@ -700,13 +670,15 @@ import type { ImportStreamEvent } from "../../shared/st-directory-scanner.js";
 
 	/**
 	 * List a character's co-author chats for the Co-Author mode entry screen.
-	 * Reuses mapChatToListItem so items carry the same shape (lastMessageAt,
-	 * messageCount, …) the sidebar uses. Several co-author chats per character
+	 * Items carry the same shape (lastMessageAt, messageCount, …) the sidebar
+	 * uses — from the ONE chat-list aggregate (LC-2), with
+	 * listByCharacterAndMode supplying the ordered id list (insertion order,
+	 * the pre-aggregate order, pinned). Several co-author chats per character
 	 * fall out for free: each is a chats row with mode='coauthor'.
 	 */
 	async listCoauthorChats(characterId: CharacterId): Promise<ChatListItem[]> {
 		const chats = await this.stores.chats.listByCharacterAndMode(characterId, "coauthor");
-		return Promise.all(chats.map((c) => this.mapChatToListItem(c.id as ChatId)));
+		return buildChatListItems(this.stores, chats.map((c) => c.id));
 	}
 
 	/**
@@ -830,39 +802,6 @@ import type { ImportStreamEvent } from "../../shared/st-directory-scanner.js";
 			aiAssistantPrompts: (preset as { aiAssistantPrompts?: string }).aiAssistantPrompts ?? "{}",
 			createdAt: preset.createdAt,
 			updatedAt: preset.updatedAt,
-		};
-	}
-
-	private async mapChatToListItem(chatId: ChatId): Promise<ChatListItem> {
-		const chat = (await this.stores.chats.getById(chatId))!;
-		const chatState = await this.chatApp.getChatState(chatId, chat.activeBranchId as ChatBranchId);
-		let characterName = "Unknown";
-		let subtitle = "";
-		try {
-			const charRecord = await this.resolver.getCharacter(chat.characterId);
-			characterName = charRecord.name;
-			subtitle = charRecord.subtitle ?? "";
-		} catch { /* chat may reference a since-deleted character; keep default name/subtitle */ }
-		const messageCount = chatState.messages.length;
-		// Recency signal for the sidebar's "recent" sort: the newest message in the
-		// active branch (chat.updatedAt reflects metadata edits, not generation).
-		// getMessages() returns position-ascending, but reduce on createdAt is
-		// order-robust and empty-safe (→ "" → falls back to chat.updatedAt).
-		const lastMessageAt = chatState.messages.reduce<string>(
-			(max, m) => (m.createdAt > max ? m.createdAt : max),
-			"",
-		) || chat.updatedAt;
-		return {
-			id: chat.id as ChatId,
-			title: chat.title,
-			characterId: chat.characterId as CharacterId,
-			characterName,
-			subtitle,
-			activeBranchLabel: chatState.branch.label,
-			mode: chat.mode,
-			messageCount,
-			lastMessageAt,
-			updatedAt: chat.updatedAt,
 		};
 	}
 

@@ -77,7 +77,13 @@ export const BUDGETS = {
 	// 1244 (2026-10-21, SC-11): one insights scene-harness stub typed — SC-11
 	// reached 1246 mid-unit, paid back to 1244 at commit (SC-10's HEAD was
 	// green at exactly 1245/1245).
-	asNever: 1244,
+	// 1245 (2026-10-26, DR-3a): +1 — story-plan-sync.test.ts constructs
+	// ObjectiveService twice (main pair + the observer-failure case) with two
+	// unused ctor deps (SessionRuntime/ProviderProfileService — no path under
+	// test touches them); minimized to ONE shared `unusedObjectiveDeps` cast
+	// from 4 raw `null as never`s. Lower when the ctor deps become optional
+	// or the DI boundary becomes structural.
+	asNever: 1245,
 	/** Global `screen.` usage in apps/web test files (binds at import time). */
 	// 196 (2026-10-04): ratcheted to the merged tree's count after PR #51
 	// (provider-lists unification removed the forked pickers' screen usage;

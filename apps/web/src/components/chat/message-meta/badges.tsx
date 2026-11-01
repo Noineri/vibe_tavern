@@ -23,6 +23,7 @@ import { resolveModelLabel } from "../../../lib/model-resolve.js";
 
 // Side-effect: register the Dice rolls user-message badge (DICE-F10).
 import "./dice-rolls.js";
+import "./experience-report.js";
 
 // Provenance: model that produced this variant.
 // Visible only for assistant variants that carry a model id.

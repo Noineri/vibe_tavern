@@ -40,6 +40,7 @@ import type {
   ExperienceRecalculateRequest,
   ExperienceRecalculationPreview,
   ExperienceReportQueueRequest,
+  ExperienceReportClearRequest,
   ExperienceReportStatus,
   ExperienceRoundCommitRequestDto,
   ExperienceRoundConfigResponseDto,
@@ -278,6 +279,12 @@ export async function queueExperienceReport(
 export async function getExperienceReportStatus(sessionId: string): Promise<ExperienceReportStatus> {
   const response = await client.api.experience.sessions[":sessionId"].reports.status.$get({ param: { sessionId } });
   return unwrapExperience(response);
+}
+
+/** Clear the selected scope's unbound queue without rewinding the report frontier. */
+export async function clearExperienceReportQueue(sessionId: string, body: ExperienceReportClearRequest): Promise<void> {
+  const response = await client.api.experience.sessions[":sessionId"].reports.queue.$delete({ param: { sessionId }, json: body });
+  await unwrapExperience(response);
 }
 
 // ─── Replay ──────────────────────────────────────────────────────────────────

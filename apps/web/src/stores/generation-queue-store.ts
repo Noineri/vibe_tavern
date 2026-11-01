@@ -2,14 +2,17 @@ import { create } from "zustand";
 import { immer } from "zustand/middleware/immer";
 import { useShallow } from "zustand/react/shallow";
 import { useSnapshotStore } from "./snapshot-store.js";
+import type { ChatGenerationJob } from "@vibe-tavern/api-contracts";
+import type { ChatGenerationJobStatus } from "@vibe-tavern/domain";
 
 /**
- * Chat generation queue — per-chat sequential job list (CHAT_GENERATION_QUEUE_PLAN Q3).
+ * Server queue mirror (BR-4g). Only the server executes jobs and owns statuses.
+ * The local mutators below remain projection/fixture utilities, not a runner.
  *
  * Owns ONLY the queue's concern: the ordered list of enqueued regeneration
  * jobs and their per-job status. It does NOT model streaming-target identity
  * — that is the {@link useChatStore}`.streamingMessageId` seam (D8), which the
- * queue runner writes through `startGeneration`. The two stores are distinct:
+ * BR-4c replay writes through `startGeneration`. The two stores are distinct:
  * this one answers "what is the queue's progress", chat-store answers "which
  * message is streaming right now".
  *
@@ -26,25 +29,8 @@ import { useSnapshotStore } from "./snapshot-store.js";
  * drained, cleared, or cancelled job list until the next Send/Resend reset.
  */
 
-export type QueueJobStatus = "pending" | "running" | "done" | "failed" | "cancelled";
-
-export interface QueueJob {
-  id: string;
-  chatId: string;
-  /** Existing assistant message this job adds a variant to. */
-  messageId: string;
-  /** Frozen model key. The override model's per-model overlay resolves at pop. */
-  model: string;
-  /** Frozen prompt-preset key (null = use the chat's current preset). */
-  promptPresetId: string | null;
-  /** Links this executable job to its non-variant timeline record. */
-  recordId?: string;
-  status: QueueJobStatus;
-  /** Variant index once the job completes and materializes a swipe. */
-  variantIndex?: number;
-  error?: string;
-  enqueuedAt: number;
-}
+export type QueueJobStatus = ChatGenerationJobStatus;
+export type QueueJob = ChatGenerationJob;
 
 export type GenerationRecordOrigin = "regenerate" | "queue";
 export type GenerationRecordStatus = "pending" | "running" | "failed";
@@ -89,6 +75,7 @@ export interface EnqueueJobInput {
 }
 
 export interface GenerationQueueActions {
+  replaceServerJobs: (chatId: string, jobs: QueueJob[], presetNames?: Record<string, string>) => void;
   /** Append a pending job. Returns the new job id. */
   enqueueJob: (input: EnqueueJobInput) => string;
   /**
@@ -132,6 +119,36 @@ export const useGenerationQueueStore = create<GenerationQueueState & GenerationQ
     jobsByChat: {},
     batchesByChat: {},
     recordsByChat: {},
+
+    replaceServerJobs: (chatId, jobs, presetNames = {}) => set((s) => {
+      const previousJobs = s.jobsByChat[chatId] ?? [];
+      s.jobsByChat[chatId] = jobs.map((job) => ({ ...job, recordId: job.id }));
+      const snapshot = useSnapshotStore.getState();
+      const visible = snapshot.activeChat?.id === chatId;
+      const latestAssistant = visible ? [...snapshot.messageOrder].reverse().find((id) => snapshot.messagesById[id]?.role === "assistant") : undefined;
+      const lastJob = jobs.findLast((job) => job.messageId === latestAssistant);
+      if (!s.batchesByChat[chatId] && lastJob) {
+        const variants = snapshot.messagesById[lastJob.messageId]?.variants ?? [];
+        const indexes = jobs.filter((job) => job.messageId === lastJob.messageId && job.variantIndex !== undefined).map((job) => job.variantIndex!);
+        const firstIndex = indexes.length ? Math.min(...indexes) : Infinity;
+        s.batchesByChat[chatId] = { messageId: lastJob.messageId, variantIdsAtStart: variants.filter((variant) => variant.variantIndex < firstIndex).map((variant) => variant.id) };
+      }
+      const previous = s.recordsByChat[chatId] ?? [];
+      const records = jobs.flatMap((job): GenerationRecord[] => {
+        if (job.status !== "pending" && job.status !== "running" && job.status !== "failed") return [];
+        const old = previous.find((record) => record.id === job.id || record.id === previousJobs.find((item) => item.id === job.id)?.recordId);
+        const count = visible ? snapshot.messagesById[job.messageId]?.variants.length : undefined;
+        return [{ id: job.id, messageId: job.messageId, origin: "queue", status: job.status,
+          model: job.model, presetId: job.promptPresetId, presetName: presetNames[job.promptPresetId ?? (visible ? snapshot.activeChat?.promptPresetId : null) ?? ""] ?? old?.presetName ?? null,
+          // A newly observed background job has no snapshot anchor yet. Do not
+          // freeze a fabricated zero: returning must anchor it to that target's
+          // actual saved variants before the running row hides an in-flight one.
+          startVariantPosition: job.variantIndex ?? (old?.status === job.status && old.startVariantPosition >= 0 ? old.startVariantPosition : count ?? old?.startVariantPosition ?? -1),
+          ...(job.error === undefined ? {} : { error: job.error }),
+        }];
+      });
+      s.recordsByChat[chatId] = [...previous.filter((record) => record.origin === "regenerate" && !previousJobs.some((job) => job.recordId === record.id)), ...records];
+    }),
 
     enqueueJob: (input) => {
       const id = nextJobId();

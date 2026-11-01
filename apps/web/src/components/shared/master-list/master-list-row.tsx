@@ -5,8 +5,9 @@ import { cn } from "../../../lib/cn.js";
 import { rowSecondCls, rowTitleCls } from "../../../lib/field-tokens.js";
 
 // forks: 0 — master-list primitive source: the row every master-detail list
-// renders (handle, status slot, wrapping title, second line, rename slot,
-// trailing slot, selection look). Consumers supply data + slots, never classes.
+// renders (handle, status slot, wrapping title, tags line, second line,
+// rename slot, trailing slot, selection look). Consumers supply data +
+// slots, never classes.
 
 /** Drag-handle wiring for one row: the ONLY element that starts a reorder.
  *  Built by `SortableMasterListRow` from `useSortable`; a row without a
@@ -31,11 +32,17 @@ export interface MasterListRowProps {
   /** Dot color for the active row: success (default) or danger (the active
    *  profile has no usable auth — the LLM provider-list tone). */
   activeTone?: "success" | "danger";
-  /** Status-marker slot (connection dot, built-in/user badge, …). */
+  /** Status-marker slot: markers only (connection dot, active dot, …) —
+   *  never a text tag. Text tags live one line under the title via `tags`. */
   status?: ReactNode;
+  /** Text-tag line: its own line directly under the title, above the second
+   *  line, wrapping (e.g. the «built-in» tag — a user item carries no tag).
+   *  Renders in the title column, never in the status cluster. */
+  tags?: ReactNode;
   /** Optional second line under the title (provider label, backend, …). */
   secondLine?: ReactNode;
-  /** Inline-rename editor slot: when present it replaces title + second line. */
+  /** Inline-rename editor slot: when present it replaces the whole title
+   *  block (title + tags + second line). */
   rename?: ReactNode;
   /** Trailing slot (context actions, drill-down caret, …). */
   trailing?: ReactNode;
@@ -57,6 +64,7 @@ export function MasterListRow({
   activeTone = "success",
   status,
   title,
+  tags,
   secondLine,
   rename,
   trailing,
@@ -118,6 +126,7 @@ export function MasterListRow({
           {rename ?? (
             <>
               <div className={cn(rowTitleCls, "min-w-0 break-words")}>{title}</div>
+              {tags ? <div className="mt-0.5 flex flex-wrap gap-1">{tags}</div> : null}
               {secondLine ? (
                 <div className={cn(rowSecondCls, "mt-0.5", selected ? "text-accent-t" : "text-t4")}>
                   {secondLine}
