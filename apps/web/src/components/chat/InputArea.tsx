@@ -103,6 +103,7 @@ function DesktopInputArea({ data }: { data: ReturnType<typeof useInputArea> }) {
 
           <AutoTextarea
             bare
+            scrollbarSize="thin"
             className={cn(composerCls, "w-full !px-4 !pt-[13px] !pb-2 !text-[calc(var(--ui-fs)+1px)] !leading-tight")}
             maxRows={12}
             minRows={3}

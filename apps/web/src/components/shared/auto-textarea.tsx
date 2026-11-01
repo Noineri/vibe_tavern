@@ -18,6 +18,7 @@ import {
  *  escape hatch is the explicit `bare` mode below. */
 import { cn, } from "../../lib/cn.js";
 import { monoMod, textareaCls } from "../../lib/field-tokens.js";
+import { ScrollArea } from "./scroll-area.js";
 
 /** Native HTML textarea attributes that AutoTextarea doesn't consume itself. */
 export type AutoTextareaPassthrough = Omit<
@@ -40,6 +41,8 @@ export interface AutoTextareaProps extends AutoTextareaPassthrough {
    *  under prose font), so the composer family opts out DELIBERATELY.
    *  Regular fields never set this. */
   bare?: boolean;
+  /** Composer-only custom 3px chrome; the textarea remains the real viewport. */
+  scrollbarSize?: "thin";
   /** Inline styles. NOTE: `minHeight` / `maxHeight` / `height` are NOT supported
    *  here — the underlying library owns element height and throws at runtime if
    *  they appear in `style`. Use `minRows` / `maxRows` for size control. */
@@ -115,6 +118,7 @@ const textareaValueSetter = typeof window === "undefined"
 export function AutoTextarea({
   className,
   bare,
+  scrollbarSize,
   mono,
   style,
   disabled,
@@ -291,8 +295,7 @@ export function AutoTextarea({
   // lib's Style narrows height to number and forbids minHeight/maxHeight. Cast
   // at the seam — callers must keep those keys out of style (the lib's runtime
   // guard makes a mistake loud, not silent).
-  return (
-    <>
+  const input = (
       <TextareaAutosize
         {...rest}
         {...(register ? { name: register.name } : {})}
@@ -314,6 +317,10 @@ export function AutoTextarea({
         maxRows={maxRows}
         minRows={minRows}
       />
+  );
+  return (
+    <>
+      {scrollbarSize ? <ScrollArea scrollbarSize={scrollbarSize} viewportRender={input} /> : input}
       {macroAutocomplete && acOpen
         ? createPortal(
             <MacroAutocomplete

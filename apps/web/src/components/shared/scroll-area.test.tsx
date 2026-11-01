@@ -7,6 +7,32 @@ const { act, fireEvent, render, waitFor } = await import("@testing-library/react
 const { ScrollArea } = await import("./scroll-area.js");
 
 describe("ScrollArea", () => {
+  it("uses a textarea itself as viewport and remeasures value changes without replacing it", async () => {
+    const ref = createRef<HTMLTextAreaElement>();
+    const node = (value: string) => <ScrollArea scrollbarSize="thin" viewportRender={<textarea ref={ref} aria-label="Native draft" value={value} readOnly />} />;
+    const view = render(node("Short draft"));
+    await act(async () => {});
+    const textarea = view.getByRole("textbox");
+    expect(ref.current === textarea).toBe(true);
+    expect(textarea.hasAttribute("data-scroll-viewport")).toBe(true);
+    expect(textarea.tabIndex).toBe(0);
+    expect(view.container.querySelector("[data-scroll-content]")).toBeNull();
+    let height = 100;
+    Object.defineProperties(textarea, {
+      clientHeight: { value: 100 }, scrollHeight: { get: () => height },
+      clientWidth: { value: 200 }, scrollWidth: { value: 200 },
+    });
+    height = 1000;
+    await act(async () => view.rerender(node("Long draft")));
+    await waitFor(() => expect(view.container.querySelector("[data-scroll-thumb]")).not.toBeNull());
+    expect(view.getByRole("textbox")).toBe(textarea);
+    expect(textarea.scrollTop).toBe(0);
+    height = 100;
+    await act(async () => view.rerender(node("")));
+    await waitFor(() => expect(view.container.querySelector("[data-scroll-track]")).toBeNull());
+    expect(textarea.tabIndex).toBe(0);
+  });
+
   it("preserves a semantic root and keeps viewport/content layout separate", async () => {
     const view = render(<ScrollArea render={<section />} className="max-h-[50%]" contentClassName="py-2" scrollbarSize="thin">
       <button type="button">Choose character</button>

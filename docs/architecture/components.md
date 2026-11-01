@@ -67,7 +67,10 @@ Wraps the installed Base UI Root/Viewport/Content/Scrollbar/Thumb; the viewport 
 `className`/`style` size the root (including flex or max-height constraints); `contentClassName` carries row layout, gaps and padding; `viewportProps` forwards the ref, accessible name, scroll events and viewport-local classes to the actual scroller.
 Use `render={<section />}` when the existing semantic root must remain a section.
 Base UI owns measurement, conditional scrollbar mounting, thumb dragging and native keyboard/wheel/touch interaction; non-overflowing viewports stay out of tab order.
-This vertical primitive does not replace the message navigation rail, direct textarea scrolling, CodeMirror, or sandboxed iframe documents.
+`viewportRender` composes a native editor element as the viewport without a Content wrapper; native inputs remain focusable even without overflow and keep their own focus chrome.
+After editor renders, a programmatic scroll notification refreshes Base UI's measurements when a capped textarea's value changes scrollHeight without resizing its box; no scroll position is assigned and the editor is not remounted.
+`AutoTextarea scrollbarSize="thin"` uses this composition for the desktop RP/Co-Author composers, retaining autosizing, native selection/caret scrolling, register refs and macro autocomplete.
+This vertical primitive does not replace the message navigation rail, CodeMirror, or sandboxed iframe documents.
 
 ## Chat Navigation Rail
 

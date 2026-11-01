@@ -4,7 +4,7 @@ import { useDomEnv } from "../../../test/dom-env.js";
 
 useDomEnv();
 
-const { fireEvent, render } = await import("@testing-library/react");
+const { act, fireEvent, render } = await import("@testing-library/react");
 
 // The component reads `window.HTMLTextAreaElement` at module scope, so it must
 // be imported only after useDomEnv() has registered happy-dom.
@@ -44,6 +44,22 @@ function firstOption() {
 }
 
 describe("AutoTextarea — macro autocomplete", () => {
+  it("keeps the actual composer textarea, caret and macro picker with custom thin chrome", async () => {
+    const view = render(<AutoTextarea bare scrollbarSize="thin" className="composer-chrome" defaultValue="" />);
+    await act(async () => {});
+    const ta = view.getByRole("textbox") as HTMLTextAreaElement;
+    expect(ta.hasAttribute("data-scroll-viewport")).toBe(true);
+    expect(ta.closest('[data-scroll-area="thin"]')).not.toBeNull();
+    expect(ta.classList.contains("composer-chrome")).toBe(true);
+    expect(ta.tabIndex).toBe(0);
+    await act(async () => typeInto(ta, "hello {{"));
+    expect(picker()).not.toBeNull();
+    await act(async () => fireEvent.keyDown(ta, { key: "Enter" }));
+    expect(ta.value).toBe("hello {{user}}");
+    expect(view.getByRole("textbox")).toBe(ta);
+    expect(ta.selectionStart).toBe(ta.value.length);
+  });
+
   it("opens the picker when `{{` is typed", () => {
     render(<Controlled />);
     expect(picker()).toBeNull();

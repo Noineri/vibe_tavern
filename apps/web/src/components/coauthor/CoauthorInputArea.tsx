@@ -88,6 +88,7 @@ function DesktopInput({ data }: { data: ReturnType<typeof useCoauthorInputArea> 
 				<input type="file" ref={fileInputRef} className="hidden" accept={accept} multiple onChange={onFileInputChange} />
 				<AutoTextarea
 					bare
+					scrollbarSize="thin"
 					data-testid="coauthor-input-textarea"
 					className={cn(composerCls, "w-full !min-h-[55px] !px-4 !pt-[13px] !pb-2 !text-[calc(var(--ui-fs)+1px)] !leading-tight")}
 					maxRows={12}
