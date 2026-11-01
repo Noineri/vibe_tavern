@@ -243,7 +243,7 @@ export function MessageScroller({ displayIds, renderItem, bottomInset = 0 }: Mes
           overscan={{ main: 4000, reverse: 4000 }}
           itemContent={(index, messageId) => renderItem(index, messageId)}
           components={components}
-          className={cn("flex-1", !isMobile && "scrollbar-hide")}
+          className="flex-1 scrollbar-hide"
           style={{ overflowY: "auto", WebkitOverflowScrolling: "touch" } as React.CSSProperties}
         />
         <ChatScrollRail key={resetKey} displayIds={displayIds} scroller={scrollerElement} onJump={jumpToDisplayIndex} isMobile={isMobile} />

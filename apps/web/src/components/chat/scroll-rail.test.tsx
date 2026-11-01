@@ -11,20 +11,21 @@ const entries: RailEntry[] = Array.from({ length: 12 }, (_, i) => ({
   role: i % 2 ? "user" : "assistant", author: i % 2 ? "Noah" : "Keith", snippet: `Scene ${i}`,
 }));
 
-function setup() {
+function setup(isMobile = false) {
   const scroller = document.createElement("div");
   scroller.id = "transcript";
   Object.defineProperties(scroller, {
     clientHeight: { value: 400 }, scrollHeight: { value: 2000 }, clientWidth: { value: 600 },
   });
   const onJump = mock();
-  const view = render(<ScrollRail entries={entries} scroller={scroller} onJump={onJump} isMobile={false} />);
+  const onTick = mock();
+  const view = render(<ScrollRail entries={entries} scroller={scroller} onJump={onJump} isMobile={isMobile} onTick={onTick} />);
   const rail = view.getByRole("scrollbar");
   rail.getBoundingClientRect = () => new DOMRect(564, 20, 36, 400);
   rail.setPointerCapture = () => {};
   rail.releasePointerCapture = () => {};
   rail.hasPointerCapture = () => true;
-  return { view, rail, onJump };
+  return { view, rail, onJump, onTick };
 }
 
 describe("desktop scroll rail", () => {
@@ -69,5 +70,42 @@ describe("desktop scroll rail", () => {
   it("has no navigation surface when there are no persisted entries", () => {
     const view = render(<ScrollRail entries={[]} scroller={null} onJump={() => {}} isMobile={false} />);
     expect(view.queryByRole("scrollbar")).toBeNull();
+  });
+});
+
+describe("mobile scroll rail", () => {
+  it("scrubs only from the inboard handle, shares the preview, and ticks once per selected message", () => {
+    const { view, rail, onJump, onTick } = setup(true);
+    expect(rail.classList.contains("pointer-events-none")).toBe(true);
+    const handle = rail.querySelector<HTMLElement>("[data-rail-handle]")!;
+    expect(handle.classList.contains("touch-none")).toBe(true);
+    expect(rail.classList.contains("right-1")).toBe(true);
+    fireEvent.pointerDown(rail, { pointerId: 1, clientY: 220, pointerType: "touch", button: 0 });
+    expect(onJump).not.toHaveBeenCalled();
+    fireEvent.pointerDown(handle, { pointerId: 1, clientY: 220, pointerType: "touch", button: 0 });
+    expect(view.getByRole("tooltip").textContent).toContain("#126");
+    expect(onTick).toHaveBeenCalledTimes(1);
+    fireEvent.pointerMove(rail, { pointerId: 2, clientY: 20, pointerType: "touch" });
+    expect(onJump).toHaveBeenCalledTimes(1);
+    fireEvent.pointerMove(rail, { pointerId: 1, clientY: 221, pointerType: "touch" });
+    expect(onTick).toHaveBeenCalledTimes(1);
+    fireEvent.pointerMove(rail, { pointerId: 1, clientY: 419, pointerType: "touch" });
+    expect(onJump).toHaveBeenLastCalledWith(13);
+    expect(onTick).toHaveBeenCalledTimes(2);
+    fireEvent.pointerUp(rail, { pointerId: 1, pointerType: "touch" });
+    expect(view.queryByRole("tooltip")).toBeNull();
+    fireEvent.pointerMove(rail, { pointerId: 1, clientY: 20, pointerType: "touch" });
+    expect(onJump).toHaveBeenCalledTimes(2);
+  });
+
+  it("pointer cancellation ends a scrub and permits a fresh capture", () => {
+    const { view, rail, onJump } = setup(true);
+    const handle = rail.querySelector<HTMLElement>("[data-rail-handle]")!;
+    fireEvent.pointerDown(handle, { pointerId: 1, clientY: 20, pointerType: "touch", button: 0 });
+    fireEvent.pointerCancel(rail, { pointerId: 1, pointerType: "touch" });
+    expect(view.queryByRole("tooltip")).toBeNull();
+    fireEvent.pointerDown(handle, { pointerId: 2, clientY: 419, pointerType: "touch", button: 0 });
+    expect(onJump).toHaveBeenLastCalledWith(13);
+    expect(view.getByRole("tooltip").textContent).toContain("#131");
   });
 });

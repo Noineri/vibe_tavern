@@ -10,6 +10,12 @@ interface ScrollRailProps {
   scroller: HTMLElement | null;
   onJump: (displayIndex: number) => void;
   isMobile: boolean;
+  /** External haptic boundary; unsupported browsers use visual feedback only. */
+  onTick?: () => void;
+}
+
+function vibrateTick(): void {
+  if (typeof navigator.vibrate === "function") navigator.vibrate(8);
 }
 
 /** Store subscriptions stay below MessageScroller, isolated from the transcript renderer. */
@@ -22,18 +28,20 @@ export function ChatScrollRail({ displayIds, ...props }: Omit<ScrollRailProps, "
 }
 
 /** v3 story map: one quiet thread, bounded ticks on hover, one persistent preview. */
-export function ScrollRail({ entries, scroller, onJump, isMobile }: ScrollRailProps) {
+export function ScrollRail({ entries, scroller, onJump, isMobile, onTick = vibrateTick }: ScrollRailProps) {
   const { t } = useT();
   const railRef = useRef<HTMLDivElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);
   const pointerRef = useRef<number | null>(null);
   const lastJumpRef = useRef(-1);
   const [active, setActive] = useState(-1);
+  const [previewIndex, setPreviewIndex] = useState(-1);
   const [cursorY, setCursorY] = useState(0);
   const [geometry, setGeometry] = useState({ height: 0, width: 0, start: 0, end: 1 });
   const [previewHeight, setPreviewHeight] = useState(0);
   const segments = useMemo(() => buildRailSegments(entries, geometry.height), [entries, geometry.height]);
   const entry = entries[active];
+  const previewEntry = entries[previewIndex];
 
   useLayoutEffect(() => {
     if (!scroller) return;
@@ -72,12 +80,13 @@ export function ScrollRail({ entries, scroller, onJump, isMobile }: ScrollRailPr
     resize.observe(preview);
     update();
     return () => resize.disconnect();
-  }, [!!entry]);
+  }, [!!previewEntry]);
 
   useEffect(() => {
     pointerRef.current = null;
     lastJumpRef.current = -1;
     setActive(-1);
+    setPreviewIndex(-1);
   }, [scroller, entries.length, isMobile]);
 
   function pointAt(y: number, jump: boolean): void {
@@ -86,11 +95,13 @@ export function ScrollRail({ entries, scroller, onJump, isMobile }: ScrollRailPr
     const index = railIndexAtY(y, rect.top, rect.height, entries.length);
     if (index < 0) return;
     setActive(index);
+    setPreviewIndex(index);
     setCursorY(y - rect.top);
     setGeometry((old) => ({ ...old, height: rect.height }));
     if (jump && lastJumpRef.current !== index) {
       lastJumpRef.current = index;
       onJump(entries[index].displayIndex);
+      if (isMobile) onTick();
     }
   }
 
@@ -112,16 +123,16 @@ export function ScrollRail({ entries, scroller, onJump, isMobile }: ScrollRailPr
     if (next < 0) return;
     event.preventDefault();
     setActive(next);
+    setPreviewIndex(next);
     setCursorY((next + 0.5) / entries.length * geometry.height);
     onJump(entries[next].displayIndex);
   }
 
-  // The mobile interaction is added in CNR-5; never substitute the desktop hitzone.
-  if (isMobile || entries.length === 0) return null;
+  if (entries.length === 0) return null;
   const open = !!entry;
   const valueIndex = active >= 0 ? active : Math.min(entries.length - 1, Math.floor(geometry.start * entries.length));
   const value = entries[valueIndex];
-  const cardTop = Math.max(0, Math.min(geometry.height - previewHeight, cursorY - previewHeight / 2));
+  const cardTop = Math.max(0, Math.min(geometry.height - previewHeight, cursorY - (isMobile ? previewHeight + 24 : previewHeight / 2)));
   const windowSize = geometry.end - geometry.start;
   const thumbHeight = Math.min(geometry.height, Math.max(24, windowSize * geometry.height));
   const thumbTop = windowSize < 1 ? geometry.start / (1 - windowSize) * (geometry.height - thumbHeight) : 0;
@@ -130,21 +141,23 @@ export function ScrollRail({ entries, scroller, onJump, isMobile }: ScrollRailPr
       ref={railRef}
       role="scrollbar"
       tabIndex={0}
-      aria-label={t("chat_rail_label")}
+      aria-label={t(isMobile ? "chat_rail_handle" : "chat_rail_label")}
       aria-controls={scroller?.id || undefined}
       aria-orientation="vertical"
       aria-valuemin={1}
       aria-valuemax={entries.length}
       aria-valuenow={valueIndex + 1}
       aria-valuetext={`#${value.number} ${value.author || t(value.role === "user" ? "chat_rail_user" : "chat_rail_assistant")}`}
-      className="absolute inset-y-2 right-0 z-20 w-9 cursor-pointer select-none outline-none focus-visible:ring-1 focus-visible:ring-accent"
-      onPointerEnter={(event) => { if (event.pointerType !== "touch") pointAt(event.clientY, false); }}
+      className={cn("absolute inset-y-2 z-20 select-none outline-none focus-visible:ring-1 focus-visible:ring-accent", isMobile ? "pointer-events-none right-1 w-6" : "right-0 w-9 cursor-pointer")}
+      onPointerEnter={(event) => { if (!isMobile && event.pointerType !== "touch") pointAt(event.clientY, false); }}
       onPointerMove={(event) => {
-        if (event.pointerType !== "touch") pointAt(event.clientY, pointerRef.current === event.pointerId);
+        if (pointerRef.current !== null && pointerRef.current !== event.pointerId) return;
+        if (isMobile ? pointerRef.current === event.pointerId : event.pointerType !== "touch") pointAt(event.clientY, pointerRef.current === event.pointerId);
       }}
       onPointerLeave={() => { if (pointerRef.current === null) setActive(-1); }}
       onPointerDown={(event) => {
-        if (event.button !== 0 || event.pointerType === "touch") return;
+        if (pointerRef.current !== null || event.button !== 0 || (!isMobile && event.pointerType === "touch")) return;
+        if (isMobile && !(event.target instanceof Element && event.target.closest("[data-rail-handle]"))) return;
         event.preventDefault();
         pointerRef.current = event.pointerId;
         lastJumpRef.current = -1;
@@ -155,14 +168,18 @@ export function ScrollRail({ entries, scroller, onJump, isMobile }: ScrollRailPr
       onPointerCancel={finishPointer}
       onLostPointerCapture={() => { if (pointerRef.current !== null) { pointerRef.current = null; lastJumpRef.current = -1; setActive(-1); } }}
       onKeyDown={keyDown}
-      onFocus={() => { setActive(valueIndex); setCursorY(geometry.start * geometry.height); }}
+      onFocus={() => { setActive(valueIndex); setPreviewIndex(valueIndex); setCursorY(geometry.start * geometry.height); }}
       onBlur={() => { if (pointerRef.current === null) setActive(-1); }}
     >
       <div aria-hidden className={cn("pointer-events-none absolute inset-0 transition-opacity motion-reduce:transition-none", open ? "opacity-100" : "opacity-0")}
         style={{ background: "linear-gradient(to right, transparent, color-mix(in srgb, var(--surface) 65%, transparent))" }} />
-      <div aria-hidden className={cn("pointer-events-none absolute inset-y-0 right-[5px] w-0.5 rounded-sm bg-t3/15 transition-opacity", open && "opacity-0")}>
+      {!isMobile && <div aria-hidden className={cn("pointer-events-none absolute inset-y-0 right-[5px] w-0.5 rounded-sm bg-t3/15 transition-opacity", open && "opacity-0")}>
         <div className="absolute -left-px w-[3px] rounded-full bg-accent/65" style={{ top: thumbTop, height: thumbHeight }} />
-      </div>
+      </div>}
+      {isMobile && <div data-rail-handle className="pointer-events-auto absolute right-0 flex h-12 w-6 touch-none cursor-grab items-center justify-end active:cursor-grabbing"
+        style={{ top: Math.max(0, Math.min(geometry.height - 48, thumbTop + thumbHeight / 2 - 24)) }}>
+        <span aria-hidden className={cn("h-[26px] w-[2.5px] rounded-full bg-accent transition-opacity", open ? "opacity-0" : "opacity-55")} />
+      </div>}
       <div aria-hidden className={cn("pointer-events-none absolute inset-0 flex flex-col justify-around pr-1.5 transition-opacity motion-reduce:transition-none", open ? "opacity-100" : "opacity-0")}>
         {segments.map((segment) => {
           const distance = active < segment.startIndex ? segment.startIndex - active : active > segment.endIndex ? active - segment.endIndex : 0;
@@ -179,14 +196,15 @@ export function ScrollRail({ entries, scroller, onJump, isMobile }: ScrollRailPr
           </div>;
         })}
       </div>
-      {entry && <div ref={previewRef} role="tooltip" className="pointer-events-none absolute right-[38px] w-max whitespace-normal rounded-md bg-t1 px-2.5 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] leading-snug text-bg shadow-md"
-        style={{ top: cardTop, maxWidth: Math.min(360, Math.max(0, geometry.width - 56)), maxHeight: geometry.height, overflowY: "hidden" }}>
+      {previewEntry && <div ref={previewRef} role="tooltip" aria-hidden={!entry} className={cn("pointer-events-none absolute w-max whitespace-normal rounded-md bg-t1 px-2.5 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] leading-snug text-bg shadow-md transition-opacity duration-150 motion-reduce:transition-none", entry ? "opacity-100" : "opacity-0")}
+        style={{ top: cardTop, right: isMobile ? undefined : 38, left: isMobile ? 28 - geometry.width / 2 : undefined, transform: isMobile ? "translateX(-50%)" : undefined,
+          maxWidth: Math.min(360, Math.max(0, geometry.width - 56)), maxHeight: geometry.height, overflowY: "hidden" }}>
         <div className="mb-1.5 flex flex-wrap items-baseline gap-x-2 gap-y-1 border-b border-bg/15 pb-1.5">
-          <span className="font-body italic text-accent">#{entry.number}</span>
-          <span className="min-w-0 break-words font-semibold">{entry.author || t(entry.role === "user" ? "chat_rail_user" : "chat_rail_assistant")}</span>
-          <span className="text-[calc(var(--ui-fs)-3px)] opacity-65">{t(entry.role === "user" ? "chat_rail_user" : "chat_rail_assistant")}</span>
+          <span className="font-body italic text-accent">#{previewEntry.number}</span>
+          <span className="min-w-0 break-words font-semibold">{previewEntry.author || t(previewEntry.role === "user" ? "chat_rail_user" : "chat_rail_assistant")}</span>
+          <span className="text-[calc(var(--ui-fs)-3px)] opacity-65">{t(previewEntry.role === "user" ? "chat_rail_user" : "chat_rail_assistant")}</span>
         </div>
-        <p className="line-clamp-3 break-words font-body opacity-85">{entry.snippet}</p>
+        <p className="line-clamp-3 break-words font-body opacity-85">{previewEntry.snippet}</p>
       </div>}
     </div>
   );
