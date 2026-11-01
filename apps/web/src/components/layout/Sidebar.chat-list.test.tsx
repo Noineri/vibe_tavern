@@ -73,6 +73,7 @@ mock.module("../../hooks/use-character-controller.js", () => ({
 }));
 
 const { Sidebar } = await import("./Sidebar.js");
+const { CoauthorSidebar } = await import("../coauthor/CoauthorSidebar.js");
 const { useBootstrapStore } = await import("../../stores/api-actions/bootstrap-actions.js");
 const { useChatStore, useNavigationStore } = await import("../../stores/index.js");
 const { useSnapshotStore } = await import("../../stores/snapshot-store.js");
@@ -175,9 +176,47 @@ function chatSectionTitles(view: View): string[] {
 // ── Tests ────────────────────────────────────────────────────────────────
 
 describe("Sidebar — chats section without an active chat", () => {
-	it("marks a character's non-first generating chat without intercepting the character actions", () => {
+	it.each([["RP", Sidebar], ["Co-Author", CoauthorSidebar]] as const)("%s uses narrow custom viewport chrome in both expanded sections without changing global widths", async (_mode, Component) => {
+		seedNoActiveChat({ collapsed: false, selectedCharacterId: ARIA });
+		const view = render(<Component />);
+		const sidebar = view.container.firstElementChild!;
+		await act(async () => {});
+		expect(sidebar.classList.contains("sidebar-scrollbars")).toBe(false);
+		const sections = view.container.querySelectorAll('section[data-scroll-area="thin"]');
+		expect(sections.length).toBe(2);
+		for (const section of sections) {
+			expect(section.querySelector("[data-scroll-viewport]")?.classList.contains("scrollbar-hide")).toBe(true);
+			expect(section.querySelector("[data-scroll-viewport]")?.classList.contains("isolate")).toBe(true);
+			expect(section.querySelector("[data-scroll-content]")).not.toBeNull();
+		}
+		const css = await Bun.file(`${import.meta.dir}/../../styles.css`).text();
+		expect(css).toContain("::-webkit-scrollbar{width:8px;height:8px}");
+		expect(css).not.toContain(".sidebar-scrollbars");
+	});
+
+	it.each([["RP", Sidebar], ["Co-Author", CoauthorSidebar]] as const)("%s keeps the collapsed avatar strip inside a narrow custom scroll area", async (_mode, Component) => {
+		seedNoActiveChat({ collapsed: true, selectedCharacterId: ARIA });
+		const view = render(<Component />);
+		await act(async () => {});
+		const area = view.container.querySelector('[data-scroll-area="thin"]')!;
+		expect(area).not.toBeNull();
+		expect(area.querySelector("[data-scroll-content]")?.textContent).toContain("A");
+		expect(area.querySelector("[data-scroll-viewport]")?.classList.contains("scrollbar-hide")).toBe(true);
+	});
+
+	it.each([false, true])("keeps build navigation scrollable with custom chrome (collapsed=%s)", async (collapsed) => {
+		seedNoActiveChat({ collapsed, selectedCharacterId: ARIA });
+		useNavigationStore.setState({ mode: "build" });
+		const view = render(<Sidebar />);
+		await act(async () => {});
+		expect(view.container.querySelector('[data-scroll-area="thin"]')).not.toBeNull();
+		expect(view.container.querySelector("[data-scroll-viewport]")?.classList.contains("scrollbar-hide")).toBe(true);
+	});
+
+	it("marks a character's non-first generating chat without intercepting the character actions", async () => {
 		seedNoActiveChat({ collapsed: false, selectedCharacterId: ARIA });
 		const view = render(<Sidebar />);
+		await act(async () => {});
 		act(() => {
 			useChatRunActivityStore.getState().setRunning("chat-a2", true);
 			useChatRunActivityStore.getState().setRunning("chat-b1", true);
@@ -196,32 +235,36 @@ describe("Sidebar — chats section without an active chat", () => {
 		expect(view.getAllByRole("status")).toEqual([characterBadge]);
 	});
 
-	it("lists the selected character's RP chats (not another character's, not its Co-Author chat)", () => {
+	it("lists the selected character's RP chats (not another character's, not its Co-Author chat)", async () => {
 		seedNoActiveChat({ collapsed: false, selectedCharacterId: ARIA });
 		const view = render(<Sidebar />);
+		await act(async () => {});
 		expect(chatSectionTitles(view)).toEqual(["Moonlit Harbor", "Winter Market"]);
 		expect(within(view.container).queryByText("sidebar_send_a_message")).toBeNull();
 	});
 
-	it("tapping one of those chats switches to it", () => {
+	it("tapping one of those chats switches to it", async () => {
 		seedNoActiveChat({ collapsed: false, selectedCharacterId: ARIA });
 		const view = render(<Sidebar />);
+		await act(async () => {});
 		fireEvent.click(within(view.container).getByText("Winter Market"));
 		expect(CHAT_STUB.handleSwitchChat).toHaveBeenCalledWith(brandId<ChatId>("chat-a2"));
 	});
 
-	it("a selected character with no chats of its own still shows the empty state", () => {
+	it("a selected character with no chats of its own still shows the empty state", async () => {
 		seedNoActiveChat({ collapsed: false, selectedCharacterId: CORA });
 		const view = render(<Sidebar />);
+		await act(async () => {});
 		expect(chatSectionTitles(view)).toEqual([]);
 		expect(within(view.container).getByText("sidebar_send_a_message")).toBeTruthy();
 	});
 });
 
 describe("Sidebar — character list recency without an active chat", () => {
-	it("orders the characters by their newest RP chat (Bram, Aria, Cora), not by the unsorted tie", () => {
+	it("orders the characters by their newest RP chat (Bram, Aria, Cora), not by the unsorted tie", async () => {
 		seedNoActiveChat({ collapsed: false, selectedCharacterId: null });
 		const view = render(<Sidebar />);
+		await act(async () => {});
 		const names = ["Aria", "Bram", "Cora"];
 		const hits = names.flatMap((name) =>
 			[...view.container.querySelectorAll("span")].filter((el) => el.childElementCount === 0 && el.textContent?.trim() === name).map((el) => ({ name, el })),

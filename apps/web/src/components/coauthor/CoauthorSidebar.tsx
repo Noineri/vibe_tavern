@@ -193,7 +193,7 @@ export function CoauthorSidebar() {
             />
 
             <ChatListSection
-              sectionClassName="min-h-0 max-h-[50%] overflow-y-auto border-b-0 pb-1.5"
+              sectionClassName="max-h-[50%] border-b-0"
               header={
                 <ListSectionHeader
                   titleKey="sidebar_coauthor_chats"

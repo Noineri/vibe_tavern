@@ -24,6 +24,7 @@ import type { ReactNode } from "react";
 import type { ChatListItem } from "@vibe-tavern/api-contracts";
 import { useT } from "../../../i18n/context.js";
 import type Resources from "../../../i18n/resources.js";
+import { ScrollArea } from "../../shared/scroll-area.js";
 
 export interface ChatListSectionProps {
 	/** The `<section>` element className — differs: RP `flex-1`, co-author `max-h-[50%]`. */
@@ -56,7 +57,7 @@ export function ChatListSection({
 }: ChatListSectionProps) {
 	const { t } = useT();
 	return (
-		<section className={sectionClassName}>
+		<ScrollArea render={<section />} scrollbarSize="thin" className={sectionClassName} contentClassName="pb-1.5">
 			{header}
 			{chats.length === 0 ? (
 				<div className="px-[14px] py-5 text-center text-[calc(var(--ui-fs)-2px)] leading-relaxed text-t3">{t(emptyAllKey)}</div>
@@ -65,6 +66,6 @@ export function ChatListSection({
 			) : (
 				sectionChats.map((chatItem) => renderRow(chatItem, chatItem.id === activeChatId))
 			)}
-		</section>
+		</ScrollArea>
 	);
 }

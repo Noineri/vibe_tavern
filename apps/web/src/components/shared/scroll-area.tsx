@@ -18,7 +18,7 @@ export function ScrollArea({ children, className, scrollbarSize = "regular", vie
   return (
     <BaseScrollArea.Root {...props} data-scroll-area={scrollbarSize} className={cn("flex min-h-0 min-w-0 flex-col overflow-hidden", className)}>
       <BaseScrollArea.Viewport {...viewportAttrs} data-scroll-viewport
-        className={cn("min-h-0 min-w-0 flex-auto scrollbar-hide outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-accent", viewportClassName)}
+        className={cn("isolate min-h-0 min-w-0 flex-auto scrollbar-hide outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-accent", viewportClassName)}
         style={{ ...viewportStyle, overflowX: "hidden" }}>
         <BaseScrollArea.Content data-scroll-content className={cn("min-w-0", contentClassName)}>
           {children}

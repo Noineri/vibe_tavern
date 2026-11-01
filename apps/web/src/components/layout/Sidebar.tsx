@@ -28,6 +28,7 @@ import { ListSectionHeader } from "./sections/ListSectionHeader.js";
 import { CustomTooltip } from "../shared/Tooltip.js";
 import { OverflowTooltip } from "../shared/OverflowTooltip.js";
 import { useBuildPanels } from "../../hooks/use-build-panels.js";
+import { ScrollArea } from "../shared/scroll-area.js";
 
 export function Sidebar() {
   const { t, tDynamic } = useT();
@@ -166,7 +167,7 @@ export function Sidebar() {
           t={t}
         />
         {sidebarCollapsed && mode === 'build' && (
-          <div className="flex min-h-0 flex-1 flex-col items-center gap-1 overflow-y-auto px-0 py-2">
+          <ScrollArea scrollbarSize="thin" className="w-full flex-1" contentClassName="flex min-h-full flex-col items-center gap-1 py-2">
             <BuildCharacterSwitcher
               variant="collapsed"
               open={charSwitcherOpen}
@@ -204,7 +205,7 @@ export function Sidebar() {
             <div className="mt-auto flex shrink-0 flex-col items-center gap-1">
               <SidebarFooter collapsed items={rpFooterItems} />
             </div>
-          </div>
+          </ScrollArea>
         )}
 
         {!sidebarCollapsed && mode === 'play' && (
@@ -236,7 +237,7 @@ export function Sidebar() {
             />
 
             <ChatListSection
-              sectionClassName="min-h-0 flex-1 overflow-y-auto border-b-0 pb-1.5"
+              sectionClassName="flex-1 border-b-0"
               header={
                 <ListSectionHeader
                   titleKey="sidebar_chats"
@@ -298,7 +299,7 @@ export function Sidebar() {
             </div>
 
             {/* Build sections navigation */}
-            <div className="flex-1 overflow-y-auto py-1">
+            <ScrollArea scrollbarSize="thin" className="flex-1" contentClassName="py-1">
               <div className="font-ui text-[calc(var(--ui-fs)-5px)] font-medium uppercase tracking-[0.08em] text-t3" style={{ padding: '9px 15px 7px' }}>{t('sidebar_build_editor')}</div>
               {buildPanelItems.map((item) => (
                 <div
@@ -315,7 +316,7 @@ export function Sidebar() {
                   <span>{tDynamic(item.labelKey)}</span>
                 </div>
               ))}
-            </div>
+            </ScrollArea>
 
             <SidebarFooter items={rpFooterItems} />
           </>

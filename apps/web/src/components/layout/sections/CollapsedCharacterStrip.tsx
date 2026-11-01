@@ -17,6 +17,7 @@ import { cn } from "../../../lib/cn.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
 import type { CharacterTab } from "../app-shell-types.js";
 import { CharacterActivityBadge } from "./character-activity-badge.js";
+import { ScrollArea } from "../../shared/scroll-area.js";
 
 export function CollapsedCharacterStrip({
   characterTabs,
@@ -36,7 +37,7 @@ export function CollapsedCharacterStrip({
   setFlyoutCharId: (updater: (prev: string | null) => string | null) => void;
 }) {
   return (
-    <div className="flex min-h-0 flex-1 flex-col items-center gap-2 overflow-y-auto py-2 px-[7px]">
+    <ScrollArea scrollbarSize="thin" className="w-full flex-1" contentClassName="flex flex-col items-center gap-2 py-2 px-[7px]">
       {characterTabs.map((tab) => {
         const isMarked = tab.id === activeChatCharacterId || tab.chatId === activeChatId;
         return (
@@ -72,6 +73,6 @@ export function CollapsedCharacterStrip({
           </CustomTooltip>
         );
       })}
-    </div>
+    </ScrollArea>
   );
 }

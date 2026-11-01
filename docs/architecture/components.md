@@ -75,6 +75,8 @@ This vertical primitive does not replace the message navigation rail, direct tex
 
 `MessageScroller` mounts one `ChatScrollRail` for both RP and Co-Author and hides only the transcript's native scrollbar through `scrollbar-hide`.
 All other scrollbars retain the global themed 8px WebKit geometry; Firefox uses the standard thin/color fallback guarded by `@supports (-moz-appearance:none)`, including nested scroll regions and both opaque-origin experience iframe documents.
+RP and Co-Author character/chat lists, collapsed avatar strips, and RP build navigation use the shared `ScrollArea scrollbarSize="thin"` for true 3px custom chrome in Chromium and Firefox.
+Their section headers, row controls, filtering, and height allocation remain inside native scroll viewports; global native-scrollbar styling, editors, modal panels, experience frames, and the transcript rail are unchanged.
 The engine-property guard is intentional: Firefox 153 also accepts WebKit selectors, so selector absence no longer identifies it; the host fallback lives in the base layer so utility-based scrollbar hiding still wins.
 
 - **Rest:** a quiet 2px thread and accent viewport thumb on desktop; a 2.5px mobile thread rides the reading position inside a transparent 24×48px handle, 4px inboard of the edge.

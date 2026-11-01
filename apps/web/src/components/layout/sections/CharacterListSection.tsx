@@ -27,6 +27,7 @@ import type { ConfirmDestroyDialog } from "../../../stores/character-store.js";
 import type { CharacterTab } from "../app-shell-types.js";
 import type { TFn } from "./section-types.js";
 import { CharacterActivityBadge } from "./character-activity-badge.js";
+import { ScrollArea } from "../../shared/scroll-area.js";
 
 export function CharacterListSection({
   t,
@@ -72,7 +73,7 @@ export function CharacterListSection({
   onCloseOtherMenus?: () => void;
 }) {
   return (
-    <section className="min-h-0 max-h-[50%] overflow-y-auto border-b border-border pb-1.5">
+    <ScrollArea render={<section />} scrollbarSize="thin" className="max-h-[50%] border-b border-border" contentClassName="pb-1.5">
       <ListSectionHeader
         titleKey="sidebar_characters"
         sortMode={characterSortMode}
@@ -180,6 +181,6 @@ export function CharacterListSection({
           );
         })
       )}
-    </section>
+    </ScrollArea>
   );
 }
