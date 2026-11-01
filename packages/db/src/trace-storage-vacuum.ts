@@ -3,6 +3,14 @@ import { isTraceStorageConversionRunning, TRACE_STORAGE_CONVERSION_MARKER } from
 
 export const TRACE_STORAGE_VACUUM_MARKER = 'trace-storage-v2-vacuumed';
 
+/** Claim the one-shot compaction as done WITHOUT running VACUUM — for
+ * databases whose conversion pass was a no-op and freed no pages (fresh
+ * installs). Keeps the marker write owned by this module so the constant
+ * and its writer never drift apart. Idempotent. */
+export function markTraceStorageVacuumed(db: AppDb): void {
+  db.$client.query('INSERT OR IGNORE INTO app_data_migrations(name, applied_at) VALUES (?, ?)').run(TRACE_STORAGE_VACUUM_MARKER, new Date().toISOString());
+}
+
 export interface TraceStorageVacuumOptions {
   /** Wall-clock source for the measured duration (injectable for tests). */
   readonly now?: () => number;
@@ -27,7 +35,7 @@ export function vacuumTraceStorageOnce(db: AppDb, options: TraceStorageVacuumOpt
   const startedAt = now();
   client.exec('VACUUM');
   client.exec('PRAGMA wal_checkpoint(TRUNCATE)');
-  client.query('INSERT INTO app_data_migrations(name, applied_at) VALUES (?, ?)').run(TRACE_STORAGE_VACUUM_MARKER, new Date().toISOString());
+  markTraceStorageVacuumed(db);
   options.onDone?.(now() - startedAt);
   return true;
 }

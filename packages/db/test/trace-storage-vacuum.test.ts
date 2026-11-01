@@ -3,7 +3,7 @@ import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createDb } from '../src/db-connection.js';
-import { vacuumTraceStorageOnce, TRACE_STORAGE_VACUUM_MARKER } from '../src/trace-storage-vacuum.js';
+import { vacuumTraceStorageOnce, markTraceStorageVacuumed, TRACE_STORAGE_VACUUM_MARKER } from '../src/trace-storage-vacuum.js';
 
 test('VACUUM is gated by completed conversion, not by a partial running pass', async () => {
   const db = await createDb(':memory:');
@@ -39,6 +39,17 @@ test('real file pages are reclaimed once; a later boot does not VACUUM again', a
   expect(free).toBeGreaterThan(0);
   expect(vacuumTraceStorageOnce(db)).toBe(false);
   expect(freePages()).toBe(free);
+});
+
+test('markTraceStorageVacuumed claims the compaction without running it', async () => {
+  const db = await createDb(':memory:');
+  db.$client.exec("INSERT INTO app_data_migrations(name,applied_at) VALUES ('trace-storage-v2','now')");
+  markTraceStorageVacuumed(db);
+  markTraceStorageVacuumed(db);
+  expect(db.$client.query('SELECT name FROM app_data_migrations WHERE name=?').get(TRACE_STORAGE_VACUUM_MARKER)).not.toBeNull();
+  const events: string[] = [];
+  expect(vacuumTraceStorageOnce(db, { onStart: () => events.push('start'), onDone: () => events.push('done') })).toBe(false);
+  expect(events).toEqual([]);
 });
 
 test('a failed VACUUM never claims success and can retry', async () => {

@@ -197,6 +197,24 @@ test("nothing to convert emits zero progress callbacks", async () => {
 	expect(emissions).toEqual([]);
 });
 
+test("a pass over an empty trace table is a no-op that still writes the completion marker", async () => {
+	const db = await createDb(":memory:");
+	const stats = await runTraceStorageConversion(db);
+	expect(stats.wasNoOp).toBe(true);
+	expect(stats.tracesConverted).toBe(0);
+	expect(stats.chunksCompressed).toBe(0);
+	expect(db.$client.query('SELECT name FROM app_data_migrations WHERE name = ?').get(TRACE_STORAGE_CONVERSION_MARKER)).not.toBeNull();
+	expect((await runTraceStorageConversion(db)).skippedByMarker).toBe(true);
+});
+
+test("legacy chunks without any trace row are real work, not a no-op", async () => {
+	const db = await createDb(":memory:");
+	db.$client.query('INSERT INTO prompt_trace_chunks(id, byte_size, content) VALUES (?, ?, ?)').run('legacy-chunk', 13, '{"big":"text"}');
+	const stats = await runTraceStorageConversion(db);
+	expect(stats.chunksCompressed).toBe(1);
+	expect(stats.wasNoOp).toBe(false);
+});
+
 test("a resumed pass counts already-converted rows toward progress", async () => {
 	const db = await seedTraceRows(3, "converted");
 	const emissions: Array<[number, number]> = [];
@@ -206,5 +224,6 @@ test("a resumed pass counts already-converted rows toward progress", async () =>
 		onProgress: (converted, total) => { emissions.push([converted, total]); },
 	});
 	expect(stats.tracesConverted).toBe(0);
+	expect(stats.wasNoOp).toBe(false);
 	expect(emissions).toEqual([[1, 3], [3, 3]]);
 });

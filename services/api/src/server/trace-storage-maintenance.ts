@@ -1,9 +1,11 @@
-import { isTraceStorageConversionRunning, runTraceStorageConversion, vacuumTraceStorageOnce, type AppDb, type TraceStorageConversionOptions } from '@vibe-tavern/db';
+import { isTraceStorageConversionRunning, markTraceStorageVacuumed, runTraceStorageConversion, vacuumTraceStorageOnce, type AppDb, type TraceStorageConversionOptions } from '@vibe-tavern/db';
 
 /** Fire-and-forget after readiness, joined/cancelled on runtime shutdown.
  * A failure leaves the completion marker absent for the next boot to resume;
  * it never turns a healthy API into a startup failure.
- * All trace-storage console lines render here — packages/db stays console-free. */
+ * All trace-storage console lines render here — packages/db stays console-free.
+ * A no-op pass (fresh install, empty trace table) renders nothing and marks
+ * the compaction done so later boots stay silent too. */
 export function startTraceStorageConversion(db: AppDb, options: Omit<TraceStorageConversionOptions, 'signal' | 'onProgress'> & {
   log?: (message: string) => void;
   onError?: (error: unknown) => void;
@@ -22,7 +24,14 @@ export function startTraceStorageConversion(db: AppDb, options: Omit<TraceStorag
       log(`[trace-storage] converting legacy traces: ${converted}/${total} (${Math.min(100, Math.round((converted / total) * 100))}%)`);
     },
   }).then((stats) => {
-    if (!stats.skippedByMarker) log(`[trace-storage] conversion complete: ${tracesTotal > 0 ? tracesTotal : stats.tracesConverted} traces`);
+    if (!stats.skippedByMarker && stats.wasNoOp) {
+      // A no-op pass freed no pages, so the next boot's one-shot compaction
+      // would reclaim nothing: mark it done (idempotent on later boots) and
+      // log nothing — fresh installs boot silent like every completed DB.
+      markTraceStorageVacuumed(db);
+    } else if (!stats.skippedByMarker) {
+      log(`[trace-storage] conversion complete: ${tracesTotal > 0 ? tracesTotal : stats.tracesConverted} traces`);
+    }
     return stats;
   }).catch((error: unknown) => {
     if (!abort.signal.aborted) (options.onError ?? ((cause: unknown) => console.error('[db] Trace storage v2 conversion paused; will resume on next boot:', cause)))(error);

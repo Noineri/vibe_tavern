@@ -23,6 +23,15 @@ export interface TraceStorageConversionOptions {
 
 export interface TraceStorageConversionStats {
   skippedByMarker: boolean;
+  /** True only for a pass that had nothing to convert: the trace table held
+   * 0 rows when the trace walk began AND no chunk needed compression. The
+   * completion marker is still written, and the caller may treat the boot
+   * VACUUM as done: conversion freed no pages (at most it swept already-
+   * orphaned refs/chunks, whose free pages SQLite reuses for later writes).
+   * A pass over a non-empty table is never a no-op — not even when every
+   * row was already v2 (a resumed pass) — and a skippedByMarker pass never
+   * reports it. */
+  wasNoOp: boolean;
   chunksCompressed: number;
   tracesConverted: number;
   sliceDurationsMs: number[];
@@ -48,7 +57,7 @@ export async function runTraceStorageConversion(
 ): Promise<TraceStorageConversionStats> {
   const client = db.$client;
   client.exec('CREATE TABLE IF NOT EXISTS app_data_migrations (name TEXT PRIMARY KEY, applied_at TEXT NOT NULL)');
-  const stats: TraceStorageConversionStats = { skippedByMarker: false, chunksCompressed: 0, tracesConverted: 0, sliceDurationsMs: [] };
+  const stats: TraceStorageConversionStats = { skippedByMarker: false, wasNoOp: false, chunksCompressed: 0, tracesConverted: 0, sliceDurationsMs: [] };
   if (client.query('SELECT name FROM app_data_migrations WHERE name = ?').get(TRACE_STORAGE_CONVERSION_MARKER)) {
     stats.skippedByMarker = true;
     return stats;
@@ -147,9 +156,9 @@ export async function runTraceStorageConversion(
 
   // Total is the trace-table size at pass start; walked rows include rows a
   // previous pass already converted, so a resumed pass still reaches total.
-  traceTotal = onProgress
-    ? client.query<{ n: number }, []>('SELECT count(*) AS n FROM prompt_traces').get()!.n
-    : 0;
+  // Read unconditionally: 0 rows is also the no-op signal (an empty trace
+  // table at pass start means the pass can free no pages).
+  traceTotal = client.query<{ n: number }, []>('SELECT count(*) AS n FROM prompt_traces').get()!.n;
   cursor = '';
   for (;;) {
     checkAbort();
@@ -196,6 +205,7 @@ export async function runTraceStorageConversion(
     client.query('INSERT INTO app_data_migrations(name, applied_at) VALUES (?, ?)').run(TRACE_STORAGE_CONVERSION_MARKER, new Date().toISOString());
     client.query('DELETE FROM app_data_migrations WHERE name = ?').run(RUNNING_MARKER);
   })();
+  stats.wasNoOp = traceTotal === 0 && stats.chunksCompressed === 0;
   reportProgress(true);
   return stats;
 }

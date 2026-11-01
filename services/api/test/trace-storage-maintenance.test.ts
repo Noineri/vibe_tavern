@@ -12,7 +12,7 @@ function seedTraceRows(db: AppDb, count: number): void {
   for (let i = 0; i < count; i++) insert.run(`t${i}`, `{"layers":[${i}]}`, `{"final":${i}}`);
 }
 
-test('startup scheduling returns before work, logs once, and completed boots skip silently', async () => {
+test('startup scheduling returns before work, an empty database logs nothing, and completed boots skip silently', async () => {
   const db = await createDb(':memory:');
   const gate = Promise.withResolvers<void>();
   const logs: string[] = [];
@@ -20,12 +20,53 @@ test('startup scheduling returns before work, logs once, and completed boots ski
   expect(db.$client.query("SELECT name FROM app_data_migrations WHERE name = 'trace-storage-v2'").get()).toBeNull();
   gate.resolve();
   expect((await run.completed)?.skippedByMarker).toBe(false);
-  expect(logs).toHaveLength(1);
+  expect(logs).toEqual([]);
   await run.stop();
   const second = startTraceStorageConversion(db, { log: (message) => logs.push(message) });
   expect((await second.completed)?.skippedByMarker).toBe(true);
-  expect(logs).toHaveLength(1);
+  expect(logs).toEqual([]);
   await second.stop();
+});
+
+test('a fresh database with no legacy traces boots with zero trace-storage lines', async () => {
+  const db = await createDb(':memory:');
+  const logs: string[] = [];
+  const run = startTraceStorageConversion(db, { clock: { now: () => 0 }, log: (message) => logs.push(message) });
+  expect((await run.completed)?.skippedByMarker).toBe(false);
+  await run.stop();
+  expect(logs).toEqual([]);
+});
+
+test('a no-op first boot marks compaction done; the next boot vacuums nothing and logs nothing', async () => {
+  const db = await createDb(':memory:');
+  const logs: string[] = [];
+  const first = startTraceStorageConversion(db, { clock: { now: () => 0 }, log: (message) => logs.push(message) });
+  expect((await first.completed)?.skippedByMarker).toBe(false);
+  await first.stop();
+  expect(logs).toEqual([]);
+  expect(compactTraceStorageOnce(db, (message) => logs.push(message))).toBe(false);
+  expect(logs).toEqual([]);
+});
+
+test('a resume-completed pass over already-v2 traces still logs complete and keeps the one-shot compaction', async () => {
+  const db = await createDb(':memory:');
+  seedTraceRows(db, 3);
+  const first = startTraceStorageConversion(db, { clock: { now: () => 0 }, log: () => {} });
+  await first.completed;
+  await first.stop();
+  // Rows are all v2 now; removing only the completion marker recreates the
+  // interrupted-pass state a resumed boot observes.
+  db.$client.exec("DELETE FROM app_data_migrations WHERE name = 'trace-storage-v2'");
+  const logs: string[] = [];
+  const run = startTraceStorageConversion(db, { clock: { now: () => 0 }, log: (message) => logs.push(message) });
+  expect((await run.completed)?.skippedByMarker).toBe(false);
+  await run.stop();
+  expect(logs).toEqual([
+    '[trace-storage] converting legacy traces: 1/3 (33%)',
+    '[trace-storage] converting legacy traces: 3/3 (100%)',
+    '[trace-storage] conversion complete: 3 traces',
+  ]);
+  expect(compactTraceStorageOnce(db, () => {})).toBe(true);
 });
 
 test('a converting boot logs throttled progress lines and the final count; skip boots add nothing', async () => {
