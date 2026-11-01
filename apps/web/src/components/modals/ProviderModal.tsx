@@ -27,7 +27,7 @@ import { ConfirmCloseModal } from "../shared/confirm-close-modal.js";
 import { DestructiveConfirmModal } from "../shared/destructive-confirm-modal.js";import { useIsMobile } from "../../hooks/use-mobile.js";
 import { useModalStore } from "../../stores/modal-store.js";
 import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js";
-import { getProviderModelSettingsAction, reorderProviderProfilesAction } from "../../stores/api-actions/provider-actions.js";
+import { reorderProviderProfilesAction } from "../../stores/api-actions/provider-actions.js";
 import { MasterDetailModal } from "../shared/MasterDetailModal.js";
 import { DropdownSelect } from "../shared/DropdownSelect.js";
 import { shouldUsePersistedProviderForTest } from "../../lib/provider-proxy-policy.js";
@@ -44,7 +44,7 @@ import { ImageGenProfileEditor } from "../settings/provider/imagegen/ImageGenPro
 import { ImageGenFooter } from "../settings/provider/imagegen/ImageGenFooter.js";
 import { useImageProfiles } from "../../hooks/use-image-profiles.js";
 import { profileToForm } from "./provider-profile-to-form.js";
-import { NEW_PROFILE_CONTEXT_BUDGET } from "../../lib/new-profile-defaults.js";
+import { useProviderBindingFollow } from "./provider-modal-follow.js";
 
 export interface FormState extends ProviderSamplerValues {
   id: string;
@@ -276,6 +276,11 @@ export function ProviderModal({
       if (p) { setEditingId(p.id); setForm(profileToForm(p)); void loadCached(p.id); }
     }
     setTestOk(null); setHeaderMode("view"); setIsNew(false); setDirty(false); setConfirmClose(false); setConfirmDelete(false);
+    // Form was (re)built from the profile — editingModelId reset to null — so
+    // the follow MUST re-hydrate even if this followKey was already visited
+    // this mount (owner bug 2026-11-01: a stale ref suppressed the hydrate
+    // after close/reopen and the badge lied "model not in favorites").
+    resetBindingFollow();
     setActiveCategory("llm");
   }, [isOpen]);
 
@@ -309,147 +314,18 @@ export function ProviderModal({
   // switching models reads the clean persisted base, not a stale form
   // snapshot. `followKey` guards the async gap: a faster model switch re-keys
   // the follow and a stale hydrate aborts instead of overwriting the fresh one.
-  const bindingFollowKeyRef = useRef<string>("");
-  const hydrateForActiveModel = async (modelId: string | null, followKey: string) => {
-    if (!form) return;
-    const baseProfile = providerProfiles.find((p) => p.id === form.id);
-    if (!baseProfile) return;
-    let overlay = null;
-    if (modelId != null) {
-      try {
-        overlay = await getProviderModelSettingsAction(form.id, modelId);
-      } catch {
-        // Network/API error — fall through with null overlay (base passthrough).
-        overlay = null;
-      }
-    }
-    // Manual field-wise merge: overlay value if present, else base profile value.
-    // (Cannot use domain's resolveEffectiveSettings directly — web
-    // ProviderProfileRecord omits apiKey for security, so it isn't structurally
-    // assignable to StoredProviderProfileRecord.)
-    const ov = overlay?.settings ?? null;
-    // A faster model switch may have re-keyed the follow while the overlay
-    // fetch was in flight — a stale hydrate must never overwrite the fresh one.
-    if (bindingFollowKeyRef.current !== followKey) return;
-    const pick = <K extends keyof typeof effectiveFields>(k: K): (typeof effectiveFields)[K] =>
-      (ov && ov[k] != null ? ov[k] : effectiveFields[k]) as (typeof effectiveFields)[K];
-    const effectiveFields = {
-      temperature: baseProfile.temperature,
-      topP: baseProfile.topP,
-      minP: baseProfile.minP,
-      topK: baseProfile.topK,
-      topA: baseProfile.topA,
-      typicalP: baseProfile.typicalP,
-      tfsZ: baseProfile.tfsZ,
-      adaptiveTarget: baseProfile.adaptiveTarget,
-      adaptiveDecay: baseProfile.adaptiveDecay,
-      dynatempRange: baseProfile.dynatempRange,
-      dynatempExponent: baseProfile.dynatempExponent,
-      topNSigma: baseProfile.topNSigma,
-      smoothingFactor: baseProfile.smoothingFactor,
-      repeatLastN: baseProfile.repeatLastN,
-      dryPenaltyLastN: baseProfile.dryPenaltyLastN,
-      mirostat: baseProfile.mirostat,
-      mirostatTau: baseProfile.mirostatTau,
-      mirostatEta: baseProfile.mirostatEta,
-      dryMultiplier: baseProfile.dryMultiplier,
-      dryBase: baseProfile.dryBase,
-      dryAllowedLength: baseProfile.dryAllowedLength,
-      drySequenceBreakers: baseProfile.drySequenceBreakers,
-      xtcThreshold: baseProfile.xtcThreshold,
-      xtcProbability: baseProfile.xtcProbability,
-      frequencyPenalty: baseProfile.frequencyPenalty,
-      presencePenalty: baseProfile.presencePenalty,
-      repetitionPenalty: baseProfile.repetitionPenalty,
-      maxTokens: baseProfile.maxTokens,
-      contextBudget: baseProfile.contextBudget,
-      pinContextBudget: baseProfile.pinContextBudget,
-      stopSequences: baseProfile.stopSequences,
-      bannedStrings: baseProfile.bannedStrings,
-      logitBias: baseProfile.logitBias,
-      seed: baseProfile.seed,
-      reasoningEffort: baseProfile.reasoningEffort,
-      showReasoning: baseProfile.showReasoning,
-      streamResponse: baseProfile.streamResponse,
-      customSamplers: baseProfile.customSamplers,
-    };
-    setForm((f) => {
-      if (!f) return f;
-      const next: FormState = {
-        ...f,
-        editingModelId: modelId,
-        temperature: pick("temperature"),
-        topP: pick("topP"),
-        minP: pick("minP"),
-        topK: pick("topK"),
-        topA: pick("topA"),
-        typicalP: pick("typicalP") ?? 1,
-        tfsZ: pick("tfsZ") ?? 1,
-        adaptiveTarget: pick("adaptiveTarget") ?? -1,
-        adaptiveDecay: pick("adaptiveDecay") ?? 0.9,
-        dynatempRange: pick("dynatempRange") ?? 0,
-        dynatempExponent: pick("dynatempExponent") ?? 1,
-        topNSigma: pick("topNSigma") ?? 0,
-        smoothingFactor: pick("smoothingFactor") ?? 0,
-        repeatLastN: pick("repeatLastN") ?? 0,
-        dryPenaltyLastN: pick("dryPenaltyLastN") ?? -1,
-        mirostat: pick("mirostat") ?? 0,
-        mirostatTau: pick("mirostatTau") ?? 5,
-        mirostatEta: pick("mirostatEta") ?? 0.1,
-        dryMultiplier: pick("dryMultiplier") ?? 0,
-        dryBase: pick("dryBase") ?? 1.75,
-        dryAllowedLength: pick("dryAllowedLength") ?? 2,
-        drySequenceBreakers: pick("drySequenceBreakers") ?? [],
-        xtcThreshold: pick("xtcThreshold") ?? 0.1,
-        xtcProbability: pick("xtcProbability") ?? 0,
-        frequencyPenalty: pick("frequencyPenalty"),
-        presencePenalty: pick("presencePenalty"),
-        repetitionPenalty: pick("repetitionPenalty"),
-        maxTokens: pick("maxTokens"),
-        contextBudget: pick("contextBudget") ?? NEW_PROFILE_CONTEXT_BUDGET,
-        pinContextBudget: pick("pinContextBudget") ?? false,
-        // Token padding (LS-1d) is profile-level — never overridden by the
-        // per-model overlay — so it reads straight from the base profile.
-        tokenPadding: baseProfile.tokenPadding,
-        stopSequences: pick("stopSequences"),
-        bannedStrings: pick("bannedStrings") ?? [],
-        logitBias: pick("logitBias") ?? [],
-        seed: pick("seed") ?? null,
-        reasoningEffort: pick("reasoningEffort"),
-        showReasoning: pick("showReasoning"),
-        streamResponse: pick("streamResponse"),
-        customSamplers: pick("customSamplers"),
-        // Per-model set pointer (IG-CF15 twin): the overlay's pointer when the
-        // model carries one, else the base pointer (binding-off fallback).
-        samplerSetId: (ov?.samplerSetId ?? baseProfile.samplerSetId) ?? null,
-      };
-      latestFormRef.current = next;
-      return next;
-    });
-    setDirty(true);
-  };
-
-  // ── Follow-the-active-model (owner ruling 2026-09-27) ──
-  // With binding ON the settings below the toggle always mirror the ACTIVE
-  // model: favorited → its overlay, non-favorite → base. The follow runs on
-  // open, on model switch, and on toggle flips — there is no manual binding
-  // dropdown anymore. The followKey ref keeps one hydrate per (profile,
-  // model, binding) state; unrelated re-renders and the hydrate's own setForm
-  // never re-trigger it.
-  useEffect(() => {
-    if (!form || !form.id) return;
-    const favorites = favoriteModelsByProfile[form.id] ?? [];
-    const activeModel = form.model.trim();
-    const target = form.bindPerModel && activeModel !== "" && favorites.some((f) => f.modelId === activeModel)
-      ? activeModel
-      : null;
-    const followKey = `${form.id}::${form.bindPerModel ? target : "off"}`;
-    if (bindingFollowKeyRef.current === followKey) return;
-    bindingFollowKeyRef.current = followKey;
-    if (target !== form.editingModelId) {
-      void hydrateForActiveModel(target, followKey);
-    }
-  }, [form, favoriteModelsByProfile, hydrateForActiveModel]);
+  // ── Per-model binding: re-hydrate form for the ACTIVE model ──
+  // The follow block lives in its own module (file-size ratchet); the hook
+  // call MUST stay ABOVE `if (!isOpen) return null;` — a hook after a
+  // conditional return broke the closed→open transition (React #310,
+  // pinned by ProviderModal.follow.test.tsx).
+  const resetBindingFollow = useProviderBindingFollow({
+    form,
+    providerProfiles,
+    favoriteModelsByProfile,
+    setForm,
+    latestFormRef,
+  });
 
   if (!isOpen) return null;
 
@@ -539,20 +415,20 @@ export function ProviderModal({
   // ── Profile selection ──
   const handleSelect = (id: string) => {
     const p = providerProfiles.find((pr) => pr.id === id);
-    if (p) { setEditingId(p.id); setForm(profileToForm(p)); setTestOk(null); setModels([]); void loadCached(p.id); setHeaderMode("view"); setIsNew(false); setDirty(false); }
+    if (p) { setEditingId(p.id); setForm(profileToForm(p)); setTestOk(null); setModels([]); void loadCached(p.id); setHeaderMode("view"); setIsNew(false); setDirty(false); resetBindingFollow(); }
   };
 
   // ── Add new profile ──
   const handleAdd = async () => {
     const c = await onCreateProfile();
-    if (c) { setEditingId(c.id); setForm(profileToForm(c)); setModels([]); setTestOk(null); setIsNew(true); setHeaderMode("edit"); setDirty(false); if (providerModalOrigin === "coauthor") setCoauthorCreatedProfileId(c.id); }
+    if (c) { setEditingId(c.id); setForm(profileToForm(c)); setModels([]); setTestOk(null); setIsNew(true); setHeaderMode("edit"); setDirty(false); resetBindingFollow(); if (providerModalOrigin === "coauthor") setCoauthorCreatedProfileId(c.id); }
   };
 
   // ── Duplicate ──
   const handleDuplicate = async () => {
     if (!editingId) return;
     const d = await onDuplicateProfile(editingId);
-    if (d) { setEditingId(d.id); setForm(profileToForm(d)); setModels([]); setTestOk(null); setIsNew(true); setHeaderMode("edit"); setDirty(false); if (providerModalOrigin === "coauthor") setCoauthorCreatedProfileId(d.id); }
+    if (d) { setEditingId(d.id); setForm(profileToForm(d)); setModels([]); setTestOk(null); setIsNew(true); setHeaderMode("edit"); setDirty(false); resetBindingFollow(); if (providerModalOrigin === "coauthor") setCoauthorCreatedProfileId(d.id); }
   };
 
   // ── Delete ──
@@ -882,7 +758,7 @@ export function ProviderModal({
                   <ProviderBindingPanel
                     form={form}
                     favorites={favoriteModelsByProfile[form.id] ?? []}
-                    updateForm={autoSaveField}
+                    onTogglePerModelBinding={(v) => autoSaveField("bindPerModel", v)}
                   />
 
                   <ProviderSamplerPanel values={form} onChange={lazyAutoSaveField} capabilities={capabilities} />

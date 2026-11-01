@@ -2,7 +2,7 @@ import { useDomEnv } from "../../../test/dom-env.js";
 
 useDomEnv();
 
-const { act, render, waitFor } = await import("@testing-library/react");
+const { act, fireEvent, render, waitFor } = await import("@testing-library/react");
 /**
  * ProviderModal per-model binding — follow-the-active-model (owner ruling
  * 2026-09-27) and the React #310 regression pin.
@@ -65,6 +65,7 @@ mock.module("../../stores/api-actions/provider-actions.js", () => ({
 }));
 
 const { useModalStore } = await import("../../stores/modal-store.js");
+import type { FormState } from "./ProviderModal.js";
 let ProviderModal: typeof import("./ProviderModal.js").ProviderModal;
 
 beforeAll(async () => {
@@ -86,7 +87,7 @@ function makeProfile(over: Record<string, unknown> = {}): ProviderProfileRecord 
     samplerSetId: "sset_base",
     temperature: 0.7,
     topP: 1, minP: 0, topK: 0, topA: 0, typicalP: null, tfsZ: null,
-    contextBudget: 16000, maxTokens: null, pinContextBudget: false,
+    contextBudget: 16000, maxTokens: 4096, pinContextBudget: false,
     tokenPadding: 0, generationMode: "chat",
     cachedModels: { models: [] },
     ...over,
@@ -187,5 +188,65 @@ describe("ProviderModal follow-the-active-model", () => {
     await waitFor(() => expect(temperatureFieldValue(view)).toBe("0.70"));
     // The manual binding dropdown is GONE (owner ruling): its label key renders nowhere.
     expect(view.queryByText(/binding_dropdown_label/)).toBeNull();
+  });
+
+  test("binding toggle is an autosave field: persists immediately, no unsaved-changes guard (owner 2026-11-01)", async () => {
+    // Bug 1: the toggle went through updateForm -> setDirty(true) — but the
+    // whole binding surface is autosave (samplers lazyAutoSave, model pick
+    // autoSave), and settings may exist with binding ON and no advanced
+    // overlay configured. The dirty guard blocked clean exit while unrelated
+    // silent full-form autosaves (context-budget autofill) persisted the
+    // toggle anyway — dirty state that lies.
+    const saved: Array<{ bindPerModel: boolean }> = [];
+    const props = {
+      ...makeProps(makeProfile({ bindPerModel: false }), makeFavorites(["m-fav"])),
+      onSaveProfile: async (form: FormState): Promise<ProviderProfileRecord | null> => {
+        saved.push({ bindPerModel: form.bindPerModel });
+        return null;
+      },
+    };
+    const view = render(<LocaleProvider><ProviderModal {...props} /></LocaleProvider>);
+    act(() => useModalStore.setState({ isProviderModalOpen: true }));
+    await waitFor(() => expect(view.getAllByText("Follow Test Profile")).toHaveLength(2));
+    act(() => fireEvent.click(view.getByRole("switch", { name: "Bind settings per model" })));
+    // The flip persists immediately ("simple toggle" autosave semantics).
+    await waitFor(() => expect(saved.some((f) => f.bindPerModel === true)).toBe(true));
+    // And the modal stays clean: closing triggers NO unsaved-changes guard.
+    act(() => fireEvent.click(view.getByRole("button", { name: "Close" })));
+    expect(view.queryByText("Unsaved changes")).toBeNull();
+    await waitFor(() => expect(view.queryByText("Follow Test Profile")).toBeNull());
+  });
+
+  test("toggle on, close without saving, reopen: follow re-hydrates — 'Editing' badge, not the not-in-favorites lie (owner 2026-11-01)", async () => {
+    // Bug 2: bindingFollowKeyRef survived close/reopen on the same mount.
+    // The reopened modal rebuilt the form (editingModelId: null) but the
+    // follow effect saw an unchanged followKey and SKIPPED the hydrate —
+    // the badge claimed "Base settings (model not in favorites)" for a
+    // model that IS starred.
+    overlayStore.set("prof1::m-fav", { temperature: 0.123, samplerSetId: "sset_x" });
+    let profile = makeProfile({ bindPerModel: false });
+    const favorites = makeFavorites(["m-fav"]);
+    const props = {
+      ...makeProps(profile, favorites),
+      onSaveProfile: async (form: FormState): Promise<ProviderProfileRecord | null> => {
+        profile = { ...profile, bindPerModel: form.bindPerModel } as ProviderProfileRecord;
+        return null;
+      },
+    };
+    const view = render(<LocaleProvider><ProviderModal {...props} /></LocaleProvider>);
+    act(() => useModalStore.setState({ isProviderModalOpen: true }));
+    await waitFor(() => expect(view.getAllByText("Follow Test Profile")).toHaveLength(2));
+    act(() => fireEvent.click(view.getByRole("switch", { name: "Bind settings per model" })));
+    await waitFor(() => expect(view.getByText("Editing: m-fav")).toBeTruthy());
+    // Exit without pressing Save, then reopen on the persisted state
+    // (bindPerModel: true — the autosave above wrote it).
+    act(() => useModalStore.setState({ isProviderModalOpen: false }));
+    view.rerender(<LocaleProvider><ProviderModal {...makeProps(profile, favorites)} /></LocaleProvider>);
+    act(() => useModalStore.setState({ isProviderModalOpen: true }));
+    await waitFor(() => expect(view.getAllByText("Follow Test Profile")).toHaveLength(2));
+    // The follow must re-hydrate on open: the favorited model's badge is
+    // back — not the base-settings lie.
+    await waitFor(() => expect(view.getByText("Editing: m-fav")).toBeTruthy());
+    expect(view.queryByText("Base settings (model not in favorites)")).toBeNull();
   });
 });

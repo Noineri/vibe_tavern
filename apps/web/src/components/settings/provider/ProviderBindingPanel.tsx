@@ -8,7 +8,11 @@ interface ProviderBindingPanelProps {
   form: FormState;
   /** Starred models for this profile (drives the follow/badge state). */
   favorites: FavoriteProviderModelRecord[];
-  updateForm: <K extends keyof FormState>(k: K, v: FormState[K]) => void;
+  /** The toggle is an AUTOSAVE field (owner ruling 2026-11-01): it persists
+   *  immediately and never dirties the modal — settings may exist with
+   *  binding ON and no advanced overlay configured, so the binding choice
+   *  must not raise the unsaved-changes guard. */
+  onTogglePerModelBinding: (value: boolean) => void;
 }
 
 /**
@@ -28,7 +32,7 @@ interface ProviderBindingPanelProps {
 export function ProviderBindingPanel({
   form,
   favorites,
-  updateForm,
+  onTogglePerModelBinding,
 }: ProviderBindingPanelProps) {
   const { t } = useT();
 
@@ -38,7 +42,8 @@ export function ProviderBindingPanel({
       <div className="flex items-center gap-3">
         <Toggle
           checked={form.bindPerModel}
-          onChange={(v) => updateForm("bindPerModel", v as FormState["bindPerModel"])}
+          onChange={(v) => onTogglePerModelBinding(v)}
+          aria-label={t("bind_to_favorite_model")}
           className="!mb-0 !inline-flex"
         />
         <div className="min-w-0">
