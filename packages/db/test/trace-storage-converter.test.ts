@@ -3,6 +3,7 @@ import { createDb } from "../src/db-connection.js";
 import { deflateTraceValue } from "../src/trace-chunking.js";
 import { PromptTraceStore } from "../src/stores/prompt-trace-store.js";
 import { runTraceStorageConversion, TRACE_STORAGE_CONVERSION_MARKER } from "../src/trace-storage-converter.js";
+import { compressTraceText } from "../src/trace-storage-codec.js";
 
 async function seed() {
 	const db = await createDb(":memory:");
@@ -130,4 +131,80 @@ test("ordinary deletes and the boot sweep cannot reclaim chunks while legacy ref
 	});
 	expect(await store.getTracesByChat("chat", "branch")).toEqual(expected);
 	expect(db.$client.query("SELECT trace_id FROM prompt_trace_chunk_refs WHERE trace_id = 't0'").get()).toBeNull();
+});
+
+/** Lean trace table for progress-cadence pins: `count` minimal rows with either
+ * legacy v1 TEXT columns (need conversion) or already-v2 compressed columns
+ * (a resumed pass walks them without converting them again). */
+async function seedTraceRows(count: number, mode: "legacy" | "converted") {
+	const db = await createDb(":memory:");
+	const client = db.$client;
+	client.exec(`INSERT INTO characters(id,name,created_at,updated_at) VALUES ('c','fixture','now','now');
+		INSERT INTO chats(id,character_id,active_branch_id,title,created_at,updated_at) VALUES ('chat','c','branch','fixture','now','now');
+		INSERT INTO chat_branches(id,chat_id,label,created_at) VALUES ('branch','chat','root','now');
+		INSERT INTO messages(id,chat_id,branch_id,role,author_type,position,content,state,created_at,updated_at) VALUES ('m','chat','branch','user','user',0,'seed','active','now','now');`);
+	const insert = client.query(`INSERT INTO prompt_traces(id,chat_id,branch_id,message_id,model,preset_name,assembled_layers_json,token_accounting_json,final_payload_json,provider_response_json,latency_ms,created_at)
+		VALUES (?,'chat','branch','m','model','preset',?,'{}',?,NULL,5,'now')`);
+	for (let i = 0; i < count; i++) {
+		const layers = mode === "legacy" ? `{"layers":[${i}]}` : compressTraceText(`{"layers":[${i}]}`);
+		const final = mode === "legacy" ? `{"final":${i}}` : compressTraceText(`{"final":${i}}`);
+		insert.run(`t${i}`, layers, final);
+	}
+	return db;
+}
+
+test("progress follows the 500-row cadence and ends with the completed counts", async () => {
+	const db = await seedTraceRows(1200, "legacy");
+	const emissions: Array<[number, number]> = [];
+	const stats = await runTraceStorageConversion(db, {
+		clock: { now: () => 0 },
+		yieldToEventLoop: async () => {},
+		onProgress: (converted, total) => { emissions.push([converted, total]); },
+	});
+	expect(emissions).toEqual([[1, 1200], [501, 1200], [1001, 1200], [1200, 1200]]);
+	expect(stats.tracesConverted).toBe(1200);
+});
+
+test("logical clock time releases the throttle before 500 more rows pass", async () => {
+	const db = await seedTraceRows(30, "legacy");
+	let now = 0;
+	const emissions: Array<{ converted: number; total: number; at: number }> = [];
+	await runTraceStorageConversion(db, {
+		clock: { now: () => (now += 1000) },
+		yieldToEventLoop: async () => {},
+		onProgress: (converted, total) => { emissions.push({ converted, total, at: now }); },
+	});
+	// 30 rows never reach the 500-row rule, so every throttled emission (all
+	// but the final one) must have been released by the 5 s logical-time rule.
+	for (let i = 1; i < emissions.length - 1; i++) {
+		expect(emissions[i]!.at - emissions[i - 1]!.at).toBeGreaterThanOrEqual(5000);
+	}
+	expect(emissions.length).toBeLessThan(30);
+	expect(emissions[0]!.converted).toBe(1);
+	expect(emissions[emissions.length - 1]!.converted).toBe(30);
+	expect(emissions[emissions.length - 1]!.total).toBe(30);
+});
+
+test("nothing to convert emits zero progress callbacks", async () => {
+	const db = await createDb(":memory:");
+	const emissions: Array<[number, number]> = [];
+	const record = (converted: number, total: number): void => { emissions.push([converted, total]); };
+	const stats = await runTraceStorageConversion(db, { clock: { now: () => 0 }, onProgress: record });
+	expect(emissions).toEqual([]);
+	expect(stats.skippedByMarker).toBe(false);
+	const skipped = await runTraceStorageConversion(db, { clock: { now: () => 0 }, onProgress: record });
+	expect(skipped.skippedByMarker).toBe(true);
+	expect(emissions).toEqual([]);
+});
+
+test("a resumed pass counts already-converted rows toward progress", async () => {
+	const db = await seedTraceRows(3, "converted");
+	const emissions: Array<[number, number]> = [];
+	const stats = await runTraceStorageConversion(db, {
+		clock: { now: () => 0 },
+		yieldToEventLoop: async () => {},
+		onProgress: (converted, total) => { emissions.push([converted, total]); },
+	});
+	expect(stats.tracesConverted).toBe(0);
+	expect(emissions).toEqual([[1, 3], [3, 3]]);
 });

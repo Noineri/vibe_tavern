@@ -1,8 +1,8 @@
 export * from './db-schema.js';
 export { createDb, closeAllDbs, resolveMigrationsFolder, type AppDb, type DbTransaction } from './db-connection.js';
 export { enableTestDbTemplate, type CreateDbOptions } from './db-template.js';
-export { runTraceStorageConversion, TRACE_STORAGE_CONVERSION_MARKER, type TraceStorageConversionOptions, type TraceStorageConversionStats } from './trace-storage-converter.js';
-export { vacuumTraceStorageOnce, TRACE_STORAGE_VACUUM_MARKER } from './trace-storage-vacuum.js';
+export { runTraceStorageConversion, isTraceStorageConversionRunning, TRACE_STORAGE_CONVERSION_MARKER, type TraceStorageConversionOptions, type TraceStorageConversionStats } from './trace-storage-converter.js';
+export { vacuumTraceStorageOnce, TRACE_STORAGE_VACUUM_MARKER, type TraceStorageVacuumOptions } from './trace-storage-vacuum.js';
 export {
   createStoreContainer,
   IncrementingStoreIdGenerator,

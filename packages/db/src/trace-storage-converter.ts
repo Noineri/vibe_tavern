@@ -5,11 +5,20 @@ import { compressTraceText, decodeTraceText, isCompressedTraceText, type StoredT
 export const TRACE_STORAGE_CONVERSION_MARKER = 'trace-storage-v2';
 const RUNNING_MARKER = 'trace-storage-v2-running';
 const SLICE_BUDGET_MS = 15;
+const PROGRESS_ROW_INTERVAL = 500;
+const PROGRESS_TIME_INTERVAL_MS = 5000;
 
 export interface TraceStorageConversionOptions {
   readonly clock?: { now(): number };
   readonly yieldToEventLoop?: () => Promise<void>;
   readonly signal?: AbortSignal;
+  /** Console-free progress channel. Counts are trace rows walked this pass
+   * (rows a previous pass already converted included, so a resumed pass still
+   * reaches total) over the trace-table size at pass start. Throttled to one
+   * emission per 500 rows or 5 s of logical clock time, whichever comes first,
+   * plus exactly one final emission when the pass completes. Never called
+   * when there is nothing to convert. */
+  readonly onProgress?: (converted: number, total: number) => void;
 }
 
 export interface TraceStorageConversionStats {
@@ -61,6 +70,25 @@ export async function runTraceStorageConversion(
       sliceStart = clock.now();
     }
     checkAbort();
+  };
+
+  // Progress is throttled here, not by the caller: at most one emission per
+  // PROGRESS_ROW_INTERVAL walked trace rows or PROGRESS_TIME_INTERVAL_MS of
+  // logical clock time, whichever comes first, plus one final emission.
+  const onProgress = options.onProgress;
+  let progressEmitted = false;
+  let progressRowMark = 0;
+  let progressTimeMark = clock.now();
+  let tracesWalked = 0;
+  let traceTotal = 0;
+  const reportProgress = (final: boolean): void => {
+    if (!onProgress || (final && !progressEmitted)) return;
+    const timestamp = clock.now();
+    if (!final && progressEmitted && tracesWalked - progressRowMark < PROGRESS_ROW_INTERVAL && timestamp - progressTimeMark < PROGRESS_TIME_INTERVAL_MS) return;
+    progressEmitted = true;
+    progressRowMark = tracesWalked;
+    progressTimeMark = timestamp;
+    onProgress(tracesWalked, traceTotal);
   };
 
   const nextChunk = client.query<{ id: string; content: StoredTraceText }, [string]>(
@@ -117,6 +145,11 @@ export async function runTraceStorageConversion(
     updateTrace.run(...deflated.map((value) => value === null ? null : compressTraceText(JSON.stringify(value.skeleton))), row.id);
   });
 
+  // Total is the trace-table size at pass start; walked rows include rows a
+  // previous pass already converted, so a resumed pass still reaches total.
+  traceTotal = onProgress
+    ? client.query<{ n: number }, []>('SELECT count(*) AS n FROM prompt_traces').get()!.n
+    : 0;
   cursor = '';
   for (;;) {
     checkAbort();
@@ -131,6 +164,8 @@ export async function runTraceStorageConversion(
       convertRow(row);
       stats.tracesConverted++;
     }
+    tracesWalked++;
+    reportProgress(false);
     await afterUnit();
   }
   // Every surviving skeleton now owns correct refs. Sweep in bounded atomic
@@ -161,6 +196,7 @@ export async function runTraceStorageConversion(
     client.query('INSERT INTO app_data_migrations(name, applied_at) VALUES (?, ?)').run(TRACE_STORAGE_CONVERSION_MARKER, new Date().toISOString());
     client.query('DELETE FROM app_data_migrations WHERE name = ?').run(RUNNING_MARKER);
   })();
+  reportProgress(true);
   return stats;
 }
 

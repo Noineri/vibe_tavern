@@ -52,3 +52,21 @@ test('a failed VACUUM never claims success and can retry', async () => {
   expect(db.$client.query('SELECT name FROM app_data_migrations WHERE name=?').get(TRACE_STORAGE_VACUUM_MARKER)).toBeNull();
   expect(vacuumTraceStorageOnce(db)).toBe(true);
 });
+
+test('visibility hooks fire with measured wall time only on the vacuum boot', async () => {
+  const db = await createDb(':memory:');
+  const events: string[] = [];
+  let time = 0;
+  const hooks = {
+    now: () => (time += 1000),
+    onStart: () => events.push('start'),
+    onDone: (durationMs: number) => events.push(`done:${durationMs}`),
+  };
+  expect(vacuumTraceStorageOnce(db, hooks)).toBe(false);
+  expect(events).toEqual([]);
+  db.$client.exec("INSERT INTO app_data_migrations(name,applied_at) VALUES ('trace-storage-v2','now')");
+  expect(vacuumTraceStorageOnce(db, hooks)).toBe(true);
+  expect(events).toEqual(['start', 'done:1000']);
+  expect(vacuumTraceStorageOnce(db, hooks)).toBe(false);
+  expect(events).toEqual(['start', 'done:1000']);
+});

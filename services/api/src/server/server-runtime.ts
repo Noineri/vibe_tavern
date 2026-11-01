@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { Hono } from "hono";
 import { EventBus } from "@vibe-tavern/domain";
 import { setTokenCountFn, setSeparatorSideFn } from "@vibe-tavern/prompt-pipeline";
-import { TokenCountStore, vacuumTraceStorageOnce } from "@vibe-tavern/db";
+import { TokenCountStore } from "@vibe-tavern/db";
 import {
 	countTokens,
 	warmupTokenizers,
@@ -82,7 +82,7 @@ import { createLoadingHandler } from "./loading-placeholder.js";
 import { closeAllSocksBridges } from "../domain/providers/socks-bridge.js";
 import { serveErrorResponse } from "./serve-error.js";
 import { serveAssetFile } from "./static-conditional.js";
-import { startTraceStorageConversion } from "./trace-storage-maintenance.js";
+import { compactTraceStorageOnce, startTraceStorageConversion } from "./trace-storage-maintenance.js";
 // Port pre-check cluster — extracted when TC-6's wiring pushed this file over
 // the 800-line arch-gate cap (extraction, never compression — see server-port.ts).
 import { ensurePortAvailable } from "./server-port.js";
@@ -157,7 +157,7 @@ export async function createRuntimeApp(config: RuntimeAppConfig): Promise<Hono> 
 	const stores = await createRuntimeStore(config.dataDir);
 	// Conversion runs after readiness; physical compaction belongs to the next
 	// boot while the bind-first loading placeholder still owns all API traffic.
-	if (vacuumTraceStorageOnce(stores.db)) console.log(`${tag} Trace storage v2 VACUUM complete.`);
+	compactTraceStorageOnce(stores.db);
 
 	// Seed
 	await Promise.all([
