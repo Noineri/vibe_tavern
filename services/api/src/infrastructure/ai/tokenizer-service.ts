@@ -67,6 +67,16 @@ async function ensureTokenizerDir(): Promise<string> {
 const tiktokenCache = new Map<string, Tiktoken>();
 const webTokenizerCache = new Map<string, WebTokenizer>();
 
+/** Test seam: drop the warmed web tokenizers so a file can pin the COLD path
+ * (fallback ids, pre-warmup counts) on demand. "Fresh process" cannot be
+ * assumed from file order: a workspace's test files share ONE process and
+ * discovery order is readdir-order on Linux CI vs alphabetical on Windows
+ * dev — on 2026-11-01 a server-runtime-importing file warmed the cache before
+ * tokenizer-service.test.ts ran, flipping its cold-path pins. */
+export function resetWebTokenizerCacheForTests(): void {
+	webTokenizerCache.clear();
+}
+
 function getTiktoken(encoding: string): Tiktoken {
 	let instance = tiktokenCache.get(encoding);
 	if (instance) return instance;

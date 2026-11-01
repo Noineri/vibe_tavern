@@ -14,11 +14,14 @@
  * seam, the 100 000-char persistence cutoff, provider-exact precedence
  * over every local layer, and store-less (unit-test) operation.
  *
- * Process-sharing (services/api tests share one process): this file is the
- * ONLY warmer of the web tokenizers in the suite, so the pre-warmup pins
- * below are deterministic. Every injection this file makes (persistent
- * store, fetch stub) is restored in afterAll; every layer is reset between
- * tests.
+ * Process-sharing (services/api tests share one process): discovery order is
+ * readdir-order on Linux CI and alphabetical on Windows dev, so "this file
+ * runs before any warmer" is not a portable assumption (2026-11-01: a
+ * server-runtime-importing file warmed the web tokenizers first on Linux and
+ * flipped these cold-path pins). The cold-path describe below enforces its
+ * own precondition via resetWebTokenizerCacheForTests(). Every injection this
+ * file makes (persistent store, fetch stub) is restored in afterAll; every
+ * layer is reset between tests.
  */
 import { describe, test, expect, beforeAll, beforeEach, afterEach, afterAll } from "bun:test";
 import {
@@ -30,6 +33,7 @@ import {
 	getTokenCountLayerStatsForTests,
 	configureTokenCountLayerForTests,
 	resetTokenCountLayerForTests,
+	resetWebTokenizerCacheForTests,
 	type PersistentTokenCountStore,
 } from "../src/infrastructure/ai/tokenizer-service.js";
 import {
@@ -183,9 +187,16 @@ afterAll(() => {
 });
 
 describe("tokenizer-service before warmup (fresh process)", () => {
+	beforeAll(() => {
+		// Enforce the "fresh process" precondition instead of assuming it from
+		// file order (see the file header) — another file in this shared process
+		// may have warmed the web tokenizers already.
+		resetWebTokenizerCacheForTests();
+	});
+
 	test("a not-yet-loaded web tokenizer falls back to the cl100k count", () => {
-		// Nothing in this test process loads web tokenizers before this file's
-		// warmup below — countTokens with a claude model must equal the plain
+		// The cold cache is enforced by the describe's beforeAll, not assumed
+		// from file order — countTokens with a claude model must equal the plain
 		// cl100k default, exactly as the production cold path does before
 		// warmupTokenizers() completes.
 		expect(countTokens(FIX_CYRILLIC, "claude-sonnet-4-5")).toBe(countTokensDefault(FIX_CYRILLIC));
