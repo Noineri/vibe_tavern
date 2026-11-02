@@ -4,7 +4,7 @@ import type { AgentPlan } from "@vibe-tavern/api-contracts";
 
 useDomEnv();
 
-const { fireEvent, render, waitFor } = await import("@testing-library/react");
+const { act, fireEvent, render, waitFor } = await import("@testing-library/react");
 const { AgentPlanEditorModal } = await import("./AgentPlanEditorModal.js");
 
 const originalFetch = globalThis.fetch;
@@ -180,5 +180,33 @@ describe("AgentPlanEditorModal — story labels for a branch owner (DR-9)", () =
     // match the route suffix, not the exact string.
     expect(lastPath.endsWith("/api/agent/chats/story-chat/branches/story-branch/plan")).toBe(true);
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("AgentPlanEditorModal — scroll surface (CNR-8h)", () => {
+  it("the editor body scrolls on the thin ScrollArea lane; header and footer stay docked", async () => {
+    const { getByLabelText, getByTestId } = renderModal("scroll-plan");
+    const goal = await waitFor(() => getByLabelText("agent_plan_goal"));
+    const area = goal.closest<HTMLElement>("[data-scroll-area]")!;
+    expect(area.getAttribute("data-scroll-area")).toBe("thin");
+    // The shared body rides the lane for BOTH viewports (the CNR-7g policy
+    // hides it on phones): fields sit on the scroller's content with the
+    // desktop body padding, the panel header and the save footer stay
+    // OUTSIDE the scroller (one wrapper, same paddings as before).
+    expect(area.querySelector("[data-scroll-content]")!.className).toContain("py-5");
+    expect(getByTestId("agent-plan-save").closest("[data-scroll-area]")).toBeNull();
+    const viewport = area.querySelector<HTMLElement>("[data-scroll-viewport]")!;
+    expect(viewport.classList.contains("scrollbar-hide")).toBe(true);
+    // Fake a tall body (happy-dom has no layout) → the vertical lane mounts.
+    Object.defineProperties(viewport, {
+      clientHeight: { value: 100 }, scrollHeight: { value: 1000 },
+      clientWidth: { value: 200 }, scrollWidth: { value: 200 },
+    });
+    await act(async () => {
+      viewport.scrollTop = 200;
+      fireEvent.scroll(viewport);
+    });
+    await waitFor(() => expect(area.querySelector("[data-scroll-thumb]")).not.toBeNull());
+    expect(area.querySelector("[data-scroll-track]")?.getAttribute("data-orientation")).toBe("vertical");
   });
 });

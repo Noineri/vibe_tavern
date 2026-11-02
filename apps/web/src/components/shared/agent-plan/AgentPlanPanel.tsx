@@ -3,6 +3,7 @@ import type { AgentPlan, AgentPlanTask } from "@vibe-tavern/api-contracts";
 import { cn } from "../../../lib/cn.js";
 import { useT } from "../../../i18n/context.js";
 import { Ic } from "../icons.js";
+import { ScrollArea } from "../scroll-area.js";
 
 export interface AgentPlanPanelProps {
   plan: AgentPlan;
@@ -274,8 +275,20 @@ export function AgentPlanPanel({
         {showEditorInCollapsedRow && editorButton}
         {actions}
       </div>
+      {/* CNR-8h: the open curtain body rides the thin ScrollArea lane (3px
+          rest / 5px hover) instead of the native 8px fallback — the cap
+          moved onto the ScrollArea root (the curtain itself: same absolute
+          §5 geometry, same max-h-[60vh] ceiling) and the gap/padding onto
+          the content element so both scroll with the rows. Header, premise
+          and task list keep their order; no consumer ever held the old div
+          by ref. The lane hides on phones (CNR-7g policy). */}
       {open && (
-        <div data-testid="agent-plan-curtain" className="absolute left-0 right-0 top-full z-30 flex max-h-[60vh] flex-col gap-1 overflow-y-auto border-b border-border bg-surface px-2 py-1.5 shadow-[var(--shadow-md)]">
+        <ScrollArea
+          scrollbarSize="thin"
+          data-testid="agent-plan-curtain"
+          className="absolute left-0 right-0 top-full z-30 max-h-[60vh] border-b border-border bg-surface shadow-[var(--shadow-md)]"
+          contentClassName="flex flex-col gap-1 px-2 py-1.5"
+        >
           <div className={cn("flex items-center gap-1.5", headerActionsBefore !== undefined && "flex-wrap")}>
             <span className="shrink-0 text-accent"><Ic.target /></span>
             <span className="text-[calc(var(--ui-fs)-4px)] font-semibold uppercase tracking-[0.06em] text-t4">{t("agent_plan_story_title")}</span>
@@ -312,7 +325,7 @@ export function AgentPlanPanel({
             </p>
           )}
           {taskList(true)}
-        </div>
+        </ScrollArea>
       )}
     </div>
   );

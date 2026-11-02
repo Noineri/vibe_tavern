@@ -19,6 +19,8 @@ import { agentThreadKey, getAgentHost, type AgentI18nKey, type AgentKind, type A
 import type { AgentBuiltinProfileHandoff } from "../../../lib/agent-builtin-profiles.js";
 import { agentEventAnchors } from "./agent-event-anchors.js";
 import { useAgentListScroll } from "./agent-list-scroll.js";
+import { AgentFeedScroll } from "./AgentFeedScroll.js";
+import { AgentJumpToBottom } from "./AgentJumpToBottom.js";
 import { AgentMessageBlock } from "./AgentMessageBlock.js";
 import { AgentTimelineSeparator } from "./AgentTimelineSeparator.js";
 import { syntheticAgentMessage, PENDING_USER_MESSAGE_ID } from "./agent-synthetic-message.js";
@@ -36,7 +38,6 @@ import { AgentTurnErrorSlot } from "./AgentTurnErrorSlot.js";
 import { AgentHostCaption } from "./AgentHostCaption.js";
 import { buildTurnCaptions, withLiveReasoning } from "./agent-turn-captions.js";
 import { MessageReasoning } from "../../chat/MessageReasoning.js";
-import { Icons } from "../icons.js";
 import { AgentEmptyState } from "./AgentEmptyState.js";
 import { useT } from "../../../i18n/context.js";
 
@@ -553,8 +554,10 @@ export function AgentMessageList({
 
   return (
     <div data-testid="copilot-message-list" className="relative flex min-h-0 min-w-0 flex-1 flex-col">
-      <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-4 py-3">
-        <div className="flex flex-col gap-3">
+      {/* CNR-8h: the scroll surface lives in `AgentFeedScroll` (thin lane,
+          viewport-repinned bottom-pinning — its header documents the wiring). */}
+      <AgentFeedScroll scrollRef={scrollRef} onScroll={handleScroll}>
+        <div className="flex flex-col gap-3 px-4 py-3">
           {visibleMessages.map((entry, visibleIndex) => {
             // AP-29 follow-up 2: the replaced turn hides whole — its
             // bubbles, its anchored accordion/cards, its caption, and its
@@ -782,17 +785,9 @@ export function AgentMessageList({
             onRetryTurn={onRetryTurn}
           />
         </div>
-      </div>
+      </AgentFeedScroll>
 
-      {showJumpToBottom && (
-        <button
-          type="button"
-          className="absolute bottom-4 right-4 z-10 flex h-10 w-10 items-center justify-center rounded-full bg-accent text-on-accent shadow-lg transition-transform hover:scale-110 active:scale-95"
-          onClick={jump}
-        >
-          <Icons.Caret direction="d" />
-        </button>
-      )}
+      {showJumpToBottom && <AgentJumpToBottom onClick={jump} />}
     </div>
   );
 }

@@ -4,7 +4,7 @@ import type { AgentPlan } from "@vibe-tavern/api-contracts";
 
 useDomEnv();
 
-const { fireEvent, render } = await import("@testing-library/react");
+const { act, fireEvent, render, waitFor } = await import("@testing-library/react");
 const { AgentPlanPanel } = await import("./AgentPlanPanel.js");
 
 const PLAN: AgentPlan = {
@@ -126,7 +126,7 @@ describe("AgentPlanPanel — curtain presentation (DR-9)", () => {
     return render(<AgentPlanPanel plan={PLAN} onOpenEditor={mock()} locked={false} presentation="curtain" {...over} />);
   }
 
-  it("renders the expanded part as an overlay below the CONSTANT row (no layout shift)", () => {
+  it("renders the expanded part as an overlay below the CONSTANT row (no layout shift)", async () => {
     const { getByTestId, queryByTestId } = renderCurtain();
     expect(getByTestId("agent-plan-panel").getAttribute("data-state")).toBe("collapsed");
     expect(queryByTestId("agent-plan-curtain")).toBeNull();
@@ -143,8 +143,27 @@ describe("AgentPlanPanel — curtain presentation (DR-9)", () => {
     expect(curtain.className).toContain("absolute");
     expect(curtain.className).toContain("left-0 right-0 top-full");
     expect(curtain.className).toContain("max-h-[60vh]");
-    expect(curtain.className).toContain("overflow-y-auto");
     expect(curtain.className).toContain("shadow-[var(--shadow-md)]");
+    // CNR-8h: the curtain IS the thin ScrollArea root now — same §5 geometry
+    // and the same max-h-[60vh] ceiling above (the capped internal-scroll
+    // boundary, pinned through the new wiring): the rows scroll inside its
+    // viewport with the gap/padding on the content element.
+    expect(curtain.getAttribute("data-scroll-area")).toBe("thin");
+    const viewport = curtain.querySelector<HTMLElement>("[data-scroll-viewport]")!;
+    expect(viewport.classList.contains("scrollbar-hide")).toBe(true);
+    expect(curtain.querySelector("[data-scroll-content]")?.className).toContain("gap-1");
+    // Base UI mounts a scrollbar lazily (overflow observed); happy-dom has no
+    // layout, so fake the measurement the way scroll-area.test.tsx does.
+    Object.defineProperties(viewport, {
+      clientHeight: { value: 100 }, scrollHeight: { value: 1000 },
+      clientWidth: { value: 200 }, scrollWidth: { value: 200 },
+    });
+    await act(async () => {
+      viewport.scrollTop = 200;
+      fireEvent.scroll(viewport);
+    });
+    await waitFor(() => expect(curtain.querySelector("[data-scroll-thumb]")).not.toBeNull());
+    expect(curtain.querySelector("[data-scroll-track]")?.getAttribute("data-orientation")).toBe("vertical");
     // §5: the story title heads the curtain; the premise rides on top (P2).
     expect(curtain.textContent).toContain("agent_plan_story_title");
     expect(getByTestId("agent-plan-premise")).toBeDefined();

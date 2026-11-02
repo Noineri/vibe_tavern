@@ -13,9 +13,8 @@ import ru from "../../../i18n/locales/ru.json";
 
 useDomEnv();
 
-const { render } = await import("@testing-library/react");
+const { act, fireEvent, render, waitFor } = await import("@testing-library/react");
 const { RecordProposalFallbackCard } = await import("./RecordProposalFallbackCard.js");
-
 function proposal(over: Partial<RecordProposal>): RecordProposal {
   return {
     kind: "record",
@@ -95,5 +94,41 @@ describe("RecordProposalFallbackCard — page translation (follow-up 2026-10-24)
     const { getByTestId } = render(<RecordProposalFallbackCard proposal={proposal({})} threadId="thread-1" />);
     expect(getByTestId("record-proposal-fallback-payload").getAttribute("translate")).toBe("yes");
     expect(getByTestId("record-proposal-fallback-accept").getAttribute("translate")).toBeNull();
+  });
+});
+
+// ─── Scroll surface (CNR-8h) ──────────────────────────────────────────────
+// The payload preview (the card's only scroll region) rides the shared thin
+// ScrollArea lane: the codeQuote frame (rounded/border/bg — fixed while the
+// JSON scrolls, like the native scroller's own border) and the max-h-40
+// ceiling sit on the root, the token's text classes + the translate opt-in
+// on the content div. Display-only — Accept stays the disabled chrome pinned
+// above.
+describe("RecordProposalFallbackCard — scroll surface (CNR-8h)", () => {
+
+  it("payload preview scrolls on the thin ScrollArea lane (frame fixed, ceiling on the root)", async () => {
+    const { getByTestId } = render(<RecordProposalFallbackCard proposal={proposal({})} threadId="thread-1" />);
+    const payload = getByTestId("record-proposal-fallback-payload");
+    const area = payload.closest<HTMLElement>("[data-scroll-area]")!;
+    expect(area.getAttribute("data-scroll-area")).toBe("thin");
+    // The codeQuote frame + the max-h-40 ceiling live on the root; the mono
+    // text classes + translate opt-in stay with the payload text.
+    expect(area.className).toContain("max-h-40");
+    expect(area.className).toContain("rounded-[6px] border border-border bg-s2");
+    expect(payload.className).toContain("whitespace-pre-wrap break-all p-2 font-mono");
+    expect(payload.getAttribute("translate")).toBe("yes");
+    const viewport = area.querySelector<HTMLElement>("[data-scroll-viewport]")!;
+    expect(viewport.classList.contains("scrollbar-hide")).toBe(true);
+    // Fake an overflowing preview (happy-dom has no layout) → the vertical lane mounts.
+    Object.defineProperties(viewport, {
+      clientHeight: { value: 100 }, scrollHeight: { value: 1000 },
+      clientWidth: { value: 200 }, scrollWidth: { value: 200 },
+    });
+    await act(async () => {
+      viewport.scrollTop = 200;
+      fireEvent.scroll(viewport);
+    });
+    await waitFor(() => expect(area.querySelector("[data-scroll-thumb]")).not.toBeNull());
+    expect(area.querySelector("[data-scroll-track]")?.getAttribute("data-orientation")).toBe("vertical");
   });
 });

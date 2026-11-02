@@ -10,6 +10,7 @@ import { DropdownSelect } from "../DropdownSelect.js";
 import { Ic } from "../icons.js";
 import { Modal } from "../Modal.js";
 import { modalPanelCls } from "../modal-helpers.js";
+import { ScrollArea } from "../scroll-area.js";
 import { TextInput } from "../text-input.js";
 import { agentPlanEditorLabels } from "./agent-plan-editor-labels.js";
 
@@ -98,7 +99,13 @@ export function AgentPlanEditorModal({ owner, open, onClose, locked }: AgentPlan
           <h2 className="font-ui text-[calc(var(--ui-fs)+2px)] font-medium text-t1">{t(labels.title)}</h2>
           {locked && <p className="mt-1 font-ui text-[calc(var(--ui-fs)-2px)] text-t3">{t("agent_plan_locked")}</p>}
         </div>
-        <div className={cn("min-h-0 flex-1 overflow-y-auto", isMobile ? "px-4 py-4" : "px-6 py-5")}>
+        {/* CNR-8h: the editor body rides the thin ScrollArea lane (3px
+            rest / 5px hover) instead of the native 8px fallback — the CNR-8g
+            modal-body idiom: ONE wrapper for both viewports (shared body;
+            the CNR-7g policy hides the lane on phones), the viewport takes
+            the panel's remaining height, and the px/py padding moved onto
+            the content element so it scrolls with the fields. */}
+        <ScrollArea scrollbarSize="thin" className="min-h-0 flex-1" contentClassName={isMobile ? "px-4 py-4" : "px-6 py-5"}>
           {isLoading ? (
             <p className="font-ui text-[calc(var(--ui-fs)-2px)] text-t3">{t("agent_plan_loading")}</p>
           ) : (
@@ -147,7 +154,7 @@ export function AgentPlanEditorModal({ owner, open, onClose, locked }: AgentPlan
               </div>
             </div>
           )}
-        </div>
+        </ScrollArea>
         <div className={cn("shrink-0 border-t border-border bg-surface", isMobile ? "px-4 py-3" : "px-6 py-3")}>
           {saveError && <p role="alert" className="mb-2 font-ui text-[calc(var(--ui-fs)-2px)] text-danger">{saveError}</p>}
           <div className="flex items-center justify-end gap-2">

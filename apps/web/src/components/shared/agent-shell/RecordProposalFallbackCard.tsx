@@ -14,9 +14,8 @@
  * "objective"` renderer, SC-13c) clones this frame.
  */
 import type { RecordProposal } from "@vibe-tavern/api-contracts";
-import { cn } from "../../../lib/cn.js";
-import { codeQuoteCls } from "../../../lib/field-tokens.js";
 import { Icons } from "../icons.js";
+import { ScrollArea } from "../scroll-area.js";
 import { useT } from "../../../i18n/context.js";
 
 export interface RecordProposalFallbackCardProps {
@@ -83,14 +82,28 @@ export function RecordProposalFallbackCard({ proposal }: RecordProposalFallbackC
       )}
 
       {/* The proposed payload is MODEL text — page-translatable (owner
-          follow-up 2026-10-24); title / target / hint / accept are chrome. */}
-      <div
-        data-testid="record-proposal-fallback-payload"
-        translate="yes"
-        className={cn(codeQuoteCls, "max-h-40 overflow-auto")}
+          follow-up 2026-10-24); title / target / hint / accept are chrome.
+          CNR-8h: the preview rides the thin ScrollArea lane (3px rest / 5px
+          hover) instead of the native fallback. `codeQuoteCls` splits at this
+          call site — its FRAME classes (rounded/border/bg) sit on the
+          ScrollArea root so the frame stays fixed while the JSON scrolls
+          (the native scroller's own border behaved the same), its TEXT
+          classes (whitespace/padding/mono ladder) on the content div so the
+          padding scrolls with the text. The token's other ceiling consumers
+          (ScriptTester, TrackerConfig, the prompt panes) stay native until
+          their own CNR-8 units. */}
+      <ScrollArea
+        scrollbarSize="thin"
+        className="max-h-40 rounded-[6px] border border-border bg-s2"
       >
-        {preview ?? t("agent.record_proposal.bad_payload")}
-      </div>
+        <div
+          data-testid="record-proposal-fallback-payload"
+          translate="yes"
+          className="min-w-0 whitespace-pre-wrap break-all p-2 font-mono text-[calc(var(--ui-fs)-2px)] leading-relaxed text-t2"
+        >
+          {preview ?? t("agent.record_proposal.bad_payload")}
+        </div>
+      </ScrollArea>
 
       <div className="flex items-center gap-2">
         <button

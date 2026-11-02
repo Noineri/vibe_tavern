@@ -20,10 +20,12 @@ installRadixPopoverSeam();
 
 let render: typeof import("@testing-library/react").render;
 let fireEvent: typeof import("@testing-library/react").fireEvent;
+let act: typeof import("@testing-library/react").act;
+let waitFor: typeof import("@testing-library/react").waitFor;
 let AgentSessionSwitcher: typeof import("./AgentSessionSwitcher.js").AgentSessionSwitcher;
 
 beforeAll(async () => {
-  ({ render, fireEvent } = await import("@testing-library/react"));
+  ({ render, fireEvent, act, waitFor } = await import("@testing-library/react"));
   ({ AgentSessionSwitcher } = await import("./AgentSessionSwitcher.js"));
 });
 
@@ -219,5 +221,33 @@ describe("ExperienceSessionSwitcher", () => {
     fireEvent.change(again, { target: { value: "   " } });
     fireEvent.keyDown(again, { key: "Enter" });
     expect(onRename).not.toHaveBeenCalled();
+  });
+
+  // ── CNR-8h: the session list rides the shared thin lane ──────────────
+  // The popup's capped list body is one thin ScrollArea (the 8d
+  // DropdownSelect idiom): the max-h cap moved onto its root, the p-1 row
+  // padding scrolls with the content, and the "+ New session" dock stays
+  // OUTSIDE the scroller. Switch/rename callbacks are untouched (pinned
+  // above).
+  it("the session list scrolls on the thin ScrollArea lane; New stays docked (CNR-8h)", async () => {
+    const { getByTestId } = renderSwitcher();
+    const area = getByTestId("copilot-session-t1").closest<HTMLElement>("[data-scroll-area]")!;
+    expect(area.getAttribute("data-scroll-area")).toBe("thin");
+    expect(area.className).toContain("max-h-[280px]");
+    expect(area.querySelector("[data-scroll-content]")!.className).toContain("p-1");
+    expect(area.querySelector("[data-scroll-viewport]")!.classList.contains("scrollbar-hide")).toBe(true);
+    expect(getByTestId("copilot-session-new").closest("[data-scroll-area]")).toBeNull();
+    // Fake an overflowing list (happy-dom has no layout) → the vertical lane mounts.
+    const viewport = area.querySelector<HTMLElement>("[data-scroll-viewport]")!;
+    Object.defineProperties(viewport, {
+      clientHeight: { value: 100 }, scrollHeight: { value: 1000 },
+      clientWidth: { value: 200 }, scrollWidth: { value: 200 },
+    });
+    await act(async () => {
+      viewport.scrollTop = 200;
+      fireEvent.scroll(viewport);
+    });
+    await waitFor(() => expect(area.querySelector("[data-scroll-thumb]")).not.toBeNull());
+    expect(area.querySelector("[data-scroll-track]")?.getAttribute("data-orientation")).toBe("vertical");
   });
 });

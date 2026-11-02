@@ -4,6 +4,7 @@ import { useT } from "../../../i18n/context.js";
 import { cn } from "../../../lib/cn.js";
 import { Icons } from "../icons.js";
 import { MasterListTag } from "../master-list/master-list-tag.js";
+import { ScrollArea } from "../scroll-area.js";
 import { getAgentHost, type AgentKind } from "../../../lib/agent-host-registry.js";
 import { useCopilotProfileStore } from "../../../stores/copilot-profile-store.js";
 import { BUILTIN_PROFILE_ID, useParkedProfileChoice } from "./use-agent-profile-assignment.js";
@@ -135,7 +136,13 @@ export function AgentProfileChip({
 					sideOffset={4}
 					className="glass-blur z-[301] flex w-[240px] flex-col overflow-hidden rounded-lg border border-border bg-glass-bg shadow-[0_12px_28px_rgba(0,0,0,0.45)] outline-none"
 				>
-					<div className="flex max-h-[280px] flex-col overflow-y-auto p-1">
+					{/* CNR-8h: the profile list rides the thin ScrollArea lane (3px
+				 * rest / 5px hover) instead of the native 8px fallback — the same 8d
+				 * DropdownSelect popup idiom as AgentSessionSwitcher (the chip's menu
+				 * clones that popover chrome): the max-h cap moved onto the
+				 * ScrollArea root, the p-1 row padding scrolls with the content.
+				 * Choose/edit callbacks untouched. */}
+					<ScrollArea scrollbarSize="thin" className="max-h-[280px]" contentClassName="flex flex-col p-1">
 						{profiles.map((p) => {
 							const isActive = p.id === effectiveId;
 							// Mockup §2 row: [check?] name… tag. The effective row is a
@@ -177,7 +184,7 @@ export function AgentProfileChip({
 								</button>
 							);
 						})}
-					</div>
+					</ScrollArea>
 					<button
 						type="button"
 						data-testid="agent-profile-menu-edit"

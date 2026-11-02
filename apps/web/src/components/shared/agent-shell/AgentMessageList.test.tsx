@@ -189,6 +189,53 @@ describe("ExperienceCopilotMessageList", () => {
     expect(getByText("Here are the rules")).toBeDefined();
   });
 
+  // ── CNR-8h: the feed scrolls on the shared thin lane ──────────────────
+  // ONE thin ScrollArea wraps the whole feed (streaming flushes reconcile
+  // rows inside the stable viewport — no per-message wrapper), and the
+  // bottom-pinning scroller from `useAgentListScroll` IS that viewport
+  // (the PersonaModal ref repoint): scrolling it away from the bottom
+  // reveals the jump button, and the jump writes the viewport's own
+  // scrollTop back to the bottom — the pre-conversion div behavior, now
+  // through the ScrollArea viewport.
+  it("feed scroll wiring: one thin lane, bottom-pinning pinned to the viewport (CNR-8h)", async () => {
+    const view = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={[
+          message({ id: "u1", role: "user", content: "Make it scarier" }),
+          message({ id: "a1", role: "assistant", content: "Here are the rules" }),
+        ]}
+        pendingUserContent=""
+      />,
+    );
+    const list = view.getByTestId("copilot-message-list");
+    const areas = list.querySelectorAll("[data-scroll-area]");
+    expect(areas).toHaveLength(1);
+    const area = areas[0]! as HTMLElement;
+    expect(area.getAttribute("data-scroll-area")).toBe("thin");
+    // The single scroller owns the WHOLE feed — both rows live on its content.
+    expect(area.querySelector("[data-scroll-content]")!.textContent).toContain("Here are the rules");
+    // Fake a tall feed scrolled to the top (happy-dom has no layout); the
+    // scroll handler reads the repointed viewport and reveals the jump button.
+    const viewport = area.querySelector<HTMLElement>("[data-scroll-viewport]")!;
+    expect(viewport.classList.contains("scrollbar-hide")).toBe(true);
+    Object.defineProperties(viewport, {
+      clientHeight: { value: 100 }, scrollHeight: { value: 1000 },
+      clientWidth: { value: 200 }, scrollWidth: { value: 200 },
+    });
+    await act(async () => {
+      viewport.scrollTop = 0;
+      fireEvent.scroll(viewport);
+    });
+    const jumpButton = await waitFor(() => {
+      const button = view.container.querySelector<HTMLButtonElement>("button.absolute");
+      expect(button).not.toBeNull();
+      return button!;
+    });
+    fireEvent.click(jumpButton);
+    expect(viewport.scrollTop).toBe(1000);
+  });
+
   // ── AP-29: the live block is the inline preset on the live caption line ─
   // WAS (characterized pre-change, UX 2026-08-16 remark 4): a separate
   // `copilot-pending-reasoning-row` (avatar + the co-author's minimal block)

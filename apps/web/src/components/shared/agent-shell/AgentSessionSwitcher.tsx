@@ -5,6 +5,7 @@ import { cn } from "../../../lib/cn.js";
 import { Icons } from "../icons.js";
 import { formatRelativeTime } from "../../layout/sidebar-utils.js";
 import { SidebarChatRename } from "../../layout/sections/SidebarChatRename.js";
+import { ScrollArea } from "../scroll-area.js";
 import { useT } from "../../../i18n/context.js";
 
 /**
@@ -112,7 +113,13 @@ export function AgentSessionSwitcher({
           sideOffset={4}
           className="glass-blur z-[301] flex w-[260px] flex-col overflow-hidden rounded-lg border border-border bg-glass-bg shadow-[0_12px_28px_rgba(0,0,0,0.45)] outline-none"
         >
-          <div className="flex max-h-[280px] flex-col overflow-y-auto p-1">
+          {/* CNR-8h: the session list rides the thin ScrollArea lane (3px
+              rest / 5px hover) instead of the native 8px fallback — the
+              8d DropdownSelect popup idiom: the max-h cap moved onto the
+              ScrollArea root (still limits the list; the primitive is
+              flex-col, its viewport takes the rest) and the p-1 row padding
+              scrolls with the content. Selection/rename callbacks untouched. */}
+          <ScrollArea scrollbarSize="thin" className="max-h-[280px]" contentClassName="flex flex-col p-1">
             {sessions.map((session) => {
               const isActive = session.id === activeThreadId;
               const isArchived = session.archivedAt !== null;
@@ -217,7 +224,7 @@ export function AgentSessionSwitcher({
                 </div>
               );
             })}
-          </div>
+          </ScrollArea>
 
           <button
             type="button"

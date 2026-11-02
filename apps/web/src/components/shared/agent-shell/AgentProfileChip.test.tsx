@@ -36,7 +36,7 @@ installRadixPopoverSeam({ stubAllRoots: true });
 // Identity `t`: the tag assertions pin WHICH keys the menu reads.
 installI18nContextSeam();
 
-const { fireEvent, render, waitFor } = await import("@testing-library/react");
+const { act, fireEvent, render, waitFor } = await import("@testing-library/react");
 import { useCopilotProfileStore } from "../../../stores/copilot-profile-store.js";
 import { useBootstrapStore } from "../../../stores/api-actions/bootstrap-actions.js";
 import type { CopilotProfile } from "@vibe-tavern/api-contracts";
@@ -266,6 +266,40 @@ describe("AgentProfileChip — menu rows (tags + check)", () => {
 		expect(seed.textContent).toContain("agent_profile_chip_tag_builtin");
 		expect(user.textContent).toContain("agent_profile_chip_tag_own");
 		expect(seed.textContent).not.toContain("agent_profile_chip_tag_own");
+	});
+
+	it("the profile list scrolls on the thin ScrollArea lane; the edit row stays docked (CNR-8h)", async () => {
+		// The 8d DropdownSelect popup idiom (the same wiring as
+		// AgentSessionSwitcher, whose popover chrome this menu clones): the
+		// max-h cap moved onto the ScrollArea root, the p-1 row padding
+		// scrolls with the content, and the edit-profiles dock stays OUTSIDE
+		// the scroller. Choose/edit callbacks untouched (pinned above).
+		getAgentChatSettings.mockResolvedValue({
+			chatId: CHAT_ID,
+			agentKind: CHAT_KIND,
+			profileId: "builtin-director",
+			updatedAt: "",
+		});
+		const { getByTestId } = renderChip();
+		await waitFor(() => expect(getByTestId("agent-profile-chip")).toBeTruthy());
+		const area = getByTestId("agent-profile-menu-row-builtin").closest<HTMLElement>("[data-scroll-area]")!;
+		expect(area.getAttribute("data-scroll-area")).toBe("thin");
+		expect(area.className).toContain("max-h-[280px]");
+		expect(area.querySelector("[data-scroll-content]")!.className).toContain("p-1");
+		expect(area.querySelector("[data-scroll-viewport]")!.classList.contains("scrollbar-hide")).toBe(true);
+		expect(getByTestId("agent-profile-menu-edit").closest("[data-scroll-area]")).toBeNull();
+		// Fake an overflowing list (happy-dom has no layout) → the vertical lane mounts.
+		const viewport = area.querySelector<HTMLElement>("[data-scroll-viewport]")!;
+		Object.defineProperties(viewport, {
+			clientHeight: { value: 100 }, scrollHeight: { value: 1000 },
+			clientWidth: { value: 200 }, scrollWidth: { value: 200 },
+		});
+		await act(async () => {
+			viewport.scrollTop = 200;
+			fireEvent.scroll(viewport);
+		});
+		await waitFor(() => expect(area.querySelector("[data-scroll-thumb]")).not.toBeNull());
+		expect(area.querySelector("[data-scroll-track]")?.getAttribute("data-orientation")).toBe("vertical");
 	});
 });
 
