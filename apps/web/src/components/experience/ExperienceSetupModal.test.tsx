@@ -481,6 +481,18 @@ describe("ExperienceSetupModal — setup fields", () => {
     mocks.testScript.mockResolvedValue(interactiveOk(fieldDefs()));
   });
 
+  it("scrolls the modal body on the shared thin ScrollArea lane while the Start footer stays docked outside (CNR-8g)", async () => {
+    const view = renderModal();
+    await whenReady(view);
+    const lane = view.baseElement.querySelector('[data-scroll-area="thin"]');
+    expect(lane).toBeTruthy();
+    // The setup fields ride INSIDE the lane's viewport (the modal body).
+    const viewport = lane!.querySelector("[data-scroll-viewport]");
+    expect(viewport?.contains(view.baseElement.querySelector('[data-field-id="name"]'))).toBe(true);
+    // The stable Start footer stays docked OUTSIDE the scroller.
+    expect(view.getByTestId("experience-setup-start").closest("[data-scroll-area]")).toBeNull();
+  });
+
   it("seeds author defaults into the four field controls", async () => {
     const view = renderModal();
     await whenReady(view);

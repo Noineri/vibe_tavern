@@ -18,9 +18,10 @@ import { ProviderModalModelSelector } from "../settings/provider/ProviderModalMo
 import type { FormState } from "../modals/ProviderModal.js";
 import { buildWizardFormSeed } from "./setup-wizard-form-seed.js";
 import { PROVIDER_PRESETS } from "../../provider-presets.js";
-import { StFolderImport } from "../modals/ImportModals.js";
+import { StMigrationStep } from "./setup-wizard-st-step.js";
 import { Icons, Ic } from "../shared/icons.js";
 import { Modal } from "../shared/Modal.js";
+import { ScrollArea } from "../shared/scroll-area.js";
 import { AvatarCropModal } from "../shared/AvatarCropModal.js";
 import type { AvatarCropResult } from "../shared/AvatarCropModal.js";
 import { MobileExpandTextarea } from "../shared/MobileExpandTextarea.js";
@@ -244,9 +245,14 @@ function ProviderStep({
   const presetLabel = PROVIDER_PRESETS.find((f) => f.id === form.providerPreset)?.label ?? form.providerPreset;
 
   // ── Collapsed view (saved profile card + test + models) ──
+  // Step bodies ride the shared thin ScrollArea lane (CNR-8g); the wizard
+  // panel's max-h cap stays outside the scroller and each step's nav buttons
+  // stay inside the scrolling body (they always scrolled with it), so only
+  // the chrome changes. Padding + column gap move onto the content element
+  // so they scroll with the body exactly as before (the 8c–8f rule).
   if (collapsed) {
     return (
-      <div className={cn("flex flex-1 flex-col gap-4 overflow-y-auto", isMobile ? "px-4 pb-4" : "px-7 pb-7")}>
+      <ScrollArea scrollbarSize="thin" className="flex-1" contentClassName={cn("flex flex-col gap-4", isMobile ? "px-4 pb-4" : "px-7 pb-7")}>
         <div className="flex flex-col items-stretch gap-3 rounded-lg border border-border2 bg-s2 p-3 sm:flex-row sm:items-start sm:justify-between sm:p-4">
           <div className="min-w-0">
             <div className="mb-1 truncate font-ui text-[calc(var(--ui-fs)+2px)] font-semibold text-t1">{form.name}</div>
@@ -305,7 +311,7 @@ function ProviderStep({
             {t("next")}
           </button>
         </div>
-      </div>
+      </ScrollArea>
     );
   }
 
@@ -313,7 +319,7 @@ function ProviderStep({
   const canContinue = testOk === true && form.model;
 
   return (
-    <div className={cn("flex flex-1 flex-col gap-3 overflow-y-auto", isMobile ? "px-4 pb-4" : "px-7 pb-6")}>
+    <ScrollArea scrollbarSize="thin" className="flex-1" contentClassName={cn("flex flex-col gap-3", isMobile ? "px-4 pb-4" : "px-7 pb-6")}>
       <ProviderForm
         form={form}
         editingId={form.id || null}
@@ -386,7 +392,7 @@ function ProviderStep({
           {saving ? t("saving") : showEdit ? t("save") : t("next")}
         </button>
       </div>
-    </div>
+    </ScrollArea>
   );
 }
 
@@ -470,7 +476,7 @@ function PersonaStep({
   }
 
   return (
-    <div className={cn("flex flex-1 flex-col gap-3.5 overflow-y-auto", isMobile ? "px-4 pb-4" : "px-7 pb-7")}>
+    <ScrollArea scrollbarSize="thin" className="flex-1" contentClassName={cn("flex flex-col gap-3.5", isMobile ? "px-4 pb-4" : "px-7 pb-7")}>
       <div className="font-ui text-[var(--ui-fs)] text-t2">{t("wizard_persona_hint")}</div>
 
       {/* Avatar */}
@@ -578,7 +584,7 @@ function PersonaStep({
           {saving ? t("saving") : t("next")}
         </button>
       </div>
-    </div>
+    </ScrollArea>
   );
 }
 
@@ -690,7 +696,7 @@ function CharacterStep({
   }
 
   return (
-    <div className={cn("flex flex-1 flex-col gap-3.5 overflow-y-auto", isMobile ? "px-4 pb-4" : "px-7 pb-7")}>
+    <ScrollArea scrollbarSize="thin" className="flex-1" contentClassName={cn("flex flex-col gap-3.5", isMobile ? "px-4 pb-4" : "px-7 pb-7")}>
       <div className="font-ui text-[var(--ui-fs)] text-t2">{t("wizard_character_hint")}</div>
       <div className="font-ui text-[calc(var(--ui-fs)-2px)] text-t3">{t("wizard_character_simplified")}</div>
 
@@ -833,20 +839,7 @@ function CharacterStep({
           {busy ? (cardPreview ? t("importing") : t("ws_creating")) : (cardPreview ? t("add_to_library") : t("ws_create_btn"))}
         </button>
       </div>
-    </div>
-  );
-}
-
-// ── Path B: ST migration ──
-function StMigrationStep({ onImported }: { onImported: () => void }) {
-  const { t } = useT();
-  const isMobile = useIsMobile();
-
-  return (
-    <div className={cn("flex flex-1 flex-col gap-4 overflow-y-auto", isMobile ? "px-4 pb-4" : "px-7 pb-7")}>
-      <div className="font-ui text-[var(--ui-fs)] text-t2">{t("wizard_st_hint")}</div>
-      <StFolderImport onImported={onImported} />
-    </div>
+    </ScrollArea>
   );
 }
 

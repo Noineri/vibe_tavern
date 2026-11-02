@@ -155,6 +155,19 @@ test("character step: three fields render and typing works", async () => {
 	expect(firstMsg.value).toBe("Hello!");
 });
 
+test("step bodies scroll on the shared thin ScrollArea lane; the nav buttons scroll WITH the body (CNR-8g)", async () => {
+	const view = await renderAtPersonaStep();
+	const lane = view.baseElement.querySelector('[data-scroll-area="thin"]');
+	expect(lane).toBeTruthy();
+	// Persona fields ride INSIDE the lane's viewport (the step body).
+	const viewport = lane!.querySelector("[data-scroll-viewport]");
+	expect(viewport?.contains(view.getByPlaceholderText("persona_name_placeholder"))).toBe(true);
+	// The step's nav buttons always scrolled with the body — they stay inside
+	// the scroller, exactly as before (no docked footer in this wizard).
+	expect(lane!.contains(view.getByText("skip"))).toBe(true);
+	view.unmount();
+});
+
 test("a fresh wizard (no existing profile) submits the app-wide generation defaults: maxTokens 2000, temperature 1, reasoningEffort auto (PD-1, PD-2)", async () => {
 	wizardSave.mockClear();
 	const view = render(createElement(SetupWizard, { onVisibilityChange: () => {} }));

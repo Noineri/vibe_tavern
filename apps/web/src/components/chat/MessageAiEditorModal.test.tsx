@@ -369,6 +369,32 @@ describe("MessageAiEditorModal — closed state", () => {
   });
 });
 
+describe("MessageAiEditorModal — modal-body scroll wiring (CNR-8g)", () => {
+  it("the modal-level body scrolls on the shell's thin ScrollArea lane; the footer stays docked outside", () => {
+    useProviderDataStore.setState({
+      profiles: [makeProfile("prov-1", "Provider One")],
+      favoritesByProfile: {},
+    });
+    seedMessage(makeVariants(1));
+    seedBootstrap("prov-1", "model-a");
+    openEditorForEdit(brandId<MessageVariantId>("var-0"));
+    const view = renderModal();
+    // The modal-level body scroller is the AiAssistantShell body — the ONE
+    // thin lane (3px rest / 5px hover, CNR-8f). Inner sub-surfaces (source
+    // list, candidate pre views) are CNR-8p scope and keep native chrome.
+    const lane = view.baseElement.querySelector('[data-scroll-area="thin"]');
+    expect(lane).toBeTruthy();
+    const viewport = lane!.querySelector("[data-scroll-viewport]");
+    expect(viewport).toBeTruthy();
+    // The instruction textarea rides INSIDE the lane's viewport (modal body).
+    expect(viewport!.querySelector("textarea")).toBeTruthy();
+    // The footer Cancel button stays docked OUTSIDE the scroller.
+    expect(view.getByText("cancel_btn").closest("[data-scroll-area]")).toBeNull();
+    // Exactly one scroll area: no second (inner) lane was introduced.
+    expect(view.baseElement.querySelectorAll("[data-scroll-area]")).toHaveLength(1);
+  });
+});
+
 /** The merge checklist row for display index N (role=checkbox, whole row
  *  is the toggle hit area). Merge rows only — edit/annotate rows have no
  *  checkbox role. */
