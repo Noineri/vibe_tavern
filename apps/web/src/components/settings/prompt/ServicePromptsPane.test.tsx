@@ -349,6 +349,9 @@ describe("ServicePromptsPane", () => {
 		const { getByTestId, rerender } = render(<Harness active={true} />);
 		await waitFor(() => expect(getDetailMock).toHaveBeenCalled());
 		const detail = getByTestId("detail");
+		// A request being called is not its resolved detail being committed.
+		// Wait for the real family controls before attempting to expand them.
+		await waitFor(() => expect(detail.textContent).toContain("promptManager.servicePrompts.family.assistant"));
 		await openAllFamilies(detail);
 		// FS-6: default-profile fields render as codeQuote displays (max-h-40
 		// is the display block's scroll cap), not editable textareas.
@@ -362,8 +365,12 @@ describe("ServicePromptsPane", () => {
 		const callsBefore = getDetailMock.mock.calls.length;
 		rerender(<Harness active={true} />);
 		const detail2 = getByTestId("detail");
-		await openAllFamilies(detail2);
+		// The loaded pane retains its family expansion across inactive slots.
+		// Toggling these controls again would CLOSE them and race their exit.
 		await waitFor(() => expect(detail2.querySelectorAll(".max-h-40").length).toBe(SERVICE_PROMPT_FIELD_KEYS.length));
+		for (const field of SERVICE_PROMPT_FIELD_KEYS) {
+			expect(detail2.textContent).toContain(makeResolved()[field].default);
+		}
 		expect(getDetailMock.mock.calls.length).toBe(callsBefore);
 	});
 

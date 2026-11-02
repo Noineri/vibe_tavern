@@ -141,6 +141,7 @@ export function AgentMobileInputArea(props: AgentInputAreaProps) {
           <AutoTextarea
             bare
             scrollbarSize="thin"
+            containerClassName="flex-1"
             className={composerCls}
             minRows={1}
             maxRows={6}

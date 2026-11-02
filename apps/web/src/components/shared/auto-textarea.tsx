@@ -33,6 +33,8 @@ export interface AutoTextareaProps extends AutoTextareaPassthrough {
    *  lib/field-tokens.ts). Since the FS-8b flip a passed className EXTENDS
    *  the base (base always composes) — the silent-replace window is closed. */
   className?: string;
+  /** Layout of the optional ScrollArea root; className still styles the editor. */
+  containerClassName?: string;
   /** Explicit no-base mode — the composer-family escape hatch (FS-8b).
    *  When set, the primitive applies NO base at all: the caller's className
    *  carries everything (borderless composer chrome, bubble/strip shells).
@@ -117,6 +119,7 @@ const textareaValueSetter = typeof window === "undefined"
  */
 export function AutoTextarea({
   className,
+  containerClassName,
   bare,
   scrollbarSize,
   mono,
@@ -320,7 +323,7 @@ export function AutoTextarea({
   );
   return (
     <>
-      {scrollbarSize ? <ScrollArea scrollbarSize={scrollbarSize} viewportRender={input} /> : input}
+      {scrollbarSize ? <ScrollArea className={containerClassName} scrollbarSize={scrollbarSize} viewportRender={input} /> : input}
       {macroAutocomplete && acOpen
         ? createPortal(
             <MacroAutocomplete

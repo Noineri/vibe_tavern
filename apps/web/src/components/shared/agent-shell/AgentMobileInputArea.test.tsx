@@ -214,6 +214,9 @@ describe("ExperienceCopilotMobileInputArea — pinned context (CX-6)", () => {
     expect(textarea.hasAttribute("data-scroll-viewport")).toBe(true);
     const area = textarea.closest('[data-scroll-area="thin"]')!;
     expect(area).not.toBeNull();
+    // The ScrollArea root is now the input row's flex item, not the textarea.
+    expect(area.classList.contains("flex-1")).toBe(true);
+    expect(area.parentElement?.classList.contains("items-end")).toBe(true);
     expect(area.querySelector("[data-scroll-content]")).toBeNull();
     expect(area.querySelector("textarea")).toBe(textarea);
     expect(textarea.tabIndex).toBe(0);

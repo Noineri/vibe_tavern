@@ -79,6 +79,7 @@ Base UI owns measurement, conditional scrollbar mounting, thumb dragging and nat
 After editor renders, a programmatic scroll notification refreshes Base UI's measurements when a capped textarea's value changes scrollHeight without resizing its box; no scroll position is assigned and the editor is not remounted.
 `AutoTextarea scrollbarSize="thin"` uses this composition for the desktop RP/Co-Author composers, retaining autosizing, native selection/caret scrolling, register refs and macro autocomplete.
 Both agent-shell composers (`AgentInputArea` and `AgentMobileInputArea`, including Experience Copilot) use the same `AutoTextarea scrollbarSize="thin"` opt-in, preserving their 3–12 / 1–6 row autosizing, controlled prefills, mentions, attachments and desktop Enter-to-send / mobile button-only send behavior; agent message/profile form fields do not opt in.
+In the mobile agent input row, `containerClassName="flex-1"` assigns the row's remaining width to the ScrollArea root; a flex class on the nested textarea alone cannot size that root.
 The mobile RP/Co-Author composers (hand-rolled px-capped `<textarea>`, no autosize lib) compose the same way directly — `ScrollArea scrollbarSize="thin" viewportRender={<textarea …/>}` with the root taking the input row's `flex-1` — keeping their imperative 40vh growth cap, native refs, attachment/send controls and touch input.
 The primitive does not replace the message navigation rail, CodeMirror, or sandboxed iframe documents (their integrations are later Wave-7 migration units).
 The host stylesheet hides native chrome on non-textareas at widths up to 768px and on touch-first devices (`hover: none` with `pointer: coarse`), including the real RP/Co-Author navigation drawers, collapsed strips, sheets, modal lists, CodeMirror scrollers and horizontal markdown overflow; it never changes their overflow/touch-action behavior.
@@ -367,6 +368,8 @@ Size control is **row-based** (`minRows` / `maxRows`), never pixel heights — t
 | Prop | Type | Description |
 |------|------|-------------|
 | `className` | `string?` | Extension appended AFTER the base (base always composes — the FS-8b flip killed the silent-replace window) |
+| `containerClassName` | `string?` | Layout classes on the optional custom-scrollbar root, e.g. `flex-1` in a horizontal composer row; does not change the native textarea's classes |
+| `scrollbarSize` | `"thin"?` | Opt into the shared custom chrome with the textarea itself as the native viewport; absent keeps the unwrapped editor |
 | `bare` | `boolean?` | Explicit no-base mode — the composer-family escape hatch; the caller's className carries everything |
 | `mono` | `boolean?` | Composes `monoMod` onto the base |
 | `value` / `onChange` | `string?` / `(e) => void?` | Controlled mode |

@@ -44,6 +44,29 @@ function firstOption() {
 }
 
 describe("AutoTextarea — macro autocomplete", () => {
+  it("applies container layout to the custom-chrome root without moving editor classes or remounting", async () => {
+    const content = (containerClassName: string) => <AutoTextarea bare scrollbarSize="thin"
+      containerClassName={containerClassName} className="composer-chrome" defaultValue="Draft" />;
+    const view = render(content("flex-1"));
+    await act(async () => {});
+    const ta = view.getByRole("textbox") as HTMLTextAreaElement;
+    const area = ta.closest('[data-scroll-area="thin"]')!;
+    expect(area.classList.contains("flex-1")).toBe(true);
+    expect(area.classList.contains("min-w-0")).toBe(true);
+    expect(ta.classList.contains("composer-chrome")).toBe(true);
+    expect(area.classList.contains("composer-chrome")).toBe(false);
+    expect(ta.hasAttribute("containerClassName")).toBe(false);
+    ta.focus();
+    ta.setSelectionRange(1, 3);
+    await act(async () => view.rerender(content("w-full")));
+    expect(view.getByRole("textbox")).toBe(ta);
+    expect(ta.closest('[data-scroll-area="thin"]')).toBe(area);
+    expect(area.classList.contains("w-full")).toBe(true);
+    expect(area.classList.contains("flex-1")).toBe(false);
+    expect(document.activeElement).toBe(ta);
+    expect([ta.selectionStart, ta.selectionEnd, ta.value]).toEqual([1, 3, "Draft"]);
+  });
+
   it("keeps the actual composer textarea, caret and macro picker with custom thin chrome", async () => {
     const view = render(<AutoTextarea bare scrollbarSize="thin" className="composer-chrome" defaultValue="" />);
     await act(async () => {});
