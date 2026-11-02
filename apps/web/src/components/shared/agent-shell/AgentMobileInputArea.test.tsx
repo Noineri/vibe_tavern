@@ -12,6 +12,7 @@ useDomEnv();
 let render: typeof import("@testing-library/react").render;
 let fireEvent: typeof import("@testing-library/react").fireEvent;
 let waitFor: typeof import("@testing-library/react").waitFor;
+let act: typeof import("@testing-library/react").act;
 let AgentMobileInputArea: typeof import("./AgentMobileInputArea.js").AgentMobileInputArea;
 
 // CA-4e2: attachment uploads + image-route reads stubbed at the module
@@ -125,7 +126,7 @@ mock.module("../../../stores/api-actions/provider-actions.js", () => ({
 }));
 
 beforeAll(async () => {
-  ({ render, fireEvent, waitFor } = await import("@testing-library/react"));
+  ({ render, fireEvent, waitFor, act } = await import("@testing-library/react"));
   ({ AgentMobileInputArea } = await import("./AgentMobileInputArea.js"));
 });
 
@@ -206,6 +207,50 @@ async function renderWithTextFile(over: Partial<Parameters<typeof AgentMobileInp
 }
 
 describe("ExperienceCopilotMobileInputArea — pinned context (CX-6)", () => {
+  it("keeps the native editor through long prefills, thin overflow chrome and button-only send clearing", async () => {
+    const view = renderMobileInput();
+    await act(async () => {});
+    const textarea = view.getByTestId("copilot-chat-input") as HTMLTextAreaElement;
+    expect(textarea.hasAttribute("data-scroll-viewport")).toBe(true);
+    const area = textarea.closest('[data-scroll-area="thin"]')!;
+    expect(area).not.toBeNull();
+    expect(area.querySelector("[data-scroll-content]")).toBeNull();
+    expect(area.querySelector("textarea")).toBe(textarea);
+    expect(textarea.tabIndex).toBe(0);
+    let contentHeight = 100;
+    Object.defineProperties(textarea, {
+      clientHeight: { value: 100 }, scrollHeight: { get: () => contentHeight },
+      clientWidth: { value: 200 }, scrollWidth: { value: 200 },
+    });
+    const draft = "Review this scene\n".repeat(80).trim();
+    contentHeight = 1600;
+    await act(async () => view.rerender(withIsolatedI18n(<AgentMobileInputArea {...view.props} prefill={{ text: draft }} />)));
+    await waitFor(() => expect(area.querySelector("[data-scroll-thumb]")).not.toBeNull());
+    expect(area.querySelector("[data-scroll-track]")!.classList.contains("w-[3px]")).toBe(true);
+    expect(view.getByTestId("copilot-chat-input")).toBe(textarea);
+    expect(textarea.value).toBe(draft);
+    await act(async () => {
+      textarea.focus();
+      textarea.setSelectionRange(3, 12);
+      textarea.scrollTop = 200;
+      fireEvent.scroll(textarea);
+    });
+    expect(document.activeElement).toBe(textarea);
+    expect([textarea.selectionStart, textarea.selectionEnd, textarea.scrollTop]).toEqual([3, 12, 200]);
+    let enterAccepted = false;
+    await act(async () => { enterAccepted = fireEvent.keyDown(textarea, { key: "Enter" }); });
+    expect(enterAccepted).toBe(true);
+    expect(view.props.onSend).not.toHaveBeenCalled();
+    contentHeight = 100;
+    await act(async () => { fireEvent.click(view.getByTestId("copilot-send-btn")); });
+    expect(view.props.onSend).toHaveBeenCalledWith(draft, []);
+    await waitFor(() => expect(area.querySelector("[data-scroll-track]")).toBeNull());
+    expect(textarea.value).toBe("");
+    expect(view.getByTestId("copilot-chat-input")).toBe(textarea);
+    expect(document.activeElement).toBe(textarea);
+    expect(textarea.tabIndex).toBe(0);
+  });
+
   const CATALOG = [
     { targetType: "character", id: "c1", label: "Alice", hint: "wanderer" },
     { targetType: "skill", id: "sk1", label: "Skill A" },

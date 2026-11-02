@@ -140,6 +140,7 @@ export function AgentMobileInputArea(props: AgentInputAreaProps) {
           <input type="file" ref={attachment.fileInputRef} className="hidden" accept={attachment.accept} multiple onChange={attachment.onFileInputChange} />
           <AutoTextarea
             bare
+            scrollbarSize="thin"
             className={composerCls}
             minRows={1}
             maxRows={6}

@@ -188,6 +188,7 @@ export function AgentInputArea(props: AgentInputAreaProps) {
         <input type="file" ref={attachment.fileInputRef} className="hidden" accept={attachment.accept} multiple onChange={attachment.onFileInputChange} />
         <AutoTextarea
           bare
+          scrollbarSize="thin"
           className={cn(composerCls, "w-full !min-h-[55px] !px-4 !pt-[13px] !pb-2 !text-[calc(var(--ui-fs)+1px)] !leading-tight")}
           maxRows={12}
           minRows={3}

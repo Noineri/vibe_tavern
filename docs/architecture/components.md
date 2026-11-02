@@ -72,6 +72,7 @@ Base UI owns measurement, conditional scrollbar mounting, thumb dragging and nat
 `viewportRender` composes a native editor element as the viewport without a Content wrapper; native inputs remain focusable even without overflow and keep their own focus chrome.
 After editor renders, a programmatic scroll notification refreshes Base UI's measurements when a capped textarea's value changes scrollHeight without resizing its box; no scroll position is assigned and the editor is not remounted.
 `AutoTextarea scrollbarSize="thin"` uses this composition for the desktop RP/Co-Author composers, retaining autosizing, native selection/caret scrolling, register refs and macro autocomplete.
+Both agent-shell composers (`AgentInputArea` and `AgentMobileInputArea`, including Experience Copilot) use the same `AutoTextarea scrollbarSize="thin"` opt-in, preserving their 3–12 / 1–6 row autosizing, controlled prefills, mentions, attachments and desktop Enter-to-send / mobile button-only send behavior; agent message/profile form fields do not opt in.
 The mobile RP/Co-Author composers (hand-rolled px-capped `<textarea>`, no autosize lib) compose the same way directly — `ScrollArea scrollbarSize="thin" viewportRender={<textarea …/>}` with the root taking the input row's `flex-1` — keeping their imperative 40vh growth cap, native refs, attachment/send controls and touch input.
 This vertical primitive does not replace the message navigation rail, CodeMirror, or sandboxed iframe documents.
 
