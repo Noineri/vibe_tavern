@@ -240,10 +240,16 @@ export interface AgentHostBridge {
 
 /** Props a per-recordType record-proposal renderer receives. SC-13a: the card
  *  resolves against its thread (accept/reject land in SC-13c), so the thread
- *  id rides the props — the fallback ignores it until then. */
+ *  id rides the props — the fallback ignores it until then.
+ *  2026-11 remount-resurrection guard: onResolved fires after the row's
+ *  status changed SERVER-side (successful apply/reject, or the typed 409
+ *  another tab's resolution produced) — the host patches its live-feed
+ *  cache, whose stale pending copy otherwise shadows the refetched history
+ *  on remount (AgentMessageList dedupes by toolCallId, live wins). */
 export interface RecordProposalCardProps {
   proposal: RecordProposal;
   threadId: string;
+  onResolved?: (proposal: RecordProposal) => void;
 }
 
 /**

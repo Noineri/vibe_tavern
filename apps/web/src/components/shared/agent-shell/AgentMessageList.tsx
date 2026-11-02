@@ -25,10 +25,10 @@ import { syntheticAgentMessage, PENDING_USER_MESSAGE_ID } from "./agent-syntheti
 import {
   AgentAnchorItems,
   recordProposalOf,
+  buildAgentAnchorContext,
   renderAskActivity,
   renderPermissionActivity,
   renderProposalActivity,
-  type AgentAnchorContext,
   type CopilotTurnAnchorItem,
 } from "./agent-anchor-items.js";
 import { AgentToolAccordion } from "./AgentToolAccordion.js";
@@ -342,7 +342,7 @@ export function AgentMessageList({
   // ask / permission / proposal cards) lives in `agent-anchor-items.tsx`
   // (extracted under the file-size ratchet); history, trailing, and live
   // call sites share it through one explicit context.
-  const anchorCtx: AgentAnchorContext = {
+  const anchorCtx = buildAgentAnchorContext({
     kind,
     threadId,
     liveAsk,
@@ -351,7 +351,7 @@ export function AgentMessageList({
     onAnswer,
     pendingAskAnswer,
     pendingPermissionAnswer,
-  };
+  });
 
   // SC-16: the host's message actions for persisted assistant bubbles —
   // resolved once per kind (unknown kind = no row, never a throw). Pending

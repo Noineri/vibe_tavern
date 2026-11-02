@@ -105,7 +105,7 @@ function planModeChipClass(status: RecordProposal["status"]): string {
   return cn("shrink-0 rounded-full px-1.5 py-px font-ui text-[calc(var(--ui-fs)-4px)]", tint);
 }
 
-export function ObjectiveProposalCard({ proposal, threadId }: RecordProposalCardProps) {
+export function ObjectiveProposalCard({ proposal, threadId, onResolved }: RecordProposalCardProps) {
   const { t } = useT();
   // The stored status seeds the card: a reloaded thread renders the persisted
   // `applied` / `rejected` with no further fetch (the message list passes the
@@ -151,6 +151,9 @@ export function ObjectiveProposalCard({ proposal, threadId }: RecordProposalCard
           ? await applyObjectiveProposal(threadId, proposal.id)
           : await rejectObjectiveProposal(threadId, proposal.id);
       setStatus(resolved.proposal.status);
+      // 2026-11 remount-resurrection guard: the live feed's cached copy of
+      // this proposal is now stale — hand the final row to the host.
+      onResolved?.(resolved.proposal);
       if (decision === "apply" && resolved.proposal.status === "applied") {
         // DR-10b: under a plan the apply response carries the refreshed
         // `plan` companion (the inserted event is already saved) — ingest it
@@ -182,6 +185,7 @@ export function ObjectiveProposalCard({ proposal, threadId }: RecordProposalCard
           // Double click / second tab: the server owns the final status —
           // show it instead of refetching the thread.
           setStatus(err.resolvedStatus);
+          onResolved?.({ ...proposal, status: err.resolvedStatus });
           return;
         }
       }

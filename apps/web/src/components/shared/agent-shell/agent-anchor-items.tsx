@@ -6,6 +6,7 @@ import {
   type AgentPermissionState,
   type AgentToolActivity,
 } from "../../../stores/agent-turn-store.js";
+import { useAgentTurnStore } from "../../../stores/agent-turn-store.js";
 import type { AgentPendingAskAnswer, AgentPendingPermissionAnswer } from "./use-agent-controller.js";
 import {
   type AgentKind,
@@ -68,6 +69,10 @@ export interface AgentAnchorContext {
   onAnswer?: (toolCallId: string, answer: CopilotAnswerInput) => void;
   pendingAskAnswer: AgentPendingAskAnswer | null;
   pendingPermissionAnswer: AgentPendingPermissionAnswer | null;
+  /** 2026-11 remount-resurrection guard: the host's live-feed patch for a
+   *  server-resolved record proposal (see RecordProposalCardProps.onResolved).
+   *  Wired by AgentMessageList (kind + threadId in scope there). */
+  onProposalResolved?: (toolCallId: string, proposal: RecordProposal) => void;
 }
 
 // SC-23f: `read_message_prompt` remains its own interactive card,
@@ -146,13 +151,42 @@ export function renderProposalActivity(
   } catch {
     Renderer = RecordProposalFallbackCard;
   }
-  return <Renderer key={activity.toolCallId} proposal={proposal} threadId={ctx.threadId} />;
+  const onProposalResolved = ctx.onProposalResolved;
+  return (
+    <Renderer
+      key={activity.toolCallId}
+      proposal={proposal}
+      threadId={ctx.threadId}
+      {...(onProposalResolved !== undefined
+        ? { onResolved: (resolved: RecordProposal) => onProposalResolved(activity.toolCallId, resolved) }
+        : {})}
+    />
+  );
 }
 
 /** TA-1: history renders each turn as ONE accordion (at the first tool
  *  activity's slot) plus in-place ask, permission and proposal cards, in
  *  the items' slot order. Only the live feed receives `isSending`:
  *  historical groups stay collapsed even while a newer turn is in flight. */
+/** Assemble the anchor context the history / trailing / live call sites
+ *  share (extracted from AgentMessageList under the file-size ratchet).
+ *  Includes the 2026-11 remount-resurrection guard: when a record proposal
+ *  resolves SERVER-side (accept/reject/409), the live feed's cached copy of
+ *  that proposal is stale until the next turn — the ctx patches it in place
+ *  (surgical, never clearTurn: the turn may still be streaming its tail
+ *  text). See RecordProposalCardProps.onResolved for the full chain. */
+export function buildAgentAnchorContext(
+  input: Omit<AgentAnchorContext, "onProposalResolved">,
+): AgentAnchorContext {
+  const { kind, threadId } = input;
+  return {
+    ...input,
+    onProposalResolved: (toolCallId, resolvedProposal) => {
+      useAgentTurnStore.getState().resolveProposalActivity(kind, threadId, toolCallId, resolvedProposal);
+    },
+  };
+}
+
 export function AgentAnchorItems({
   items,
   ctx,

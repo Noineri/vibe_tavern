@@ -192,11 +192,18 @@ async function mountCard(over?: {
   stored?: AgentPlan;
   branchId?: string;
   chat?: Parameters<typeof seedChat>[0];
+  onResolved?: (proposal: RecordProposal) => void;
 }) {
   const branchId = over?.branchId ?? "b1";
   storedPlansByBranch.set(branchId, over?.stored ?? planOf(STORED_TASKS));
   seedChat({ branchId, ...(over?.chat ?? {}) });
-  const view = render(<StoryPlanProposalCard proposal={proposal({ targetId: branchId })} threadId="thread-1" />);
+  const view = render(
+    <StoryPlanProposalCard
+      proposal={proposal({ targetId: branchId })}
+      threadId="thread-1"
+      {...(over?.onResolved !== undefined ? { onResolved: over.onResolved } : {})}
+    />,
+  );
   await waitFor(() => expect(view.getByTestId("story-plan-proposal-events")).not.toBeNull());
   return view;
 }
@@ -431,6 +438,39 @@ describe("StoryPlanProposalCard (DR-10a)", () => {
     expect(mocks.fetchChatAction).not.toHaveBeenCalled();
     expect(mocks.applyStoryPlanProposal).not.toHaveBeenCalled();
     expect(mocks.toastError).not.toHaveBeenCalled();
+  });
+
+  it("Accept/Reject/409 notify the host's live feed (onResolved) — the remount-resurrection guard", async () => {
+    // The 2026-11 incident: after accepting, every chat re-entry re-offered
+    // the proposal. The card resolved its LOCAL state only; the live turn
+    // store kept the pending payload and its copy shadows the refetched
+    // history on remount (AgentMessageList dedupes by toolCallId, live
+    // wins). onResolved is the handover: the host patches the live store to
+    // the server's final row, so the remounted card renders resolved.
+    const onResolved = mock();
+    const { getByTestId } = await mountCard({ branchId: "b-live", onResolved });
+    mocks.applyStoryPlanProposal.mockResolvedValue({ proposal: proposal({ status: "applied" }), plan: APPLIED_PLAN });
+
+    fireEvent.click(getByTestId("story-plan-proposal-accept"));
+
+    await waitFor(() => expect(onResolved).toHaveBeenCalledTimes(1));
+    expect(onResolved).toHaveBeenCalledWith(proposal({ status: "applied" }));
+
+    // The typed 409 (another tab resolved it first) ALSO notifies — our live
+    // copy is stale in that scenario too.
+    onResolved.mockClear();
+    const second = await mountCard({ branchId: "b-live-409", onResolved });
+    mocks.applyStoryPlanProposal.mockRejectedValue(
+      new realProposalsApi.ObjectiveProposalApiError(
+        409,
+        "This objective proposal was already rejected.",
+        realProposalsApi.OBJECTIVE_PROPOSAL_ALREADY_RESOLVED_CODE,
+        "rejected",
+      ),
+    );
+    fireEvent.click(second.getByTestId("story-plan-proposal-accept"));
+    await waitFor(() => expect(onResolved).toHaveBeenCalledTimes(1));
+    expect(onResolved).toHaveBeenCalledWith(proposal({ targetId: "b-live-409", status: "rejected" }));
   });
 
   it("409 already-resolved shows the server's final status", async () => {

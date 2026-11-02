@@ -11,6 +11,7 @@ import {
   type AgentTodoActivityResult,
   type AgentAskState,
   type AgentPermissionState,
+  type RecordProposal,
 } from "@vibe-tavern/api-contracts";
 export type { AgentToolStatus, AgentToolActivity, AgentTodoActivityResult, AgentAskState, AgentPermissionState } from "@vibe-tavern/api-contracts";
 
@@ -576,6 +577,16 @@ interface AgentTurnState {
   todoByThread: Record<string, CopilotTodoItem[]>;
   /** Insert or merge (by toolCallId) an activity for a thread. */
   upsertActivity: (kind: AgentKind, threadId: string, activity: AgentToolActivity) => void;
+  /** 2026-11 remount-resurrection guard: patch ONE live activity's cached
+   *  record-proposal payload to the server's final row (Accept/Reject/409).
+   * Surgical on purpose — clearTurn would also drop a still-streaming
+   * turn's feed. A foreign toolCallId is a no-op. */
+  resolveProposalActivity: (
+    kind: AgentKind,
+    threadId: string,
+    toolCallId: string,
+    proposal: RecordProposal,
+  ) => void;
   /** Drop the active turn's activities for a thread (turn start / switch / Apply / Reject). */
   clearTurn: (kind: AgentKind, threadId: string) => void;
   /** Read the activities for a thread (empty array if none). */
@@ -632,6 +643,24 @@ export const useAgentTurnStore = create<AgentTurnState>((set, get) => ({
       return { turnsByThread: nextActivities, feedByThread: nextFeed };
     });
     // ER-10 wires draft persistence (experience-copilot-draft.ts) — not yet available.
+  },
+  resolveProposalActivity: (kind, threadId, toolCallId, proposal) => {
+    const key = agentThreadKey(kind, threadId);
+    set((s) => {
+      const list = s.turnsByThread[key];
+      if (list === undefined) return s;
+      const idx = list.findIndex((a) => a.toolCallId === toolCallId);
+      if (idx === -1) return s;
+      // The summary becomes the RAW resolved-proposal JSON — the same shape
+      // the live fallback branch stores (summarizeToolOutput of the output)
+      // and the shape parseAgentToolOutput passes through unwrapped, so the
+      // remounted card reads the final status exactly like the refetched
+      // history row would.
+      const patched = list.map((a, i) =>
+        i === idx ? { ...a, summary: JSON.stringify(proposal) } : a,
+      );
+      return { turnsByThread: { ...s.turnsByThread, [key]: patched } };
+    });
   },
   getActivities: (kind, threadId) => get().turnsByThread[agentThreadKey(kind, threadId)] ?? [],
   setTodo: (kind, threadId, items) => {

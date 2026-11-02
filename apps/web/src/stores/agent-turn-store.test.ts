@@ -17,6 +17,53 @@ describe("useAgentTurnStore", () => {
     useAgentTurnStore.setState({ turnsByThread: {}, feedByThread: {}, todoByThread: {} });
   });
 
+  it("resolveProposalActivity rewrites the live activity's proposal payload (remount-resurrection guard)", () => {
+    // The 2026-11 incident: a resolved proposal re-offered accept/reject on
+    // every chat re-entry. The live store's cached activity held the ORIGINAL
+    // pending payload forever (nothing updated it on Accept/Reject), and the
+    // history dedupe in AgentMessageList prefers the live copy — so the stale
+    // pending card kept rendering after remount. resolveProposalActivity is
+    // the card→host handover: it patches the cached activity to the server's
+    // final row, so the live copy and the refetched history agree.
+    const pending = {
+      kind: "record" as const,
+      id: "tc-plan",
+      recordType: "story-plan",
+      op: "update" as const,
+      targetId: "b1",
+      payload: {},
+      status: "pending" as const,
+    };
+    useAgentTurnStore.getState().upsertActivity("sidechat", "thread-1", {
+      toolCallId: "tc-plan",
+      toolName: "propose_plan",
+      status: "done",
+      summary: JSON.stringify(pending),
+    });
+
+    const resolved = { ...pending, status: "applied" as const };
+    useAgentTurnStore.getState().resolveProposalActivity("sidechat", "thread-1", "tc-plan", resolved);
+
+    const activity = useAgentTurnStore
+      .getState()
+      .getActivities("sidechat", "thread-1")
+      .find((a) => a.toolCallId === "tc-plan");
+    expect(activity).toBeDefined();
+    // The summary parses back to the RESOLVED proposal (the live fallback's
+    // raw shape — parseAgentToolOutput passes it through unwrapped).
+    expect(JSON.parse(activity!.summary!)).toMatchObject({ id: "tc-plan", status: "applied" });
+    // The card's other fields survive untouched.
+    expect(activity!.toolName).toBe("propose_plan");
+    expect(activity!.status).toBe("done");
+
+    // A foreign toolCallId is a no-op, never a throw (history-rendered card,
+    // live store already cleared).
+    useAgentTurnStore.getState().resolveProposalActivity("sidechat", "thread-1", "tc-other", resolved);
+    expect(
+      useAgentTurnStore.getState().getActivities("sidechat", "thread-1"),
+    ).toHaveLength(1);
+  });
+
   it("rebuilds only the latest committed non-streaming turn with tool names and proposals", () => {
     const messages = [
       { id: "user_old", role: "user", content: "old" },

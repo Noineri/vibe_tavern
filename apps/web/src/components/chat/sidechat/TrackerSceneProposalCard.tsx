@@ -127,7 +127,7 @@ function statusChipClass(status: RecordProposal["status"]): string {
   return cn("shrink-0 rounded-full px-1.5 py-px font-ui text-[calc(var(--ui-fs)-4px)]", tint);
 }
 
-export function TrackerSceneProposalCard({ proposal, threadId }: RecordProposalCardProps) {
+export function TrackerSceneProposalCard({ proposal, threadId, onResolved }: RecordProposalCardProps) {
   const { t } = useT();
   // The stored status seeds the card: a reloaded thread renders the persisted
   // `applied` / `rejected` with no further fetch (the source card's pattern).
@@ -146,6 +146,9 @@ export function TrackerSceneProposalCard({ proposal, threadId }: RecordProposalC
           ? await applyTrackerSceneProposal(threadId, proposal.id)
           : await rejectTrackerSceneProposal(threadId, proposal.id);
       setStatus(resolved.proposal.status);
+      // 2026-11 remount-resurrection guard: the live feed's cached copy of
+      // this proposal is now stale — hand the final row to the host.
+      onResolved?.(resolved.proposal);
       if (decision === "apply" && resolved.proposal.status === "applied") {
         // Fresh id through `getState()`: render closures hold the pre-action
         // state (the frontend-skill rule). The refetch lands the chat's new
@@ -168,6 +171,7 @@ export function TrackerSceneProposalCard({ proposal, threadId }: RecordProposalC
       ) {
         // Double click / second tab: the server owns the final status.
         setStatus(err.resolvedStatus);
+        onResolved?.({ ...proposal, status: err.resolvedStatus });
         return;
       }
       // Any other failure keeps the card pending and reports through the

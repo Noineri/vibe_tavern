@@ -233,7 +233,7 @@ function statusChipClass(status: RecordProposal["status"]): string {
   return cn("shrink-0 rounded-full px-1.5 py-px font-ui text-[calc(var(--ui-fs)-4px)]", tint);
 }
 
-export function StoryPlanProposalCard({ proposal, threadId }: RecordProposalCardProps) {
+export function StoryPlanProposalCard({ proposal, threadId, onResolved }: RecordProposalCardProps) {
   const { t } = useT();
   // The stored status seeds the card: a reloaded thread renders the persisted
   // `applied` / `rejected` (the status rides the tool row — DR-5).
@@ -279,6 +279,9 @@ export function StoryPlanProposalCard({ proposal, threadId }: RecordProposalCard
             )
           : await rejectStoryPlanProposal(threadId, proposal.id);
       setStatus(resolved.proposal.status);
+      // 2026-11 remount-resurrection guard: the live feed's cached copy of
+      // this proposal is now stale — hand the final row to the host.
+      onResolved?.(resolved.proposal);
       if (decision === "apply" && resolved.proposal.status === "applied") {
         // D5: the companion plan is authoritative and already saved — push it
         // into the cache so mounted plan consumers re-render (no second GET).
@@ -307,6 +310,7 @@ export function StoryPlanProposalCard({ proposal, threadId }: RecordProposalCard
       ) {
         // Double click / second tab: the server owns the final status.
         setStatus(err.resolvedStatus);
+        onResolved?.({ ...proposal, status: err.resolvedStatus });
         return;
       }
       // Any other failure keeps the card pending and reports through the
