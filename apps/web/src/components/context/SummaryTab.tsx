@@ -22,8 +22,7 @@ import { useSummaryRun } from "./use-summary-run.js";
 import { computeTokenEstimate, TokenEstimate, type CountedMessage } from "./TokenEstimate.js";
 import { countTokens } from "../../utils/tokenizer.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
-import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js";
-import { updateUiSettings } from "../../api/settings-api.js";
+import { useSummaryPinBinding } from "./summary-pin-binding.js";
 import { MasterList } from "../shared/master-list/master-list.js";
 import { SortableMasterListPhoneRow } from "../shared/master-list/master-list-phone-row.js";
 import { MasterListDragOverlayRow } from "../shared/master-list/master-list-overlay-row.js";
@@ -112,7 +111,6 @@ export function useSummaryTab({
 } {
   const { t } = useT();
   const isMobile = useIsMobile();
-  const bootstrapUiSettings = useBootstrapStore((s) => s.data?.uiSettings ?? null);
   const activeProvider = providers.find((p) => p.isActive) ?? providers[0] ?? null;
   const messagesById = useSnapshotStore((s) => s.messagesById);
   const messageOrder = useSnapshotStore((s) => s.messageOrder);
@@ -140,14 +138,22 @@ export function useSummaryTab({
   const [summaryContextBudget, setSummaryContextBudget] = useState<number | null>(null);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [useChatModel, setUseChatModel] = useState(true);
-  const [selectedProviderId, setSelectedProviderId] = useState(activeProvider?.id ?? "");
-  const [selectedModel, setSelectedModel] = useState(activeProvider?.defaultModel ?? "");
-  // SUM-4: the pin is PERSISTED (ui_settings summary pair), not ephemeral
-  // useState — it survives modal close/reopen. `pinnedModel` is hydrated from
-  // the store on open; the star writes/clears the pair. Null = follow the
-  // chat model (unpinned).
-  const [pinnedModel, setPinnedModel] = useState<string | null>(null);
+  // SUM-4: provider/model selection + the persisted pin live in the pin
+  // binding hook (summary-pin-binding.ts) — states, hydration-on-open, and
+  // the store-merging persistence writes (see its header for the incident
+  // contract).
+  const {
+    useChatModel, setUseChatModel,
+    selectedProviderId, setSelectedProviderId,
+    selectedModel, setSelectedModel,
+    pinnedModel, setPinnedModel,
+    clearPersistedPin, persistPinnedPair,
+  } = useSummaryPinBinding({
+    isOpen,
+    providers,
+    initialProviderId: activeProvider?.id ?? "",
+    initialModel: activeProvider?.defaultModel ?? "",
+  });
   const [providerModels, setProviderModels] = useState<Array<{ id: string; label: string; detail?: string }>>([]);
   const [isLoadingModels, setIsLoadingModels] = useState(false);
   // History-limit latch: null = AUTO (persisted 0 = unlimited server-side,
@@ -167,25 +173,6 @@ export function useSummaryTab({
   //     large can't extend, so the range freezes near the small branch's value.
   // Keying on chatId|branchId resets on BOTH chat and branch switches.
   const prevScopeRef = useRef<string | null>(null);
-
-  // SUM-4 hydration: a persisted summary binding (provider + model) restores
-  // the pinned selection on open — the exact state the star wrote last time.
-  // A dangling provider id (profile deleted since) falls through to the
-  // follow-chat-model default instead of wedging the picker on a ghost row.
-  useEffect(() => {
-    if (!isOpen) return;
-    const storedProviderId = bootstrapUiSettings?.summaryProviderId ?? null;
-    const storedModelName = bootstrapUiSettings?.summaryModelName ?? null;
-    if (storedProviderId && storedModelName) {
-      const providerExists = providers.some((p) => p.id === storedProviderId);
-      if (providerExists) {
-        setUseChatModel(false);
-        setSelectedProviderId(storedProviderId);
-        setSelectedModel(storedModelName);
-        setPinnedModel(storedModelName);
-      }
-    }
-  }, [isOpen, bootstrapUiSettings?.summaryProviderId, bootstrapUiSettings?.summaryModelName, providers]);
 
   const maxMessage = Math.max(1, messageCount - 1);
   const { latched, displayLimit } = resolveHistoryLimitState(limitOverride, messageCount);
@@ -686,7 +673,7 @@ export function useSummaryTab({
             setSelectedModel("");
             setPinnedModel(null);
             // SUM-4: switching providers invalidates the persisted pin.
-            void updateUiSettings({ summaryProviderId: null, summaryModelName: null }).catch(() => {});
+            clearPersistedPin();
           }}
           onModelChange={(id) => {
             setSelectedModel(id);
@@ -694,7 +681,7 @@ export function useSummaryTab({
             // binding (the pin follows the live selection, as before).
             if (pinnedModel !== null) {
               setPinnedModel(id);
-              void updateUiSettings({ summaryProviderId: effectiveProviderId || null, summaryModelName: id }).catch(() => {});
+              persistPinnedPair(effectiveProviderId || null, id);
             } else {
               setPinnedModel(useChatModel ? id : null);
             }
@@ -712,10 +699,10 @@ export function useSummaryTab({
             onChange: (pinned) => {
               if (!pinned) {
                 setPinnedModel(null);
-                void updateUiSettings({ summaryProviderId: null, summaryModelName: null }).catch(() => {});
+                clearPersistedPin();
               } else if (selectedModel) {
                 setPinnedModel(selectedModel);
-                void updateUiSettings({ summaryProviderId: effectiveProviderId || null, summaryModelName: selectedModel }).catch(() => {});
+                persistPinnedPair(effectiveProviderId || null, selectedModel);
               }
             },
             pinLabel: t("summary_pin_model"),
