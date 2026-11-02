@@ -63,6 +63,8 @@
 
 **File:** `scroll-area.tsx`.
 Wraps the installed Base UI Root/Viewport/Content/Scrollbar/Thumb; the viewport remains a native scroll container, with native scrollbar chrome hidden and horizontal overflow clipped.
+Vertical-list Content is explicitly viewport-wide (`width: 100%; min-width: 0` inline), overriding Base UI's inline `min-width: fit-content`; long names must truncate inside their list rather than expand headers, rows or portal contents beyond the clipped viewport.
+Keep that width contract in the shared primitive, not in per-row pixel widths or stacking overrides; it does not apply to the native-editor viewport branch, which has no Content wrapper.
 `scrollbarSize="thin"` draws a 3px vertical scrollbar; the default `regular` draws 8px, using `--border2` and a fully rounded thumb in Chromium and Firefox alike.
 `className`/`style` size the root (including flex or max-height constraints); `contentClassName` carries row layout, gaps and padding; `viewportProps` forwards the ref, accessible name, scroll events and viewport-local classes to the actual scroller.
 Use `render={<section />}` when the existing semantic root must remain a section.
@@ -81,6 +83,7 @@ This vertical primitive does not replace the message navigation rail, CodeMirror
 All other scrollbars retain the global themed 8px WebKit geometry; Firefox uses the standard thin/color fallback guarded by `@supports (-moz-appearance:none)`, including nested scroll regions and both opaque-origin experience iframe documents.
 RP and Co-Author character/chat lists, collapsed avatar strips, and RP build navigation use the shared `ScrollArea scrollbarSize="thin"` for true 3px custom chrome in Chromium and Firefox.
 Sidebar-owned portal lists opt in explicitly too: both chat flyouts and both build-character switcher variants use the same primitive, with Radix available-height bounds applied to the complete popup so header/search height is included.
+The expanded build-character switcher also caps its content-driven popup width at Radix's available viewport width, keeping the trigger-width minimum without letting long names place the popup offscreen.
 Their section headers, row controls, filtering, and height allocation remain inside native scroll viewports; global native-scrollbar styling, editors, modal panels, experience frames, and the transcript rail are unchanged.
 The engine-property guard is intentional: Firefox 153 also accepts WebKit selectors, so selector absence no longer identifies it; the host fallback lives in the base layer so utility-based scrollbar hiding still wins.
 

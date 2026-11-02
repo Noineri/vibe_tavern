@@ -179,7 +179,7 @@ export function BuildCharacterSwitcher({
             sideOffset={4}
             onOpenAutoFocus={handleOpenAutoFocus}
             className="glass-blur z-[400] rounded-lg border border-border bg-glass-bg shadow-theme-md outline-none data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 flex min-w-[var(--radix-popover-trigger-width)] flex-col overflow-hidden"
-            style={{ maxHeight: "var(--radix-popper-available-height)" }}
+            style={{ maxHeight: "var(--radix-popper-available-height)", maxWidth: "var(--radix-popover-content-available-width)" }}
           >
             {searchRow}
             <ScrollArea scrollbarSize="thin" className="max-h-[240px]" contentClassName="py-1">

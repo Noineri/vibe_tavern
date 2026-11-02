@@ -175,6 +175,12 @@ function chatSectionTitles(view: View): string[] {
 
 // ── Tests ────────────────────────────────────────────────────────────────
 
+function expectVerticalContentSizing(area: Element) {
+	const content = area.querySelector<HTMLElement>("[data-scroll-content]")!;
+	expect(Number.parseFloat(content.style.minWidth)).toBe(0);
+	expect(content.style.width).toBe("100%");
+}
+
 describe("Sidebar — chats section without an active chat", () => {
 	it.each([["RP", Sidebar], ["Co-Author", CoauthorSidebar]] as const)("%s uses narrow custom viewport chrome in both expanded sections without changing global widths", async (_mode, Component) => {
 		seedNoActiveChat({ collapsed: false, selectedCharacterId: ARIA });
@@ -188,6 +194,7 @@ describe("Sidebar — chats section without an active chat", () => {
 			expect(section.querySelector("[data-scroll-viewport]")?.classList.contains("scrollbar-hide")).toBe(true);
 			expect(section.querySelector("[data-scroll-viewport]")?.classList.contains("isolate")).toBe(true);
 			expect(section.querySelector("[data-scroll-content]")).not.toBeNull();
+			expectVerticalContentSizing(section);
 		}
 		const css = await Bun.file(`${import.meta.dir}/../../styles.css`).text();
 		expect(css).toContain("::-webkit-scrollbar{width:8px;height:8px}");
@@ -201,6 +208,7 @@ describe("Sidebar — chats section without an active chat", () => {
 		const area = view.container.querySelector('[data-scroll-area="thin"]')!;
 		expect(area).not.toBeNull();
 		expect(area.querySelector("[data-scroll-content]")?.textContent).toContain("A");
+		expectVerticalContentSizing(area);
 		expect(area.querySelector("[data-scroll-viewport]")?.classList.contains("scrollbar-hide")).toBe(true);
 	});
 
@@ -210,6 +218,7 @@ describe("Sidebar — chats section without an active chat", () => {
 		const view = render(<Sidebar />);
 		await act(async () => {});
 		expect(view.container.querySelector('[data-scroll-area="thin"]')).not.toBeNull();
+		expectVerticalContentSizing(view.container.querySelector('[data-scroll-area="thin"]')!);
 		expect(view.container.querySelector("[data-scroll-viewport]")?.classList.contains("scrollbar-hide")).toBe(true);
 	});
 
@@ -286,6 +295,7 @@ describe("Sidebar — collapsed flyout without an active chat", () => {
 		expect(view.container.contains(dialog)).toBe(false);
 		const area = dialog.querySelector('[data-scroll-area="thin"]')!;
 		expect(area).not.toBeNull();
+		expectVerticalContentSizing(area);
 		expect(area.querySelector("[data-scroll-viewport]")?.classList.contains("scrollbar-hide")).toBe(true);
 	});
 

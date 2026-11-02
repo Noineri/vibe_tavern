@@ -353,11 +353,18 @@ describe("BuildCharacterSwitcher — unit (LB-3A)", () => {
 
 	for (const variant of VARIANTS) {
 		it(`${variant}: portal rows use the narrow native-scroll/custom-chrome primitive`, async () => {
-			const view = await renderSettled(<MockSwitcher variant={variant} tabs={makeTabs(["Alpha", "Bree", "Cory", "D", "E", "F", "G"])} />);
+			const view = await renderSettled(<MockSwitcher variant={variant} tabs={makeTabs(["Alpha".repeat(80), "Bree", "Cory", "D", "E", "F", "G"])} />);
 			const area = view.baseElement.querySelector('[role="dialog"] [data-scroll-area="thin"]')!;
 			expect(area).not.toBeNull();
 			expect(area.querySelector("[data-scroll-viewport]")?.classList.contains("scrollbar-hide")).toBe(true);
 			expect(area.querySelector("[data-scroll-content]")?.textContent).toContain("Alpha");
+			const content = area.querySelector<HTMLElement>("[data-scroll-content]")!;
+			expect(Number.parseFloat(content.style.minWidth)).toBe(0);
+			expect(content.style.width).toBe("100%");
+			if (variant === "expanded") {
+				const popup = area.closest<HTMLElement>('[role="dialog"]')!;
+				expect(popup.style.maxWidth).toBe("var(--radix-popover-content-available-width)");
+			}
 		});
 		it(`${variant}: lists every tab when open`, async () => {
 			await renderSettled(<MockSwitcher variant={variant} tabs={makeTabs(["Alpha", "Bree", "Cory"])} />);

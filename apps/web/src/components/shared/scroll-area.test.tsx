@@ -7,6 +7,22 @@ const { act, fireEvent, render, waitFor } = await import("@testing-library/react
 const { ScrollArea } = await import("./scroll-area.js");
 
 describe("ScrollArea", () => {
+  it.each(["thin", "regular"] as const)("overrides intrinsic Content sizing with the vertical viewport width (%s)", async (scrollbarSize) => {
+    const name = "LongUnbrokenCharacterName".repeat(20);
+    const view = render(<ScrollArea scrollbarSize={scrollbarSize} style={{ width: 247 }} contentClassName="flex flex-col px-2">
+      <span className="truncate">{name}</span>
+      <button type="button">Row actions</button>
+    </ScrollArea>);
+    await act(async () => {});
+    const content = view.container.querySelector<HTMLElement>("[data-scroll-content]")!;
+    // Pin the rendered inline override: a utility cannot beat Base UI's inline fit-content.
+    // Browser acceptance separately checks computed layout, ellipsis and pointer reachability.
+    expect(Number.parseFloat(content.style.minWidth)).toBe(0);
+    expect(content.style.width).toBe("100%");
+    expect(content.classList.contains("px-2")).toBe(true);
+    expect(content.textContent).toContain(name);
+  });
+
   it("uses a textarea itself as viewport and remeasures value changes without replacing it", async () => {
     const ref = createRef<HTMLTextAreaElement>();
     const node = (value: string) => <ScrollArea scrollbarSize="thin" viewportRender={<textarea ref={ref} aria-label="Native draft" value={value} readOnly />} />;

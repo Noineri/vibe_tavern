@@ -32,7 +32,10 @@ export function ScrollArea({ children, className, scrollbarSize = "regular", vie
         {...(viewportRender ? { tabIndex: viewportAttrs.tabIndex ?? 0 } : {})}
         className={cn("isolate min-h-0 min-w-0 flex-auto scrollbar-hide outline-none", !viewportRender && "focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-accent", viewportClassName)}
         style={{ ...viewportStyle, overflowX: "hidden" }}
-        children={viewportRender ? undefined : <BaseScrollArea.Content data-scroll-content className={cn("min-w-0", contentClassName)}>{children}</BaseScrollArea.Content>}
+        children={viewportRender ? undefined : (
+          // Vertical lists must fit the viewport; override Base UI's inline fit-content minimum.
+          <BaseScrollArea.Content data-scroll-content className={contentClassName} style={{ minWidth: 0, width: "100%" }}>{children}</BaseScrollArea.Content>
+        )}
       />
       <BaseScrollArea.Scrollbar data-scroll-track orientation="vertical"
         className={cn("z-10 flex cursor-default select-none", scrollbarSize === "thin" ? "w-[3px]" : "w-2")}>
