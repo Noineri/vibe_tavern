@@ -96,3 +96,24 @@ describe("ToolbarSelect portal target", () => {
 		expect(anchor.contains(listbox)).toBe(true);
 	});
 });
+
+// CNR-8d scroll chrome: the desktop list body rides the shared thin ScrollArea
+// (3px rest / 5px hover) instead of the old native overflow div; the ~6-row cap
+// (popoverMaxHeight "singleLine" = 6 × 33px) moved onto the ScrollArea root.
+describe("ToolbarSelect desktop list scroll chrome", () => {
+	it("scrolls the opened desktop list inside the shared thin ScrollArea", async () => {
+		render(
+			<ToolbarSelect
+				trigger={trigger("ts-trigger-scroll")}
+				title="Models"
+				items={twoItems}
+				value={null}
+				onSelect={() => {}}
+			/>,
+		);
+		const listbox = await openSelect("ts-trigger-scroll");
+		const region = listbox.querySelector('[data-scroll-area="thin"]');
+		expect(region).not.toBeNull();
+		expect((region as HTMLElement).style.maxHeight).toBe("198px");
+	});
+});

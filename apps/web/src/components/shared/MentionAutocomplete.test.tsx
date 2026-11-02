@@ -128,4 +128,13 @@ describe("MentionAutocomplete (CX-5)", () => {
     listbox!.dispatchEvent(event);
     expect(event.defaultPrevented).toBe(true);
   });
+
+  it("scrolls rows inside the shared thin ScrollArea viewport (CNR-8d)", () => {
+    renderPicker();
+    const first = options()[0];
+    // The rows sit inside the thin ScrollArea region and its viewport — the
+    // list no longer scrolls on a native overflow-y-auto div.
+    expect(first.closest('[data-scroll-area="thin"]')).not.toBeNull();
+    expect(first.closest("[data-scroll-viewport]")).not.toBeNull();
+  });
 });

@@ -30,6 +30,7 @@ import { BottomSheet } from "./BottomSheet.js";
 import { SearchInput } from "./SearchInput.js";
 import { popoverMaxHeight } from "./popover-constants.js";
 import { useOverlayPortalSession } from "./modal-helpers.js";
+import { ScrollArea } from "./scroll-area.js";
 import { useT } from "../../i18n/context.js";
 
 export interface ToolbarSelectItem {
@@ -192,7 +193,14 @@ export function ToolbarSelect({
 					</div>
 					<Select.Viewport className="overflow-y-auto">
 						{items.length > 0 ? (
-							<div className="overflow-y-auto" style={{ maxHeight: popoverMaxHeight("singleLine") }}>
+							/* CNR-8d: the list body scrolls on the shared thin ScrollArea lane
+							 * (3px rest / 5px hover) instead of the native 8px fallback; the
+							 * ~6-row cap (popoverMaxHeight) stays on the scroller root. Radix's
+							 * highlighted-item scrollIntoView is element-level, so it rides the
+							 * ScrollArea viewport unchanged; the Viewport's own overflow is
+							 * library-inlined ("hidden auto" with Radix's own scrollbar hiding)
+							 * and stays as-is. */
+							<ScrollArea scrollbarSize="thin" style={{ maxHeight: popoverMaxHeight("singleLine") }}>
 								{items.map((item) => (
 									<Fragment key={item.value}>
 										{item.sectionLabel && (
@@ -229,7 +237,7 @@ export function ToolbarSelect({
 									</Select.Item>
 									</Fragment>
 								))}
-							</div>
+							</ScrollArea>
 						) : (
 							<div className="px-4 py-2 font-ui text-[calc(var(--ui-fs)-2px)] text-t3">{emptyText}</div>
 						)}

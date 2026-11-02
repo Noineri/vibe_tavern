@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import type { MacroCatalogEntry } from "@vibe-tavern/prompt-pipeline";
 import { macroCategoryLabel, matchingMacroAliases } from "./macro-autocomplete-store.js";
 import { cn } from "../../lib/cn.js";
+import { ScrollArea } from "./scroll-area.js";
 
 const POPUP_MAX_WIDTH = 380;
 const EDGE_GAP = 8;
@@ -145,7 +146,18 @@ export function MacroAutocomplete({
             {query ? <>No macro matches “{query}”.</> : "No macros available."}
           </div>
         ) : (
-          <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto p-1">
+          /* CNR-8d: the rows scroll on the shared thin ScrollArea lane (3px
+           * rest / 5px hover) instead of the native 8px fallback; the popup
+           * root keeps the placement maxHeight and the ScrollArea fills the
+           * rest (flex-1 inside the flex-col root). listRef moves to the
+           * ScrollArea viewport — same element role (the list scroller); the
+           * active-item scrollIntoView below is element-level and rides it. */
+          <ScrollArea
+            scrollbarSize="thin"
+            className="flex-1"
+            contentClassName="p-1"
+            viewportProps={{ ref: listRef }}
+          >
             {items.map((entry, index) => {
               const isActive = index === activeIndex;
               const matchingAliases = matchingMacroAliases(entry, query);
@@ -178,7 +190,7 @@ export function MacroAutocomplete({
                 </div>
               );
             })}
-          </div>
+          </ScrollArea>
         )}
       </motion.div>
     </AnimatePresence>

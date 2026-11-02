@@ -155,6 +155,26 @@ describe("DropdownSelect trigger label", () => {
 	});
 });
 
+// CNR-8d scroll chrome: the popup list body rides the shared thin ScrollArea
+// (3px rest / 5px hover) instead of a native overflow-y-auto — pinned where
+// the real cmdk list mounts (portaled into document.body, same as below).
+describe("DropdownSelect popup scroll chrome", () => {
+	it("scrolls the opened list inside the shared thin ScrollArea viewport", async () => {
+		const view = render(
+			<DropdownSelect value="" defaultOption="Auto" options={threeOptions} onChange={() => {}} />,
+		);
+		fireEvent.click(view.container.querySelector("button")!);
+		await waitFor(() => expect(document.body.querySelector("[cmdk-list]")).toBeTruthy());
+		const list = document.body.querySelector("[cmdk-list]")!;
+		// The list sits inside the thin ScrollArea region and its viewport; the
+		// native scroller class is gone (the cap lives on the region root).
+		expect(list.closest('[data-scroll-area="thin"]')).not.toBeNull();
+		expect(list.closest("[data-scroll-viewport]")).not.toBeNull();
+		expect(list.classList.contains("overflow-y-auto")).toBe(false);
+		view.unmount();
+	});
+});
+
 // Search + Enter with a `defaultOption` (AI_PILL_MODEL_CROSS_PROVIDER_REPORT
 // step 3): the default row sits first and cmdk highlights the first item, so it
 // used to stay on top of every search and swallow Enter — a model search + Enter

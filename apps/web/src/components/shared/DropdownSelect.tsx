@@ -5,6 +5,7 @@ import { cn } from "../../lib/cn.js";
 import { useT } from "../../i18n/context.js";
 import { Ic } from "./icons.js";
 import { useOverlayPortalSession } from "./modal-helpers.js";
+import { ScrollArea } from "./scroll-area.js";
 
 // cmdk (and Radix Select before it) cannot represent an empty-string value as a
 // real selectable item: an empty value is treated as "no value". The sentinel
@@ -267,46 +268,52 @@ export function DropdownSelect({
                 />
               </div>
             )}
-            <Command.List
-              className={cn(
-                searchable ? "max-h-[190px]" : "max-h-[240px]",
-                "overflow-y-auto p-1",
-              )}
+            {/* CNR-8d: the list body scrolls on the shared thin ScrollArea
+             *  lane (3px rest / 5px hover) instead of the native 8px fallback;
+             *  the height cap moves onto the ScrollArea root so it still limits
+             *  the popup (the primitive is flex-col, its viewport takes the
+             *  remaining space). cmdk scrolls the active item with element-level
+             *  scrollIntoView, which rides the ScrollArea viewport unchanged. */}
+            <ScrollArea
+              scrollbarSize="thin"
+              className={searchable ? "max-h-[190px]" : "max-h-[240px]"}
             >
-              {defaultOption && showDefaultRow && (
-                <Command.Item
-                  value={EMPTY_VALUE}
-                  onSelect={() => handleSelect("")}
-                  className={cn(
-                    "flex cursor-pointer items-center rounded px-2.5 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] outline-none transition-colors",
-                    !value
-                      ? "bg-accent-dim font-medium text-accent-t"
-                      : "text-t1 hover:bg-s2 data-[selected=true]:bg-s2",
-                  )}
-                >
-                  {defaultOption}
-                </Command.Item>
-              )}
-              {filteredGroups
-                ? filteredGroups.map((g) =>
-                    g.options.length > 0 ? (
-                      <div key={g.id}>
-                        {g.label && (
-                          <div className="px-2.5 pb-0.5 pt-1.5 font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-wide text-t3">
-                            {g.label}
-                          </div>
-                        )}
-                        {g.options.map(renderOption)}
-                      </div>
-                    ) : null,
-                  )
-                : filtered.map(renderOption)}
-              {(filteredGroups ? flatGroupedCount === 0 : filtered.length === 0) && (
-                <div className="px-2.5 py-1.5 text-center font-ui text-[calc(var(--ui-fs)-3px)] text-t4">
-                  —
-                </div>
-              )}
-            </Command.List>
+              <Command.List className="p-1">
+                {defaultOption && showDefaultRow && (
+                  <Command.Item
+                    value={EMPTY_VALUE}
+                    onSelect={() => handleSelect("")}
+                    className={cn(
+                      "flex cursor-pointer items-center rounded px-2.5 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] outline-none transition-colors",
+                      !value
+                        ? "bg-accent-dim font-medium text-accent-t"
+                        : "text-t1 hover:bg-s2 data-[selected=true]:bg-s2",
+                    )}
+                  >
+                    {defaultOption}
+                  </Command.Item>
+                )}
+                {filteredGroups
+                  ? filteredGroups.map((g) =>
+                      g.options.length > 0 ? (
+                        <div key={g.id}>
+                          {g.label && (
+                            <div className="px-2.5 pb-0.5 pt-1.5 font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-wide text-t3">
+                              {g.label}
+                            </div>
+                          )}
+                          {g.options.map(renderOption)}
+                        </div>
+                      ) : null,
+                    )
+                  : filtered.map(renderOption)}
+                {(filteredGroups ? flatGroupedCount === 0 : filtered.length === 0) && (
+                  <div className="px-2.5 py-1.5 text-center font-ui text-[calc(var(--ui-fs)-3px)] text-t4">
+                    —
+                  </div>
+                )}
+              </Command.List>
+            </ScrollArea>
           </Command>
         </Popover.Content>
       </Popover.Portal>

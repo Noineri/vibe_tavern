@@ -147,4 +147,15 @@ describe("AutoTextarea — macro autocomplete", () => {
     expect(deletevar).toBeTruthy();
     expect(deletevar!.textContent).not.toContain("flushvar");
   });
+
+  it("scrolls the macro picker rows inside the shared thin ScrollArea viewport (CNR-8d)", () => {
+    render(<Controlled />);
+    typeInto(textarea(), "{{");
+    const first = firstOption();
+    expect(first).not.toBeNull();
+    // The rows sit inside the thin ScrollArea region and its viewport — the
+    // picker list no longer scrolls on a native overflow-y-auto div.
+    expect(first!.closest('[data-scroll-area="thin"]')).not.toBeNull();
+    expect(first!.closest("[data-scroll-viewport]")).not.toBeNull();
+  });
 });
