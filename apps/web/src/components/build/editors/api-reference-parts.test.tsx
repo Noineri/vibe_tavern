@@ -79,9 +79,18 @@ describe("ApiRefCode / ApiRefCard overflow contract", () => {
     const pre = container.querySelector("pre");
     if (!pre) throw new Error("code block not rendered");
     const preCls = clsOf(pre);
-    expect(preCls).toContain("overflow-x-auto");
     // Code stays unwrapped — the scroll carries the overflow, not the wrap.
     expect(preCls).not.toContain("whitespace-pre-wrap");
+    // The horizontal scroller is the shared thin ScrollArea (CNR-8c): Y is
+    // clipped by the primitive, the X scroll axis stays native underneath.
+    const area = pre.closest("[data-scroll-area]") as HTMLElement | null;
+    if (!area) throw new Error("ScrollArea root not rendered");
+    expect(area.getAttribute("data-scroll-area")).toBe("thin");
+    expect(clsOf(area)).toContain("min-w-0");
+    const viewport = area.querySelector("[data-scroll-viewport]") as HTMLElement | null;
+    if (!viewport) throw new Error("viewport not rendered");
+    expect(viewport.style.overflowY).toBe("hidden");
+    expect(viewport.style.overflowX).toBe("");
 
     // The card root and every grid level can shrink below their min-content,
     // so no code line can set the card's width.

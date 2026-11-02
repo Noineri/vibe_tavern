@@ -1,5 +1,6 @@
 import { diffArrays } from "diff";
 import { cn } from "../../lib/cn.js";
+import { ScrollArea } from "./scroll-area.js";
 
 export type TextDiffLineKind = "same" | "add" | "remove";
 
@@ -183,20 +184,22 @@ export function TextDiffPreview(props: TextDiffPreviewProps) {
             <span className="text-danger-text">-{summary.removed}</span>
           </div>
         </div>
-        <p className="max-h-[280px] overflow-y-auto overflow-x-hidden rounded border border-border/60 bg-surface p-2 font-mono text-[calc(var(--ui-fs)-3px)] leading-[1.45] [overflow-wrap:anywhere]">
-          {summary.words.map((word, idx) => (
-            <span
-              key={idx}
-              className={cn(
-                word.kind === "add" && "bg-success-dim text-success-text",
-                word.kind === "remove" && "bg-danger-dim text-danger-text",
-                word.kind === "same" && "text-t3/65",
-              )}
-            >
-              {word.text || ""}
-            </span>
-          ))}
-        </p>
+        <ScrollArea scrollbarSize="thin" className="max-h-[280px] rounded border border-border/60 bg-surface">
+          <p className="p-2 font-mono text-[calc(var(--ui-fs)-3px)] leading-[1.45] [overflow-wrap:anywhere]">
+            {summary.words.map((word, idx) => (
+              <span
+                key={idx}
+                className={cn(
+                  word.kind === "add" && "bg-success-dim text-success-text",
+                  word.kind === "remove" && "bg-danger-dim text-danger-text",
+                  word.kind === "same" && "text-t3/65",
+                )}
+              >
+                {word.text || ""}
+              </span>
+            ))}
+          </p>
+        </ScrollArea>
       </div>
     );
   }
@@ -219,21 +222,23 @@ export function TextDiffPreview(props: TextDiffPreviewProps) {
           <span className="text-danger-text">-{summary.removed}</span>
         </div>
       </div>
-      <pre className="max-h-[280px] overflow-y-auto overflow-x-hidden rounded border border-border/60 bg-surface p-2 font-mono text-[calc(var(--ui-fs)-3px)] leading-[1.45]">
-        {summary.lines.map((line, idx) => (
-          <div
-            key={idx}
-            className={cn(
-              "min-w-0 whitespace-pre-wrap break-words px-2 [overflow-wrap:anywhere]",
-              line.kind === "add" && "bg-success-dim text-success-text",
-              line.kind === "remove" && "bg-danger-dim text-danger-text",
-              line.kind === "same" && "text-t3/65",
-            )}
-          >
-            <span className="select-none pr-2 text-t3/50">{line.kind === "add" ? "+" : line.kind === "remove" ? "-" : " "}</span>{line.text || " "}
-          </div>
-        ))}
-      </pre>
+      <ScrollArea scrollbarSize="thin" className="max-h-[280px] rounded border border-border/60 bg-surface">
+        <pre className="p-2 font-mono text-[calc(var(--ui-fs)-3px)] leading-[1.45]">
+          {summary.lines.map((line, idx) => (
+            <div
+              key={idx}
+              className={cn(
+                "min-w-0 whitespace-pre-wrap break-words px-2 [overflow-wrap:anywhere]",
+                line.kind === "add" && "bg-success-dim text-success-text",
+                line.kind === "remove" && "bg-danger-dim text-danger-text",
+                line.kind === "same" && "text-t3/65",
+              )}
+            >
+              <span className="select-none pr-2 text-t3/50">{line.kind === "add" ? "+" : line.kind === "remove" ? "-" : " "}</span>{line.text || " "}
+            </div>
+          ))}
+        </pre>
+      </ScrollArea>
     </div>
   );
 }

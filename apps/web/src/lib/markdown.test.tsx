@@ -178,6 +178,54 @@ describe("Markdown — agent-rp variant (AP-1)", () => {
   });
 });
 
+describe("Markdown — code-block scroll chrome (CNR-8c)", () => {
+  // Owner ruling 2026-11-02 restored the intended ad2b1f930 split: labeled
+  // language blocks scroll horizontally, text/plain/unlabeled blocks wrap.
+  // The original detection never matched (see CodeBlock's note), so every
+  // block wrapped — these pins hold the restored split in place.
+  it("language blocks scroll horizontally on the thin ScrollArea lane and do not wrap", () => {
+    const source = ["```python", "print('hi')", "```"].join("\n");
+    const { container } = render(<Markdown text={source} />);
+    const pre = container.querySelector("pre");
+    if (!pre) throw new Error("code block not rendered");
+    const preCls = pre.getAttribute("class") ?? "";
+    expect(preCls).toContain("md-pre");
+    expect(preCls).not.toContain("md-pre--wrap");
+    // Copy wrapper stays the outermost element; the button precedes the code.
+    const wrap = pre.closest(".md-pre-wrap") as HTMLElement | null;
+    if (!wrap) throw new Error(".md-pre-wrap not rendered");
+    expect(wrap.querySelector(".md-copy-btn")).not.toBeNull();
+    // The horizontal scroller is the shared thin ScrollArea: Y clipped by the
+    // primitive, the X scroll axis stays native underneath.
+    const area = pre.closest("[data-scroll-area]") as HTMLElement | null;
+    if (!area) throw new Error("ScrollArea root not rendered");
+    expect(area.getAttribute("data-scroll-area")).toBe("thin");
+    const viewport = area.querySelector("[data-scroll-viewport]") as HTMLElement | null;
+    if (!viewport) throw new Error("viewport not rendered");
+    expect(viewport.style.overflowY).toBe("hidden");
+    expect(viewport.style.overflowX).toBe("");
+    expect(wrap.contains(area)).toBe(true);
+  });
+
+  it("text blocks keep wrapping — no ScrollArea, the wrap class carries long lines", () => {
+    const source = ["```text", "one very long line that would otherwise overflow horizontally", "```"].join("\n");
+    const { container } = render(<Markdown text={source} />);
+    const pre = container.querySelector("pre");
+    if (!pre) throw new Error("wrap block not rendered");
+    expect(pre.getAttribute("class")).toContain("md-pre--wrap");
+    expect(pre.closest("[data-scroll-area]")).toBeNull();
+  });
+
+  it("unlabeled fenced blocks wrap too", () => {
+    const source = ["```", "no language, no label", "```"].join("\n");
+    const { container } = render(<Markdown text={source} />);
+    const pre = container.querySelector("pre");
+    if (!pre) throw new Error("unlabeled block not rendered");
+    expect(pre.getAttribute("class")).toContain("md-pre--wrap");
+    expect(pre.closest("[data-scroll-area]")).toBeNull();
+  });
+});
+
 describe("Markdown — agent-plain variant (AP-1)", () => {
   it("leaves quoted speech untouched", () => {
     const { container } = render(<Markdown text={QUOTE_SOURCE} variant="agent-plain" />);

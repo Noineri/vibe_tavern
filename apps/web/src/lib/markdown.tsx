@@ -9,6 +9,7 @@ import { copyText } from "./clipboard.js";
 import { lookupMarkdownResult, storeMarkdownResult, type MarkdownVariant } from "./markdown-result-cache.js";
 import { preserveEscapedUnderscoreTags, rehypeRestoreEscapedUnderscoreTags, remarkUnderscoreCustomTags } from "./markdown-underscore-tags.js";
 import { ImageBlock } from "../components/chat/ImageBlock.js";
+import { ScrollArea } from "../components/shared/scroll-area.js";
 
 const sanitizeSchema = {
   ...defaultSchema,
@@ -396,20 +397,27 @@ const rehypeSystemBanner = () => (tree: HastNode) => processBannerNode(tree);
 //  1. Shows a "Copy" button that writes the block's text to the clipboard.
 //  2. For `text`, `plain`, or unlabeled blocks applies white-space:pre-wrap
 //     so long lines wrap instead of scrolling horizontally.
-//     Real language blocks keep overflow-x:auto (preserves code indentation).
+//     Real language blocks keep their horizontal-only overflow (preserves code
+//     indentation) on the shared thin ScrollArea lane (CNR-8c; owner ruling
+//     2026-11-02 restored this split — see the detection note below).
 
 const WRAP_LANGS = new Set(["text", "plain", "txt", ""]);
 
 function CodeBlock({ children }: { children?: React.ReactNode }) {
   const [copied, setCopied] = useState(false);
 
-  // Extract language from the child <code> className ("language-python" → "python").
+  // Extract language from the child <code> className ("language-python" →
+  // "python"). Match on the `language-*` CLASS, never on the element type:
+  // react-markdown hands component overrides each other's elements, so the
+  // child's type is the shared `code` override component, not the string
+  // "code" — the original `child.type === "code"` check never matched, every
+  // block silently wrapped, and the intended scroll/wrap split was dead from
+  // ad2b1f930 (2026-07-02) until the owner ruling restored it (2026-11-02).
   let lang = "";
   React.Children.forEach(children, (child) => {
-    if (React.isValidElement(child) && child.type === "code") {
-      const cls = (child.props as Record<string, unknown>).className as string | undefined;
-      lang = cls?.replace(/^language-/, "") ?? "";
-    }
+    if (!React.isValidElement(child)) return;
+    const cls = (child.props as Record<string, unknown>).className;
+    if (typeof cls === "string" && cls.startsWith("language-")) lang = cls.replace(/^language-/, "");
   });
 
   const isWrap = WRAP_LANGS.has(lang);
@@ -444,9 +452,18 @@ function CodeBlock({ children }: { children?: React.ReactNode }) {
           </svg>
         )}
       </button>
-      <pre className={`md-pre${isWrap ? " md-pre--wrap" : ""}`}>
-        {children}
-      </pre>
+      {/* CNR-8c: language blocks scroll horizontally on the shared thin
+          ScrollArea lane (class names and DOM order unchanged — the agent
+          bubbles' `[&_.md-pre]` pins and the copy button's absolute anchor
+          inside .md-pre-wrap depend on them). Wrap blocks keep wrapping:
+          the ScrollArea never replaces wrap with scroll. */}
+      {isWrap ? (
+        <pre className="md-pre md-pre--wrap">{children}</pre>
+      ) : (
+        <ScrollArea scrollbarSize="thin" orientation="horizontal">
+          <pre className="md-pre">{children}</pre>
+        </ScrollArea>
+      )}
     </div>
   );
 }

@@ -290,3 +290,44 @@ describe("TextDiffPreview rendering", () => {
     });
   });
 });
+
+// ── Scroll chrome (CNR-8c) — the Wave-7 migration wiring ──
+//
+// Both preview regions scroll on the shared thin ScrollArea: a vertically
+// capped scroller with the X axis clipped by the primitive, lines still
+// wrapping (wrap carries overflow — the scroll never goes horizontal). The
+// <pre>/<p> elements stay inside so the rendering pins above keep holding.
+describe("TextDiffPreview scroll chrome", () => {
+  it("line mode: the <pre> sits in a capped thin vertical ScrollArea with wrapped lines", () => {
+    const d = buildLineDiff("same line\nold text", "same line\nnew text\nplus one");
+    const { container } = render(<TextDiffPreview summary={d} labels={LABELS} />);
+    const pre = container.querySelector("pre");
+    expect(pre).not.toBeNull();
+    const area = pre!.closest("[data-scroll-area]") as HTMLElement | null;
+    expect(area).not.toBeNull();
+    expect(area!.getAttribute("data-scroll-area")).toBe("thin");
+    expect(area!.className).toContain("max-h-[280px]");
+    expect(area!.className).toContain("bg-surface");
+    const viewport = area!.querySelector("[data-scroll-viewport]") as HTMLElement | null;
+    expect(viewport).not.toBeNull();
+    expect(viewport!.style.overflowX).toBe("hidden");
+    const row = pre!.querySelector("div");
+    expect(row?.className ?? "").toContain("whitespace-pre-wrap");
+    expect(row?.className ?? "").toContain("[overflow-wrap:anywhere]");
+  });
+
+  it("word mode: the <p> sits in the same capped thin vertical ScrollArea", () => {
+    const d = buildWordDiff("one two three", "one two three four");
+    const { container } = render(<TextDiffPreview granularity="word" summary={d} labels={LABELS} />);
+    const p = container.querySelector("p");
+    expect(p).not.toBeNull();
+    const area = p!.closest("[data-scroll-area]") as HTMLElement | null;
+    expect(area).not.toBeNull();
+    expect(area!.getAttribute("data-scroll-area")).toBe("thin");
+    expect(area!.className).toContain("max-h-[280px]");
+    const viewport = area!.querySelector("[data-scroll-viewport]") as HTMLElement | null;
+    expect(viewport).not.toBeNull();
+    expect(viewport!.style.overflowX).toBe("hidden");
+    expect(p!.className).toContain("[overflow-wrap:anywhere]");
+  });
+});

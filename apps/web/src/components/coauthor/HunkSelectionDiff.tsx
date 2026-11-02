@@ -26,6 +26,7 @@ import type { TextDiffLine, TextDiffSummary } from "../shared/TextDiffPreview.js
 import { groupHunks, type DiffHunk } from "../../lib/coauthor-hunk-merge.js";
 import { annotateHunkLines, type LineSegment } from "../../lib/intra-line-diff.js";
 import { Checkbox } from "../shared/Checkbox.js";
+import { ScrollArea } from "../shared/scroll-area.js";
 
 interface HunkSelectionDiffLabels {
   /** Header title for the diff area. */
@@ -170,7 +171,8 @@ export function HunkSelectionDiff({
         </div>
       </div>
 
-      <pre className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden rounded border border-border/60 bg-surface p-2 font-mono text-[calc(var(--ui-fs)-3px)] leading-[1.45]">
+      <ScrollArea scrollbarSize="thin" className="min-h-0 flex-1 rounded border border-border/60 bg-surface">
+        <pre className="p-2 font-mono text-[calc(var(--ui-fs)-3px)] leading-[1.45]">
         {segments.map((seg, si) => {
           if (seg.type === "context") {
             return (
@@ -238,7 +240,8 @@ export function HunkSelectionDiff({
             </div>
           );
         })}
-      </pre>
+        </pre>
+      </ScrollArea>
     </div>
   );
 }

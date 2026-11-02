@@ -127,13 +127,18 @@ describe("Markdown — result cache (LC-4)", () => {
     for (const fixture of FIXTURES) {
       it(`serves the cached element tree — ${fixture.name}`, () => {
         const first = render(<Markdown text={fixture.text} />);
-        const firstHtml = first.container.innerHTML;
+        // CNR-8c: language code blocks render inside Base UI's ScrollArea,
+        // whose viewport carries a module-scoped generated data-id
+        // (base-ui-_r_N_-viewport) that increments per mount. It is chrome
+        // the component owns, not part of the cached markdown tree —
+        // normalize it before the byte-identity check.
+        const firstHtml = first.container.innerHTML.replace(/base-ui-_r_\d+_-/g, "base-ui-_r_-");
         fixture.sanity?.(first.container);
         first.unmount();
 
         seamCalls.length = 0;
         const second = render(<Markdown text={fixture.text} />);
-        expect(second.container.innerHTML).toBe(firstHtml);
+        expect(second.container.innerHTML.replace(/base-ui-_r_\d+_-/g, "base-ui-_r_-")).toBe(firstHtml);
         // The cached re-mount must not run the parse pipeline.
         expect(seamCalls).toHaveLength(0);
         second.unmount();

@@ -9,13 +9,14 @@
  * three copies rendered before extraction, changed only by the overflow
  * contract — the card root and every grid level carry `min-w-0` so no grid
  * track's min-content can widen the card; `ApiRefCode` scrolls horizontally
- * inside the card (`overflow-x-auto`, code never wraps); `ApiRefRow` keeps
- * the one-line desktop row and stacks below the app-wide mobile breakpoint
- * (Tailwind `md:` = 768px = MOBILE_MQ in use-mobile.ts): code chip on its
- * own line, description under it at full width, wrapping normally. Authored
- * copy is never truncated or ellipsized.
+ * inside the card on the shared thin ScrollArea lane (CNR-8c, code never
+ * wraps); `ApiRefRow` keeps the one-line desktop row and stacks below the
+ * app-wide mobile breakpoint (Tailwind `md:` = 768px = MOBILE_MQ in
+ * use-mobile.ts): code chip on its own line, description under it at full
+ * width, wrapping normally. Authored copy is never truncated or ellipsized.
  */
 import type { ReactNode } from "react";
+import { ScrollArea } from "../../shared/scroll-area.js";
 
 /** Card shell: accented container + uppercase title + the section grid. */
 export function ApiRefCard({ title, children }: { title: ReactNode; children: ReactNode }) {
@@ -54,10 +55,12 @@ export function ApiRefRow({ code, children }: { code?: ReactNode; children: Reac
   );
 }
 
-/** Read-only code block: scrolls horizontally inside the card — the longest
- *  line never sets the card's width. */
+/** Read-only code block: scrolls horizontally inside the card on the shared
+ *  thin ScrollArea lane — the longest line never sets the card's width. */
 export function ApiRefCode({ children }: { children: ReactNode }) {
   return (
-    <pre className="mt-1 min-w-0 overflow-x-auto rounded border border-border2 bg-bg px-2 py-1.5 font-mono text-[calc(var(--ui-fs)-4px)] leading-[1.4] text-t2">{children}</pre>
+    <ScrollArea scrollbarSize="thin" orientation="horizontal" className="mt-1 min-w-0 rounded border border-border2 bg-bg">
+      <pre className="px-2 py-1.5 font-mono text-[calc(var(--ui-fs)-4px)] leading-[1.4] text-t2">{children}</pre>
+    </ScrollArea>
   );
 }

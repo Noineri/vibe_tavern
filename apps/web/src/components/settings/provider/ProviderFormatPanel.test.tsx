@@ -181,6 +181,28 @@ describe("ProviderFormatPanel (sampler-clone redesign)", () => {
 		expect(off?.format?.inputSequence).toBe(on?.format?.inputSequence);
 	});
 
+	it("preview body: wraps on the thin horizontal ScrollArea — wrap carries overflow, never a widened box (CNR-8c)", () => {
+		const form = makeForm({
+			generationFormat: { mode: "manual", selection: "builtin:chatml", format: { mode: "manual", inputSequence: "User: " } },
+		});
+		const { getByTestId } = render(<ProviderFormatPanel form={form} updateForm={mock()} tcTemplateSource="default" />);
+		fireEvent.click(getByTestId("provider-format-sequences-toggle"));
+		fireEvent.click(getByTestId("provider-format-preview-toggle"));
+		const body = getByTestId("provider-format-preview-body");
+		// The scroller is the shared thin ScrollArea: horizontal orientation
+		// clips the Y axis; the overflow-x contract is unchanged.
+		expect(body.getAttribute("data-scroll-area")).toBe("thin");
+		const viewport = body.querySelector("[data-scroll-viewport]") as HTMLElement | null;
+		expect(viewport?.style.overflowY).toBe("hidden");
+		// Wrapping stays exactly as before (whitespace-pre-wrap break-all) —
+		// a wrapping region keeps wrapping, scroll never replaces it.
+		const content = body.querySelector("[data-scroll-content]") as HTMLElement | null;
+		const contentCls = content?.getAttribute("class") ?? "";
+		expect(contentCls).toContain("whitespace-pre-wrap");
+		expect(contentCls).toContain("break-all");
+		expect(contentCls).toContain("font-mono");
+	});
+
 	it("auto state: the sequence fields render greyed + inert (pointer-events-none)", () => {
 		const form = makeForm({ generationFormat: { mode: "auto", selection: "builtin:chatml" } });
 		const { getByTestId } = render(<ProviderFormatPanel form={form} updateForm={mock()} tcTemplateSource="default" />);

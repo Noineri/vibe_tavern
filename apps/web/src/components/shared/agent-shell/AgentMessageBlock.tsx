@@ -187,12 +187,14 @@ export const AgentMessageBlock = memo(function AgentMessageBlock({
     <div translate="yes" className="font-ui text-[calc(var(--ui-fs)-1px)] leading-[1.5] text-msg-t1 [overflow-wrap:anywhere] [&_.md-pre]:[overflow-wrap:normal]">
       {/* overflow-wrap:anywhere — long unbreakable inline tokens (inline
        * code, paths, ids) wrap instead of spilling past the bubble edge.
-       * Reset inside .md-pre: fenced code keeps its own overflow-x:auto
-       * internal scroll with preserved indentation (lib/markdown contract).
-       * AP-2: no em override here — the agent-rp / agent-plain Markdown
-       * variants own `em` (RP colors vs plain typography). LAG-4: a live
-       * streaming bubble swaps in the block-split renderer; every other
-       * body renders the single-`Markdown` path exactly as before. */}
+       * Reset inside .md-pre: fenced LANGUAGE code keeps its own
+       * horizontal-only scroll with preserved indentation on the shared
+       * thin ScrollArea lane (lib/markdown contract, CNR-8c; text/plain
+       * and unlabeled blocks wrap). AP-2: no em override here — the
+       * agent-rp / agent-plain Markdown variants own `em` (RP colors vs
+       * plain typography). LAG-4: a live streaming bubble swaps in the
+       * block-split renderer; every other body renders the single-`Markdown`
+       * path exactly as before. */}
       {isStreaming ? (
         <AgentStreamingMarkdown text={message.content} variant={markdownVariant} />
       ) : (

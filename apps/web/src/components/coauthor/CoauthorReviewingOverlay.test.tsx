@@ -196,10 +196,17 @@ describe("CoauthorReviewingOverlay — tracker section scroll (owner follow-up 2
     const diffSection = getByTestId("coauthor-diff-section");
     expect(diffSection.className).toContain("min-h-0");
     expect(diffSection.className).toContain("flex-1");
-    // The diff scrolls inside its own pre block (HunkSelectionDiff internals).
+    // The diff scrolls inside its own block (HunkSelectionDiff internals):
+    // a thin vertical ScrollArea bounded by the section's flex share, X
+    // clipped, wrapped lines (CNR-8c chrome swap).
     const pre = diffSection.querySelector("pre") as HTMLElement | null;
     expect(pre).toBeTruthy();
-    expect(pre?.className ?? "").toContain("overflow-y-auto");
+    const diffScroller = pre?.closest("[data-scroll-area]") as HTMLElement | null;
+    expect(diffScroller).toBeTruthy();
+    expect(diffScroller?.getAttribute("data-scroll-area")).toBe("thin");
+    expect(diffScroller?.className).toContain("flex-1");
+    const diffViewport = diffScroller?.querySelector("[data-scroll-viewport]") as HTMLElement | null;
+    expect(diffViewport?.style.overflowX).toBe("hidden");
 
     const trackerSection = getByTestId("coauthor-tracker-section");
     expect(trackerSection.className).toContain("min-h-0");

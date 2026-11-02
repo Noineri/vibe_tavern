@@ -16,6 +16,7 @@ import { SegmentedControl } from "../../shared/SegmentedControl.js";
 import { DropdownSelect } from "../../shared/DropdownSelect.js";
 import { Toggle } from "../../shared/Toggle.js";
 import { AnimatedDisclosure } from "../../shared/AnimatedDisclosure.js";
+import { ScrollArea } from "../../shared/scroll-area.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
 import { DestructiveConfirmModal } from "../../shared/destructive-confirm-modal.js";
 import { lblCls } from "../../../lib/field-tokens.js";
@@ -610,7 +611,16 @@ export function ProviderFormatPanel({ form, updateForm, tcTemplateSource }: Prov
 						</button>
 						<AnimatedDisclosure open={previewOpen}>
 							<div className="border-t border-border2 bg-surface p-3">
-								<div className="overflow-x-auto whitespace-pre-wrap break-all rounded-md border border-border bg-s2 p-3 font-mono text-[calc(var(--ui-fs)-2px)] leading-4 leading-relaxed" data-testid="provider-format-preview-body">
+								{/* Preview body: wraps (whitespace-pre-wrap break-all) — the
+								    overflow-x contract stays horizontal-only, carried by the
+								    shared thin ScrollArea lane (CNR-8c). */}
+								<ScrollArea
+									scrollbarSize="thin"
+									orientation="horizontal"
+									data-testid="provider-format-preview-body"
+									className="rounded-md border border-border bg-s2"
+									contentClassName="whitespace-pre-wrap break-all p-3 font-mono text-[calc(var(--ui-fs)-2px)] leading-4 leading-relaxed"
+								>
 									{buildFormatPreviewSegments(manualFormat, {
 										system: t("providerFormat.previewDemoSystem"),
 										user: t("providerFormat.previewDemoUser"),
@@ -626,7 +636,7 @@ export function ProviderFormatPanel({ form, updateForm, tcTemplateSource }: Prov
 											{segment.text}
 										</span>
 									))}
-								</div>
+								</ScrollArea>
 								<div className="mt-2 font-ui text-[calc(var(--ui-fs)-3px)] text-t3">{t("providerFormat.previewLegend")}</div>
 							</div>
 						</AnimatedDisclosure>
