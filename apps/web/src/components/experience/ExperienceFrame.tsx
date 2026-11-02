@@ -9,10 +9,12 @@
  * storage, or network (the injected CSP `connect-src 'none'` closes the network
  * hole even if a future browser relaxed the sandbox default).
  *
- * The host injects exactly two things into the frame document:
+ * The host injects the following into the frame document:
  *   1. a restrictive CSP `<meta>` (no network, inline scripts/styles only,
  *      images via data:/blob: only);
  *   2. the immutable `VibeExperience` SDK (`experience-sdk.ts`).
+ *   3. base scrollbar styling and a layout-only host visibility listener;
+ *      realtime documents additionally carry their fixed runtime/config.
  * The rest is the caller-supplied `visualSource` (the editable HTML/CSS/JS). The
  * SDK is host-provided and version-pinned; the visual source is user-owned and
  * never silently rewritten by Vibe Tavern (design: "Only the versioned SDK
@@ -136,6 +138,30 @@ function embedSafeScriptSource(source: string): string {
   return source.replace(/<\/script/gi, "<\\/script");
 }
 
+// Both opaque-origin documents share this layout channel, NOT the gameplay
+// SDK/MessagePort protocol. Only the parent may supply the boolean policy.
+const FRAME_SCROLLBAR_POLICY_SCRIPT = String.raw`
+(function () {
+  window.addEventListener("message", function (event) {
+    if (event.source !== window.parent) return;
+    var data = event.data;
+    if (!data || typeof data !== "object" || Array.isArray(data) ||
+        data.type !== "vt:scrollbar-visibility" || typeof data.hidden !== "boolean") return;
+    document.documentElement.toggleAttribute("data-vt-hide-content-scrollbars", data.hidden);
+  });
+})();`;
+
+const FRAME_MOBILE_SCROLLBAR_STYLE = [
+  "html[data-vt-hide-content-scrollbars],html[data-vt-hide-content-scrollbars] :not(textarea){scrollbar-width:none!important}",
+  "html[data-vt-hide-content-scrollbars]::-webkit-scrollbar,html[data-vt-hide-content-scrollbars] :not(textarea)::-webkit-scrollbar{display:none!important}",
+].join("\n");
+
+function hostHidesContentScrollbars(): boolean {
+  // Read the host stylesheet's actual result, not the frame's narrower width
+  // or a second JS copy of the mobile breakpoint. This also works detached.
+  return getComputedStyle(document.documentElement).getPropertyValue("scrollbar-width").trim() === "none";
+}
+
 /**
  * Assemble the frame document: CSP meta → SDK → visual source. Pure (no React,
  * no DOM) so it is unit-testable for CSP/SDK/source presence without rendering.
@@ -146,6 +172,7 @@ function embedSafeScriptSource(source: string): string {
 export function buildExperienceFrameDocument(
   visualSource: string,
   scrollbarColor?: string,
+  hideContentScrollbars = false,
 ): string {
   // The frame is a separate opaque-origin document (sandbox="allow-scripts",
   // no allow-same-origin): it inherits neither the host's ::-webkit-scrollbar
@@ -160,7 +187,7 @@ export function buildExperienceFrameDocument(
       : "rgba(140,140,140,0.5)";
   return [
     "<!DOCTYPE html>",
-    "<html>",
+    hideContentScrollbars ? "<html data-vt-hide-content-scrollbars>" : "<html>",
     "<head>",
     '<meta charset="utf-8">',
     `<meta http-equiv="Content-Security-Policy" content="${EXPERIENCE_FRAME_CSP}">`,
@@ -168,7 +195,11 @@ export function buildExperienceFrameDocument(
     "html,body{margin:0;padding:0;background:transparent;color:inherit;font:inherit;}",
     `::-webkit-scrollbar{width:8px;height:8px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:${thumb};border-radius:4px}`,
     `@supports (-moz-appearance:none){*{scrollbar-width:thin;scrollbar-color:${thumb} transparent}}`,
+    FRAME_MOBILE_SCROLLBAR_STYLE,
     "</style>",
+    '<script id="__vt_scrollbar_policy">',
+    FRAME_SCROLLBAR_POLICY_SCRIPT,
+    "</script>",
     "</head>",
     "<body>",
     "<script>",
@@ -195,6 +226,7 @@ export function buildRealtimeExperienceFrameDocument(
   runtimeSource: string,
   config: ExperienceLoopConfig,
   scrollbarColor?: string,
+  hideContentScrollbars = false,
 ): string {
   const thumb =
     scrollbarColor && scrollbarColor.trim() !== ""
@@ -203,7 +235,7 @@ export function buildRealtimeExperienceFrameDocument(
   const configJson = JSON.stringify(config).replace(/</g, "\\u003c");
   return [
     "<!DOCTYPE html>",
-    "<html>",
+    hideContentScrollbars ? "<html data-vt-hide-content-scrollbars>" : "<html>",
     "<head>",
     '<meta charset="utf-8">',
     `<meta http-equiv="Content-Security-Policy" content="${EXPERIENCE_FRAME_REALTIME_CSP}">`,
@@ -211,7 +243,11 @@ export function buildRealtimeExperienceFrameDocument(
     "html,body{margin:0;padding:0;background:transparent;color:inherit;font:inherit;}",
     `::-webkit-scrollbar{width:8px;height:8px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:${thumb};border-radius:4px}`,
     `@supports (-moz-appearance:none){*{scrollbar-width:thin;scrollbar-color:${thumb} transparent}}`,
+    FRAME_MOBILE_SCROLLBAR_STYLE,
     "</style>",
+    '<script id="__vt_scrollbar_policy">',
+    FRAME_SCROLLBAR_POLICY_SCRIPT,
+    "</script>",
     "</head>",
     "<body>",
     "<script>",
@@ -238,7 +274,7 @@ export interface ExperienceFrameProps {
   /**
    * REALTIME round configuration (RM-4). Present ⇒ the frame document embeds
    * the kernel port + loop host + this config and boots the fixed-timestep
-   * loop; absent ⇒ the turn-based document, byte-identical to pre-RM-4.
+   * loop; absent ⇒ the turn-based document, without the realtime runtime.
    */
   readonly realtime?: { readonly config: ExperienceLoopConfig };
   /** The active experience session id (frame shows it for telemetry only). */
@@ -340,13 +376,13 @@ export const ExperienceFrame = forwardRef<ExperienceFrameHandle, ExperienceFrame
         loadFrameRuntimeSource()
           .then((runtimeSource) => {
             if (cancelled) return;
-            publish(buildRealtimeExperienceFrameDocument(visualSource, runtimeSource, realtimeConfig, scrollbarColor));
+            publish(buildRealtimeExperienceFrameDocument(visualSource, runtimeSource, realtimeConfig, scrollbarColor, hostHidesContentScrollbars()));
           })
           .catch((err: unknown) => {
             onError?.(`frame runtime failed to load: ${String(err)}`);
           });
       } else {
-        publish(buildExperienceFrameDocument(visualSource, scrollbarColor));
+        publish(buildExperienceFrameDocument(visualSource, scrollbarColor, hostHidesContentScrollbars()));
       }
       return () => {
         cancelled = true;
@@ -407,14 +443,38 @@ export const ExperienceFrame = forwardRef<ExperienceFrameHandle, ExperienceFrame
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [sessionId]);
 
+    const sendScrollbarVisibility = useCallback(() => {
+      // Opaque origins require '*'; the recipient validates window.parent and
+      // the message type/boolean payload. Nothing is accepted back by this channel.
+      iframeRef.current?.contentWindow?.postMessage({
+        type: "vt:scrollbar-visibility",
+        hidden: hostHidesContentScrollbars(),
+      }, "*");
+    }, []);
+
+    useEffect(() => {
+      // Resize covers viewport/orientation changes; this media listener covers
+      // input-capability changes without a resize. CSS still owns the verdict.
+      const touchFirst = window.matchMedia("(hover: none) and (pointer: coarse)");
+      window.addEventListener("resize", sendScrollbarVisibility);
+      touchFirst.addEventListener("change", sendScrollbarVisibility);
+      return () => {
+        window.removeEventListener("resize", sendScrollbarVisibility);
+        touchFirst.removeEventListener("change", sendScrollbarVisibility);
+      };
+    }, [sendScrollbarVisibility]);
+
     const handleLoad = useCallback(() => {
+      // Re-read on every load: host state may change during an async runtime
+      // import/navigation. Visibility never enters blob or session dependencies.
+      sendScrollbarVisibility();
       const win = iframeRef.current?.contentWindow as BridgeContentWindow | null;
       const bridge = bridgeRef.current;
       if (!win || !bridge) return;
       // attach creates the MessageChannel, transfers port2 to the frame, and
       // sends `hello`. The SDK binds its nonce from hello and replies `ready`.
       bridge.attach(win);
-    }, []);
+    }, [sendScrollbarVisibility]);
 
     useImperativeHandle(
       ref,

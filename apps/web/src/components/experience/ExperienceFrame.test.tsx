@@ -13,7 +13,8 @@
  * URL.createObjectURL / revokeObjectURL are spied so we both observe the
  * lifecycle and can read back the exact document bytes handed to the frame.
  */
-import { describe, it, expect, afterEach } from "bun:test";
+import { describe, it, expect, beforeAll, afterAll, afterEach } from "bun:test";
+import type { Window as HappyWindow } from "happy-dom";
 
 import { createRef } from "react";
 import { useDomEnv } from "../../../test/dom-env.js";
@@ -27,7 +28,7 @@ import { VIBE_EXPERIENCE_SDK_SOURCE } from "../../lib/experience-sdk.js";
 
 useDomEnv();
 
-const { render, act } = await import("@testing-library/react");
+const { render, act, fireEvent } = await import("@testing-library/react");
 const { waitFor } = await import("@testing-library/react");
 
 const VISUAL = [
@@ -41,6 +42,19 @@ const createdBlobs: Blob[] = [];
 const revokedUrls: string[] = [];
 const realCreate = URL.createObjectURL;
 const realRevoke = URL.revokeObjectURL;
+const browserSettings = (window as unknown as HappyWindow).happyDOM.settings;
+const originalIframeLoading = browserSettings.enableIframePageLoading;
+const originalScrollbarWidth = document.documentElement.style.scrollbarWidth;
+
+// These spies navigate ONLY to about:blank, never to the generated visual.
+// Enable that supported local navigation instead of emitting a disabled-load
+// error per mount; isolation/handshake behavior still belongs to live browsers.
+beforeAll(() => { browserSettings.enableIframePageLoading = true; });
+afterAll(() => {
+  browserSettings.enableIframePageLoading = originalIframeLoading;
+  document.documentElement.style.scrollbarWidth = originalScrollbarWidth;
+  restoreUrl();
+});
 
 function installUrlSpies() {
   let n = 0;
@@ -66,6 +80,7 @@ afterEach(() => {
   createdBlobs.length = 0;
   revokedUrls.length = 0;
   restoreUrl();
+  document.documentElement.style.scrollbarWidth = originalScrollbarWidth;
 });
 
 // ─── buildExperienceFrameDocument (pure) ────────────────────────────────────
@@ -366,6 +381,89 @@ const REALTIME_CONFIG: ExperienceLoopConfig = {
   viewer: { kind: "human", participantId: "p1" },
   scriptSeats: [],
 };
+
+describe("ExperienceFrame — host scrollbar visibility", () => {
+  for (const mode of ["turn", "realtime"] as const) {
+    const build = (hidden: boolean) => mode === "turn"
+      ? buildExperienceFrameDocument(VISUAL, undefined, hidden)
+      : buildRealtimeExperienceFrameDocument(VISUAL, RUNTIME_STUB, REALTIME_CONFIG, undefined, hidden);
+
+    it(`${mode}: initializes the host policy and validates layout messages independently of the SDK`, () => {
+      const mobile = build(true);
+      expect(mobile).toContain('<html data-vt-hide-content-scrollbars>');
+      expect(build(false)).toContain('<html>');
+      expect(mobile).toContain(':not(textarea)');
+      expect(mobile).toContain('scrollbar-width:none');
+      expect(mobile).not.toContain('max-width: 768px');
+      const tag = '<script id="__vt_scrollbar_policy">';
+      const start = mobile.indexOf(tag);
+      expect(start).toBeGreaterThan(0);
+      const script = mobile.slice(start + tag.length, mobile.indexOf('</script>', start));
+      const root = document.createElement('html');
+      const parent = {};
+      const listeners: Array<(event: { source: unknown; data: unknown }) => void> = [];
+      const frameWindow = { parent, addEventListener: (type: string, listener: typeof listeners[number]) => {
+        expect(type).toBe('message');
+        listeners.push(listener);
+      } };
+      new Function('window', 'document', script)(frameWindow, { documentElement: root });
+      expect(listeners.length).toBe(1);
+      const send = (source: unknown, data: unknown) => listeners[0]!({ source, data });
+      const valid = { type: 'vt:scrollbar-visibility', hidden: true };
+      for (const source of [null, {}, frameWindow]) {
+        send(source, valid);
+        expect(root.hasAttribute('data-vt-hide-content-scrollbars')).toBe(false);
+      }
+      for (const data of [null, [], 'mobile', {}, { ...valid, type: 'hello' }, { ...valid, hidden: 'true' }, { ...valid, hidden: 1 }]) {
+        send(parent, data);
+        expect(root.hasAttribute('data-vt-hide-content-scrollbars')).toBe(false);
+      }
+      send(parent, valid);
+      expect(root.hasAttribute('data-vt-hide-content-scrollbars')).toBe(true);
+      send(parent, { ...valid, hidden: false });
+      expect(root.hasAttribute('data-vt-hide-content-scrollbars')).toBe(false);
+    });
+
+    it(`${mode}: sends current CSS state on load/resize without replacing the document or session`, async () => {
+      installUrlSpies();
+      document.documentElement.style.scrollbarWidth = 'none';
+      const ref = createRef<ExperienceFrameHandle>();
+      const { container, unmount } = render(<ExperienceFrame
+        ref={ref} visualSource={VISUAL} sessionId="visibility-session" initialRevision={4}
+        onAction={() => {}} realtime={mode === 'realtime' ? { config: REALTIME_CONFIG } : undefined}
+      />);
+      await waitFor(() => expect(createdBlobs.length).toBe(1));
+      expect(await createdBlobs[0]!.text()).toContain('<html data-vt-hide-content-scrollbars>');
+      const iframe = container.querySelector('iframe')!;
+      const url = iframe.src;
+      const nonce = ref.current!.sessionNonce;
+      const messages: unknown[] = [];
+      // Element-local window boundary, leaving the real session bridge intact.
+      Object.defineProperty(iframe, 'contentWindow', { configurable: true, value: {
+        postMessage: (data: unknown) => messages.push(data),
+      } });
+      document.documentElement.style.scrollbarWidth = 'auto';
+      fireEvent.load(iframe);
+      expect(messages).toContainEqual({ type: 'vt:scrollbar-visibility', hidden: false });
+      document.documentElement.style.scrollbarWidth = 'none';
+      fireEvent(window, new Event('resize'));
+      expect(messages.at(-1)).toEqual({ type: 'vt:scrollbar-visibility', hidden: true });
+      document.documentElement.style.scrollbarWidth = 'auto';
+      fireEvent(window, new Event('resize'));
+      expect(messages.at(-1)).toEqual({ type: 'vt:scrollbar-visibility', hidden: false });
+      expect(iframe.src).toBe(url);
+      expect(container.querySelector('iframe')).toBe(iframe);
+      expect(ref.current!.sessionNonce).toBe(nonce);
+      expect(createdBlobs.length).toBe(1);
+      expect(revokedUrls.length).toBe(0);
+      unmount();
+      const count = messages.length;
+      fireEvent(window, new Event('resize'));
+      expect(messages.length).toBe(count);
+      expect(revokedUrls.length).toBe(1);
+    });
+  }
+});
 
 function roundtripDocConfig(doc: string): unknown {
   const open = '<script type="application/json" id="__vt_round_config">';

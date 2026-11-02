@@ -78,14 +78,16 @@ This vertical primitive does not replace the message navigation rail, CodeMirror
 The host stylesheet hides native chrome on non-textareas at widths up to 768px and on touch-first devices (`hover: none` with `pointer: coarse`), including the real RP/Co-Author navigation drawers, collapsed strips, sheets, modal lists, CodeMirror scrollers and horizontal markdown overflow; it never changes their overflow/touch-action behavior.
 The same media rule hides non-editor ScrollArea tracks from layout and pointer hit testing; `data-scroll-editor` identifies the existing native-editor composition, whose 3px thumb remains visible when overflowing.
 Viewport/input-capability changes update this policy through CSS, preserving mounted editor/list state; desktop 3px/8px tracks and the separate transcript navigation rail are unchanged.
-Opaque-origin experience documents do not inherit this host rule and require the separately queued iframe follow-up before application-wide mobile coverage can be claimed.
+Opaque-origin experience documents receive the host stylesheet's computed root scrollbar visibility through `ExperienceFrame`, initially in both generated documents and then through a parent-source/type/boolean-validated layout-only message on load, viewport resize and touch-first input changes.
+The frame's own width is never used to infer phone state; a narrow desktop mini-app retains desktop chrome, while host policy changes hide non-textarea body/list chrome without reloading the blob, restarting a round, changing the gameplay bridge/SDK or relaxing sandbox/CSP.
+Native gallery grids, the mobile media picker and the gallery lightbox follow the host rule directly; caption/description textareas keep their native chrome, and image zoom/pan remains separate from scrollbar handling.
 
 ## Chat Navigation Rail
 
 **Files:** `chat/scroll-rail.tsx`, `chat/scroll-rail-model.ts`, `chat/message-jump.ts`.
 
 `MessageScroller` mounts one `ChatScrollRail` for both RP and Co-Author and hides only the transcript's native scrollbar through `scrollbar-hide`.
-All other scrollbars retain the global themed 8px WebKit geometry; Firefox uses the standard thin/color fallback guarded by `@supports (-moz-appearance:none)`, including nested scroll regions and both opaque-origin experience iframe documents.
+On desktop, other native scrollbars retain the global themed 8px WebKit geometry; Firefox uses the standard thin/color fallback guarded by `@supports (-moz-appearance:none)`, including nested scroll regions and both opaque-origin experience iframe documents.
 RP and Co-Author character/chat lists, collapsed avatar strips, and RP build navigation use the shared `ScrollArea scrollbarSize="thin"` for true 3px custom chrome in Chromium and Firefox.
 Sidebar-owned portal lists opt in explicitly too: both chat flyouts and both build-character switcher variants use the same primitive, with Radix available-height bounds applied to the complete popup so header/search height is included.
 The expanded build-character switcher also caps its content-driven popup width at Radix's available viewport width, keeping the trigger-width minimum without letting long names place the popup offscreen.
