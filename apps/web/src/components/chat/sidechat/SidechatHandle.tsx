@@ -139,7 +139,7 @@ export function SidechatHandle(props: SidechatHandleProps) {
     );
   }
   return (
-    <div className="relative w-0 shrink-0" data-testid="sidechat-closed">
+    <div className="relative w-0 shrink-0" data-testid="sidechat-closed" data-sidechat-opener>
       <div className="absolute top-1/2 right-0 -translate-y-1/2">
         <EdgeButton label={label} onPress={onPress} look="capsule" side="right" caret="l" testId="sidechat-toggle" tooltipSide="left" />
       </div>

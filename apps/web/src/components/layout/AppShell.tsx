@@ -359,7 +359,7 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
   // chat reading area stays transparent so the gradient shows. Do NOT add
   // bg-bg here — it masks --page-bg (see docs/guides/adding-a-theme.md).
   return (
-    <div className="flex text-t1 font-ui" style={{ height: "100dvh", paddingBottom: "env(safe-area-inset-bottom, 0px)", overflow: "hidden" }}>
+    <div className="chat-shell flex text-t1 font-ui" style={{ height: "100dvh", paddingBottom: "env(safe-area-inset-bottom, 0px)", overflow: "hidden" }}>
       {/* Portals a fixed full-screen <canvas> to <body> behind all content.
           No-op (renders null) unless lavaActive. See LavaBackground.tsx. */}
       <LavaBackground active={lavaActive} messageWidth={tweaksSettings.messageWidth} />

@@ -1,0 +1,22 @@
+/* Presence follows ResizableSidePane's rendered closedView, including transitions.
+   Only the shell's own right-edge opener may inset its transcript. */
+.chat-shell:has(> [data-sidechat-opener]) > main {
+  --chat-rail-edge-inset: 28px;
+}
+
+.chat-rail-layout {
+  --chat-rail-lane-width: 36px;
+  --chat-rail-preview-gap: 2px;
+  --chat-rail-preview-clearance: calc(var(--chat-rail-edge-inset, 0px) + var(--chat-rail-lane-width) + var(--chat-rail-preview-gap) + 18px);
+}
+
+.chat-scroll-rail-desktop {
+  right: var(--chat-rail-edge-inset, 0px);
+  width: var(--chat-rail-lane-width);
+}
+
+.chat-rail-bottom-button {
+  /* 24px beyond the entire hit lane, not merely the quiet visible thread.
+     The 40px button's 1.1 hover scale consumes another 2px of that gap. */
+  right: calc(var(--chat-rail-edge-inset, 0px) + var(--chat-rail-lane-width) + 24px);
+}

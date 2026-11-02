@@ -6,6 +6,7 @@
 @import "./themes/mystic-dawn.css";
 @import "./themes/light-lava.css";
 @import "./themes/dark-lava.css";
+@import "./components/chat/chat-rail-layout.css";
 
 /* ─── Font faces ─── */
 @font-face {
