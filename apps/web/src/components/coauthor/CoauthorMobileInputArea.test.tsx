@@ -245,7 +245,10 @@ describe("CoauthorMobileInputArea draft growth (CNR-7e)", () => {
       expect(el).not.toBeNull();
       return el;
     });
-    expect(track.classList.contains("w-[3px]")).toBe(true);
+    // CNR-8b: thin chrome is keyed by the root variant + track wiring; the 3px
+    // geometry contract lives in styles.css (pinned in scroll-area.test.tsx).
+    expect(track.closest("[data-scroll-area]")!.getAttribute("data-scroll-area")).toBe("thin");
+    expect(track.getAttribute("data-orientation")).toBe("vertical");
     expect(textbox(view)).toBe(ta);
   });
 });

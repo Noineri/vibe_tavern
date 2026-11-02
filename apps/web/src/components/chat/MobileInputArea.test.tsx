@@ -231,7 +231,11 @@ describe("MobileInputArea draft growth (CNR-7e)", () => {
       expect(el).not.toBeNull();
       return el;
     });
-    expect(track.classList.contains("w-[3px]")).toBe(true);
+    // CNR-8b: the 3px is no longer a track class — the thin variant marker on
+    // the ScrollArea root plus the track wiring carry it (styles.css owns the
+    // geometry contract, pinned in scroll-area.test.tsx).
+    expect(track.closest("[data-scroll-area]")!.getAttribute("data-scroll-area")).toBe("thin");
+    expect(track.getAttribute("data-orientation")).toBe("vertical");
     expect(textbox(view)).toBe(ta);
   });
 });

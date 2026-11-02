@@ -24,6 +24,33 @@ describe("ScrollArea", () => {
     expect(textarea.hasAttribute("data-scroll-viewport")).toBe(true);
   });
 
+  it.each(["thin", "regular"] as const)("maps the %s geometry through the stylesheet custom-property contract", async (scrollbarSize) => {
+    const css = await Bun.file(`${import.meta.dir}/../../styles.css`).text();
+    // jsdom/happy-dom does not apply real CSS; pin the contract where it lives:
+    // the variant budgets (3/5/5px thin — minimal default lane, owner ruling
+    // 2026-11-02, static 8px regular) in styles.css, keyed off the root
+    // data-scroll-area variant the component renders.
+    if (scrollbarSize === "thin") {
+      expect(css).toContain('[data-scroll-area="thin"]');
+      expect(css).toContain("--vt-scrollbar-thumb: 3px;");
+      expect(css).toContain("--vt-scrollbar-thumb-hover: 5px;");
+      expect(css).toContain("--vt-scrollbar-lane: 5px;");
+    } else {
+      // `regular` is the default: the bare root selector carries the static 8px
+      // mapping, so unmigrated consumers keep today's exact appearance.
+      expect(css).toContain('[data-scroll-area="thin"]');
+      expect(css).toContain("--vt-scrollbar-thumb: 8px;");
+      expect(css).toContain("--vt-scrollbar-thumb-hover: 8px;");
+      expect(css).toContain("--vt-scrollbar-lane: 8px;");
+    }
+    expect(css).toContain('[data-scroll-track][data-orientation="vertical"] { width: var(--vt-scrollbar-lane); }');
+    expect(css).toContain('[data-scroll-track][data-orientation="horizontal"] { height: var(--vt-scrollbar-lane); }');
+    expect(css).toContain('@media (hover: hover)');
+    expect(css).toContain('[data-orientation="vertical"]:hover > [data-scroll-thumb] { width: var(--vt-scrollbar-thumb-hover); }');
+    expect(css).toContain('[data-orientation="horizontal"]:hover > [data-scroll-thumb] { height: var(--vt-scrollbar-thumb-hover); }');
+    expect(css).toContain('@media (prefers-reduced-motion: reduce)');
+  });
+
   it.each(["thin", "regular"] as const)("overrides intrinsic Content sizing with the vertical viewport width (%s)", async (scrollbarSize) => {
     const name = "LongUnbrokenCharacterName".repeat(20);
     const view = render(<ScrollArea scrollbarSize={scrollbarSize} style={{ width: 247 }} contentClassName="flex flex-col px-2">
@@ -82,10 +109,10 @@ describe("ScrollArea", () => {
     expect(content.contains(view.getByRole("button", { name: "Choose character" }))).toBe(true);
   });
 
-  it.each([["thin", "w-[3px]"], ["regular", "w-2"]] as const)("uses %s custom chrome on a native scroll viewport", async (scrollbarSize, widthClass) => {
+  it("mounts a vertical lane with the library orientation state on a native scroll viewport", async () => {
     const ref = createRef<HTMLDivElement>();
     const onScroll = mock();
-    const view = render(<ScrollArea scrollbarSize={scrollbarSize} viewportProps={{ ref, onScroll }}><p>Story list</p></ScrollArea>);
+    const view = render(<ScrollArea scrollbarSize="thin" viewportProps={{ ref, onScroll }}><p>Story list</p></ScrollArea>);
     const viewport = ref.current!;
     expect(viewport.hasAttribute("data-scroll-viewport")).toBe(true);
     Object.defineProperties(viewport, {
@@ -94,13 +121,86 @@ describe("ScrollArea", () => {
     });
     await act(async () => { viewport.scrollTop = 200; fireEvent.scroll(viewport); });
     await waitFor(() => expect(view.container.querySelector("[data-scroll-thumb]")).not.toBeNull());
-    const track = view.container.querySelector("[data-scroll-track]")!;
-    expect(track.classList.contains(widthClass)).toBe(true);
+    const root = view.container.querySelector<HTMLElement>("[data-scroll-area]")!;
+    const track = view.container.querySelector<HTMLElement>("[data-scroll-track]")!;
+    // Geometry lives in the stylesheet keyed off these hooks: the variant on the
+    // root, the orientation the installed library already mirrors per track.
+    expect(root.getAttribute("data-scroll-area")).toBe("thin");
+    expect(track.getAttribute("data-orientation")).toBe("vertical");
     expect(track.getAttribute("aria-hidden")).toBe("true");
+    expect(track.querySelector<HTMLElement>("[data-scroll-thumb]")!.classList.contains("ms-auto")).toBe(true);
     expect(viewport.tabIndex).toBe(0);
     expect(viewport.scrollTop).toBe(200);
     expect(onScroll).toHaveBeenCalled();
     expect(view.container.querySelector("[data-scroll-content]")!.textContent).toBe("Story list");
+  });
+
+  it("renders exactly two lanes and one corner over one biaxial scroller", async () => {
+    const view = render(<ScrollArea orientation="both" scrollbarSize="thin"><pre>{"wide\ncode".repeat(40)}</pre></ScrollArea>);
+    await act(async () => {});
+    const viewport = view.container.querySelector<HTMLElement>("[data-scroll-viewport]")!;
+    Object.defineProperties(viewport, {
+      clientHeight: { value: 100 }, scrollHeight: { value: 1000 },
+      clientWidth: { value: 200 }, scrollWidth: { value: 2000 },
+    });
+    await act(async () => { viewport.scrollTop = 100; viewport.scrollLeft = 100; fireEvent.scroll(viewport); });
+    await waitFor(() => expect(view.container.querySelectorAll("[data-scroll-track]")).toHaveLength(2));
+    const tracks = [...view.container.querySelectorAll<HTMLElement>("[data-scroll-track]")];
+    expect(tracks.map((track) => track.getAttribute("data-orientation")).sort()).toEqual(["horizontal", "vertical"]);
+    const corner = view.container.querySelector<HTMLElement>("[data-scroll-corner]")!;
+    expect(corner.getAttribute("aria-hidden")).toBe("true");
+    expect(corner.classList.contains("pointer-events-none")).toBe(true);
+    // One scroller: biaxial never clips an axis and keeps Base UI's inline
+    // fit-content Content so wide content really overflows the viewport.
+    expect(view.container.querySelectorAll("[data-scroll-viewport]")).toHaveLength(1);
+    expect(viewport.style.overflowX).toBe("");
+    expect(viewport.style.overflowY).toBe("");
+    const content = view.container.querySelector<HTMLElement>("[data-scroll-content]")!;
+    expect(content.style.width).toBe("");
+    expect(content.style.minWidth).toBe("fit-content");
+  });
+
+  it("renders a single horizontal lane that clips the vertical axis", async () => {
+    const view = render(<ScrollArea orientation="horizontal" scrollbarSize="thin"><div className="w-[2000px]">Row</div></ScrollArea>);
+    await act(async () => {});
+    const viewport = view.container.querySelector<HTMLElement>("[data-scroll-viewport]")!;
+    expect(viewport.style.overflowY).toBe("hidden");
+    expect(viewport.style.overflowX).toBe("");
+    Object.defineProperties(viewport, {
+      clientHeight: { value: 100 }, scrollHeight: { value: 100 },
+      clientWidth: { value: 200 }, scrollWidth: { value: 2000 },
+    });
+    await act(async () => { viewport.scrollLeft = 100; fireEvent.scroll(viewport); });
+    await waitFor(() => expect(view.container.querySelector('[data-scroll-track][data-orientation="horizontal"]')).not.toBeNull());
+    expect(view.container.querySelectorAll("[data-scroll-track]")).toHaveLength(1);
+    expect(view.container.querySelector("[data-scroll-corner]")).toBeNull();
+    expect(view.container.querySelector<HTMLElement>("[data-scroll-thumb]")!.classList.contains("mt-auto")).toBe(true);
+  });
+
+  it("holds the expanded-thumb drag latch from lane pointerdown until release", async () => {
+    const view = render(<ScrollArea scrollbarSize="thin"><p>Long story list</p></ScrollArea>);
+    await act(async () => {});
+    const viewport = view.container.querySelector<HTMLElement>("[data-scroll-viewport]")!;
+    Object.defineProperties(viewport, {
+      clientHeight: { value: 100 }, scrollHeight: { value: 1000 },
+      clientWidth: { value: 200 }, scrollWidth: { value: 200 },
+    });
+    await act(async () => { viewport.scrollTop = 200; fireEvent.scroll(viewport); });
+    await waitFor(() => expect(view.container.querySelector("[data-scroll-track]")).not.toBeNull());
+    const track = view.container.querySelector<HTMLElement>("[data-scroll-track]")!;
+    // Base UI 1.9.0 has no dragging state; data-dragging is the named
+    // approximation (see scroll-area.tsx) that CSS keys the 5px thumb on.
+    expect(track.hasAttribute("data-dragging")).toBe(false);
+    fireEvent.pointerDown(track, { button: 2, pointerId: 1 });
+    expect(track.hasAttribute("data-dragging")).toBe(false);
+    fireEvent.pointerDown(track, { button: 0, pointerId: 1 });
+    expect(track.hasAttribute("data-dragging")).toBe(true);
+    fireEvent.pointerCancel(track, { pointerId: 1 });
+    expect(track.hasAttribute("data-dragging")).toBe(false);
+    fireEvent.pointerDown(track, { button: 0, pointerId: 2 });
+    expect(track.hasAttribute("data-dragging")).toBe(true);
+    fireEvent.pointerUp(track, { pointerId: 2 });
+    expect(track.hasAttribute("data-dragging")).toBe(false);
   });
 
   it("has no scrollbar or keyboard stop without overflow and keeps children mounted on updates", async () => {

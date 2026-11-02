@@ -54,7 +54,7 @@
 | `textarea-helpers` | — | `textarea-helpers.ts` | Shared utilities for textarea behavior (not a component) |
 | `<DiceFaces>` | per-feature dice markup | `dice-faces.tsx` | Shared 2D SVG dice renderer + pure helpers |
 | `<ResizableSidePane>` | per-panel drag/resize code | `resizable-side-pane.tsx` | Resizable side column: persisted width, drag line, width glide open/close |
-| `<ScrollArea>` | Vertical native scrollbar chrome | `scroll-area.tsx` | Base UI native viewport with themed custom 3px (`thin`) or 8px (`regular`) scrollbar visuals in every browser |
+| `<ScrollArea>` | Custom-chrome scroll regions | `scroll-area.tsx` | Base UI native viewport with themed overlay chrome: 3px-at-rest thumbs (thin) expanding to 5px over an invisible wider grab lane, static 8px (regular), vertical/horizontal/biaxial via `orientation` |
 | `<ChatScrollRail>` / `<ScrollRail>` | Transcript native scrollbar | `chat/scroll-rail.tsx` | Shared RP/Co-Author story map: quiet thread, hover previews, desktop jumps/drag and mobile edge scrub |
 
 ---
@@ -62,22 +62,28 @@
 ## Scroll Area
 
 **File:** `scroll-area.tsx`.
-Wraps the installed Base UI Root/Viewport/Content/Scrollbar/Thumb; the viewport remains a native scroll container, with native scrollbar chrome hidden and horizontal overflow clipped.
+Wraps the installed Base UI Root/Viewport/Content/Scrollbar/Thumb/Corner; the viewport remains a native scroll container, with native scrollbar chrome hidden by Base UI itself and the cross axis clipped by the orientation.
+`orientation="vertical"` (the default) clips horizontal overflow; `orientation="horizontal"` clips vertical overflow; `orientation="both"` keeps one biaxial scroller and mounts exactly two lanes plus one inert (`pointer-events-none`, aria-hidden) Corner at their intersection.
 Vertical-list Content is explicitly viewport-wide (`width: 100%; min-width: 0` inline), overriding Base UI's inline `min-width: fit-content`; long names must truncate inside their list rather than expand headers, rows or portal contents beyond the clipped viewport.
-Keep that width contract in the shared primitive, not in per-row pixel widths or stacking overrides; it does not apply to the native-editor viewport branch, which has no Content wrapper.
-`scrollbarSize="thin"` draws a 3px vertical scrollbar; the default `regular` draws 8px, using `--border2` and a fully rounded thumb in Chromium and Firefox alike.
+Keep that width contract in the shared primitive, not in per-row pixel widths or stacking overrides; it does not apply to horizontal/biaxial regions (which keep Base UI's `fit-content` so wide content really overflows) or to the native-editor viewport branch, which has no Content wrapper.
+Wave-7 hover contract (CNR-8b, owner-approved): the track is an invisible absolutely positioned grab lane — the real pointer hit target — and the visible thumb hugs the lane's outer edge with a `--border2` fill and fully rounded ends in Chromium and Firefox alike.
+`scrollbarSize="thin"` rests at a 3px thumb expanding to 5px only while the pointer is inside the lane or a drag is held, over a minimal 5px lane (owner ruling 2026-11-02: the invisible overlay must not eat interactive content at list edges; 5px still exceeds the 3px thumb so the hit target never moves); the default `regular` keeps today's static 8px mapping (lane, rest and hover all 8px) so unmigrated consumers look exactly as before.
+All geometry budgets (`--vt-scrollbar-lane`, `--vt-scrollbar-thumb`, `--vt-scrollbar-thumb-hover`) live once in the `styles.css` custom-property layer keyed off the root `data-scroll-area` variant and the track `data-orientation`; themes override the variables, and migration units may widen `--vt-scrollbar-lane` per surface where the scroll edge has no interactive content, never per-screen CSS.
+Expansion is paint-only: only the thumb's cross-axis size changes inside the overlay lane, so the viewport's `clientWidth`/`clientHeight` never change on hover or drag and no content reflows, wraps or shifts.
+Hover expansion is gated behind `@media (hover: hover)` so touch devices never keep a sticky 5px thumb after a tap, and `prefers-reduced-motion` disables the 120ms cross-axis transition (only the cross axis transitions — Base UI's inline scroll-length sizing is never smoothed).
+The installed Base UI 1.9.0 exposes no dragging state (its drag latch lives in refs, and `data-scrolling` is a 500ms scroll debounce that drops while a held drag merely pauses), so the component mirrors the library's own drag lifecycle — primary pointerdown on the lane through pointerup/cancel/lost-capture — as `data-dragging` on the track, which the stylesheet keys the held 5px thumb on.
 `className`/`style` size the root (including flex or max-height constraints); `contentClassName` carries row layout, gaps and padding; `viewportProps` forwards the ref, accessible name, scroll events and viewport-local classes to the actual scroller.
 Use `render={<section />}` when the existing semantic root must remain a section.
 Base UI owns measurement, conditional scrollbar mounting, thumb dragging and native keyboard/wheel/touch interaction; non-overflowing viewports stay out of tab order.
-`viewportRender` composes a native editor element as the viewport without a Content wrapper; native inputs remain focusable even without overflow and keep their own focus chrome.
+`viewportRender` composes a native editor element as the vertical viewport without a Content wrapper (it implies `orientation="vertical"`); native inputs remain focusable even without overflow and keep their own focus chrome.
 After editor renders, a programmatic scroll notification refreshes Base UI's measurements when a capped textarea's value changes scrollHeight without resizing its box; no scroll position is assigned and the editor is not remounted.
 `AutoTextarea scrollbarSize="thin"` uses this composition for the desktop RP/Co-Author composers, retaining autosizing, native selection/caret scrolling, register refs and macro autocomplete.
 Both agent-shell composers (`AgentInputArea` and `AgentMobileInputArea`, including Experience Copilot) use the same `AutoTextarea scrollbarSize="thin"` opt-in, preserving their 3–12 / 1–6 row autosizing, controlled prefills, mentions, attachments and desktop Enter-to-send / mobile button-only send behavior; agent message/profile form fields do not opt in.
 The mobile RP/Co-Author composers (hand-rolled px-capped `<textarea>`, no autosize lib) compose the same way directly — `ScrollArea scrollbarSize="thin" viewportRender={<textarea …/>}` with the root taking the input row's `flex-1` — keeping their imperative 40vh growth cap, native refs, attachment/send controls and touch input.
-This vertical primitive does not replace the message navigation rail, CodeMirror, or sandboxed iframe documents.
+The primitive does not replace the message navigation rail, CodeMirror, or sandboxed iframe documents (their integrations are later Wave-7 migration units).
 The host stylesheet hides native chrome on non-textareas at widths up to 768px and on touch-first devices (`hover: none` with `pointer: coarse`), including the real RP/Co-Author navigation drawers, collapsed strips, sheets, modal lists, CodeMirror scrollers and horizontal markdown overflow; it never changes their overflow/touch-action behavior.
-The same media rule hides non-editor ScrollArea tracks from layout and pointer hit testing; `data-scroll-editor` identifies the existing native-editor composition, whose 3px thumb remains visible when overflowing.
-Viewport/input-capability changes update this policy through CSS, preserving mounted editor/list state; desktop 3px/8px tracks and the separate transcript navigation rail are unchanged.
+The same media rule hides non-editor ScrollArea lanes and corners from layout and pointer hit testing; `data-scroll-editor` identifies the existing native-editor composition, whose 3px thumb remains visible when overflowing.
+Viewport/input-capability changes update this policy through CSS, preserving mounted editor/list state; desktop lanes and the separate transcript navigation rail are unchanged.
 Opaque-origin experience documents receive the host stylesheet's computed root scrollbar visibility through `ExperienceFrame`, initially in both generated documents and then through a parent-source/type/boolean-validated layout-only message on load, viewport resize and touch-first input changes.
 The frame's own width is never used to infer phone state; a narrow desktop mini-app retains desktop chrome, while host policy changes hide non-textarea body/list chrome without reloading the blob, restarting a round, changing the gameplay bridge/SDK or relaxing sandbox/CSP.
 Native gallery grids, the mobile media picker and the gallery lightbox follow the host rule directly; caption/description textareas keep their native chrome, and image zoom/pan remains separate from scrollbar handling.

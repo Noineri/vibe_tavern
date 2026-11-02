@@ -606,6 +606,60 @@ select option{padding:2px 6px}
   display: none;
 }
 
+/* ── Shared ScrollArea hover contract (CNR-8b) ──
+   Owner-approved visual system for every custom-chrome surface: the track is
+   an invisible absolutely positioned grab lane wider than the resting thumb
+   (probe B: elementFromPoint at lane center resolves to the lane), and the
+   thumb rests at 3px (`thin`) expanding to 5px only while the pointer is
+   inside the lane or a drag is held. Because the lane is a pure overlay and
+   only the thumb's cross-axis size changes, expansion is paint-only — the
+   viewport's clientWidth/clientHeight never change and no content reflows.
+   `regular` maps every budget to today's static 8px so unmigrated consumers
+   keep their exact appearance; themes may override any budget. */
+[data-scroll-area] {
+  --vt-scrollbar-lane: 8px;
+  --vt-scrollbar-thumb: 8px;
+  --vt-scrollbar-thumb-hover: 8px;
+}
+[data-scroll-area="thin"] {
+  /* Owner ruling 2026-11-02: the default lane is minimal (5px) — the lane is an
+     invisible overlay that intercepts pointer events over content at the scroll
+     edge, and wider defaults eat interactive content (right-aligned row
+     buttons). 5px > the 3px resting thumb, so the hit target still exceeds the
+     visible strip and never moves under the pointer; migration units may widen
+     this per surface via --vt-scrollbar-lane where the edge has no interactive
+     content. */
+  --vt-scrollbar-lane: 5px;
+  --vt-scrollbar-thumb: 3px;
+  --vt-scrollbar-thumb-hover: 5px;
+}
+/* The lane, not the 3px strip, is the real hit target; it must stay the same
+   width across hover/drag so the target never moves under the pointer. */
+[data-scroll-track][data-orientation="vertical"] { width: var(--vt-scrollbar-lane); }
+[data-scroll-track][data-orientation="horizontal"] { height: var(--vt-scrollbar-lane); }
+/* Thumb cross-size hugs the lane's outer edge (ms/mt auto), so expansion grows
+   toward the content and the resting 3px visual is unchanged from CNR-7. */
+[data-scroll-track][data-orientation="vertical"] > [data-scroll-thumb] { width: var(--vt-scrollbar-thumb); }
+[data-scroll-track][data-orientation="horizontal"] > [data-scroll-thumb] { height: var(--vt-scrollbar-thumb); }
+/* Only the cross axis transitions — the scroll-length axis stays under Base
+   UI's inline sizing so overscroll/per-frame feedback is never smoothed. */
+[data-scroll-track][data-orientation="vertical"] > [data-scroll-thumb] { transition: width 120ms ease-out; }
+[data-scroll-track][data-orientation="horizontal"] > [data-scroll-thumb] { transition: height 120ms ease-out; }
+/* Hover drives real pointers only: touch devices never get a sticky simulated
+   :hover that would leave a 5px thumb after a tap (Wave 7 rule 10). */
+@media (hover: hover) {
+  [data-scroll-track][data-orientation="vertical"]:hover > [data-scroll-thumb] { width: var(--vt-scrollbar-thumb-hover); }
+  [data-scroll-track][data-orientation="horizontal"]:hover > [data-scroll-thumb] { height: var(--vt-scrollbar-thumb-hover); }
+}
+/* Base UI 1.9.0 has no dragging state (see scroll-area.tsx), so the component
+   mirrors its drag lifecycle as data-dragging: the expanded thumb holds
+   through the drag until release even if the pointer leaves the lane. */
+[data-scroll-track][data-orientation="vertical"][data-dragging] > [data-scroll-thumb] { width: var(--vt-scrollbar-thumb-hover); }
+[data-scroll-track][data-orientation="horizontal"][data-dragging] > [data-scroll-thumb] { height: var(--vt-scrollbar-thumb-hover); }
+@media (prefers-reduced-motion: reduce) {
+  [data-scroll-track] > [data-scroll-thumb] { transition: none; }
+}
+
 /* Phone-sized viewports and touch-first tablets: hide chrome, not scrolling.
    Native textareas keep their scrollbar; composer ScrollArea editors keep the
    custom thumb instead. Hiding only native chrome cannot hide a DOM track.
@@ -613,7 +667,8 @@ select option{padding:2px 6px}
 @media (max-width: 768px), (hover: none) and (pointer: coarse) {
   :where(:not(textarea)) { scrollbar-width: none; }
   :not(textarea)::-webkit-scrollbar { display: none; }
-  [data-scroll-area]:not([data-scroll-editor]) > [data-scroll-track] {
+  [data-scroll-area]:not([data-scroll-editor]) > [data-scroll-track],
+  [data-scroll-area]:not([data-scroll-editor]) > [data-scroll-corner] {
     display: none;
     pointer-events: none;
   }

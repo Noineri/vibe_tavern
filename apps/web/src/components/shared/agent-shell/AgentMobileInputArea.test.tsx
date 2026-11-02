@@ -226,7 +226,11 @@ describe("ExperienceCopilotMobileInputArea — pinned context (CX-6)", () => {
     contentHeight = 1600;
     await act(async () => view.rerender(withIsolatedI18n(<AgentMobileInputArea {...view.props} prefill={{ text: draft }} />)));
     await waitFor(() => expect(area.querySelector("[data-scroll-thumb]")).not.toBeNull());
-    expect(area.querySelector("[data-scroll-track]")!.classList.contains("w-[3px]")).toBe(true);
+    // CNR-8b: thin chrome is keyed by the root variant + track wiring; the 3px
+    // geometry contract lives in styles.css (pinned in scroll-area.test.tsx).
+    const track = area.querySelector("[data-scroll-track]")!;
+    expect(track.getAttribute("data-orientation")).toBe("vertical");
+    expect(track.closest("[data-scroll-area]")!.getAttribute("data-scroll-area")).toBe("thin");
     expect(view.getByTestId("copilot-chat-input")).toBe(textarea);
     expect(textarea.value).toBe(draft);
     await act(async () => {
