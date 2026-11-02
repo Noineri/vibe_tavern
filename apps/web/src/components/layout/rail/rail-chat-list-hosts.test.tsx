@@ -21,7 +21,7 @@
  */
 import { beforeEach, describe, expect, it, mock } from "bun:test";
 import { forwardRef, type ReactNode } from "react";
-import { brandId, type ChatId, type CharacterId } from "@vibe-tavern/domain";
+import { brandId, normalizeAutoSummaryConfig, normalizeInsightsConfig, normalizeObjectiveState, type ChatBranchId, type ChatId, type CharacterId } from "@vibe-tavern/domain";
 import type { AppCharacterEntry, ChatListItem } from "../../../api/types.js";
 import type { CharacterImportMobileHandle } from "../../modals/import/CharacterImportMobile.js";
 import type { ChatImportMobileHandle } from "../../modals/import/ChatImportMobile.js";
@@ -98,6 +98,7 @@ mock.module("../../modals/import/ChatImportMobile.js", () => ({
 }));
 
 const { Rail } = await import("../Rail.js");
+const { CoauthorRail } = await import("../../coauthor/CoauthorRail.js");
 const { useBootstrapStore } = await import("../../../stores/api-actions/bootstrap-actions.js");
 const { useChatStore, useModalStore, useNavigationStore } = await import("../../../stores/index.js");
 const { useCharacterStore } = await import("../../../stores/character-store.js");
@@ -280,5 +281,55 @@ describe("Rail chat list — sizing per host", () => {
 		const view = openRail();
 		const sheet = openTabletSheet(view, "Aria");
 		expect(chatList(sheet, "Moonlit Harbor").className).toBe("max-h-[55vh] overflow-y-auto pb-3");
+	});
+});
+
+describe("Mobile scrollbar policy — real RP and Co-Author hosts", () => {
+	it.each([["RP", Rail], ["Co-Author", CoauthorRail]] as const)("%s retains native drawer/strip/sheet scrolling and filtering under the global non-editor rule", async (mode, Component) => {
+		if (mode === "Co-Author") {
+			const chats = CHATS.map((chat) => ({ ...chat, mode: "coauthor" as const }));
+			useSnapshotStore.setState({
+				chatsById: Object.fromEntries(chats.map((chat) => [chat.id, chat])),
+				activeChat: {
+					id: CHAT_A1, characterId: brandId<CharacterId>(ARIA), personaId: null,
+					title: "Moonlit Harbor", status: "active", mode: "coauthor", activeBranchId: brandId<ChatBranchId>("branch-a1"),
+					promptPresetId: null, selectedGreetingIndex: 0, coauthorContextLinks: [],
+					coauthorModuleId: null, dynamicPrompt: "", createdAt: "", updatedAt: "",
+					summary: "", messageHistoryLimit: 0,
+					autoSummaryConfig: normalizeAutoSummaryConfig(undefined),
+					insightsConfig: normalizeInsightsConfig(undefined),
+					insightsObjectiveState: normalizeObjectiveState(undefined),
+				},
+			});
+		}
+		const view = render(<Component />);
+		await act(async () => { useNavigationStore.setState({ railForceOpen: 1 }); });
+		const popup = drawer(view);
+		const list = characterRow(view, "Aria").closest<HTMLElement>(".overflow-y-auto")!;
+		expect(list).not.toBeNull();
+		// These hosts are native, not ScrollArea: the GLOBAL non-textarea rule must reach them.
+		for (const scroller of [list, view.container.querySelector(".overflow-y-scroll")!]) {
+			expect(scroller.matches(":not(textarea)")).toBe(true);
+			expect(scroller.closest("[data-scroll-area]")).toBeNull();
+		}
+		const css = await Bun.file(`${import.meta.dir}/../../../styles.css`).text();
+		expect(css).toContain(":where(:not(textarea)) { scrollbar-width: none; }");
+		await act(async () => { fireEvent.click(characterRow(view, "Aria")); });
+		const chats = chatList(popup, "Moonlit Harbor");
+		expect(chats.matches(":not(textarea)")).toBe(true);
+		await act(async () => { chats.scrollTop = 120; fireEvent.scroll(chats); });
+		expect(chats.scrollTop).toBe(120);
+		const search = popup.querySelector<HTMLInputElement>('input[placeholder="chat_search_placeholder"]')!;
+		await act(async () => { fireEvent.change(search, { target: { value: "Winter" } }); });
+		expect(chatTitles(popup)).toEqual(["Winter Market"]);
+		await act(async () => { fireEvent.change(search, { target: { value: "" } }); });
+		expect(chatTitles(popup).sort()).toEqual(["Moonlit Harbor", "Winter Market"]);
+		await act(async () => { fireEvent.keyDown(popup, { key: "Escape", code: "Escape" }); });
+		const avatar = view.container.querySelector<HTMLElement>('div[title="Aria"]')!;
+		await act(async () => { fireEvent.click(avatar); });
+		const sheet = view.baseElement.querySelector<HTMLElement>(".bs-popup")!;
+		const sheetList = chatList(sheet, "Moonlit Harbor");
+		expect(sheetList.matches(":not(textarea)")).toBe(true);
+		expect(chatTitles(sheet).sort()).toEqual(["Moonlit Harbor", "Winter Market"]);
 	});
 });

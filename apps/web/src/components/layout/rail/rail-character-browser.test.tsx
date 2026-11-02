@@ -769,6 +769,21 @@ describe("Rail drawer — «N chats · when» on the character rows", () => {
 });
 
 describe("Rail drawer — build mode keeps the build-panel list", () => {
+	it("keeps the build drawer on the same global native non-editor policy as the character browser", async () => {
+		useNavigationStore.setState({ mode: "build" });
+		const view = render(<Rail />);
+		await act(async () => { openDrawer(); });
+		const list = drawer(view).querySelector<HTMLElement>(".overflow-y-scroll")!;
+		expect(list).not.toBeNull();
+		expect(list.matches(":not(textarea)")).toBe(true);
+		expect(list.closest("[data-scroll-area]")).toBeNull();
+		const css = await Bun.file(`${import.meta.dir}/../../../styles.css`).text();
+		expect(css).toContain(":where(:not(textarea)) { scrollbar-width: none; }");
+		await act(async () => { list.scrollTop = 100; fireEvent.scroll(list); });
+		expect(list.scrollTop).toBe(100);
+		expect(screenTitle(view)).toBe("editor");
+	});
+
 	it("shows the editor header and no character browser", () => {
 		seedStores();
 		useNavigationStore.setState({ mode: "build" });

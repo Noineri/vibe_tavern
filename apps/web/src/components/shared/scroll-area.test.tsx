@@ -7,6 +7,23 @@ const { act, fireEvent, render, waitFor } = await import("@testing-library/react
 const { ScrollArea } = await import("./scroll-area.js");
 
 describe("ScrollArea", () => {
+  it("declares mobile content-track hiding separately from native chrome and preserves editor tracks", async () => {
+    const css = await Bun.file(`${import.meta.dir}/../../styles.css`).text();
+    expect(css).toContain("@media (max-width: 768px), (hover: none) and (pointer: coarse)");
+    expect(css).toContain(":where(:not(textarea)) { scrollbar-width: none; }");
+    expect(css).toContain(":not(textarea)::-webkit-scrollbar { display: none; }");
+    expect(css).toContain("[data-scroll-area]:not([data-scroll-editor]) > [data-scroll-track]");
+    const view = render(<>
+      <ScrollArea viewportProps={{ "aria-label": "List" }}>Characters</ScrollArea>
+      <ScrollArea scrollbarSize="thin" viewportRender={<textarea aria-label="Draft" readOnly value="Keep this draft" />} />
+    </>);
+    await act(async () => {});
+    expect(view.getByLabelText("List").closest("[data-scroll-area]")!.hasAttribute("data-scroll-editor")).toBe(false);
+    const textarea = view.getByRole("textbox");
+    expect(textarea.closest("[data-scroll-area]")!.hasAttribute("data-scroll-editor")).toBe(true);
+    expect(textarea.hasAttribute("data-scroll-viewport")).toBe(true);
+  });
+
   it.each(["thin", "regular"] as const)("overrides intrinsic Content sizing with the vertical viewport width (%s)", async (scrollbarSize) => {
     const name = "LongUnbrokenCharacterName".repeat(20);
     const view = render(<ScrollArea scrollbarSize={scrollbarSize} style={{ width: 247 }} contentClassName="flex flex-col px-2">

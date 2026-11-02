@@ -75,6 +75,10 @@ After editor renders, a programmatic scroll notification refreshes Base UI's mea
 Both agent-shell composers (`AgentInputArea` and `AgentMobileInputArea`, including Experience Copilot) use the same `AutoTextarea scrollbarSize="thin"` opt-in, preserving their 3–12 / 1–6 row autosizing, controlled prefills, mentions, attachments and desktop Enter-to-send / mobile button-only send behavior; agent message/profile form fields do not opt in.
 The mobile RP/Co-Author composers (hand-rolled px-capped `<textarea>`, no autosize lib) compose the same way directly — `ScrollArea scrollbarSize="thin" viewportRender={<textarea …/>}` with the root taking the input row's `flex-1` — keeping their imperative 40vh growth cap, native refs, attachment/send controls and touch input.
 This vertical primitive does not replace the message navigation rail, CodeMirror, or sandboxed iframe documents.
+The host stylesheet hides native chrome on non-textareas at widths up to 768px and on touch-first devices (`hover: none` with `pointer: coarse`), including the real RP/Co-Author navigation drawers, collapsed strips, sheets, modal lists, CodeMirror scrollers and horizontal markdown overflow; it never changes their overflow/touch-action behavior.
+The same media rule hides non-editor ScrollArea tracks from layout and pointer hit testing; `data-scroll-editor` identifies the existing native-editor composition, whose 3px thumb remains visible when overflowing.
+Viewport/input-capability changes update this policy through CSS, preserving mounted editor/list state; desktop 3px/8px tracks and the separate transcript navigation rail are unchanged.
+Opaque-origin experience documents do not inherit this host rule and require the separately queued iframe follow-up before application-wide mobile coverage can be claimed.
 
 ## Chat Navigation Rail
 

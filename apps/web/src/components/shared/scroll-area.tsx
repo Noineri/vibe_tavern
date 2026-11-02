@@ -27,7 +27,7 @@ export function ScrollArea({ children, className, scrollbarSize = "regular", vie
     if (viewportRender) viewportRef.current?.dispatchEvent(new Event("scroll"));
   }, [viewportRender]);
   return (
-    <BaseScrollArea.Root {...props} data-scroll-area={scrollbarSize} className={cn("flex min-h-0 min-w-0 flex-col overflow-hidden", className)}>
+    <BaseScrollArea.Root {...props} data-scroll-area={scrollbarSize} data-scroll-editor={viewportRender ? "" : undefined} className={cn("flex min-h-0 min-w-0 flex-col overflow-hidden", className)}>
       <BaseScrollArea.Viewport {...viewportAttrs} ref={viewportRef} render={viewportRender} data-scroll-viewport
         {...(viewportRender ? { tabIndex: viewportAttrs.tabIndex ?? 0 } : {})}
         className={cn("isolate min-h-0 min-w-0 flex-auto scrollbar-hide outline-none", !viewportRender && "focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-accent", viewportClassName)}
