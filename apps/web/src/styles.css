@@ -253,7 +253,10 @@ html,body{height:100%;background:var(--page-bg, var(--bg));color:var(--t1);overf
 .md-del{text-decoration:line-through;color:var(--t3)}
 
 /* ── Links ── */
-.md-link{color:var(--accent-t);text-decoration:underline;text-underline-offset:2px;text-decoration-color:color-mix(in srgb, var(--accent-t) 40%, transparent);transition:text-decoration-color .15s,color .15s}
+/* Long URLs wrap anywhere so a link never pushes its paragraph (and the host) wider
+   than the viewport; `anywhere` (not break-word) counts the break opportunities
+   toward min-content sizing, so the paragraph itself stops growing (owner fix). */
+.md-link{color:var(--accent-t);text-decoration:underline;text-underline-offset:2px;text-decoration-color:color-mix(in srgb, var(--accent-t) 40%, transparent);transition:text-decoration-color .15s,color .15s;overflow-wrap:anywhere}
 .md-link:hover{color:var(--accent);text-decoration-color:var(--accent)}
 
 /* ── Task-list checkboxes ── */

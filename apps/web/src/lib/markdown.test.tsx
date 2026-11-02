@@ -590,3 +590,26 @@ describe("Markdown — chat/plain variants never do math (byte-identical pipelin
     expect(container.textContent).toContain("$x$");
   });
 });
+
+// Long link URLs wrap inside their paragraph (owner report, phone: links did
+// not wrap and created horizontal scroll). happy-dom applies no stylesheet, so
+// the wrapping contract is pinned where it lives — the `.md-link` rule in
+// styles.css, the same CSS-contract pin pattern as scroll-area.test.tsx.
+describe("Markdown — long link URLs wrap inside their paragraph", () => {
+  it("renders anchors with the md-link class (the rule the contract pins)", () => {
+    const { container } = render(<Markdown text="[docs](https://example.com/a/very/long/url)" />);
+    const anchor = container.querySelector("a");
+    expect(anchor?.classList.contains("md-link")).toBe(true);
+  });
+
+  it("pins overflow-wrap:anywhere on the .md-link rule in styles.css", async () => {
+    const css = await Bun.file(`${import.meta.dir}/../styles.css`).text();
+    // `anywhere` (not break-word): only `anywhere` counts break opportunities
+    // toward min-content sizing, so a long unbroken URL stops pushing the
+    // paragraph (and its host) wider than the viewport.
+    const start = css.indexOf(".md-link{");
+    expect(start).toBeGreaterThanOrEqual(0);
+    const rule = css.slice(start, css.indexOf("}", start));
+    expect(rule).toContain("overflow-wrap:anywhere");
+  });
+});
