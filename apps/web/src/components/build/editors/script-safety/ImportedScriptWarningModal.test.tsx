@@ -186,4 +186,16 @@ describe("ImportedScriptWarningModal", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(updateScriptSafetySettings).not.toHaveBeenCalled();
   });
+
+  it("scrolls the body on the shared thin ScrollArea lane while the footer stays docked outside (CNR-8g)", () => {
+    const view = render(<ImportedScriptWarningModal intent="enable" onConfirm={() => {}} onCancel={() => {}} />);
+    const lane = view.baseElement.querySelector('[data-scroll-area="thin"]');
+    expect(lane).toBeTruthy();
+    // The warning text + suppress toggle ride INSIDE the lane's viewport.
+    const viewport = lane!.querySelector("[data-scroll-viewport]");
+    expect(viewport?.textContent).toContain("script_safety_warning_suppress");
+    // The footer pair stays docked OUTSIDE the scroller.
+    expect(view.getByText("cancel").closest("[data-scroll-area]")).toBeNull();
+    expect(view.getByText("script_safety_warning_confirm_enable").closest("[data-scroll-area]")).toBeNull();
+  });
 });

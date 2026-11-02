@@ -3,6 +3,7 @@ import { useT } from "../../../../i18n/context.js";
 import { cn } from "../../../../lib/cn.js";
 import { modalPanelCls } from "../../../shared/modal-helpers.js";
 import { Modal } from "../../../shared/Modal.js";
+import { ScrollArea } from "../../../shared/scroll-area.js";
 import { blockingFindings } from "../../../../lib/script-execution-guard.js";
 import type { ScriptSafetyWarningIntent } from "../../../../lib/script-execution-guard.js";
 import { scriptSafetyRuleI18nKey } from "../../../../lib/script-safety-lint.js";
@@ -85,8 +86,11 @@ export function FindingsWarningModal({
           </div>
         </div>
 
-        {/* Body — findings list + the honest warning text when it applies */}
-        <div className="flex-1 overflow-y-auto px-5 py-3.5">
+        {/* Body — findings list + the honest warning text when it applies.
+            CNR-8g: rides the shared thin ScrollArea lane; the panel's max-h
+            cap (desktop) / fullscreen branch (mobile) stays outside the
+            scroller and the footer stays docked below it, exactly as before. */}
+        <ScrollArea scrollbarSize="thin" className="flex-1" contentClassName="px-5 py-3.5">
           {showHonestWarning && (
             <p className="mb-3 rounded-md border border-warning/40 bg-warning-dim px-3 py-2 font-ui text-[calc(var(--ui-fs)-2px)] leading-relaxed text-warning-text">
               {t("script_safety_warning_body")}
@@ -115,7 +119,7 @@ export function FindingsWarningModal({
               </li>
             ))}
           </ul>
-        </div>
+        </ScrollArea>
 
         {/* Footer — Show in code / Cancel / Confirm-anyway (canon pair +
             the outline sibling; flex-wrap so RU never truncates — AD-022). */}

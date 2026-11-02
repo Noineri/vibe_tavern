@@ -46,4 +46,22 @@ describe("AvatarCropModal zoom", () => {
 		fireEvent.change(zoom, { target: { value: "1.75" } });
 		expect(getByTestId("crop-preview").getAttribute("data-zoom")).toBe("1.75");
 	});
+
+	describe("modal-body scroll wiring (CNR-8g)", () => {
+		it("scrolls the body on the shared thin ScrollArea lane; the pan/zoom crop box is not a scroll region", () => {
+			const view = render(
+				<AvatarCropModal imageUrl="blob:avatar" onConfirm={() => {}} onCancel={() => {}} />,
+			);
+			// The modal BODY (cropper + zoom slider) rides the one thin lane.
+			const lane = view.baseElement.querySelector('[data-scroll-area="thin"]');
+			expect(lane).toBeTruthy();
+			expect(lane!.contains(view.getByTestId("crop-preview"))).toBe(true);
+			expect(lane!.contains(view.getByRole("slider"))).toBe(true);
+			// Exactly one scroll area: react-easy-crop's fixed 320×320 pan/zoom
+			// box owns pointer-drag panning and never becomes a ScrollArea.
+			expect(view.baseElement.querySelectorAll("[data-scroll-area]")).toHaveLength(1);
+			// The footer pair stays docked outside the scroller.
+			expect(view.getByText("save").closest("[data-scroll-area]")).toBeNull();
+		});
+	});
 });

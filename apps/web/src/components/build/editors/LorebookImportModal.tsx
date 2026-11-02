@@ -14,6 +14,7 @@ import { useKeyDown } from "../../../hooks/use-key-down.js";
 import { Ic } from "../../shared/icons.js";
 import { SegmentedControl } from "../../shared/SegmentedControl.js";
 import { Dropzone } from "../../shared/dropzone.js";
+import { ScrollArea } from "../../shared/scroll-area.js";
 import { cn } from "../../../lib/cn.js";
 import type { TFunc } from "../../../i18n/locale-helpers.js";
 import { importLorebookEntries } from "../../../api/lorebook-api.js";
@@ -219,7 +220,12 @@ export function LorebookImportModal({
         </div>
 
         {/* ── Content ── */}
-        <div className="flex-1 overflow-y-auto" style={{ padding: 20 }}>
+        {/* CNR-8g: the wizard body scrolls on the shared thin ScrollArea lane
+            (3px rest / 5px hover) instead of the native fallback; the shell's
+            80vh cap stays on THIS panel (outside the scroller) so shell sizing
+            is unchanged, and the 20px body padding rides the content element so
+            it scrolls with the steps exactly as before (the 8c–8f rule). */}
+        <ScrollArea scrollbarSize="thin" className="flex-1" contentClassName="p-5">
           {/* Step progress bar */}
           <div className="mb-5 flex gap-2">
             {[1, 2, 3].map((s) => (
@@ -399,7 +405,7 @@ export function LorebookImportModal({
               )}
             </>
           )}
-        </div>
+        </ScrollArea>
       </div>
     </div>
   );

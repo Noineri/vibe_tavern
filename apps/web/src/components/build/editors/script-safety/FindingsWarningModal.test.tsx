@@ -161,4 +161,25 @@ describe("FindingsWarningModal", () => {
     fireEvent.click(view.getByText("cancel"));
     expect(onCancel).toHaveBeenCalledTimes(1);
   });
+
+  it("scrolls the findings list on the shared thin ScrollArea lane while the footer stays docked outside (CNR-8g)", () => {
+    const view = render(
+      <FindingsWarningModal
+        findings={FINDINGS}
+        showHonestWarning
+        intent="enable"
+        onShowInCode={() => {}}
+        onConfirm={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+    const lane = view.baseElement.querySelector('[data-scroll-area="thin"]');
+    expect(lane).toBeTruthy();
+    // Finding rows ride INSIDE the lane's viewport (the modal body).
+    const viewport = lane!.querySelector("[data-scroll-viewport]");
+    expect(viewport?.textContent).toContain("script_safety_rule_unsafe_eval");
+    // The three-button footer stays docked OUTSIDE the scroller.
+    expect(view.getByText("cancel").closest("[data-scroll-area]")).toBeNull();
+    expect(view.getByText("script_safety_findings_show_in_code").closest("[data-scroll-area]")).toBeNull();
+  });
 });

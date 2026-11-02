@@ -6,6 +6,7 @@ import { modalPanelCls } from "./modal-helpers.js";
 import { cn } from "../../lib/cn.js";
 import { useT } from "../../i18n/context.js";
 import { Slider } from "./slider.js";
+import { ScrollArea } from "./scroll-area.js";
 
 export interface AvatarCropResult {
   /** Cropped square image as a File (512×512 PNG) */
@@ -144,8 +145,13 @@ export function AvatarCropModal({
           </div>
         </div>
 
-        {/* Body — crop area */}
-        <div className="flex-1 overflow-y-auto p-5">
+        {/* Body — crop area. CNR-8g: the modal BODY (cropper + zoom slider)
+            scrolls on the shared thin ScrollArea lane; the pan/zoom interaction
+            itself is NOT a scroll region — react-easy-crop owns pointer-drag
+            panning inside its fixed 320×320 overflow-hidden box, which stays
+            untouched below. The panel's max-h cap stays outside the scroller;
+            the footer stays docked below it, exactly as before. */}
+        <ScrollArea scrollbarSize="thin" className="flex-1" contentClassName="p-5">
           <div className="flex flex-col items-center gap-4">
             <div
               className="relative rounded-lg overflow-hidden bg-s2"
@@ -193,7 +199,7 @@ export function AvatarCropModal({
               </svg>
             </div>
           </div>
-        </div>
+        </ScrollArea>
 
         {/* Footer */}
         <div className="flex items-center gap-2.5 border-t border-border px-5 py-[14px] shrink-0">

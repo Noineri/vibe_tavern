@@ -124,6 +124,21 @@ async function importNewFile(
   await view.findByText("import_btn"); // run is async; settle before asserting
 }
 
+describe("LorebookImportModal — modal-body scroll wiring (CNR-8g)", () => {
+  it("modal body scrolls on the shared thin ScrollArea lane; the 80vh cap stays on the panel outside it", () => {
+    const { view } = renderModal();
+    const lane = view.baseElement.querySelector('[data-scroll-area="thin"]');
+    expect(lane).toBeTruthy();
+    // Step-1 content rides INSIDE the lane's viewport (the wizard body).
+    const viewport = lane!.querySelector("[data-scroll-viewport]");
+    expect(viewport?.textContent).toContain("import_step1_title");
+    // The height cap stays on the outer panel (the scroller's parent), so
+    // shell sizing is unchanged.
+    const panel = lane!.parentElement as HTMLElement;
+    expect(panel.style.maxHeight).toBe("80vh");
+  });
+});
+
 describe("LorebookImportModal — disabled-on-arrival (L1e)", () => {
   it("mode:new sends enabled:false and keeps the surface scope + owner", async () => {
     const { view } = renderModal();

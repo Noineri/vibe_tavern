@@ -5,6 +5,7 @@ import { cn } from "../../../../lib/cn.js";
 import { modalPanelCls } from "../../../shared/modal-helpers.js";
 import { Modal } from "../../../shared/Modal.js";
 import { Toggle } from "../../../shared/Toggle.js";
+import { ScrollArea } from "../../../shared/scroll-area.js";
 import { useScriptSafetySettingsStore } from "../../../../stores/script-safety-settings-store.js";
 import { scriptSafetyWarningFlow } from "../../../../lib/script-execution-guard.js";
 import type {
@@ -83,8 +84,11 @@ export function ImportedScriptWarningModal({ intent, onConfirm, onCancel }: Impo
           </div>
         </div>
 
-        {/* Body — the honest warning + the «don't show again» toggle */}
-        <div className="flex-1 overflow-y-auto px-5 py-3.5">
+        {/* Body — the honest warning + the «don't show again» toggle.
+            CNR-8g: rides the shared thin ScrollArea lane; the panel's max-h
+            cap (desktop) / fullscreen branch (mobile) stays outside the
+            scroller and the footer stays docked below it, exactly as before. */}
+        <ScrollArea scrollbarSize="thin" className="flex-1" contentClassName="px-5 py-3.5">
           <p className="font-ui text-[calc(var(--ui-fs)-2px)] leading-relaxed text-t2">
             {t("script_safety_warning_body")}
           </p>
@@ -97,7 +101,7 @@ export function ImportedScriptWarningModal({ intent, onConfirm, onCancel }: Impo
               {t("script_safety_warning_suppress")}
             </label>
           </div>
-        </div>
+        </ScrollArea>
 
         {/* Footer — canon cancel/confirm pair */}
         <div className="flex shrink-0 flex-wrap items-center justify-end gap-2.5 border-t border-border px-5 py-[14px]">
