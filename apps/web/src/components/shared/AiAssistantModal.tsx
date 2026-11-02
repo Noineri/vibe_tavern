@@ -192,7 +192,13 @@ export function AiAssistantModal({
       setCheckedFields(new Set());
       setFieldTargets({});
     }
-  }, [isOpen, mode, settings, bootstrapUiSettings, resetStreamState]);
+  }, [isOpen, mode, settings, resetStreamState]);
+  // NOTE: bootstrapUiSettings is deliberately NOT a dep. The body never
+  // reads it, and its OBJECT identity changes on every ui_settings patch
+  // from ANY surface (theme tweak, dictation pick, summary pin write…).
+  // Keying on it re-ran this reset on each such patch while the modal was
+  // open — wiping the typed prompt mid-session (2026-11 incident, same
+  // identity-churn family as the SummaryTab pin resurrection).
 
   // Context setup
   useEffect(() => {

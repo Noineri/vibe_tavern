@@ -722,3 +722,57 @@ describe("AiQuickPill — mobile sheet opens from the focused gear and stays", (
     expect(document.querySelectorAll(".bs-backdrop")).toHaveLength(1);
   });
 });
+
+describe("AiAssistantModal — unrelated ui_settings patch while open", () => {
+  beforeEach(() => {
+    mockState.requests = [];
+    mockState.chunks = [];
+    mockState.shouldThrow = false;
+    useProviderDataStore.setState({ profiles: [], favoritesByProfile: {} });
+    useBootstrapStore.setState({ data: null });
+  });
+
+  it("a ui_settings patch from another surface does not wipe the typed prompt", async () => {
+    useProviderDataStore.setState({
+      profiles: [makeProfile("prov-1", "Provider One")],
+      favoritesByProfile: {},
+    });
+    seedBootstrap("prov-1", null);
+
+    renderModal(
+      <AiAssistantModal
+        mode="full"
+        apiMode="lore_entry"
+        isOpen={true}
+        onClose={() => {}}
+        existingContent="existing entry"
+        onReplace={() => {}}
+        onInsert={() => {}}
+      />,
+    );
+
+    // The user types a prompt (no generate yet).
+    const textarea = await waitFor(() => {
+      const el = document.querySelector("textarea") as HTMLTextAreaElement | null;
+      expect(el).toBeTruthy();
+      return el as HTMLTextAreaElement;
+    });
+    fireEvent.change(textarea, { target: { value: "my precious prompt" } });
+    expect(textarea.value).toBe("my precious prompt");
+
+    // Another surface patches ui_settings while the modal is open (theme
+    // tweak, dictation pick, summary pin write — anything). The store's
+    // uiSettings OBJECT identity changes; the open modal must NOT treat
+    // that as an open/reset transition and wipe the prompt. 2026-11 incident
+    // — same family as the SummaryTab pin resurrection (identity-churn deps).
+    const { patchUiSettingsAction } = await import("../../stores/api-actions/bootstrap-actions.js");
+    await patchUiSettingsAction({ theme: "light" });
+
+    const textareaAfter = await waitFor(() => {
+      const el = document.querySelector("textarea") as HTMLTextAreaElement | null;
+      expect(el).toBeTruthy();
+      return el as HTMLTextAreaElement;
+    });
+    await waitFor(() => expect(textareaAfter.value).toBe("my precious prompt"));
+  });
+});
