@@ -7,6 +7,7 @@ import { ConfirmCloseModal } from "../shared/confirm-close-modal.js";
 import { AvatarCropModal } from "../shared/AvatarCropModal.js";
 import type { AvatarCropResult } from "../shared/AvatarCropModal.js";
 import { MasterDetailModal, MasterDetailFooter, MasterDetailMobileDrillDown } from "../shared/MasterDetailModal.js";
+import { ScrollArea } from "../shared/scroll-area.js";
 import { SaveButton } from "../shared/SaveBar.js";
 import { PersonaListRow } from "./PersonaListRow.js";
 import { PersonaCardEditor } from "./PersonaCardEditor.js";
@@ -508,7 +509,20 @@ export function PersonaModal(input: PersonaModalProps) {
         masterClassName="flex w-[380px] shrink-0 flex-col border-r border-border"
         masterContent={({ openDetail }) => (
           <>
-            <div ref={scrollBodyRef} className="min-h-0 flex-1 overflow-y-auto py-2">
+            {/* CNR-8f (re-derivation addition): the persona master pane is
+                the one MasterDetailModal consumer whose list body is
+                hand-rolled (persona cards with inline edit state — not a
+                MasterList). It scrolls on the same thin lane as every other
+                master pane; py-2 moves onto the content (padding scrolls with
+                the rows) and the reveal-on-create pin — scrollTop manipulation
+                on the container — repoints to the ScrollArea viewport, the
+                same element role the old overflow-y-auto div played. */}
+            <ScrollArea
+              scrollbarSize="thin"
+              className="min-h-0 flex-1"
+              contentClassName="py-2"
+              viewportProps={{ ref: scrollBodyRef }}
+            >
               {input.personas.length === 0 && (
                 <div className="flex flex-col items-center justify-center py-12 text-center">
                   <div className="mb-3 text-t4"><Icons.User /></div>
@@ -519,7 +533,7 @@ export function PersonaModal(input: PersonaModalProps) {
               <div className="flex flex-col">
                 {input.personas.map((p) => renderRow(p, openDetail))}
               </div>
-            </div>
+            </ScrollArea>
             {/* ST import preview panel — inline slot between the list and the
                 dock (same relative position as the old footer-adjacent slot).
                 Margin tuning (mx-5) is PSM-2 polish if it looks off here. */}

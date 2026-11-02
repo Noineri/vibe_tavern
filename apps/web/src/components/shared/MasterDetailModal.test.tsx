@@ -5,13 +5,18 @@
  * cannot regress when callers reduce outer mobile inset.
  *
  * What is pinned:
- *   - Desktop: detail pane uses `detailClassName` (default "p-6").
- *   - Mobile, no `mobileDetailClassName`: detail pane uses default "p-4".
- *   - Mobile, with `mobileDetailClassName="p-2 foo"`: detail pane uses
+ *   - Desktop: detail pane content uses `detailClassName` (default "p-6").
+ *   - Mobile, no `mobileDetailClassName`: detail pane content uses default "p-4".
+ *   - Mobile, with `mobileDetailClassName="p-2 foo"`: detail pane content uses
  *     "p-2 foo" instead of "p-4".
  *   - The master column follows `masterClassName` on desktop, "w-full" on mobile.
- *   - `scrollbar-hide` works as a plain CSS class passed through — it does
- *     not disable overflow scrolling (the overflow-y-auto is always present).
+ *   - CNR-8f scroll wiring: the detail pane is a thin ScrollArea — the pane
+ *     root carries data-scroll-area="thin" + flex-1 (same flex share the old
+ *     min-w-0 flex-1 overflow-y-auto wrapper held), the pane padding classes
+ *     ride the CONTENT element ([data-scroll-content], scrolling with the body
+ *     as before), and the scroller between them is the viewport
+ *     ([data-scroll-viewport]) — one scroller for the pane, on both mobile and
+ *     desktop (the ≤768 lane hide is CSS policy, not markup divergence).
  *   - `parentBack` (AP-3): absent → no link; present → desktop quiet link
  *     calls `onBack`; on phones the chevron shows only on the MAIN header —
  *     while a drill-down is open the drill-down back keeps priority.
@@ -61,7 +66,7 @@ function detail() {
 }
 
 describe("MasterDetailModal — desktop", () => {
-  it("detail pane uses detailClassName on desktop (default p-6)", () => {
+  it("detail pane is a thin ScrollArea; padding rides the content, desktop default p-6", () => {
     isMobile = false;
     const { getByTestId } = render(
       <MasterDetailModal
@@ -73,12 +78,22 @@ describe("MasterDetailModal — desktop", () => {
       />,
     );
 
-    const detailPane = getByTestId("detail").parentElement!;
-    expect(detailPane.className).toContain("p-6");
-    expect(detailPane.className).not.toContain("p-4");
-    expect(detailPane.className).toContain("overflow-y-auto");
-    expect(detailPane.className).toContain("min-w-0");
-    expect(detailPane.className).toContain("flex-1");
+    // The pane root: thin custom chrome, same flex share the old
+    // min-w-0 flex-1 overflow-y-auto wrapper held.
+    const pane = getByTestId("detail").closest("[data-scroll-area]")! as HTMLElement;
+    expect(pane.getAttribute("data-scroll-area")).toBe("thin");
+    expect(pane.className).toContain("flex-1");
+    expect(pane.className).toContain("min-w-0");
+    expect(pane.className).toContain("overflow-hidden");
+    // Padding lives on the content element and scrolls with the body.
+    const content = getByTestId("detail").closest("[data-scroll-content]")! as HTMLElement;
+    expect(content.className).toContain("p-6");
+    expect(content.className).not.toContain("p-4");
+    // Exactly one scroller between root and content — the viewport.
+    const viewport = getByTestId("detail").closest("[data-scroll-viewport]")! as HTMLElement;
+    expect(viewport.hasAttribute("data-scroll-viewport")).toBe(true);
+    expect(viewport.parentElement).toBe(pane);
+    expect(content.parentElement).toBe(viewport);
   });
 
   it("detail pane uses custom detailClassName on desktop", () => {
@@ -94,9 +109,9 @@ describe("MasterDetailModal — desktop", () => {
       />,
     );
 
-    const detailPane = getByTestId("detail").parentElement!;
-    expect(detailPane.className).toContain("p-0");
-    expect(detailPane.className).not.toContain("p-6");
+    const content = getByTestId("detail").closest("[data-scroll-content]")! as HTMLElement;
+    expect(content.className).toContain("p-0");
+    expect(content.className).not.toContain("p-6");
   });
 
   it("master column uses masterClassName on desktop", () => {
@@ -135,13 +150,16 @@ describe("MasterDetailModal — mobile", () => {
     // Initial: detail is hidden (drill-down pattern).
     fireEvent.click(getByTestId("drill-btn"));
 
-    // Now the detail pane is visible.
-    const detailPane = getByTestId("detail").parentElement!;
-    expect(detailPane.className).toContain("p-4");
-    expect(detailPane.className).not.toContain("p-6");
-    expect(detailPane.className).toContain("overflow-y-auto");
-    expect(detailPane.className).toContain("min-w-0");
-    expect(detailPane.className).toContain("flex-1");
+    // Now the detail pane is visible — same thin ScrollArea wiring as
+    // desktop (the ≤768 lane hide is CSS policy, not a different markup
+    // branch; the pane still scrolls via the shared viewport).
+    const pane = getByTestId("detail").closest("[data-scroll-area]")! as HTMLElement;
+    expect(pane.getAttribute("data-scroll-area")).toBe("thin");
+    expect(pane.className).toContain("flex-1");
+    const content = getByTestId("detail").closest("[data-scroll-content]")! as HTMLElement;
+    expect(content.className).toContain("p-4");
+    expect(content.className).not.toContain("p-6");
+    expect(getByTestId("detail").closest("[data-scroll-viewport]")).toBeTruthy();
   });
 
   it("detail pane uses mobileDetailClassName on mobile when passed, ignoring detailClassName", () => {
@@ -163,14 +181,17 @@ describe("MasterDetailModal — mobile", () => {
     // Open detail via drill-down.
     fireEvent.click(getByTestId("drill-btn"));
 
-    const detailPane = getByTestId("detail").parentElement!;
-    expect(detailPane.className).toContain("p-2");
-    expect(detailPane.className).toContain("scrollbar-hide");
-    expect(detailPane.className).not.toContain("p-0");  // detailClassName must not leak to mobile
-    expect(detailPane.className).not.toContain("p-4");  // default must not leak
-    expect(detailPane.className).not.toContain("p-6");  // desktop default must not leak
-    // scrollbar-hide must coexist with overflow-y-auto (hides chrome, preserves touch/wheel/keyboard scroll)
-    expect(detailPane.className).toContain("overflow-y-auto");
+    const content = getByTestId("detail").closest("[data-scroll-content]")! as HTMLElement;
+    expect(content.className).toContain("p-2");
+    expect(content.className).toContain("scrollbar-hide");
+    expect(content.className).not.toContain("p-0");  // detailClassName must not leak to mobile
+    expect(content.className).not.toContain("p-4");  // default must not leak
+    expect(content.className).not.toContain("p-6");  // desktop default must not leak
+    // scrollbar-hide passes through as a plain class and does not disable
+    // scrolling — the pane still scrolls via the ScrollArea viewport (whose
+    // own chrome hiding makes the class inert here, never a scroll blocker).
+    const viewport = getByTestId("detail").closest("[data-scroll-viewport]")! as HTMLElement;
+    expect(viewport.className).toContain("scrollbar-hide");
   });
 
   it("master column covers full width on mobile, detail is hidden until drill-down", () => {

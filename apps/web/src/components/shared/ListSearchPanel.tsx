@@ -32,6 +32,7 @@ import { useRef, useState, useMemo } from "react";
 import * as Popover from "@radix-ui/react-popover";
 import { cn } from "../../lib/cn.js";
 import { SearchInput } from "./SearchInput.js";
+import { ScrollArea } from "./scroll-area.js";
 
 import { useT } from "../../i18n/context.js";
 
@@ -141,24 +142,33 @@ function TagCombobox({
             const target = e.target as Node | null;
             if (target && comboboxRef.current?.contains(target)) e.preventDefault();
           }}
-          className="glass-blur z-[400] max-h-[180px] overflow-y-auto rounded-md border border-border2 bg-glass-bg py-1 shadow-[0_8px_24px_rgba(0,0,0,0.4)] outline-none data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95"
+          className="glass-blur z-[400] max-h-[180px] overflow-hidden rounded-md border border-border2 bg-glass-bg shadow-[0_8px_24px_rgba(0,0,0,0.4)] outline-none data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95"
         >
-          {suggestions.map((tag) => (
-            <button
-              key={tag}
-              type="button"
-              className="block w-full cursor-pointer px-2.5 py-1 text-left font-ui text-[calc(var(--ui-fs)-2px)] text-t2 transition-colors hover:bg-s2 hover:text-t1"
-              onMouseDown={(e) => {
-                // mousedown fires before the input blur/close; commit directly.
-                e.preventDefault();
-                addTag(tag);
-                tagInputRef.current?.focus();
-              }}
-              onClick={() => addTag(tag)}
-            >
-              {tag}
-            </button>
-          ))}
+          {/* CNR-8f: the suggestion rows scroll on the shared thin ScrollArea
+           *  lane (3px rest / 5px hover) instead of the native fallback; the
+           *  popup keeps its 180px cap (Popover.Content bounds the popup, the
+           *  ScrollArea root bounds the scroller) and the row padding (py-1)
+           *  scrolls with the content — the 8d DropdownSelect idiom. Combobox
+           *  focus behavior (input keeps focus, mousedown commits) is
+           *  untouched. */}
+          <ScrollArea scrollbarSize="thin" className="max-h-[180px]" contentClassName="py-1">
+            {suggestions.map((tag) => (
+              <button
+                key={tag}
+                type="button"
+                className="block w-full cursor-pointer px-2.5 py-1 text-left font-ui text-[calc(var(--ui-fs)-2px)] text-t2 transition-colors hover:bg-s2 hover:text-t1"
+                onMouseDown={(e) => {
+                  // mousedown fires before the input blur/close; commit directly.
+                  e.preventDefault();
+                  addTag(tag);
+                  tagInputRef.current?.focus();
+                }}
+                onClick={() => addTag(tag)}
+              >
+                {tag}
+              </button>
+            ))}
+          </ScrollArea>
         </Popover.Content>
       </Popover.Portal>
     </Popover.Root>

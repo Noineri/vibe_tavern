@@ -25,6 +25,7 @@ import { Dropzone } from "./dropzone.js";
 import type { AiQuickSettings } from "./AiQuickPill.js";
 import { AiAssistantConnectionFields } from "./ai-assistant/AiAssistantConnectionFields.js";
 import { AiAssistantShell } from "./ai-assistant/AiAssistantShell.js";
+import { ScrollArea } from "./scroll-area.js";
 import { AiAssistantPanel } from "./ai-assistant/AiAssistantPanel.js";
 import { AiGenParamsRow } from "./ai-assistant/AiGenParamsRow.js";
 import { useAiAssistantRunner } from "./ai-assistant/use-ai-assistant-runner.js";
@@ -581,7 +582,12 @@ export function AiAssistantModal({
                   {streamedOutput && (
                     <details className="rounded-md border border-border bg-bg" style={{ padding: 12, marginBottom: 16 }} open={Object.keys(parsedFields).length === 0}>
                       <summary className="cursor-pointer text-[calc(var(--ui-fs)-3px)] font-semibold uppercase tracking-[0.06em] text-t3">{t("raw_model_output")}</summary>
-                      <pre className="mt-2 max-h-[240px] overflow-auto whitespace-pre-wrap font-mono text-[calc(var(--ui-fs)-3px)] leading-[1.45] text-t2">{streamedOutput}{streaming && <span className="animate-pulse text-accent">▌</span>}</pre>
+                      {/* CNR-8f: the raw-output preview scrolls on the shared
+                       *  thin ScrollArea lane (3px rest / 5px hover); the height
+                       *  cap moves onto the root, text classes stay on the pre. */}
+                      <ScrollArea scrollbarSize="thin" className="mt-2 max-h-[240px]">
+                        <pre className="whitespace-pre-wrap font-mono text-[calc(var(--ui-fs)-3px)] leading-[1.45] text-t2">{streamedOutput}{streaming && <span className="animate-pulse text-accent">▌</span>}</pre>
+                      </ScrollArea>
                     </details>
                   )}
 
@@ -610,9 +616,9 @@ export function AiAssistantModal({
                                     />
                                     <div className="min-w-0 flex-1">
                                       <div className="text-[calc(var(--ui-fs)-3px)] uppercase text-t3">{fieldLabel} #{idx + 1}</div>
-                                      <div className="max-h-40 overflow-y-auto whitespace-pre-wrap rounded border border-border2 px-2 py-1.5 font-mono text-[calc(var(--ui-fs)-2px)] leading-[1.4] text-t1">
-                                        {item}
-                                      </div>
+                                      <ScrollArea scrollbarSize="thin" className="max-h-40 rounded border border-border2">
+                                        <div className="whitespace-pre-wrap px-2 py-1.5 font-mono text-[calc(var(--ui-fs)-2px)] leading-[1.4] text-t1">{item}</div>
+                                      </ScrollArea>
                                     </div>
                                     <div className="w-[168px] shrink-0">
                                       <DropdownSelect
@@ -645,9 +651,9 @@ export function AiAssistantModal({
                                 />
                                 <div className="min-w-0 flex-1">
                                   <div className="text-[calc(var(--ui-fs)-3px)] uppercase text-t3">{getMdImportFieldLabel(sourceKey)}</div>
-                                  <div className="max-h-40 overflow-y-auto whitespace-pre-wrap rounded border border-border2 px-2 py-1.5 font-mono text-[calc(var(--ui-fs)-2px)] leading-[1.4] text-t1">
-                                    {preview}
-                                  </div>
+                                  <ScrollArea scrollbarSize="thin" className="max-h-40 rounded border border-border2">
+                                    <div className="whitespace-pre-wrap px-2 py-1.5 font-mono text-[calc(var(--ui-fs)-2px)] leading-[1.4] text-t1">{preview}</div>
+                                  </ScrollArea>
                                 </div>
                                 <div className="w-[168px] shrink-0">
                                   <DropdownSelect
@@ -734,7 +740,9 @@ export function AiAssistantModal({
                       {aiDiffSummary.tooLarge && (
                         <div className="rounded-md border border-border bg-bg" style={{ padding: 12, marginBottom: 12 }}>
                           <div className="mb-2 text-[calc(var(--ui-fs)-3px)] font-semibold uppercase tracking-[0.06em] text-t3">{t(generatedKey)}</div>
-                          <pre className="max-h-[280px] overflow-auto whitespace-pre-wrap font-mono text-[calc(var(--ui-fs)-2px)] leading-[1.5] text-t1">{cleanedOutput}</pre>
+                          <ScrollArea scrollbarSize="thin" className="max-h-[280px]">
+                            <pre className="whitespace-pre-wrap font-mono text-[calc(var(--ui-fs)-2px)] leading-[1.5] text-t1">{cleanedOutput}</pre>
+                          </ScrollArea>
                         </div>
                       )}
                     </>

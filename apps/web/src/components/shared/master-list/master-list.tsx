@@ -11,6 +11,7 @@ import {
   useReorderableList,
   type ReorderResult,
 } from "../../../hooks/use-reorderable-list.js";
+import { ScrollArea } from "../scroll-area.js";
 
 // forks: 0 — master-list primitive source: the sortable master column
 // (header slot, search slot, sortable container, empty-state slot, footer
@@ -114,12 +115,19 @@ export function MasterList<T>({
         }}
       >
         <SortableContext items={sortableIds ?? rendered.map((item) => getId(item))} strategy={verticalListSortingStrategy}>
-          <div className="flex-1 overflow-y-auto">
+          {/* CNR-8f: the rows scroll on the shared thin ScrollArea lane (3px
+           *  rest / 5px hover) instead of the native fallback; the root takes
+           *  the remaining column space (min-h-0 is baked into the primitive)
+           *  while header/search/footer stay docked outside the scroller. No
+           *  consumer ever held the old scroll div by ref, and selection
+           *  persistence is row-key reconciliation — both ride the stable
+           *  ScrollArea viewport unchanged. */}
+          <ScrollArea scrollbarSize="thin" className="flex-1">
             {renderDragSlot ? renderDragSlot(activeDragItem) : null}
             {rendered.length === 0 && emptyState
               ? emptyState
               : rendered.map((item) => <div key={getId(item)}>{renderRow(item)}</div>)}
-          </div>
+          </ScrollArea>
         </SortableContext>
         <DragOverlay dropAnimation={null}>
           {activeDragItem && renderOverlayRow ? renderOverlayRow(activeDragItem) : null}

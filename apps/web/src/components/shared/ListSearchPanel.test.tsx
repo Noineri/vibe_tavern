@@ -92,4 +92,35 @@ describe("ListSearchPanel suggestions", () => {
     // The sidebar default is not leaked when a custom placeholder is set.
 		expect(panel.queryByPlaceholderText("search_tags_placeholder")).toBeNull();
   });
+
+  it("scrolls the suggestion rows on the thin ScrollArea; the popup bounds, the lane scrolls", async () => {
+    const view = render(
+      <ListSearchPanel
+        query=""
+        onQueryChange={() => {}}
+        selectedTags={[]}
+        onSelectedTagsChange={() => {}}
+        availableTags={makeTags(20)}
+      />,
+    );
+    const panel = within(view.baseElement);
+    await userEvent.setup().click(panel.getByPlaceholderText("search_tags_placeholder"));
+    const buttons = await panel.findAllByRole("button");
+    expect(buttons).toHaveLength(20);
+
+    // CNR-8f: the rows scroll on the thin ScrollArea lane (3px rest / 5px
+    // hover); the 180px cap rides the ScrollArea root, the py-1 row padding
+    // rides the content element (padding scrolls with the rows), and the
+    // Popover.Content keeps the popup bound with overflow-hidden instead of
+    // its own native overflow-y-auto scroller.
+    const root = buttons[0]!.closest('[data-scroll-area="thin"]') as HTMLElement;
+    expect(root).toBeTruthy();
+    expect(root.className).toContain("max-h-[180px]");
+    const content = buttons[0]!.closest("[data-scroll-content]") as HTMLElement;
+    expect(content.className).toContain("py-1");
+    const popover = buttons[0]!.closest("div.glass-blur") as HTMLElement;
+    expect(popover.className).toContain("max-h-[180px]");
+    expect(popover.className).toContain("overflow-hidden");
+    expect(popover.className).not.toContain("overflow-y-auto");
+  });
 });

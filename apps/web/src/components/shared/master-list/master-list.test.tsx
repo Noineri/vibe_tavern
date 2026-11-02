@@ -279,6 +279,46 @@ describe("master-list primitive", () => {
     expect(view.getAllByLabelText("drag")).toHaveLength(2);
   });
 
+  it("scrolls rows on a thin ScrollArea with slots docked outside; selection re-render keeps the scroller", () => {
+    const { props } = listProps();
+    const view = render(<MasterList {...props} />);
+
+    // CNR-8f: the row body is a thin ScrollArea lane (3px rest / 5px hover)
+    // taking the remaining column space (flex-1); rows and the drag slot
+    // live inside its viewport.
+    const row = view.getByTestId("row-a");
+    const root = row.closest('[data-scroll-area="thin"]') as HTMLElement;
+    expect(root).toBeTruthy();
+    expect(root.className).toContain("flex-1");
+    const viewport = row.closest("[data-scroll-viewport]") as HTMLElement;
+    expect(viewport.contains(row)).toBe(true);
+    // Header, search and footer stay docked OUTSIDE the scroller.
+    expect(viewport.contains(view.getByTestId("list-header"))).toBe(false);
+    expect(viewport.contains(view.getByTestId("list-search"))).toBe(false);
+    expect(viewport.contains(view.getByTestId("list-footer"))).toBe(false);
+
+    // Selection persistence: a re-render that changes the selection (the
+    // consumer state flip a row click drives) reconciles keyed rows inside
+    // the SAME viewport element — the scroll identity never resets to top.
+    const { props: nextProps, onSelect } = listProps({
+      renderRow: (item: Item) => (
+        <SortableMasterListPhoneRow
+          sortableId={item.id}
+          selected={item.id === "b"}
+          active={item.id === "a"}
+          status={<div data-testid={`dot-${item.id}`} className="test-dot" />}
+          title={item.name}
+          secondLine={`second-${item.id}`}
+          onSelect={() => onSelect(item.id)}
+          rowTestId={`row-${item.id}`}
+        />
+      ),
+    });
+    view.rerender(<MasterList {...nextProps} />);
+    expect(view.getByTestId("row-b").classList.contains("bg-accent-dim")).toBe(true);
+    expect(view.getByTestId("row-a").closest("[data-scroll-viewport]")).toBe(viewport);
+  });
+
   it("renders the drag overlay for the active item while dragging", () => {
     const { props } = listProps();
     const view = render(<MasterList {...props} />);

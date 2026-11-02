@@ -7,6 +7,7 @@ import { modalPanelCls } from "./modal-helpers.js";
 import { Icons } from "./icons.js";
 import { CustomTooltip } from "./Tooltip.js";
 import { SegmentedControl } from "./SegmentedControl.js";
+import { ScrollArea } from "./scroll-area.js";
 
 interface MasterDetailContextValue {
   isMobile: boolean;
@@ -392,9 +393,21 @@ export function MasterDetailModal<T extends string = string>({
               </div>
             )}
             {(!isMobile || isDetailOpen) && (
-              <div className={cn("min-w-0 flex-1 overflow-y-auto", isMobile ? mobileDetailClassName : detailClassName)}>
+              // CNR-8f: the detail pane scrolls on the shared thin ScrollArea
+              // lane (3px rest / 5px hover) instead of the native fallback; the
+              // pane keeps a scroller SEPARATE from the master list (independent
+              // scroll identities). The pane padding classes move onto the
+              // content element so padding scrolls with the content, exactly as
+              // it did on the native overflow-y-auto pane (the 8c–8e rule).
+              // Callers pass padding (+ scrollbar-hide, now inert under the
+              // primitive's own chrome hiding) only — no layout-critical extras.
+              <ScrollArea
+                scrollbarSize="thin"
+                className="flex-1"
+                contentClassName={isMobile ? mobileDetailClassName : detailClassName}
+              >
                 {typeof detailContent === "function" ? detailContent({ closeDetail: () => setIsDetailOpen(false) }) : detailContent}
-              </div>
+              </ScrollArea>
             )}
           </div>
 

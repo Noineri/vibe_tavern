@@ -15,7 +15,7 @@ beforeAll(async () => {
 });
 
 describe("AiAssistantShell", () => {
-  it("keeps the default header and content output unchanged without footer actions", () => {
+  it("keeps the default header chrome and scrolls the body on the thin ScrollArea without footer actions", () => {
     const { baseElement, getByRole } = render(
       <AiAssistantShell
         title={<span>Assistant</span>}
@@ -29,10 +29,16 @@ describe("AiAssistantShell", () => {
     );
 
     const header = baseElement.querySelector("div.border-b")!;
-    const content = baseElement.querySelector("div.flex-1")!;
     expect(header.className).toBe("flex shrink-0 items-center justify-between gap-3 border-b border-border px-5 py-4");
-    expect(content.className).toBe("flex-1 overflow-y-auto");
-    expect(content.getAttribute("style")).toBe("padding: 20px;");
+    // CNR-8f: the content region is a thin ScrollArea — the root fills the
+    // panel column (flex-1), the scroller is the viewport, and the former
+    // 20px container padding rides the content element so it scrolls with
+    // the body exactly as the native overflow-y-auto container did.
+    const root = baseElement.querySelector("[data-scroll-area=\"thin\"]")!;
+    expect(root.className).toContain("flex-1");
+    expect(root.querySelector(":scope > [data-scroll-viewport]")).toBeTruthy();
+    const content = baseElement.querySelector("[data-scroll-content]")!;
+    expect(content.className).toBe("p-5");
     expect(baseElement.querySelector("div.border-t")).toBeNull();
     expect(getByRole("button", { name: "cancel_btn" }).className).toBe(
       "flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-[5px] text-t3 transition-all hover:bg-s2 hover:text-t1",

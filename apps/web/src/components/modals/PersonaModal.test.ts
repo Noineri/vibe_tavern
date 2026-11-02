@@ -286,6 +286,26 @@ describe("PersonaModal master-detail wiring", () => {
 		expect(desc).toBeTruthy();
 		expect(desc!.parentElement!.className).toContain("justify-center");
 	});
+
+	test("master pane scrolls on the thin ScrollArea; the dock stays outside the scroller (CNR-8f)", async () => {
+		const calls: Calls = { setActive: [], saveEdit: [] };
+		renderOpen(calls);
+		await settled();
+		// The hand-rolled persona list body rides the same thin lane as every
+		// MasterList master pane: cap layout on the root (min-h-0 flex-1), rows
+		// inside the viewport, py-2 padding on the content. The "+ New" dock
+		// and the ST-import slot stay docked OUTSIDE the scroller.
+		const row = document.querySelectorAll(".line-clamp-5")[0]!.closest("[data-scroll-area]") as HTMLElement | null;
+		expect(row).toBeTruthy();
+		expect(row!.getAttribute("data-scroll-area")).toBe("thin");
+		expect(row!.className).toContain("flex-1");
+		const viewport = row!.querySelector(":scope > [data-scroll-viewport]") as HTMLElement;
+		expect(viewport.contains(document.querySelectorAll(".line-clamp-5")[0]!)).toBe(true);
+		expect(row!.querySelector("[data-scroll-content]")!.className).toContain("py-2");
+		const dock = Array.from(document.querySelectorAll("button")).find(b => b.textContent?.includes("create_new_persona"));
+		expect(dock).toBeTruthy();
+		expect(viewport.contains(dock!)).toBe(false);
+	});
 });
 
 describe("computePersonaIsDirty", () => {

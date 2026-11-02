@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { Icons } from "../icons.js";
 import { cn } from "../../../lib/cn.js";
 import { useT } from "../../../i18n/context.js";
+import { ScrollArea } from "../scroll-area.js";
 
 export interface AiAssistantShellFooterAction {
   label: string;
@@ -84,14 +85,19 @@ export function AiAssistantShell({
         </button>
       </div>
 
-      {/* Content */}
-      <div className="flex-1 overflow-y-auto" style={{ padding: 20 }}>
+      {/* Content — CNR-8f: the body scrolls on the shared thin ScrollArea
+       *  lane (3px rest / 5px hover) instead of the native fallback; the root
+       *  fills the panel's flex column (every consumer mounts the shell inside
+       * AiAssistantPanel's bounded flex-col) and the former 20px container
+       *  padding moved onto the content element so it scrolls with the body,
+       *  exactly as it did on the native overflow-y-auto container. */}
+      <ScrollArea scrollbarSize="thin" className="flex-1" contentClassName="p-5">
         {providerCount === 0 ? (
           <div className="py-6 text-center font-ui text-[calc(var(--ui-fs)-1px)] text-t3">{noProvidersLabel}</div>
         ) : (
           children
         )}
-      </div>
+      </ScrollArea>
 
       {/* Footer */}
       {hasStructuredFooter ? (

@@ -723,6 +723,68 @@ describe("AiQuickPill — mobile sheet opens from the focused gear and stays", (
   });
 });
 
+describe("AiAssistantModal — scroll wiring (CNR-8f)", () => {
+  beforeEach(() => {
+    mockState.requests = [];
+    mockState.chunks = [];
+    mockState.shouldThrow = false;
+    useProviderDataStore.setState({
+      profiles: [makeProfile("prov-1", "Provider One")],
+      favoritesByProfile: {},
+    });
+    seedBootstrap("prov-1", null);
+  });
+
+  it("shell body and md_import preview boxes scroll on thin ScrollArea lanes", async () => {
+    setChunks([
+      { type: "partial_json", json: { name: "Imported", description: "desc" } },
+      { type: "text", text: "{\"name\":\"Imported\"}" },
+      { type: "done" },
+    ]);
+
+    renderModal(
+      <AiAssistantModal
+        mode="full"
+        apiMode="md_import"
+        isOpen={true}
+        onClose={() => {}}
+        onMdImportApply={() => {}}
+      />,
+    );
+
+    // The modal's main scroller is the shell body ScrollArea: thin chrome,
+    // fills the panel column (flex-1), and the 20px pane padding rides the
+    // content element so it scrolls with the body (per-part pins live in
+    // AiAssistantShell.test.tsx; this pins the composite through the modal).
+    const shellRoot = document.querySelector('[data-scroll-area="thin"]') as HTMLElement;
+    expect(shellRoot).toBeTruthy();
+    expect(shellRoot.className).toContain("flex-1");
+    const shellContent = document.querySelector("[data-scroll-content]") as HTMLElement;
+    expect(shellContent.className).toContain("p-5");
+
+    // Drive the import: paste content, start, stream partial JSON + text.
+    const textarea = document.querySelector("textarea") as HTMLTextAreaElement;
+    fireEvent.change(textarea, { target: { value: "# Imported\nSome content" } });
+    const startBtn = screen.getByText("import_md_start");
+    await act(async () => { fireEvent.click(startBtn); });
+
+    // Every parsed-field preview box keeps its content cap (max-h-40) on a
+    // thin ScrollArea root — two fields parsed → two preview scrollers.
+    await waitFor(() => {
+      const previews = document.querySelectorAll('[data-scroll-area="thin"].max-h-40');
+      expect(previews.length).toBe(2);
+    });
+    // The raw-model-output debug region scrolls on its own thin lane with
+    // the 240px cap on the root (mono text stays on the inner <pre>).
+    await waitFor(() => {
+      const raw = document.querySelector('[data-scroll-area="thin"].max-h-\\[240px\\]') as HTMLElement | null;
+      expect(raw).toBeTruthy();
+      expect(raw!.querySelector("pre")!.className).toContain("whitespace-pre-wrap");
+      expect(raw!.querySelector("pre")!.className).not.toContain("overflow-auto");
+    });
+  });
+});
+
 describe("AiAssistantModal — unrelated ui_settings patch while open", () => {
   beforeEach(() => {
     mockState.requests = [];
