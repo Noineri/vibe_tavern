@@ -26,7 +26,7 @@ import { useDomEnv } from "../../../test/dom-env.js";
 
 useDomEnv();
 
-const { render, fireEvent } = await import("@testing-library/react");
+const { render, fireEvent, act, waitFor } = await import("@testing-library/react");
 
 // CustomTooltip (Radix Tooltip) needs a TooltipProvider ancestor that the
 // isolated render here doesn't mount. The app mounts one globally; tests mock
@@ -307,26 +307,48 @@ describe("SegmentedControl — layout props", () => {
 		expect(group.className).toMatch(/\bsm:w-auto\b/);
 	});
 
-	it("mobileScroll: horizontal drag with hidden scrollbar on phones; desktop untouched", () => {
+	it("mobileScroll: horizontal drag on the shared thin horizontal lane; desktop untouched", async () => {
 		isMobile = true;
 		const { container } = render(
 			<SegmentedControl value="a" options={opts} onChange={() => {}} mobileScroll />,
 		);
 		const group = container.querySelector('[role="radiogroup"]')!;
+		// CNR-8e: the row rides the shared thin ScrollArea (horizontal lane,
+		// cross axis clipped by the primitive) — the cap and the hidden strip
+		// moved from the group's own classes onto the primitive's root/viewport.
+		const area = group.closest("[data-scroll-area]") as HTMLElement | null;
+		if (!area) throw new Error("ScrollArea root not rendered");
+		expect(area.getAttribute("data-scroll-area")).toBe("thin");
 		// Draggable: the row scrolls, capped at the container width.
-		expect(group.className).toMatch(/overflow-x-auto/);
-		expect(group.className).toMatch(/max-w-full/);
-		// No scrollbar strip (MUI step 20 owner ruling).
-		expect(group.className).toMatch(/\[scrollbar-width:none\]/);
-		expect(group.className).toMatch(/\[&::-webkit-scrollbar\]:hidden/);
+		expect(area.className).toContain("max-w-full");
+		const viewport = area.querySelector<HTMLElement>("[data-scroll-viewport]")!;
+		expect(viewport.style.overflowY).toBe("hidden");
+		expect(viewport.classList.contains("scrollbar-hide")).toBe(true);
+		// No visible strip is the phone policy's job (CNR-7g hides the lane
+		// itself ≤768px); the horizontal lane mounts lazily once overflow is
+		// observed — fake the measurement the way scroll-area.test.tsx does.
+		Object.defineProperties(viewport, {
+			clientHeight: { value: 100 }, scrollHeight: { value: 100 },
+			clientWidth: { value: 200 }, scrollWidth: { value: 2000 },
+		});
+		await act(async () => {
+			viewport.scrollLeft = 100;
+			fireEvent.scroll(viewport);
+		});
+		await waitFor(() =>
+			expect(area.querySelector('[data-scroll-track][data-orientation="horizontal"]')).not.toBeNull(),
+		);
+		expect(area.querySelectorAll("[data-scroll-track]")).toHaveLength(1);
 		// Segments keep natural width — no cramming/truncation.
 		const item = container.querySelector('[role="radio"]')!;
-		expect(item.className).toMatch(/\bshrink-0\b/);
+		expect(item.className.split(" ")).toContain("shrink-0");
 
 		isMobile = false;
 		const desktop = render(
 			<SegmentedControl value="a" options={opts} onChange={() => {}} mobileScroll />,
 		);
+		// Desktop rendering is unchanged: no scroll wrapper at all.
+		expect(desktop.container.querySelector("[data-scroll-area]")).toBeNull();
 		const desktopGroup = desktop.container.querySelector('[role="radiogroup"]')!;
 		expect(desktopGroup.className).not.toMatch(/overflow-x-auto/);
 		expect(desktopGroup.className).not.toMatch(/\[scrollbar-width:none\]/);

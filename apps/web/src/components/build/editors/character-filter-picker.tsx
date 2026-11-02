@@ -33,6 +33,7 @@ import { getModalPortal } from "../../shared/modal-helpers.js";
 import { MAX_VISIBLE_ITEMS, popoverMaxHeight } from "../../shared/popover-constants.js";
 import { SearchInput } from "../../shared/SearchInput.js";
 import { BottomSheet } from "../../shared/BottomSheet.js";
+import { ScrollArea } from "../../shared/scroll-area.js";
 import { resolveTargetAvatarUrl } from "../../shared/LinkBindingPopover.js";
 import { characterToLinkTarget } from "../../../lib/link-targets.js";
 import { matchesLinkQuery, orderLinkTargets } from "../../../lib/link-binding-sections.js";
@@ -113,12 +114,18 @@ export function CharacterFilterPicker({ t }: { t: TFunc }) {
         </div>
       )}
       {/* Only the item list scrolls; the search row never scrolls away.
-       *  Desktop keeps the MAX_VISIBLE_ITEMS cap on the list wrapper; the
-       *  mobile sheet uses the viewport-relative sheet cap instead
-       *  (popover-constants.ts) with thumb-sized 44px rows. */}
-      <div
-        className={cn("overflow-y-auto", isMobile && "max-h-[50vh] overscroll-contain")}
+       *  CNR-8e: the list rides the shared thin ScrollArea lane (3px rest /
+       *  5px hover) instead of the native 8px fallback; the cap sits on the
+       *  ScrollArea root per shell — the MAX_VISIBLE_ITEMS budget on desktop,
+       *  the viewport-relative 50vh sheet cap on mobile (the CNR-7g policy
+       *  hides the lane on phones, so the sheet keeps its drag-only look) —
+       *  with thumb-sized 44px rows, and overscroll-contain moves onto the
+       *  actual scroller (the viewport). */}
+      <ScrollArea
+        scrollbarSize="thin"
+        className={isMobile ? "max-h-[50vh]" : undefined}
         style={isMobile ? undefined : { maxHeight: popoverMaxHeight("singleLine") }}
+        viewportProps={isMobile ? { className: "overscroll-contain" } : undefined}
       >
         {candidates.length === 0 ? (
           <div className={cn("px-3 py-2 text-t3", isMobile ? "text-[var(--ui-fs)]" : "text-[calc(var(--ui-fs)-2px)]")}>{t("lore_char_filter_empty")}</div>
@@ -151,7 +158,7 @@ export function CharacterFilterPicker({ t }: { t: TFunc }) {
             );
           })
         )}
-      </div>
+      </ScrollArea>
     </>
   );
 

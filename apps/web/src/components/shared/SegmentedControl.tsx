@@ -3,6 +3,7 @@ import * as RadioGroup from "@radix-ui/react-radio-group";
 import { cn } from "../../lib/cn.js";
 import { CustomTooltip } from "./Tooltip.js";
 import { DropdownSelect } from "./DropdownSelect.js";
+import { ScrollArea } from "./scroll-area.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 
 interface SegmentedOption<T extends string = string> {
@@ -59,10 +60,12 @@ interface SegmentedControlProps<T extends string = string> {
   mobileSelect?: boolean;
   /** On MOBILE ONLY, let the control scroll horizontally when the segments
    *  exceed the viewport width — the labels keep their natural width (no
-   * truncation) and the scrollbar strip is hidden (drag or swipe to move).
-   *  Desktop rendering is unchanged. For tab bars whose option set is fixed
-   *  and authored (e.g. the provider modal's LLM/TTS/STT tabs) — the owner
-   *  ruling 2026-09-11: movable, no visible scrollbar, no wrapping. */
+   * truncation) and the row rides the shared thin horizontal ScrollArea lane
+   *  (CNR-8e); the CNR-7g phone policy hides the lane itself there, so the
+   *  drag/swipe-only look is unchanged. Desktop rendering is unchanged. For
+   *  tab bars whose option set is fixed and authored (e.g. the provider
+   *  modal's LLM/TTS/STT tabs) — the owner ruling 2026-09-11: movable, no
+   *  visible scrollbar, no wrapping. */
   mobileScroll?: boolean;
 }
 
@@ -116,7 +119,7 @@ export function SegmentedControl<T extends string = string>({
       />
     );
   }
-  return (
+  const row = (
     <RadioGroup.Root
       value={value}
       // Radix emits the clicked item's value as a plain string; every option
@@ -132,8 +135,10 @@ export function SegmentedControl<T extends string = string>({
           "rounded-md border border-border bg-s3 p-0.5",
           fill ? "flex w-full" : mobileFill ? "flex w-full sm:inline-flex sm:w-auto" : "inline-flex",
           wrap && "flex-wrap",
-          // MUI step 20: horizontal drag on phones, scrollbar strip hidden.
-          mobileScroll && isMobile && "flex max-w-full overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+          // MUI step 20 / CNR-8e: horizontal drag on phones — the cap and the
+          // hidden strip now live on the ScrollArea wrapper below, so the row
+          // itself carries only its display here (see the wrapper note).
+          mobileScroll && isMobile && "flex",
           (dense || compact) ? "gap-0" : "gap-0.5",
           disabled && "pointer-events-none opacity-40",
           className,
@@ -197,4 +202,16 @@ export function SegmentedControl<T extends string = string>({
       </div>
     </RadioGroup.Root>
   );
+  // CNR-8e: the scrollable chip row rides the shared thin horizontal lane
+  // (orientation="horizontal" — a single-axis chip strip; the primitive clips
+  // the cross axis) instead of the row's own native overflow-x strip. The root
+  // caps the drag region (max-w-full); the group keeps its chrome, alignment,
+  // selection indicator and radio roles untouched, and the fit-content Content
+  // keeps the bordered box shrink-to-fit exactly as the inline-flex row was.
+  // Desktop never enters this branch — its rendering is unchanged.
+  return mobileScroll && isMobile ? (
+    <ScrollArea scrollbarSize="thin" orientation="horizontal" className="max-w-full">
+      {row}
+    </ScrollArea>
+  ) : row;
 }

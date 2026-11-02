@@ -17,6 +17,7 @@ import { getModalPortal } from "./modal-helpers.js";
 import { resolveEntityAvatarUrl, avatarUrl } from "../../lib/avatar.js";
 import { SearchInput } from "./SearchInput.js";
 import { BottomSheet } from "./BottomSheet.js";
+import { ScrollArea } from "./scroll-area.js";
 import { MAX_VISIBLE_ITEMS } from "./popover-constants.js";
 
 export type { LinkBindingRecord, LinkBindingTargetType, LinkTarget } from "../../lib/link-targets.js";
@@ -284,7 +285,15 @@ export function LinkBindingPopover({
           />
         </div>
       )}
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+      {/* CNR-8e: the chip sections scroll on the shared thin ScrollArea lane
+       *  (3px rest / 5px hover) instead of the native 8px fallback. The height
+       *  caps stay OUTSIDE and still limit: the Radix content caps the desktop
+       *  popover (max-h + flex-col), the 80dvh flex wrapper caps the mobile
+       *  sheet — this root is a min-h-0 flex-1 child of both. One body, both
+       *  shells (the CNR-7g policy hides the lane on phones, so the sheet keeps
+       *  its drag-only look); overscroll-contain moves onto the actual scroller
+       *  (the viewport) and section padding scrolls with the content. */}
+      <ScrollArea scrollbarSize="thin" className="min-h-0 flex-1" viewportProps={{ className: "overscroll-contain" }}>
         {result.sections.map((view, i) => (
           <div
             key={view.key}
@@ -330,7 +339,7 @@ export function LinkBindingPopover({
         {!hasAnyTargets && (
           <div className={cn("px-3 py-4 text-center text-t3", messageCls)}>{emptyLabel || t("lore_link_empty")}</div>
         )}
-      </div>
+      </ScrollArea>
     </div>
   );
 

@@ -41,6 +41,7 @@ const { render, fireEvent, act, waitFor, within } = await import("@testing-libra
 const { useForm, FormProvider } = await import("react-hook-form");
 const { useSnapshotStore } = await import("../../../stores/snapshot-store.js");
 const { wireLoreEntry } = await import("../../../../test/wire-fixtures.js");
+const { popoverMaxHeight } = await import("../../shared/popover-constants.js");
 const { CharacterFilterPicker } = await import("./character-filter-picker.js");
 
 import type { UseFormReturn } from "react-hook-form";
@@ -325,6 +326,49 @@ describe("CharacterFilterPicker — search / order / mobile (LB-3B)", () => {
 		const rowImg = listRoot().querySelector("button img");
 		expect(rowImg?.getAttribute("loading")).toBe("lazy");
 		expect(rowImg?.getAttribute("decoding")).toBe("async");
+	});
+
+	it("list rides the shared thin ScrollArea lane with the desktop cap on its root (CNR-8e)", async () => {
+		renderPicker([]);
+		openAdd();
+		const area = listRoot().querySelector("[data-scroll-area]") as HTMLElement | null;
+		if (!area) throw new Error("no ScrollArea in the list");
+		expect(area.getAttribute("data-scroll-area")).toBe("thin");
+		const viewport = area.querySelector<HTMLElement>("[data-scroll-viewport]")!;
+		expect(viewport.classList.contains("scrollbar-hide")).toBe(true);
+		// The MAX_VISIBLE_ITEMS budget moved onto the ScrollArea root (the old
+		// inline style on the wrapper div, same value, same boundary).
+		expect(area.style.maxHeight).toBe(`${popoverMaxHeight("singleLine")}px`);
+		// Base UI mounts a scrollbar lazily (overflow observed); happy-dom has no
+		// layout, so fake the measurement the way scroll-area.test.tsx does.
+		Object.defineProperties(viewport, {
+			clientHeight: { value: 100 }, scrollHeight: { value: 1000 },
+			clientWidth: { value: 200 }, scrollWidth: { value: 200 },
+		});
+		await act(async () => {
+			viewport.scrollTop = 200;
+			fireEvent.scroll(viewport);
+		});
+		await waitFor(() => expect(area.querySelector("[data-scroll-thumb]")).not.toBeNull());
+		expect(area.querySelector("[data-scroll-track]")?.getAttribute("data-orientation")).toBe("vertical");
+		// Rows ride the scroll content; their px-3 padding scrolls with them.
+		expect(area.querySelector("[data-scroll-content]")?.textContent).toContain("bree");
+	});
+
+	it("mobile sheet body rides the same lane with the 50vh cap (CNR-8e)", async () => {
+		__isMobile = true;
+		renderPicker([]);
+		openAdd();
+		await waitFor(() =>
+			expect(within(document.body).getAllByText("lore_charfilter_section").length).toBe(2),
+		);
+		const area = document.body.querySelector('[data-scroll-area="thin"]') as HTMLElement | null;
+		if (!area) throw new Error("no ScrollArea in the sheet body");
+		// One body, both shells: the viewport-relative sheet cap sits on the
+		// ScrollArea root on mobile (the lane itself is hidden on phones by
+		// the CNR-7g policy; only the scroller identity is pinned here).
+		expect(area.classList.contains("max-h-[50vh]")).toBe(true);
+		expect(area.querySelector("[data-scroll-viewport]")?.classList.contains("overscroll-contain")).toBe(true);
 	});
 
 	it("mobile: the picker opens as a BottomSheet (no desktop popper) and add works", async () => {

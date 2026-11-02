@@ -498,6 +498,37 @@ describe("LinkBindingPopover — variant-A picker (LB-2C)", () => {
 		}
 	});
 
+	it("picker body scrolls on the shared thin ScrollArea lane; the cap stays outside (CNR-8e)", async () => {
+		renderRow({ ...pickerBase });
+		openDesktopPicker();
+		await waitFor(() => expect(chipNames("scope_char · 11")).toBeTruthy());
+		const area = document.body.querySelector(
+			'[data-radix-popper-content-wrapper] [data-scroll-area]'
+		) as HTMLElement | null;
+		if (!area) throw new Error("no ScrollArea in the picker body");
+		expect(area.getAttribute("data-scroll-area")).toBe("thin");
+		const viewport = area.querySelector<HTMLElement>("[data-scroll-viewport]")!;
+		expect(viewport.classList.contains("scrollbar-hide")).toBe(true);
+		// Base UI mounts a scrollbar lazily (overflow observed); happy-dom has no
+		// layout, so fake the measurement the way scroll-area.test.tsx does.
+		Object.defineProperties(viewport, {
+			clientHeight: { value: 100 }, scrollHeight: { value: 1000 },
+			clientWidth: { value: 200 }, scrollWidth: { value: 200 },
+		});
+		await act(async () => {
+			viewport.scrollTop = 200;
+			fireEvent.scroll(viewport);
+		});
+		await waitFor(() => expect(area.querySelector("[data-scroll-thumb]")).not.toBeNull());
+		expect(area.querySelector("[data-scroll-track]")?.getAttribute("data-orientation")).toBe("vertical");
+		// The cap stays OUTSIDE and still limits: the ScrollArea is a min-h-0
+		// flex-1 child of the body flex column, so the Radix content's max-h
+		// (desktop) / the 80dvh sheet wrapper (mobile) still bounds it.
+		expect(area.className.split(" ")).toEqual(expect.arrayContaining(["min-h-0", "flex-1"]));
+		// Sections ride the scroll content — their px-3 padding scrolls too.
+		expect(area.querySelector("[data-scroll-content]")?.textContent).toContain("Bound One");
+	});
+
 	it("avatar images load lazily (loading=lazy, decoding=async)", async () => {
 		renderRow({
 			...pickerBase,

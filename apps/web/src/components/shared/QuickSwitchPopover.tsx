@@ -55,6 +55,7 @@ import { Icons } from "./icons.js";
 import { CustomTooltip } from "./Tooltip.js";
 import { BottomSheet } from "./BottomSheet.js";
 import { popoverMaxHeight } from "./popover-constants.js";
+import { ScrollArea } from "./scroll-area.js";
 import { useT } from "../../i18n/context.js";
 
 export interface QuickSwitchItem {
@@ -217,9 +218,18 @@ export function QuickSwitchPopover({
 					<div className="mb-1 border-b border-border px-4 pb-2 pt-1 font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.08em] text-t3">
 						{title}
 					</div>
-					<div className="overflow-y-auto">
+					{/* CNR-8e: the item list scrolls on the shared thin ScrollArea lane
+					 * (3px rest / 5px hover) instead of the native 8px fallback; the
+					 * ~6-row cap moved onto the ScrollArea root so it still limits the
+					 * list (the primitive is flex-col, its viewport takes the rest) and
+					 * the rows' px-4 padding scrolls with the content. The old outer
+					 * overflow-y-auto wrapper never scrolled itself (the capped inner
+					 * div did) and is gone. The mobile BottomSheet half keeps its
+					 * native max-h-[50vh] list — separate markup, and the CNR-7g policy
+					 * hides custom chrome on phones anyway (same accepted deviation as
+					 * ToolbarSelect in CNR-8d, remembered by CNR-8r's residual audit). */}
 						{items.length > 0 ? (
-							<div className="overflow-y-auto" style={{ maxHeight: popoverMaxHeight("singleLine") }}>
+							<ScrollArea scrollbarSize="thin" style={{ maxHeight: popoverMaxHeight("singleLine") }}>
 								{items.map((item) => (
 									<button
 										type="button"
@@ -242,11 +252,10 @@ export function QuickSwitchPopover({
 										</span>
 									</button>
 								))}
-							</div>
+							</ScrollArea>
 						) : (
 							<div className="px-4 py-2 font-ui text-[calc(var(--ui-fs)-2px)] text-t3">{emptyText}</div>
 						)}
-					</div>
 					{footer && <div className="mt-1 border-t border-border px-2 pt-1">{footer}</div>}
 				</Popover.Content>
 			</Popover.Portal>
