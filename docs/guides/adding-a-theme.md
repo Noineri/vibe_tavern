@@ -3,7 +3,12 @@
 > Companion to [Frontend Architecture](../architecture/frontend.md).
 > Read this before adding a color theme — the registry design means most additions are one CSS file + one array entry.
 
-Theming is **registry-driven**. There is exactly one source of truth — `apps/web/src/themes/registry.ts` — and every consumer (storage, the `<html>` class, the theme picker in desktop Tweaks *and* mobile settings) derives from it. Adding a theme is two mechanical steps plus a CSS file. The three traps that historically shipped bugs are documented in [§ The three traps](#the-three-traps) below; read those before writing CSS. If your theme uses a gradient or animated background, also read [§ Page-background gradients and transparency](#page-background-gradients-and-transparency).
+Built-in theming is **registry-driven**.
+There is one source of truth — `apps/web/src/themes/registry.ts` — for built-in ids, classes and icons; the shared `InterfaceSettingsBody` derives their segments for desktop quick access, mobile settings and the Interface section.
+Adding a built-in theme is two mechanical steps plus a CSS file.
+End users can instead [upload a CSS theme](#user-uploaded-css-themes) without editing or rebuilding the app.
+The three traps that historically shipped bugs are documented in [§ The three traps](#the-three-traps) below; read those before writing CSS.
+If your theme uses a gradient or animated background, also read [§ Page-background gradients and transparency](#page-background-gradients-and-transparency).
 
 ---
 
@@ -20,10 +25,9 @@ apps/web/src/
 │   ├── light-lava.css             :root.light-lava      (animated gradient)
 │   └── dark-lava.css              :root.dark-lava       (animated gradient)
 └── (consumers — no edits needed when adding a theme)
-    ├── lib/local-storage.ts       readSavedTheme() validates via normalizeTheme()
-    ├── hooks/use-vibe-tavern-app.ts applyThemeClass() — exclusive class switch
-    ├── components/settings/popovers/TweaksPanel.tsx       desktop picker (THEMES.map)
-    └── components/settings/popovers/MobileSettings.tsx    mobile picker (THEMES.map)
+    ├── stores/interface-settings-store.ts   persisted theme validated via normalizeTheme()
+    ├── hooks/use-interface-theme.ts         exclusive class + active user stylesheet
+    └── components/settings/interface-settings-body.tsx   shared theme controls
 ```
 
 Everything below `registry.ts` in that tree adapts automatically. **Do not touch the consumers when adding a theme.**
@@ -198,6 +202,41 @@ The `icon` field references the icon set in `apps/web/src/components/shared/icon
 2. Reference it by its key (e.g. `icon: "flame"`).
 
 Lucide is ISC-licensed and Feather is MIT, so no attribution is required in source — but matching their stroke/round-cap style keeps the set visually consistent.
+
+---
+
+## User-uploaded CSS themes
+
+Open **All settings → Interface → Your themes → Upload CSS**.
+Use a theme-tuner export or a copy of a built-in CSS file, up to 1 MiB of UTF-8 CSS.
+The file must contain custom properties in a top-level `:root` or `:root.<name>` rule:
+
+```css
+:root.my-theme {
+  --bg: #141210;
+  --surface: #1f1d1a;
+  --accent: #d6a75c;
+  /* Copy the remaining tokens from a built-in theme for a complete palette. */
+}
+```
+
+The server normalizes root selectors to `:root.user-<slug>`, including matching descendant/media rules; declarations, comments, CSS nesting and animation keyframes are preserved.
+Each upload gets a unique safe slug, so uploading another file with the same name does not overwrite it.
+The original filename is retained in a URI-encoded standard CSS comment at the start of the file.
+Uploaded themes live at `data/themes/<slug>.css`, alongside the rest of the portable data directory; include that directory when copying/backing up application data.
+No DB migration or server-synchronized preference is involved.
+
+When the library is non-empty, a **Custom theme** dropdown appears beneath the built-in icons on all three settings surfaces.
+Selecting an upload clears the icon selection; selecting a built-in clears the dropdown; **Not selected** returns to the default theme.
+A successful upload selects its theme unless the user changed the selection while the upload was pending.
+The device-local preference is `user:<slug>` in `state.settings.theme` under `vibe-tavern.interface-settings`.
+The active CSS is fetched through the authenticated API and inserted as style text, never as HTML; switching themes removes the previous style element.
+A missing/deleted theme returns to the default after successful discovery or a confirmed not-found response; transient request errors preserve the saved choice and offer Retry in the section.
+Delete actions are section-only and require confirmation.
+
+**Upload only CSS you trust.**
+CSS can restyle or hide application controls and reference external resources; selector normalization is not a CSS security sandbox.
+The existing pre-React splash uses a built-in fallback until the user stylesheet has loaded.
 
 ---
 

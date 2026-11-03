@@ -1,8 +1,9 @@
 import type { ReactNode } from "react";
 import { useT, type TFunc } from "../../i18n/context.js";
 import { LOCALES, normalizeLocale } from "../../i18n/registry.js";
-import { THEMES } from "../../themes/registry.js";
+import { DEFAULT_THEME, THEMES, userThemeSlug } from "../../themes/registry.js";
 import { useInterfaceSettingsStore } from "../../stores/interface-settings-store.js";
+import { useUserThemesStore } from "../../stores/user-themes-store.js";
 import { useScriptWarningsToggle } from "../../hooks/use-script-warnings-toggle.js";
 import { cn } from "../../lib/cn.js";
 import { Icons } from "../shared/icons.js";
@@ -90,6 +91,7 @@ export function InterfaceSettingsBody({ mobile = false }: { mobile?: boolean }) 
   const { t, setLocale } = useT();
   const settings = useInterfaceSettingsStore((s) => s.settings);
   const setSetting = useInterfaceSettingsStore((s) => s.setSetting);
+  const userThemes = useUserThemesStore((s) => s.themes);
   const warnings = useScriptWarningsToggle();
   const setLanguage = (value: string) => {
     const locale = normalizeLocale(value);
@@ -102,6 +104,21 @@ export function InterfaceSettingsBody({ mobile = false }: { mobile?: boolean }) 
       <SettingRow mobile={mobile} spaced label={t("tweaks_theme")}>
         <SegmentedControl value={settings.theme} options={themeOptions} onChange={(value) => setSetting("theme", value)} compact={!mobile} mobileFill={mobile} ariaLabel={t("tweaks_theme")} />
       </SettingRow>
+      {userThemes.length > 0 && (
+        <SettingRow mobile={mobile} stacked label={t("user_theme_choice")} icon={<Icons.Settings />}>
+          {/* Compact width budget: 256px content - ~90px RU label - 12px gap
+              leaves ~154px for the field; filenames ellipsize only in the trigger,
+              and the shared popup exposes their full wrapped value. */}
+          <DropdownSelect
+            value={userThemeSlug(settings.theme) ?? ""}
+            options={userThemes.map((theme) => ({ id: theme.id, label: theme.name }))}
+            defaultOption={t("user_theme_none")}
+            onChange={(slug) => setSetting("theme", slug ? `user:${slug}` : DEFAULT_THEME)}
+            className={mobile ? undefined : "min-w-0 flex-1"}
+            searchable={false}
+          />
+        </SettingRow>
+      )}
       {!mobile && (settings.theme === "dark-lava" || settings.theme === "light-lava") && (
         <SettingRow mobile={mobile} label={t("tweaks_lava_blobs")}>
           <Toggle checked={settings.lavaBlobs} onChange={(value) => setSetting("lavaBlobs", value)} aria-label={t("tweaks_lava_blobs")} />
