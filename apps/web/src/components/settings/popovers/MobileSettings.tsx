@@ -1,32 +1,15 @@
-import { Toggle } from "../../shared/Toggle.js";
 import { useT } from "../../../i18n/context.js";
-import { LOCALES } from "../../../i18n/registry.js";
 import { Icons } from "../../shared/icons.js";
-import { SegmentedControl } from "../../shared/SegmentedControl.js";
-import { Slider } from "../../shared/slider.js";
 import { ScrollArea } from "../../shared/scroll-area.js";
-import { THEMES, type ThemeMode } from "../../../themes/registry.js";
-import { useScriptWarningsToggle } from "../../../hooks/use-script-warnings-toggle.js";
-
-interface TweaksSettings {
-	theme: ThemeMode;
-	fontSize: number;
-	uiFontSize: number;
-	messageWidth: 'narrow' | 'medium' | 'wide';
-	lang: string;
-	showRail: boolean;
-}
+import { InterfaceSettingsBody } from "../interface-settings-body.js";
 
 interface MobileSettingsProps {
 	open: boolean;
 	onClose: () => void;
-	settings: TweaksSettings;
-	setSetting: (key: string, value: unknown) => void;
-	onOpenMobileAccess: () => void;
 	onOpenProxyManager?: () => void;
 }
 
-export function MobileSettings({ open, onClose, settings, setSetting, onOpenMobileAccess, onOpenProxyManager = () => {} }: MobileSettingsProps) {
+export function MobileSettings({ open, onClose, onOpenProxyManager = () => {} }: MobileSettingsProps) {
 	const { t } = useT();
 	if (!open) return null;
 
@@ -96,97 +79,7 @@ export function MobileSettings({ open, onClose, settings, setSetting, onOpenMobi
 			</div>
 
 
-				{/* Appearance — theme (segment control mirrors desktop TweaksPanel, driven by the registry) */}
-				<div className="px-5 pt-5 pb-2.5">
-					<div className="flex min-h-[48px] items-center justify-between gap-3">
-						<span className="font-body text-[length:var(--ui-fs)] text-t1">{t("tweaks_theme")}</span>
-						<SegmentedControl
-							value={settings.theme}
-							options={THEMES.map((th) => {
-								const Icon = Icons[th.icon];
-								return { value: th.id, label: <Icon /> };
-							})}
-							onChange={(v) => setSetting("theme", v as ThemeMode)}
-							mobileFill
-						/>
-					</div>
-				</div>
-
-				{/* Show Rail toggle */}
-				<div className="px-5 py-2.5">
-					<div className="flex min-h-[48px] items-center justify-between">
-						<div className="flex items-center gap-3">
-							<div className="flex h-9 w-9 items-center justify-center rounded-lg bg-s2 text-t2">
-								<Icons.Menu />
-							</div>
-							<span className="font-body text-[length:var(--ui-fs)] text-t1">{settings.showRail ? t("hide_rail") : t("show_rail")}</span>
-						</div>
-						<Toggle checked={settings.showRail} onChange={(checked) => setSetting("showRail", checked)} className="text-[calc(var(--ui-fs)+4px)]" />
-					</div>
-				</div>
-
-				{/* Chat font size */}
-				<div className="px-5 py-2.5">
-					<div className="flex items-center gap-3 mb-2">
-						<div className="flex h-9 w-9 items-center justify-center rounded-lg bg-s2 text-t2">
-							<span className="font-body text-[calc(var(--ui-fs)+2px)] font-bold">A</span>
-						</div>
-						<span className="font-body text-[length:var(--ui-fs)] text-t1">{t("tweaks_font_size")}</span>
-					</div>
-					<Slider
-						appearance="field"
-						min={14} max={22} step={1}
-						value={settings.fontSize}
-						formatValue={(value) => `${value} px`}
-						onValueChange={(value) => setSetting("fontSize", Math.round(value))}
-						aria-label={t("tweaks_font_size")}
-					/>
-				</div>
-
-				{/* UI font size */}
-				<div className="px-5 py-2.5">
-					<div className="flex items-center gap-3 mb-2">
-						<div className="flex h-9 w-9 items-center justify-center rounded-lg bg-s2 text-t2">
-							<Icons.Sliders />
-						</div>
-						<span className="font-body text-[length:var(--ui-fs)] text-t1">{t("tweaks_ui_font_size")}</span>
-					</div>
-					<Slider
-						appearance="field"
-						min={14} max={20} step={1}
-						value={settings.uiFontSize}
-						formatValue={(value) => `${value} px`}
-						onValueChange={(value) => setSetting("uiFontSize", Math.round(value))}
-						aria-label={t("tweaks_ui_font_size")}
-					/>
-				</div>
-
-				{/* Language */}
-				<div className="px-5 pt-5 pb-2.5">
-					<div className="flex items-center gap-3 mb-2.5">
-						<div className="flex h-9 w-9 items-center justify-center rounded-lg bg-s2 text-t2">
-							<Icons.Help />
-						</div>
-						<span className="font-body text-[length:var(--ui-fs)] text-t1">{t("tweaks_language")}</span>
-					</div>
-					<div className="flex rounded-lg border border-border bg-s2 p-0.5">
-						{LOCALES.map((l) => (
-							<button type="button"
-								key={l.id}
-								className={`flex flex-1 cursor-pointer items-center justify-center rounded-md py-2.5 font-ui text-[calc(var(--ui-fs)-3px)] transition-colors min-h-[40px] ${
-									settings.lang === l.id
-										? "bg-surface text-t1 font-medium shadow-sm"
-										: "text-t3 active:text-t2"
-								}`}
-								onClick={() => setSetting("lang", l.id)}
-							>
-								{l.label}
-							</button>
-						))}
-					</div>
-				</div>
-
-				<ScriptWarningsRow />
+				<InterfaceSettingsBody mobile />
 
 				<div className="px-5 py-2.5">
 					<button type="button" className="flex min-h-[48px] w-full items-center justify-between rounded-lg border border-border bg-s2 px-3 text-left text-t2 transition-colors active:bg-s3" onClick={onOpenProxyManager}>
@@ -199,34 +92,6 @@ export function MobileSettings({ open, onClose, settings, setSetting, onOpenMobi
 				<div className="h-[env(safe-area-inset-bottom,0px)]" />
 				<div className="h-4" />
 			</ScrollArea>
-		</div>
-	);
-}
-
-/** Mobile twin of the TweaksPanel «Script import warnings» row, in this
- *  sheet's own toggle-row shape (the show-rail row; `gap-3` from the theme
- *  row, since this label is longer). Its own component so the settings
- *  load runs only while the sheet is open — the sheet itself stays mounted
- *  and returns null when closed. */
-function ScriptWarningsRow() {
-	const { t } = useT();
-	const scriptWarnings = useScriptWarningsToggle();
-	return (
-		<div className="px-5 py-2.5">
-			<div className="flex min-h-[48px] items-center justify-between gap-3">
-				<div className="flex items-center gap-3">
-					<div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-s2 text-t2">
-						<Icons.alert />
-					</div>
-					<span className="font-body text-[length:var(--ui-fs)] text-t1">{t("tweaks_script_warnings")}</span>
-				</div>
-				<Toggle
-					checked={scriptWarnings.checked}
-					onChange={scriptWarnings.onChange}
-					aria-label={t("tweaks_script_warnings")}
-					className="text-[calc(var(--ui-fs)+4px)]"
-				/>
-			</div>
 		</div>
 	);
 }

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import { useScriptSafetySettingsStore } from "../../../stores/script-safety-settings-store.js";
 
@@ -7,7 +7,7 @@ useDomEnv();
 // The «Script import warnings» row (IMAGEGEN_CUSTOM_ENDPOINT_FILTER_REPORT
 // step 10, owner ruling 4b) in both settings shells. The settings API is the
 // mocked boundary; the real Zustand store and the real hook run.
-const realSettingsApi = await import("../../../api/settings-api.js");
+const realSettingsApi = { ...(await import("../../../api/settings-api.js")) };
 const getScriptSafetySettings = mock(async () => ({ suppressImportWarnings: false, updatedAt: "" }));
 const updateScriptSafetySettings = mock(async (input: { suppressImportWarnings: boolean }) => ({
   suppressImportWarnings: input.suppressImportWarnings,
@@ -19,7 +19,7 @@ mock.module("../../../api/settings-api.js", () => ({
   updateScriptSafetySettings,
 }));
 
-const realUseMobile = await import("../../../hooks/use-mobile.js");
+const realUseMobile = { ...(await import("../../../hooks/use-mobile.js")) };
 mock.module("../../../hooks/use-mobile.js", () => ({
   ...realUseMobile,
   useIsMobile: () => false,
@@ -28,20 +28,13 @@ mock.module("../../../hooks/use-mobile.js", () => ({
 const { cleanup, fireEvent, render, waitFor } = await import("@testing-library/react");
 const { TweaksPanelBody } = await import("./TweaksPanel.js");
 const { MobileSettings } = await import("./MobileSettings.js");
-
-const baseSettings = {
-  theme: "coffee" as const,
-  fontSize: 17,
-  uiFontSize: 17,
-  messageWidth: "medium" as const,
-  lang: "en",
-  lavaBlobs: true,
-};
+const originalWarnings = useScriptSafetySettingsStore.getState();
+afterAll(() => useScriptSafetySettingsStore.setState(originalWarnings, true));
 
 const SHELLS = [
   {
     name: "desktop TweaksPanel",
-    render: () => render(<TweaksPanelBody settings={baseSettings} setSetting={mock()} onOpenMobileAccess={mock()} />),
+    render: () => render(<TweaksPanelBody onOpenMobileAccess={mock()} />),
   },
   {
     name: "MobileSettings",
@@ -50,9 +43,6 @@ const SHELLS = [
         <MobileSettings
           open
           onClose={mock()}
-          settings={{ ...baseSettings, showRail: true }}
-          setSetting={mock()}
-          onOpenMobileAccess={mock()}
         />,
       ),
   },

@@ -3,12 +3,10 @@ import { toast } from "sonner";
 import * as Popover from "@radix-ui/react-popover";
 import * as buildConfig from "../../build-config.js";
 import { useT } from "../../i18n/context.js";
-import { normalizeLocale } from "../../i18n/registry.js";
 import { Icons } from "../shared/icons.js";
 import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
 import { apiFetch } from "../../api/client.js";
 import { resolveAssistantPrefillSupport } from "@vibe-tavern/domain";
-import { type ThemeMode } from "../../themes/registry.js";
 import { useChatStore, useNavigationStore, useCharacterStore, useProviderStore, useModalStore } from "../../stores/index.js";
 import { saveCharacterAction } from "../../stores/api-actions/character-actions.js";
 import { useActiveTrace, useLazyContextPreview } from "../../stores/chat-selectors.js";
@@ -58,8 +56,8 @@ interface AppShellProps {
   setTweaksSettings: React.Dispatch<React.SetStateAction<TweaksSettings>>;
 }
 
-export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
-  const { t, setLocale } = useT();
+export function AppShell({ tweaksSettings }: AppShellProps) {
+  const { t } = useT();
 
   // --- Store subscriptions (reactive) ---
   const isMobile = useIsMobile();
@@ -212,14 +210,6 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
     return result.summary;
   }
 
-  // --- Tweak helpers ---
-  function updateTweak(key: string, value: unknown): void {
-    setTweaksSettings(prev => {
-      const next = { ...prev, [key]: value };
-      return next;
-    });
-  }
-
   // --- Derived values for rendering ---
   const resolvedActiveChatId = activeChatId ?? activeChat?.id ?? null;
   const contextUsed = activePromptTrace?.tokenAccounting?.total ?? 0;
@@ -326,16 +316,6 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
     ? resolveEntityAvatarUrl({ kind: "characters", id: activeCharacter.id, avatarExt: activeCharacter.avatarExt, avatarAssetId: activeCharacter.avatarAssetId, avatarFullAssetId: activeCharacter.avatarFullAssetId, updatedAt: activeCharacter.updatedAt, preferFull: true }) ?? undefined
     : undefined;
 
-  const tweaksPanelSettings = {
-    theme: theme as ThemeMode,
-    fontSize: tweaksSettings.fontSize,
-    uiFontSize: tweaksSettings.uiFontSize,
-    messageWidth: tweaksSettings.messageWidth,
-    lang: tweaksSettings.lang,
-    showRail: tweaksSettings.showRail,
-    lavaBlobs: tweaksSettings.lavaBlobs,
-  };
-
   const handleSetDefaultProxy = async (proxyId: string | null) => {
     try {
       const setting = await setDefaultProxy(proxyId);
@@ -343,15 +323,6 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
     } catch (error) {
       toast.error(error instanceof Error ? error.message : t("request_failed"));
     }
-  };
-
-  const handleSetTweak = (key: string, value: unknown) => {
-    if (key === 'theme') useInterfaceSettingsStore.getState().setSetting("theme", value as ThemeMode);
-    else if (key === 'showRail') updateTweak(key, value as boolean);
-    else if (key === 'lavaBlobs') updateTweak(key, value as boolean);
-    else if (key === 'fontSize' || key === 'uiFontSize') updateTweak(key, value as number);
-    else if (key === 'messageWidth') updateTweak(key, value as 'narrow' | 'medium' | 'wide');
-    else if (key === 'lang') { updateTweak(key, value as string); setLocale(normalizeLocale(value as string)); }
   };
 
   // Root is intentionally transparent: the page background (solid --bg or a
@@ -380,8 +351,6 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
         </main>
         {!isMobile && (
           <TweaksPanel
-            settings={tweaksPanelSettings}
-            setSetting={handleSetTweak}
             onOpenMobileAccess={async () => {
               // Ensure a token exists before opening the modal
               try {
@@ -403,18 +372,6 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
       {isMobile && <MobileSettings
         open={tweaksOpen}
         onClose={() => setTweaksOpen(false)}
-        settings={tweaksPanelSettings}
-        setSetting={handleSetTweak}
-        onOpenMobileAccess={async () => {
-          try {
-            const resp = await apiFetch("/api/settings/mobile-access");
-            if (resp.ok) {
-              const data = await resp.json();
-              if (!data.token) await apiFetch("/api/settings/mobile-access/regenerate", { method: "POST" });
-            }
-          } catch { /* ignore */ }
-          setMobileAccessOpen(true);
-        }}
         onOpenProxyManager={() => setIsProxyManagerOpen(true)}
       />}
       {mobileAccessOpen && !isMobile && <MobileAccessModal open={mobileAccessOpen} onClose={() => setMobileAccessOpen(false)} onDisabled={() => {}} />}

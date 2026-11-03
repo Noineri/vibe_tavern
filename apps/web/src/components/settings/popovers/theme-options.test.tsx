@@ -1,5 +1,5 @@
 
-import { describe, expect, it, mock } from "bun:test";
+import { afterAll, afterEach, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import { useScriptSafetySettingsStore } from "../../../stores/script-safety-settings-store.js";
 
@@ -9,11 +9,14 @@ useDomEnv();
 // server flag on mount. A loaded value makes that load a no-op, keeping the
 // settings API out of these theme tests (the row has its own file:
 // script-warnings-setting.test.tsx).
-useScriptSafetySettingsStore.setState({ suppressImportWarnings: false });
 
-const { fireEvent, render, within } = await import("@testing-library/react");
+const { fireEvent, render, within, cleanup } = await import("@testing-library/react");
+const { useInterfaceSettingsStore, INTERFACE_SETTINGS_STORAGE_KEY } = await import("../../../stores/interface-settings-store.js");
+const originalPreferences = useInterfaceSettingsStore.getState();
+const originalWarnings = useScriptSafetySettingsStore.getState();
+const originalStored = localStorage.getItem(INTERFACE_SETTINGS_STORAGE_KEY);
 
-const realUseMobile = await import("../../../hooks/use-mobile.js");
+const realUseMobile = { ...(await import("../../../hooks/use-mobile.js")) };
 mock.module("../../../hooks/use-mobile.js", () => ({
   ...realUseMobile,
   useIsMobile: () => false,
@@ -31,6 +34,20 @@ const baseSettings = {
   lavaBlobs: true,
 };
 
+function restore() {
+  useInterfaceSettingsStore.setState(originalPreferences, true);
+  useScriptSafetySettingsStore.setState(originalWarnings, true);
+  if (originalStored === null) localStorage.removeItem(INTERFACE_SETTINGS_STORAGE_KEY);
+  else localStorage.setItem(INTERFACE_SETTINGS_STORAGE_KEY, originalStored);
+}
+beforeEach(() => {
+  restore();
+  useInterfaceSettingsStore.getState().updateSettings({ ...baseSettings, showRail: true });
+  useScriptSafetySettingsStore.setState({ suppressImportWarnings: false });
+});
+afterEach(() => { cleanup(); restore(); });
+afterAll(restore);
+
 function themeRadios(container: HTMLElement): HTMLElement[] {
   const firstGroup = container.querySelector<HTMLElement>('[role="radiogroup"]');
   expect(firstGroup).not.toBeNull();
@@ -39,11 +56,9 @@ function themeRadios(container: HTMLElement): HTMLElement[] {
 
 describe("theme settings", () => {
   it("offers Mystic Dawn with the outlined sparkle in desktop Tweaks", () => {
-		const setSetting = mock();
+		const setSetting = spyOn(useInterfaceSettingsStore.getState(), "setSetting");
     const { container } = render(
       <TweaksPanelBody
-        settings={baseSettings}
-        setSetting={setSetting}
 			onOpenMobileAccess={mock()}
       />,
     );
@@ -57,14 +72,11 @@ describe("theme settings", () => {
   });
 
   it("offers Mystic Dawn in mobile settings", () => {
-		const setSetting = mock();
+		const setSetting = spyOn(useInterfaceSettingsStore.getState(), "setSetting");
     const { container } = render(
       <MobileSettings
         open
 			onClose={mock()}
-        settings={{ ...baseSettings, showRail: true }}
-        setSetting={setSetting}
-			onOpenMobileAccess={mock()}
       />,
     );
 
@@ -85,9 +97,6 @@ describe("theme settings", () => {
       <MobileSettings
         open
         onClose={mock()}
-        settings={{ ...baseSettings, showRail: true }}
-        setSetting={mock()}
-        onOpenMobileAccess={mock()}
       />,
     );
 
@@ -107,9 +116,6 @@ describe("theme settings", () => {
       <MobileSettings
         open
         onClose={mock()}
-        settings={{ ...baseSettings, showRail: true }}
-        setSetting={mock()}
-        onOpenMobileAccess={mock()}
       />,
     );
 

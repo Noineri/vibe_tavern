@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
 import { useState, type ReactNode } from "react";
 import { useDomEnv } from "../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
@@ -7,6 +7,9 @@ import { useScriptSafetySettingsStore } from "../../stores/script-safety-setting
 useDomEnv();
 
 installI18nContextSeam();
+const { useInterfaceSettingsStore, INTERFACE_SETTINGS_STORAGE_KEY } = await import("../../stores/interface-settings-store.js");
+const originalPreferences = useInterfaceSettingsStore.getState();
+const originalStoredPreferences = localStorage.getItem(INTERFACE_SETTINGS_STORAGE_KEY);
 
 const realTooltip = await import("../shared/Tooltip.js");
 mock.module("../shared/Tooltip.js", () => ({
@@ -31,11 +34,21 @@ beforeAll(async () => {
 });
 
 beforeEach(() => {
+  useInterfaceSettingsStore.setState(originalPreferences, true);
+  useInterfaceSettingsStore.getState().updateSettings({ theme: "coffee", fontSize: 17, uiFontSize: 16, messageWidth: "medium", lang: "en", showRail: true });
   useScriptSafetySettingsStore.setState({ suppressImportWarnings: false });
   localStorage.removeItem("ai:gen-params:open");
 });
 
+function restorePreferences() {
+  useInterfaceSettingsStore.setState(originalPreferences, true);
+  if (originalStoredPreferences === null) localStorage.removeItem(INTERFACE_SETTINGS_STORAGE_KEY);
+  else localStorage.setItem(INTERFACE_SETTINGS_STORAGE_KEY, originalStoredPreferences);
+}
+afterEach(restorePreferences);
+
 afterAll(() => {
+  restorePreferences();
   if (originalAiGenParamsOpen === null) localStorage.removeItem("ai:gen-params:open");
   else localStorage.setItem("ai:gen-params:open", originalAiGenParamsOpen);
   useScriptSafetySettingsStore.setState({ suppressImportWarnings: originalSuppressImportWarnings });
@@ -218,14 +231,11 @@ describe("SL-3 settings slider sites", () => {
   });
 
   it("updates both mobile font settings immediately with their bounds and value-only field readouts", () => {
-    const setSetting = mock();
+    const setSetting = spyOn(useInterfaceSettingsStore.getState(), "setSetting");
     const view = render(
       <MobileSettings
         open
         onClose={() => {}}
-        settings={{ theme: "coffee", fontSize: 17, uiFontSize: 16, messageWidth: "medium", lang: "en", showRail: true }}
-        setSetting={setSetting}
-        onOpenMobileAccess={() => {}}
       />,
     );
     const chatFont = range(view, "tweaks_font_size");
@@ -252,14 +262,11 @@ describe("SL-3 settings slider sites", () => {
   });
 
   it("types a mobile font size through the inline editor, rounded to whole pixels and clamped to the bounds", () => {
-    const setSetting = mock();
+    const setSetting = spyOn(useInterfaceSettingsStore.getState(), "setSetting");
     const view = render(
       <MobileSettings
         open
         onClose={() => {}}
-        settings={{ theme: "coffee", fontSize: 17, uiFontSize: 16, messageWidth: "medium", lang: "en", showRail: true }}
-        setSetting={setSetting}
-        onOpenMobileAccess={() => {}}
       />,
     );
 
