@@ -24,6 +24,7 @@ import type {
   LorebookReviewSettingField,
 } from "@vibe-tavern/api-contracts";
 import { Checkbox } from "../shared/Checkbox.js";
+import { ScrollArea } from "../shared/scroll-area.js";
 import { cn } from "../../lib/cn.js";
 
 export interface CoauthorLoreReviewLabels {
@@ -235,7 +236,11 @@ export function CoauthorLoreReview({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-3 py-2">
+      {/* CNR-8p: the lore review body rides the thin vertical lane; the flex
+          share stays on the root, the gap-2 rhythm + px-3 py-2 padding scroll
+          with the cards. Dense worldbuilding prose across multiple proposed
+          books/entries is the normal case, so the body truly overflows. */}
+      <ScrollArea scrollbarSize="thin" className="min-h-0 flex-1" contentClassName="flex flex-col gap-2 px-3 py-2">
         <div className="font-ui text-[calc(var(--ui-fs)-3px)] font-semibold uppercase tracking-[0.06em] text-t3">
           {labels.title}
         </div>
@@ -343,7 +348,7 @@ export function CoauthorLoreReview({
             </div>
           </div>
         ))}
-      </div>
+      </ScrollArea>
     </div>
   );
 }

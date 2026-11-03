@@ -1,6 +1,7 @@
 import type { CoauthorLoreBundle, CoauthorTrackerTemplateOutput } from "@vibe-tavern/api-contracts";
 import type { TrackerTemplate } from "@vibe-tavern/domain";
 import type { TFunc } from "../../i18n/context.js";
+import { ScrollArea } from "../shared/scroll-area.js";
 import { buildLineDiff } from "../shared/TextDiffPreview.js";
 import { HunkSelectionDiff } from "./HunkSelectionDiff.js";
 import { groupHunks } from "../../lib/coauthor-hunk-merge.js";
@@ -123,11 +124,11 @@ export function CoauthorReviewingOverlay({
       {/* CT-7b: one tracker-template proposal, selected wholesale for Apply.
           Bounded like its siblings: the outer wrapper takes its flex-1 share
           of the column (min-h-0 so it can shrink under long content) and the
-          inner div owns the scroll, so a long template never pushes the
-          footer off-screen. The review card itself is unchanged. */}
+          CNR-8p thin vertical lane owns the scroll, so a long template never
+          pushes the footer off-screen. The review card itself is unchanged. */}
       {trackerTemplate && (
         <div data-testid="coauthor-tracker-section" className="flex min-h-0 flex-1 flex-col py-2">
-          <div className="min-h-0 flex-1 overflow-y-auto">
+          <ScrollArea scrollbarSize="thin" className="min-h-0 flex-1">
             <CoauthorTrackerTemplateReview
               template={trackerTemplate}
               summary={trackerTemplateSummary ?? summary}
@@ -138,7 +139,7 @@ export function CoauthorReviewingOverlay({
               labels={trackerTemplateLabels}
               t={t}
             />
-          </div>
+          </ScrollArea>
         </div>
       )}
       {/* CTX-L3: structured lore review (lorebooks + entries). Shown iff proposed. */}

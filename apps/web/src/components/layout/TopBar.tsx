@@ -17,6 +17,7 @@ import { selectSidechatServedChatModes } from "../../api/agent-kind-served-modes
 import { selectSidechatOwner } from "../chat/sidechat/sidechat-host.js";
 import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
 import { CustomTooltip } from "../shared/Tooltip.js";
+import { ScrollArea } from "../shared/scroll-area.js";
 import { MediaMenu } from "../chat/MediaMenu.js";
 import { UpdateBadge } from "./UpdateBadge.js";
 import { useActiveRegexPresets } from "../../hooks/use-active-regex-presets.js";
@@ -212,20 +213,27 @@ export function TopBar({ railHidden, onShowRail, update }: TopBarProps) {
               <Select.Content
                 position="popper"
                 sideOffset={4}
-                className="glass-blur z-50 max-h-[calc(6*((var(--ui-fs)-2px)*1.5+0.75rem))] min-w-[180px] overflow-hidden rounded-lg border border-border bg-glass-bg shadow-[0_12px_36px_rgba(0,0,0,.45)] data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95"
+                className="glass-blur z-50 min-w-[180px] overflow-hidden rounded-lg border border-border bg-glass-bg shadow-[0_12px_36px_rgba(0,0,0,.45)] data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95"
               >
                 <Select.Viewport className="overflow-y-auto">
-                  {promptPresets.map((p) => (
-                    <Select.Item
-                      key={p.id}
-                      value={p.id}
-                      className={cn(
-                        "cursor-pointer truncate px-3 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] text-t2 transition-colors outline-none data-[highlighted]:bg-s2 data-[state=checked]:bg-accent-dim data-[state=checked]:text-accent-t",
-                      )}
-                    >
-                      <Select.ItemText>{p.name}</Select.ItemText>
-                    </Select.Item>
-                  ))}
+                  {/* CNR-8p: the preset list rides the thin vertical lane (the
+                      8d ToolbarSelect idiom): the 6-row cap moved from
+                      Select.Content onto the ScrollArea root; Radix's
+                      highlighted-item scrollIntoView is element-level, so it
+                      rides the lane's viewport unchanged. */}
+                  <ScrollArea scrollbarSize="thin" className="max-h-[calc(6*((var(--ui-fs)-2px)*1.5+0.75rem))]">
+                    {promptPresets.map((p) => (
+                      <Select.Item
+                        key={p.id}
+                        value={p.id}
+                        className={cn(
+                          "cursor-pointer truncate px-3 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] text-t2 transition-colors outline-none data-[highlighted]:bg-s2 data-[state=checked]:bg-accent-dim data-[state=checked]:text-accent-t",
+                        )}
+                      >
+                        <Select.ItemText>{p.name}</Select.ItemText>
+                      </Select.Item>
+                    ))}
+                  </ScrollArea>
                 </Select.Viewport>
               </Select.Content>
             </Select.Portal>

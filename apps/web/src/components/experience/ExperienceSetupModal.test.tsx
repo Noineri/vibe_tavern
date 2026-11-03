@@ -644,6 +644,21 @@ describe("ExperienceSetupModal — character-backed seats", () => {
     mocks.testScript.mockResolvedValue(interactiveOk(def([{ capability: "participants" }, { capability: "model" }])));
   });
 
+  it("the add-character checklist rides its own thin lane inside the modal body lane (CNR-8p)", async () => {
+    const view = renderModal();
+    await whenReady(view);
+    fireEvent.click(view.getByTestId("experience-setup-add-character"));
+    await waitFor(() => expect(view.getByText("experience_setup_add_character_picker_title")).toBeTruthy());
+    // Two thin lanes now: the CNR-8g modal body plus the CNR-8p checklist
+    // (the 8g deferral named this picker for 8p). The checklist lane carries
+    // the max-h-48 cap; its viewport holds the character checkbox rows.
+    const lanes = [...view.baseElement.querySelectorAll('[data-scroll-area="thin"]')];
+    expect(lanes.length).toBeGreaterThanOrEqual(2);
+    const checklist = lanes.find((lane) => lane.classList.contains("max-h-48"));
+    expect(checklist).toBeTruthy();
+    expect(checklist!.querySelector("[data-scroll-viewport]")?.textContent).toContain("Aria");
+  });
+
   it("multi-adds characters as model seats with pinned characterIds and name labels", async () => {
     const view = renderModal();
     await whenReady(view);

@@ -1128,7 +1128,7 @@ export function ExperienceSetupModal({
                       {sortedAllCharacters.length === 0 ? (
                         <p className="font-ui text-[calc(var(--ui-fs)-2px)] text-t4">{t("experience_setup_add_character_empty")}</p>
                       ) : (
-                        <div className="flex max-h-48 flex-col gap-1 overflow-y-auto">
+                        <ScrollArea scrollbarSize="thin" className="max-h-48" contentClassName="flex flex-col gap-1">
                           {sortedAllCharacters.map((c) => (
                             <Checkbox
                               key={c.id}
@@ -1137,7 +1137,7 @@ export function ExperienceSetupModal({
                               label={c.name}
                             />
                           ))}
-                        </div>
+                        </ScrollArea>
                       )}
                       <div className="flex items-center justify-end">
                         <button

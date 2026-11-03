@@ -107,6 +107,16 @@ describe("CoauthorLoreReview — rendering (CTX-L3)", () => {
 		expect(getByText("entity")).toBeTruthy();
 	});
 
+	it("rides the shared thin scroll lane with the flex share on the root (CNR-8p)", () => {
+		const { container } = renderReview();
+		const lane = container.querySelector('[data-scroll-area="thin"]');
+		expect(lane).toBeTruthy();
+		expect((lane as HTMLElement).className).toContain("flex-1");
+		// Book/entry cards ride inside the lane's viewport; the gap-2 rhythm
+		// + px-3 py-2 padding scroll with the cards on the content element.
+		expect(lane!.querySelector("[data-scroll-viewport]")?.textContent).toContain("World Lore");
+	});
+
 	it("renders entry title, content, primary + secondary key chips, and the constant badge", () => {
 		const { getAllByText, getByText } = renderReview();
 		// Entry e1 — title "Eldoria" appears both as the entry title AND as a primary

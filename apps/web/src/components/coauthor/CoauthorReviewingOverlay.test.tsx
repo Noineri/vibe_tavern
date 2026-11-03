@@ -164,11 +164,13 @@ describe("CoauthorReviewingOverlay — tracker section scroll (owner follow-up 2
     // under long content (jsdom has no layout — pin the structure, not pixels).
     expect(section.className).toContain("min-h-0");
     expect(section.className).toContain("flex-1");
-    // Scrolls internally: the inner scroller owns the overflow.
+    // Scrolls internally on the CNR-8p thin vertical lane: the inner
+    // scroller IS the shared ScrollArea root owning the flex share.
     const scroller = section.firstElementChild as HTMLElement;
+    expect(scroller.getAttribute("data-scroll-area")).toBe("thin");
     expect(scroller.className).toContain("min-h-0");
     expect(scroller.className).toContain("flex-1");
-    expect(scroller.className).toContain("overflow-y-auto");
+    expect(scroller.querySelector("[data-scroll-viewport]")).toBeTruthy();
 
     const footer = getByTestId("coauthor-review-footer");
     expect(footer.className).toContain("shrink-0");
@@ -211,7 +213,7 @@ describe("CoauthorReviewingOverlay — tracker section scroll (owner follow-up 2
     const trackerSection = getByTestId("coauthor-tracker-section");
     expect(trackerSection.className).toContain("min-h-0");
     expect(trackerSection.className).toContain("flex-1");
-    expect((trackerSection.firstElementChild as HTMLElement).className).toContain("overflow-y-auto");
+    expect((trackerSection.firstElementChild as HTMLElement).getAttribute("data-scroll-area")).toBe("thin");
 
     const footer = getByTestId("coauthor-review-footer");
     expectFooterLast(container.firstElementChild as HTMLElement, [diffSection, trackerSection], footer);
