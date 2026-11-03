@@ -311,6 +311,32 @@ describe("MAE-53 mobile BottomSheet — row tap jumps; star tap is independent",
     expect(star2.className).toContain("h-11");
     expect(star2.className).toContain("w-11");
   });
+
+  test("CNR-8m: the sheet's row list rides the shared thin lane; rows keep their own elements", async () => {
+    const items = buildItems(7);
+    const { container } = render(
+      <VariantJump
+        mobile
+        items={items}
+        messageId={MESSAGE_ID_RAW}
+        selectedVariantIndex={0}
+        variantCount={7}
+        onSelect={NOOP}
+      />,
+    );
+    const trigger = container.querySelector(`[aria-label="Variant 1 of 7"]`) as HTMLButtonElement;
+    await act(async () => { fireEvent.click(trigger); });
+    const row2 = await waitForRowSelect(2);
+    // Cap on the ScrollArea root (MediaMenu idiom); the row keeps its own
+    // element (NarrationPlaylist idiom), so the data-testid/data-variant-row
+    // anchors are untouched. The lane is the shared [data-scroll-area] root,
+    // so the CNR-7g ≤768px media query hides its chrome on phones (pinned in
+    // scroll-area.test.tsx) — the thin thumb only shows on wider renders.
+    const lane = row2.closest('[data-scroll-area="thin"]');
+    expect(lane, "sheet rows must ride the shared thin lane").not.toBeNull();
+    expect(lane?.getAttribute("class")).toContain("max-h-[50vh]");
+    expect(row2.closest("[data-scroll-viewport]")).not.toBeNull();
+  });
 });
 
 describe("MAE-53 immutable-ID starring — survives index recompaction via pruneStaleStars", () => {

@@ -486,6 +486,15 @@ describe("Rail drawer — the actions reachable before the drill-in", () => {
 		expect(view.getByText("fantasy")).toBeTruthy();
 		expect(view.getByText("scifi")).toBeTruthy();
 		fireEvent.click(view.getByText("fantasy"));
+		// CNR-8m: the tag rows ride the shared thin lane with the cap on the
+		// root; the sheet's header row (label + reset) stays docked outside the
+		// scroller. The lane is the shared [data-scroll-area] root, so the
+		// CNR-7g ≤768px media query hides its chrome on phones (pinned in
+		// scroll-area.test.tsx) — native scrolling under the sheet is unchanged.
+		const tagLane = view.getByText("fantasy").closest('[data-scroll-area="thin"]');
+		expect(tagLane, "tag rows must ride the shared thin lane").not.toBeNull();
+		expect(tagLane?.getAttribute("class")).toContain("max-h-[45vh]");
+		expect(view.getByText("reset").closest("[data-scroll-area]")).toBeNull();
 		expect(listedCharacters(view)).toEqual(["Aria", "Cora"]);
 		fireEvent.click(view.getByText("scifi"));
 		expect(listedCharacters(view)).toEqual(["Cora"]);

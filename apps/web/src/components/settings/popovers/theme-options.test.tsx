@@ -95,4 +95,29 @@ describe("theme settings", () => {
     expect(queryByText("mobile_access")).toBeNull();
     expect(queryByText("mobile_access_enable")).toBeNull();
   });
+
+  // CNR-8m: the settings list rides the shared thin lane — flex-1 sizing on
+  // the ScrollArea root under the fixed header (which stays docked outside
+  // the scroller); the overscroll-contain + momentum-scrolling hints live on
+  // the native viewport the primitive renders. The lane is the shared
+  // [data-scroll-area] root, so the CNR-7g ≤768px media query hides its
+  // chrome on phones (pinned in scroll-area.test.tsx).
+  it("mobile settings body rides the shared thin lane with the header docked outside", () => {
+    const { container, getByText } = render(
+      <MobileSettings
+        open
+        onClose={mock()}
+        settings={{ ...baseSettings, showRail: true }}
+        setSetting={mock()}
+        onOpenMobileAccess={mock()}
+      />,
+    );
+
+    const lane = container.querySelector<HTMLElement>('[data-scroll-area="thin"]');
+    expect(lane, "settings body must ride the shared thin lane").not.toBeNull();
+    expect(lane?.className).toContain("flex-1");
+    expect(lane?.querySelector("[data-scroll-viewport]")?.className).toContain("overscroll-y-none");
+    expect(getByText("tweaks_title").closest("[data-scroll-area]")).toBeNull();
+    expect(getByText("tweaks_theme").closest("[data-scroll-area]")).toBe(lane);
+  });
 });

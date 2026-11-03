@@ -2,6 +2,7 @@ import { useState } from "react";
 import { cn } from "../../../lib/cn.js";
 import { brandId, type MessageId } from "@vibe-tavern/domain";
 import { BottomSheet } from "../../shared/BottomSheet.js";
+import { ScrollArea } from "../../shared/scroll-area.js";
 import { VariantStarButton } from "./variant-jump.js";
 import type { VariantPickerItem } from "./types.js";
 
@@ -42,7 +43,15 @@ export function VariantJumpSheet({ items, messageId, selectedVariantIndex, varia
         {trigger}
       </button>
       <BottomSheet open={open} onClose={() => setOpen(false)}>
-        <div className="max-h-[50vh] overflow-y-auto pb-2">
+        {/* CNR-8m: the row list rides the shared thin vertical lane with the
+            height cap on the ScrollArea root and the bottom padding scrolling
+            with the rows; each row keeps its own element (NarrationPlaylist
+            idiom) so the data-testid/data-variant-row anchors are untouched.
+            No ref-held scroll logic exists here, so nothing repoints. The
+            swipe-to-dismiss drag is owned by the BottomSheet popup around this
+            scroller exactly as around the native div; the lane chrome hides on
+            phones by the CNR-7g ≤768px policy. */}
+        <ScrollArea scrollbarSize="thin" className="max-h-[50vh]" contentClassName="pb-2">
           {items.map((item, i) => {
             const isSelected = i === selectedVariantIndex;
             return (
@@ -80,7 +89,7 @@ export function VariantJumpSheet({ items, messageId, selectedVariantIndex, varia
               </div>
             );
           })}
-        </div>
+        </ScrollArea>
       </BottomSheet>
     </>
   );

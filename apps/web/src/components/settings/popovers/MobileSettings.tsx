@@ -4,6 +4,7 @@ import { LOCALES } from "../../../i18n/registry.js";
 import { Icons } from "../../shared/icons.js";
 import { SegmentedControl } from "../../shared/SegmentedControl.js";
 import { Slider } from "../../shared/slider.js";
+import { ScrollArea } from "../../shared/scroll-area.js";
 import { THEMES, type ThemeMode } from "../../../themes/registry.js";
 import { useScriptWarningsToggle } from "../../../hooks/use-script-warnings-toggle.js";
 
@@ -42,8 +43,15 @@ export function MobileSettings({ open, onClose, settings, setSetting, onOpenMobi
 				<span className="font-ui text-[length:var(--ui-fs)] font-semibold text-t1">{t("tweaks_title")}</span>
 			</div>
 
-			{/* Content */}
-			<div className="flex-1 overflow-y-auto overscroll-y-none" style={{ WebkitOverflowScrolling: "touch" } as React.CSSProperties}>
+			{/* Content — CNR-8m: the settings list rides the shared thin vertical
+			    lane with flex-1 sizing on the ScrollArea root (it fills the flex
+			    remainder under the fixed header, which stays docked outside the
+			    scroller). The overscroll-contain and momentum-scrolling hints move
+			    onto the native viewport the primitive renders, so phone scrolling
+			    behaves exactly as before; the lane chrome hides on phones by the
+			    CNR-7g ≤768px policy (thin chrome shows where the sheet is rendered
+			    wider than a phone). */}
+			<ScrollArea scrollbarSize="thin" className="flex-1" viewportProps={{ className: "overscroll-y-none", style: { WebkitOverflowScrolling: "touch" } as React.CSSProperties }}>
 			{/* ── Live Preview ── */}
 			<div className="border-b border-border">
 				<div className="px-5 pt-4 pb-2">
@@ -190,7 +198,7 @@ export function MobileSettings({ open, onClose, settings, setSetting, onOpenMobi
 				{/* Safe area spacer */}
 				<div className="h-[env(safe-area-inset-bottom,0px)]" />
 				<div className="h-4" />
-			</div>
+			</ScrollArea>
 		</div>
 	);
 }

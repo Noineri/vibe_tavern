@@ -330,3 +330,24 @@ describe("MobileModelSheet starred models", () => {
     await waitFor(() => expect(view.getByText("no_starred_models")).toBeTruthy());
   });
 });
+
+describe("MobileModelSheet scroll chrome (CNR-8m)", () => {
+  test("the body rides the shared thin lane with the cap on its root; title and cancel stay outside the scroller", async () => {
+    const view = mountSheet(props());
+    const card = await waitFor(() => view.getByText("context_label"));
+    // MediaMenu idiom: the height cap sits on the ScrollArea root; the cards
+    // and rows scroll inside the native viewport underneath. The lane is the
+    // shared [data-scroll-area] root, so the CNR-7g ≤768px media query hides
+    // its chrome on phones (pinned in scroll-area.test.tsx) — the thin thumb
+    // only shows where the sheet is rendered wider than a phone.
+    const lane = card.closest('[data-scroll-area="thin"]');
+    expect(lane, "sheet body must ride the shared thin lane").not.toBeNull();
+    expect(lane?.getAttribute("class")).toContain("max-h-[70vh]");
+    expect(lane?.querySelector("[data-scroll-viewport]")).not.toBeNull();
+    // Docked chrome rides outside the scroller: the title row is BottomSheet
+    // chrome, the divider + cancel row are siblings after the body — the
+    // sheet's swipe-to-dismiss gesture surface keeps its exact pre-8m shape.
+    expect(view.getByText("model_label").closest("[data-scroll-area]")).toBeNull();
+    expect(view.getByText("cancel").closest("[data-scroll-area]")).toBeNull();
+  });
+});

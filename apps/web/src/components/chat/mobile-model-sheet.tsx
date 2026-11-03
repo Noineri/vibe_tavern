@@ -18,6 +18,7 @@ import { cn } from "../../lib/cn.js";
 import { BottomSheet } from "../shared/BottomSheet.js";
 import { Icons } from "../shared/icons.js";
 import { QuotaSummaryRows } from "../shared/QuotaSummaryRows.js";
+import { ScrollArea } from "../shared/scroll-area.js";
 import {
   CONTEXT_STATE_CLASSES,
   ContextBreakdownRows,
@@ -77,7 +78,15 @@ function MobileModelSheetBody({ onClose, context, providerProfile, favoriteModel
 
   return (
     <>
-      <div className="max-h-[70vh] overflow-y-auto">
+      {/* CNR-8m: the sheet body rides the shared thin vertical lane with the
+          height cap on the ScrollArea root. The title row is BottomSheet
+          chrome and the divider + cancel row ride outside the scroller as
+          siblings — the swipe-to-dismiss drag (owned by the popup, which wraps
+          this scroller exactly as it wrapped the native div) and dismissal
+          stay untouched. The lane chrome hides on phones by the CNR-7g ≤768px
+          policy; no ref-held scroll logic exists in this sheet, so nothing
+          repoints. */}
+      <ScrollArea scrollbarSize="thin" className="max-h-[70vh]">
         <ContextCard context={context} />
         {showQuota && (
           <div className="mx-3.5 mb-2.5 rounded-xl bg-s2 px-3 py-2.5">
@@ -101,7 +110,7 @@ function MobileModelSheetBody({ onClose, context, providerProfile, favoriteModel
         ) : (
           <div className="px-5 py-4 text-[calc(var(--ui-fs)-1px)] text-t3">{t("no_starred_models")}</div>
         )}
-      </div>
+      </ScrollArea>
       <div className="mx-4 mt-2 h-px bg-border" />
       <button type="button" className="flex w-full min-h-[52px] cursor-pointer items-center justify-center rounded-b-2xl text-[calc(var(--ui-fs)+1px)] font-medium text-t3 transition-colors active:bg-s3" onClick={onClose}>
         {t("cancel")}

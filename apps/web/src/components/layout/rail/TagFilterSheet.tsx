@@ -19,6 +19,7 @@
 import { cn } from "../../../lib/cn.js";
 import { Ic } from "../../shared/icons.js";
 import { BottomSheet } from "../../shared/BottomSheet.js";
+import { ScrollArea } from "../../shared/scroll-area.js";
 
 export function TagFilterSheet({
   open,
@@ -50,7 +51,17 @@ export function TagFilterSheet({
             </button>
           )}
         </div>
-        <div className="max-h-[45vh] overflow-y-auto px-2 pb-3">
+        {/* CNR-8m: the tag list rides the shared thin vertical lane (3px rest /
+            5px hover) with the height cap on the ScrollArea root and the row
+            padding scrolling with the rows on the content element. The sheet's
+            swipe-to-dismiss drag is owned by the BottomSheet popup, which wraps
+            this scroller exactly as it wrapped the native div — scrolling stays
+            native under the Base UI viewport, so the drag-vs-scroll arbitration
+            is unchanged, and the grabber + title live in the primitive's own
+            chrome outside this subtree. The lane chrome hides on phones by the
+            CNR-7g ≤768px policy (thin chrome only shows where a sheet is
+            rendered wider than a phone). */}
+        <ScrollArea scrollbarSize="thin" className="max-h-[45vh]" contentClassName="px-2 pb-3">
           {tagPool.map((tag) => {
             const selected = selectedTags.includes(tag);
             return (
@@ -67,7 +78,7 @@ export function TagFilterSheet({
               </button>
             );
           })}
-        </div>
+        </ScrollArea>
       </div>
     </BottomSheet>
   );
