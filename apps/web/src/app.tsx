@@ -8,7 +8,7 @@ import { useSessionStore } from "./stores/session-store.js";
 
 export function App() {
   const { t } = useT();
-  const { isLoading, loadError, retryLoad, tweaksSettings, setTweaksSettings } = useVibeTavernApp();
+  const { isLoading, loadError, retryLoad } = useVibeTavernApp();
   const sessionRevoked = useSessionStore((s) => s.revoked);
   const resetSession = useSessionStore((s) => s.reset);
 
@@ -66,10 +66,7 @@ export function App() {
 
   return (
     <TooltipProvider delayDuration={200}>
-      <AppShell
-        tweaksSettings={tweaksSettings}
-        setTweaksSettings={setTweaksSettings}
-      />
+      <AppShell />
       {/* One host for every floating gallery viewer (chat menu + Build
           grid open into the shared store) — mounted here so open windows
           survive mode and character switches; the user closes each one. */}

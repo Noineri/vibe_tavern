@@ -52,8 +52,8 @@ let initialized = false;
 /**
  * Initialize the shared i18next instance synchronously. Idempotent — safe to
  * call from both the module-level boot in `main.tsx` and the `LocaleProvider`
- * mount effect. `lng` seeds the initial language (from the saved tweak or
- * browser detection — see `detectLocale` in `main.tsx`).
+ * mount effect. `lng` seeds the initial language from the synchronously
+ * hydrated interface-settings store (saved choice, then browser detection).
  */
 export function initI18n(lng: Locale = DEFAULT_LOCALE): void {
 	if (initialized) return;

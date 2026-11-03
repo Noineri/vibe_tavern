@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useState, type Dispatch, type SetStateAction } from "react";
+import { useCallback, useEffect, useLayoutEffect, useState } from "react";
 import * as buildConfig from "../build-config.js";
 import { PROVIDER_PROFILE_GENERATION_DEFAULTS as D, PROVIDER_TYPE } from "@vibe-tavern/domain";
 import { getT } from "../i18n/locale-helpers.js";
@@ -9,10 +9,7 @@ import { useInterfaceSettingsStore } from "../stores/interface-settings-store.js
 import { useBootstrapStore, fetchBootstrapAction, fetchPersonasAction } from "../stores/api-actions/bootstrap-actions.js";
 import { restoreNavigationSession } from "../stores/navigation-persistence.js";
 import { useSnapshotStore } from "../stores/snapshot-store.js";
-import {
-  type TweaksSettings,
-  MESSAGE_WIDTH_MAP,
-} from "../lib/local-storage.js";
+import { MESSAGE_WIDTH_MAP } from "../lib/local-storage.js";
 import { applyThemeClass } from "../themes/registry.js";
 import { extractTokenFromHash, saveMobileToken, clearMobileToken } from "../lib/mobile-token.js";
 
@@ -108,14 +105,7 @@ export function useVibeTavernApp() {
 
   const editingMessageId = useChatStore((s) => s.editingMessageId);
 
-  const tweaksSettings = useInterfaceSettingsStore((s) => s.settings);
-  const theme = tweaksSettings.theme;
-  // Transitional adapter for the old prop-driven shells, removed in SM-2e.
-  // State and persistence already have exactly one owner.
-  const setTweaksSettings = useCallback<Dispatch<SetStateAction<TweaksSettings>>>((next) => {
-    const current = useInterfaceSettingsStore.getState();
-    current.updateSettings(typeof next === "function" ? next(current.settings) : next);
-  }, []);
+  const settings = useInterfaceSettingsStore((s) => s.settings);
 
   // --- Bootstrap: connection defaults (preferences hydrate synchronously) ---
   useLayoutEffect(() => {
@@ -125,10 +115,10 @@ export function useVibeTavernApp() {
   // --- Theme + CSS effects ---
   useEffect(() => {
     const root = document.documentElement;
-    root.style.setProperty('--mfs', `${tweaksSettings.fontSize}px`);
-    root.style.setProperty('--ui-fs', `${tweaksSettings.uiFontSize}px`);
-    root.style.setProperty('--mw', MESSAGE_WIDTH_MAP[tweaksSettings.messageWidth]);
-    applyThemeClass(root, theme);
+    root.style.setProperty('--mfs', `${settings.fontSize}px`);
+    root.style.setProperty('--ui-fs', `${settings.uiFontSize}px`);
+    root.style.setProperty('--mw', MESSAGE_WIDTH_MAP[settings.messageWidth]);
+    applyThemeClass(root, settings.theme);
     // The pre-React splash in index.html paints by setting theme tokens
     // (--bg, --accent, --accent-mid) as inline styles on <html>. Those inline
     // values beat the theme CSS class in the cascade, so without clearing them
@@ -138,7 +128,7 @@ export function useVibeTavernApp() {
     root.style.removeProperty('--bg');
     root.style.removeProperty('--accent');
     root.style.removeProperty('--accent-mid');
-  }, [tweaksSettings, theme]);
+  }, [settings]);
 
   const promptTraceId = promptTrace?.id ?? null;
 
@@ -166,7 +156,5 @@ export function useVibeTavernApp() {
     isLoading,
     loadError,
     retryLoad: load,
-    tweaksSettings,
-    setTweaksSettings,
   };
 }
