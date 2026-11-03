@@ -13,6 +13,11 @@ function memoryStorage(initial: Record<string, string> = {}) {
 }
 
 describe("interface preferences persistence", () => {
+  test("a selected user theme survives rehydration without depending on an already-loaded catalog", () => {
+    const storage = memoryStorage();
+    createInterfaceSettingsStore(storage, "en").getState().setSetting("theme", "user:my-theme");
+    expect(createInterfaceSettingsStore(storage, "en").getState().settings.theme).toBe("user:my-theme");
+  });
   test("migrates both legacy keys synchronously without changing any preference", () => {
     const legacy = { fontSize: 22, uiFontSize: 20, messageWidth: "wide", lang: "ru", showRail: true, lavaBlobs: false } as const;
     const storage = memoryStorage({ "vibe-tavern.theme": "mystic-dawn", "vibe-tavern.tweaks": JSON.stringify(legacy) });

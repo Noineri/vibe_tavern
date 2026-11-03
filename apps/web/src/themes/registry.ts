@@ -24,6 +24,7 @@
  * entered the picture).
  */
 import { Ic } from "../components/shared/icons.js";
+import { userThemeSlugSchema } from "@vibe-tavern/api-contracts";
 
 export interface ThemeDef {
 	/** Persistent id — stored in localStorage and used as the segment value. */
@@ -60,15 +61,24 @@ export type ThemeId = (typeof THEMES)[number]["id"];
 /** Back-compat alias — existing code imports `ThemeMode`. */
 export type ThemeMode = ThemeId;
 
-const DEFAULT_THEME: ThemeId = "coffee";
+export const DEFAULT_THEME: ThemeId = "coffee";
+
+/** Catalog-independent validation keeps a saved selection until discovery completes. */
+export function userThemeSlug(id: string): string | null {
+	if (!id.startsWith("user:")) return null;
+	const slug = id.slice(5);
+	return userThemeSlugSchema.safeParse(slug).success ? slug : null;
+}
 
 /** True if `id` is a registered theme id. */
 export function isValidTheme(id: string): id is ThemeId {
-	return THEMES.some((t) => t.id === id);
+	return THEMES.some((t) => t.id === id) || userThemeSlug(id) !== null;
 }
 
 /** Resolve a theme id to its `<html>` class ("" for the default theme). */
 export function themeClassName(id: string): string {
+	const slug = userThemeSlug(id);
+	if (slug !== null) return `user-${slug}`;
 	return THEMES.find((t) => t.id === id)?.className ?? "";
 }
 
@@ -86,6 +96,9 @@ export function normalizeTheme(id: string | null | undefined): ThemeId {
  * ends up with no class).
  */
 export function applyThemeClass(root: HTMLElement, id: string): void {
+	for (const cls of Array.from(root.classList)) {
+		if (cls.startsWith("user-") && userThemeSlug(`user:${cls.slice(5)}`) !== null) root.classList.remove(cls);
+	}
 	for (const t of THEMES) {
 		if (t.className) root.classList.remove(t.className);
 	}
