@@ -8,6 +8,9 @@ interface UserThemesState {
   loaded: boolean;
   loading: boolean;
   error: Error | null;
+  /** Capability of the stylesheet currently mounted on the document, not a filename guess. */
+  appliedThemeId: string | null;
+  appliedLava: boolean;
   load: () => Promise<void>;
   read: (id: string) => Promise<UserTheme | null>;
   upload: (input: UploadUserTheme) => Promise<UserTheme>;
@@ -21,7 +24,7 @@ export function createUserThemesStore(api: UserThemeApi = userThemeApi) {
   const reads = new Map<string, Promise<UserTheme | null>>();
   const versions = new Map<string, number>();
   return create<UserThemesState>()((set, get) => ({
-    themes: [], documents: {}, loaded: false, loading: false, error: null,
+    themes: [], documents: {}, loaded: false, loading: false, error: null, appliedThemeId: null, appliedLava: false,
     load: () => {
       if (listing) return listing;
       const version = mutation;

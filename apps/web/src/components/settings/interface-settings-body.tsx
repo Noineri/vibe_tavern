@@ -92,6 +92,7 @@ export function InterfaceSettingsBody({ mobile = false }: { mobile?: boolean }) 
   const settings = useInterfaceSettingsStore((s) => s.settings);
   const setSetting = useInterfaceSettingsStore((s) => s.setSetting);
   const userThemes = useUserThemesStore((s) => s.themes);
+  const userThemeLava = useUserThemesStore((s) => s.appliedThemeId === settings.theme && s.appliedLava);
   const warnings = useScriptWarningsToggle();
   const setLanguage = (value: string) => {
     const locale = normalizeLocale(value);
@@ -119,7 +120,7 @@ export function InterfaceSettingsBody({ mobile = false }: { mobile?: boolean }) 
           />
         </SettingRow>
       )}
-      {!mobile && (settings.theme === "dark-lava" || settings.theme === "light-lava") && (
+      {!mobile && (settings.theme === "dark-lava" || settings.theme === "light-lava" || userThemeLava) && (
         <SettingRow mobile={mobile} label={t("tweaks_lava_blobs")}>
           <Toggle checked={settings.lavaBlobs} onChange={(value) => setSetting("lavaBlobs", value)} aria-label={t("tweaks_lava_blobs")} />
         </SettingRow>

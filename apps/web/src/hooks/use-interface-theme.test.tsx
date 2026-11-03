@@ -30,6 +30,17 @@ function setup(api: Partial<UserThemeApi> = {}) {
   return { themes, preferences, Host };
 }
 describe("interface theme application", () => {
+  test("the actually applied CSS supplies the lava capability, which clears on switching away", async () => {
+    const lava = { ...theme, css: ":root.user-sample { --bg: #123; --lamp-glass: #456; }" };
+    const { Host, themes, preferences } = setup({ read: async () => lava });
+    render(<Host />);
+    await waitFor(() => expect(root.classList.contains("user-sample")).toBe(true));
+    expect(themes.getState().appliedThemeId).toBe("user:sample");
+    expect(themes.getState().appliedLava).toBe(true);
+    act(() => preferences.getState().setSetting("theme", "coffee"));
+    expect(themes.getState().appliedThemeId).toBeNull();
+    expect(themes.getState().appliedLava).toBe(false);
+  });
   test("restores a saved user theme, then removes injected CSS on a built-in switch", async () => {
     const { Host, preferences } = setup();
     render(<Host />);

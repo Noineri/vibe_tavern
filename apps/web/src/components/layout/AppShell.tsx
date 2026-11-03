@@ -35,6 +35,7 @@ import { ProviderModal } from "../modals/ProviderModal.js";
 import { CoauthorProviderModal } from "../modals/CoauthorProviderModal.js";
 import { SetupWizard } from "../layout/SetupWizard.js";
 import { LavaBackground, useLavaBackgroundActive } from "./LavaBackground.js";
+import { useUserThemesStore } from "../../stores/user-themes-store.js";
 import { ShellDestructiveConfirmModal } from "../shared/destructive-confirm-modal.js";
 import { TweaksPanel } from "../settings/popovers/TweaksPanel.js";
 import { MobileSettings } from "../settings/popovers/MobileSettings.js";
@@ -62,7 +63,8 @@ export function AppShell() {
   // WebGL lava-lamp overlay (progressive enhancement over the <body> gradient).
   // Only active for lava themes on wide screens with WebGL + motion allowed;
   // otherwise it renders nothing and the legacy CSS gradient shows through.
-  const lavaActive = useLavaBackgroundActive(theme, lavaBlobs);
+  const userThemeLava = useUserThemesStore((s) => s.appliedThemeId === theme && s.appliedLava);
+  const lavaActive = useLavaBackgroundActive(theme, lavaBlobs, userThemeLava);
   const activeChatId = useChatStore((s) => s.activeChatId);
   const activeChat = useSnapshotStore((s) => s.activeChat);
   const activeCharacter = useSnapshotStore((s) => s.character);

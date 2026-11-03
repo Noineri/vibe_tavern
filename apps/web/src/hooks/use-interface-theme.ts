@@ -18,6 +18,7 @@ export function useInterfaceTheme(themes = useUserThemesStore, preferences = use
     const root = document.documentElement;
     let active = true;
     let style: HTMLStyleElement | undefined;
+    themes.setState({ appliedThemeId: null, appliedLava: false });
     const apply = (theme: string) => {
       applyThemeClass(root, theme);
       // Splash inline tokens must not beat the real stylesheet's cascade.
@@ -36,8 +37,13 @@ export function useInterfaceTheme(themes = useUserThemesStore, preferences = use
         style.textContent = theme.css;
         document.head.appendChild(style);
         apply(id);
+        themes.setState({ appliedThemeId: id, appliedLava: getComputedStyle(root).getPropertyValue("--lamp-glass").trim().length > 0 });
       }).catch(() => undefined); // A transient read failure must not erase a saved selection.
     }
-    return () => { active = false; style?.remove(); };
-  }, [id, catalog, loaded, read, preferences]);
+    return () => {
+      active = false;
+      style?.remove();
+      if (themes.getState().appliedThemeId === id) themes.setState({ appliedThemeId: null, appliedLava: false });
+    };
+  }, [id, catalog, loaded, read, preferences, themes]);
 }

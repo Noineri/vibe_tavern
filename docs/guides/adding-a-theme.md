@@ -237,6 +237,9 @@ Delete actions are section-only and require confirmation.
 **Upload only CSS you trust.**
 CSS can restyle or hide application controls and reference external resources; selector normalization is not a CSS security sandbox.
 The existing pre-React splash uses a built-in fallback until the user stylesheet has loaded.
+Uploaded Lava copies retain their WebGL enhancement when the applied CSS defines `--lamp-glass` (the existing palette's opt-in token).
+The compact lava toggle remains available for those uploads; ordinary custom themes do not acquire a lamp.
+The existing width, reduced-motion, WebGL-availability and user-toggle gates still apply, with the stylesheet's gradient as the fallback.
 
 ---
 
