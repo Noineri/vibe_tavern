@@ -10,7 +10,7 @@ import { useBootstrapStore, fetchBootstrapAction, fetchPersonasAction } from "..
 import { restoreNavigationSession } from "../stores/navigation-persistence.js";
 import { useSnapshotStore } from "../stores/snapshot-store.js";
 import { MESSAGE_WIDTH_MAP } from "../lib/local-storage.js";
-import { applyThemeClass } from "../themes/registry.js";
+import { useInterfaceTheme } from "./use-interface-theme.js";
 import { extractTokenFromHash, saveMobileToken, clearMobileToken } from "../lib/mobile-token.js";
 
 function createInitialConnectionState(): ConnectionState {
@@ -61,6 +61,7 @@ function createInitialConnectionState(): ConnectionState {
  * Components import sub-hooks directly — not through this hook.
  */
 export function useVibeTavernApp() {
+  useInterfaceTheme();
   const [loadError, setLoadError] = useState("");
 
   const isLoading = useBootstrapStore((s) => s.isLoading);
@@ -118,16 +119,6 @@ export function useVibeTavernApp() {
     root.style.setProperty('--mfs', `${settings.fontSize}px`);
     root.style.setProperty('--ui-fs', `${settings.uiFontSize}px`);
     root.style.setProperty('--mw', MESSAGE_WIDTH_MAP[settings.messageWidth]);
-    applyThemeClass(root, settings.theme);
-    // The pre-React splash in index.html paints by setting theme tokens
-    // (--bg, --accent, --accent-mid) as inline styles on <html>. Those inline
-    // values beat the theme CSS class in the cascade, so without clearing them
-    // a live theme switch mixes colors (the old theme's tokens persist via
-    // inline while the new theme only takes effect through its class). Remove
-    // them once the real theme effect has run so the class is the sole source.
-    root.style.removeProperty('--bg');
-    root.style.removeProperty('--accent');
-    root.style.removeProperty('--accent-mid');
   }, [settings]);
 
   const promptTraceId = promptTrace?.id ?? null;
