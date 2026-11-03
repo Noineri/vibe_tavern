@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import type { SettingsSectionId } from "../lib/settings-section-registry.js";
 
 export interface ModalState {
   isProviderModalOpen: boolean;
@@ -18,6 +19,10 @@ export interface ModalState {
   isProxyManagerOpen: boolean;
   isUpdateModalOpen: boolean;
   isStarPromptOpen: boolean;
+  isSettingsOpen: boolean;
+  settingsSection: SettingsSectionId | null;
+  /** Repeated deep links are distinct navigation requests, even to the same id. */
+  settingsOpenRequest: number;
 }
 
 export interface ModalActions {
@@ -39,6 +44,8 @@ export interface ModalActions {
   setIsProxyManagerOpen: (open: boolean) => void;
   setUpdateModalOpen: (open: boolean) => void;
   setStarPromptOpen: (open: boolean) => void;
+  setIsSettingsOpen: (open: boolean) => void;
+  openSettings: (section?: SettingsSectionId) => void;
 }
 
 export type ModalStore = ModalState & ModalActions;
@@ -60,6 +67,9 @@ export const useModalStore = create<ModalStore>()((set, get) => ({
   isProxyManagerOpen: false,
   isUpdateModalOpen: false,
   isStarPromptOpen: false,
+  isSettingsOpen: false,
+  settingsSection: null,
+  settingsOpenRequest: 0,
   setIsProviderModalOpen: (open) => set(open ? { isProviderModalOpen: true, providerModalOrigin: null } : { isProviderModalOpen: false, providerModalOrigin: null }),
   setCoauthorProviderModalOpen: (open) => set({ isCoauthorProviderModalOpen: open }),
   openProviderModalFromCoauthor: () => set({ isCoauthorProviderModalOpen: false, isProviderModalOpen: true, providerModalOrigin: "coauthor" }),
@@ -82,6 +92,13 @@ export const useModalStore = create<ModalStore>()((set, get) => ({
   setIsProxyManagerOpen: (open) => set({ isProxyManagerOpen: open }),
   setUpdateModalOpen: (open) => set({ isUpdateModalOpen: open }),
   setStarPromptOpen: (open) => set({ isStarPromptOpen: open }),
+  setIsSettingsOpen: (open) => set({ isSettingsOpen: open, ...(!open ? { settingsSection: null } : {}) }),
+  openSettings: (section) => set((state) => ({
+    isSettingsOpen: true,
+    settingsSection: section ?? null,
+    settingsOpenRequest: state.settingsOpenRequest + 1,
+    tweaksOpen: false,
+  })),
 }));
 
 if (typeof window !== "undefined") window.__useModalStore = useModalStore;

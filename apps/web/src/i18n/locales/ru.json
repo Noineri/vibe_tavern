@@ -1,5 +1,11 @@
 {
 	"app_name": "Vibe Tavern",
+	"settings_modal_title": "Настройки Vibe Tavern",
+	"settings_section_interface": "Интерфейс",
+	"settings_section_sound": "Звук и уведомления",
+	"settings_section_data": "Данные",
+	"settings_section_network": "Сеть",
+	"settings_section_about": "О программе",
 	"macro_desc_char_prompt": "Основной промпт персонажа.",
 	"macro_desc_char_instruction": "Инструкция персонажа после истории чата.",
 	"macro_desc_system_prompt": "Активный системный промпт с приоритетом настройки персонажа.",

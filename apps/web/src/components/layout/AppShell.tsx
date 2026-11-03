@@ -43,6 +43,7 @@ import { MobileAccessModal } from "../modals/MobileAccessModal.js";
 import { ProxyManagerModal } from "../modals/ProxyManagerModal.js";
 import { UpdateModal } from "../modals/UpdateModal.js";
 import { StarPromptModal } from "../modals/StarPromptModal.js";
+import { SettingsModal } from "../modals/SettingsModal.js";
 import { CoauthorModuleModal } from "../coauthor/CoauthorModuleModal.js";
 import { CoauthorSkillModal } from "../coauthor/CoauthorSkillModal.js";
 import { AppToaster } from "./AppToaster.js";
@@ -562,6 +563,7 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
         releaseNotes={updateCheck.releaseNotes}
       />
       <StarPromptModal />
+      <SettingsModal />
       <CoauthorModuleModal />
       <CoauthorSkillModal />
       <SetupWizard onVisibilityChange={setWizardVisible} />

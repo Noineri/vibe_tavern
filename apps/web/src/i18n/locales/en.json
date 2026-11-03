@@ -1,5 +1,11 @@
 {
 	"app_name": "Vibe Tavern",
+	"settings_modal_title": "Vibe Tavern settings",
+	"settings_section_interface": "Interface",
+	"settings_section_sound": "Sound and notifications",
+	"settings_section_data": "Data",
+	"settings_section_network": "Network",
+	"settings_section_about": "About",
 	"macro_desc_char_prompt": "The character's main prompt override.",
 	"macro_desc_char_instruction": "The character's post-history instruction override.",
 	"macro_desc_system_prompt": "The active system prompt, using the character override when present.",
