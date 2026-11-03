@@ -41,7 +41,6 @@ export function TopBar({ railHidden, onShowRail, update }: TopBarProps) {
 
   // --- Store subscriptions ---
   const mode = useNavigationStore((s) => s.mode);
-  const theme = useNavigationStore((s) => s.theme);
   const connection = useProviderStore((s) => s.connection);
   const activeChatId = useChatStore((s) => s.activeChatId);
   const chatMeta = useChatMeta();

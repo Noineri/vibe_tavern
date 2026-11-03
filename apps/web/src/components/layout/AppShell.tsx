@@ -13,6 +13,7 @@ import { useChatStore, useNavigationStore, useCharacterStore, useProviderStore, 
 import { saveCharacterAction } from "../../stores/api-actions/character-actions.js";
 import { useActiveTrace, useLazyContextPreview } from "../../stores/chat-selectors.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
+import { useInterfaceSettingsStore } from "../../stores/interface-settings-store.js";
 import { useBootstrapStore, fetchPersonasAction } from "../../stores/api-actions/bootstrap-actions.js";
 import { summarizeChatAction, saveChatSummaryAction, updateChatDynamicPromptAction } from "../../stores/api-actions/chat-actions.js";
 import { useChatController } from "../../hooks/use-chat-controller.js";
@@ -63,8 +64,7 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
   // --- Store subscriptions (reactive) ---
   const isMobile = useIsMobile();
   const showRail = tweaksSettings.showRail;
-  const theme = useNavigationStore((s) => s.theme);
-  const setTheme = useNavigationStore((s) => s.setTheme);
+  const theme = useInterfaceSettingsStore((s) => s.settings.theme);
   // WebGL lava-lamp overlay (progressive enhancement over the <body> gradient).
   // Only active for lava themes on wide screens with WebGL + motion allowed;
   // otherwise it renders nothing and the legacy CSS gradient shows through.
@@ -346,7 +346,7 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
   };
 
   const handleSetTweak = (key: string, value: unknown) => {
-    if (key === 'theme') setTheme(value as ThemeMode);
+    if (key === 'theme') useInterfaceSettingsStore.getState().setSetting("theme", value as ThemeMode);
     else if (key === 'showRail') updateTweak(key, value as boolean);
     else if (key === 'lavaBlobs') updateTweak(key, value as boolean);
     else if (key === 'fontSize' || key === 'uiFontSize') updateTweak(key, value as number);

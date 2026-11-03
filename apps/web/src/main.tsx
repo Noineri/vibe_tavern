@@ -5,7 +5,7 @@ import { App } from "./app.js";
 import "./lib/register-core-panels.jsx";
 import { LocaleProvider } from "./i18n/context.js";
 import { initI18n } from "./i18n/i18n.js";
-import { isLocale, detectBrowserLocale, type Locale } from "./i18n/registry.js";
+import { useInterfaceSettingsStore } from "./stores/interface-settings-store.js";
 import { ThemeTuner } from "./components/dev/ThemeTuner.js";
 import { VibeMdThemePreview } from "./components/build/editors/VibeMdThemePreview.js";
 import { ExperienceDetachedHost, isDetachedExperienceWindow } from "./components/experience/ExperienceDetachedWindow.js";
@@ -37,22 +37,9 @@ initNavigationPersistence();
 // blocks a bare `fetch("/api/…")` from ever landing again (that bug class
 // bricked LAN/mobile clients while desktop loopback stayed green).
 
-function detectLocale(): Locale {
-  // 1. Explicit user choice (saved in TweaksPanel) takes priority
-  try {
-    const raw = localStorage.getItem("vibe-tavern.tweaks");
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (isLocale(parsed.lang)) return parsed.lang;
-    }
-  } catch { /* ignore */ }
-
-  // 2. Auto-detect from browser language, falling back to the default locale
-  //    inside detectBrowserLocale when nothing matches.
-  return detectBrowserLocale(navigator.language ?? "");
-}
-
-const initialLocale = detectLocale();
+// The persisted store owns saved-choice → browser → default resolution,
+// including migration of the old raw tweaks key before this first read.
+const initialLocale = useInterfaceSettingsStore.getState().settings.lang;
 
 // Initialize i18next synchronously BEFORE React mounts. With `initAsync: false`
 // and bundled resources, `i18next.t` is usable the instant this returns, so

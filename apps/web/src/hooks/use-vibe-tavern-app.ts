@@ -1,18 +1,15 @@
-import { useCallback, useEffect, useLayoutEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useState, type Dispatch, type SetStateAction } from "react";
 import * as buildConfig from "../build-config.js";
 import { PROVIDER_PROFILE_GENERATION_DEFAULTS as D, PROVIDER_TYPE } from "@vibe-tavern/domain";
 import { getT } from "../i18n/locale-helpers.js";
 import type { ConnectionState } from "../components/layout/app-shell-types.js";
 import { normalizeOpenAiCompatibleBaseUrl } from "../openai-compatible.js";
-import { useNavigationStore, useProviderStore, useChatStore } from "../stores/index.js";
+import { useProviderStore, useChatStore } from "../stores/index.js";
+import { useInterfaceSettingsStore } from "../stores/interface-settings-store.js";
 import { useBootstrapStore, fetchBootstrapAction, fetchPersonasAction } from "../stores/api-actions/bootstrap-actions.js";
 import { restoreNavigationSession } from "../stores/navigation-persistence.js";
 import { useSnapshotStore } from "../stores/snapshot-store.js";
 import {
-  readSavedTheme,
-  persistTheme,
-  persistTweaks,
-  readSavedTweaks,
   type TweaksSettings,
   MESSAGE_WIDTH_MAP,
 } from "../lib/local-storage.js";
@@ -111,14 +108,17 @@ export function useVibeTavernApp() {
 
   const editingMessageId = useChatStore((s) => s.editingMessageId);
 
-  const theme = useNavigationStore((s) => s.theme);
+  const tweaksSettings = useInterfaceSettingsStore((s) => s.settings);
+  const theme = tweaksSettings.theme;
+  // Transitional adapter for the old prop-driven shells, removed in SM-2e.
+  // State and persistence already have exactly one owner.
+  const setTweaksSettings = useCallback<Dispatch<SetStateAction<TweaksSettings>>>((next) => {
+    const current = useInterfaceSettingsStore.getState();
+    current.updateSettings(typeof next === "function" ? next(current.settings) : next);
+  }, []);
 
-  // Local tweak state (not in a store — only needed by AppShell/TweaksPanel)
-  const [tweaksSettings, setTweaksSettings] = useState<TweaksSettings>(() => readSavedTweaks());
-
-  // --- Bootstrap: load persisted theme and connection defaults ---
+  // --- Bootstrap: connection defaults (preferences hydrate synchronously) ---
   useLayoutEffect(() => {
-    useNavigationStore.getState().setTheme(readSavedTheme());
     useProviderStore.getState().setConnection(createInitialConnectionState());
   }, []);
 
@@ -128,9 +128,7 @@ export function useVibeTavernApp() {
     root.style.setProperty('--mfs', `${tweaksSettings.fontSize}px`);
     root.style.setProperty('--ui-fs', `${tweaksSettings.uiFontSize}px`);
     root.style.setProperty('--mw', MESSAGE_WIDTH_MAP[tweaksSettings.messageWidth]);
-    persistTweaks(tweaksSettings);
     applyThemeClass(root, theme);
-    persistTheme(theme);
     // The pre-React splash in index.html paints by setting theme tokens
     // (--bg, --accent, --accent-mid) as inline styles on <html>. Those inline
     // values beat the theme CSS class in the cascade, so without clearing them

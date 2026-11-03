@@ -89,14 +89,14 @@ describe("initNavigationPersistence", () => {
     expect(window.sessionStorage.getItem(BUILD_TAB_KEY)).toBe("lorebook");
   });
 
-  test("writes before the first restore are suppressed (mount-time setTheme must not clobber the persisted mode)", () => {
+  test("writes before the first restore are suppressed (mount-time UI changes must not clobber the persisted mode)", () => {
     window.sessionStorage.setItem(MODE_KEY, "build");
     window.sessionStorage.setItem(BUILD_TAB_KEY, "lorebook");
 
     initNavigationPersistence();
-    // Mount-time store setStates (the theme layout effect's setTheme fires the
-    // whole-state listener) must NOT overwrite the persisted values.
-    useNavigationStore.getState().setTheme("coffee");
+    // A non-mode navigation update still fires the whole-state listener;
+    // preferences now have their own store, outside this session boundary.
+    useNavigationStore.getState().setSidebarCollapsed(true);
     useCharacterStore.getState().setMdViewMode("form");
 
     expect(window.sessionStorage.getItem(MODE_KEY)).toBe("build");
