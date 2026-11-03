@@ -366,7 +366,9 @@ describe("Scene zone component (SCN-12)", () => {
     expect(panel.classList.contains("flex-col")).toBe(true);
     expect(panel.classList.contains("overflow-hidden")).toBe(true);
     expect(panel.classList.contains("overflow-y-auto")).toBe(false);
-    const fields = panel.querySelector(".overflow-y-auto")!;
+    // CNR-8p: the fields scroller is the shared thin ScrollArea lane (3px
+    // rest / 5px hover) instead of the native overflow-y-auto fallback.
+    const fields = panel.querySelector('[data-scroll-area="thin"]:not([data-scroll-editor])')!;
     expect(fields).not.toBeNull();
     expect(fields.classList.contains("min-h-0")).toBe(true);
     expect(fields.querySelectorAll("textarea").length).toBe(48);
@@ -401,7 +403,9 @@ describe("Scene zone component (SCN-12)", () => {
     expect(cap.classList.contains("max-h-[80dvh]")).toBe(true);
     expect(cap.classList.contains("flex-col")).toBe(true);
     expect(cap.classList.contains("overflow-hidden")).toBe(true);
-    const fields = cap.querySelector(".overflow-y-auto")!;
+    // CNR-8p: same thin lane under the sheet (the lane chrome hides on
+    // phones per the CNR-7g policy; the native viewport keeps scrolling).
+    const fields = cap.querySelector('[data-scroll-area="thin"]:not([data-scroll-editor])')!;
     expect(fields).not.toBeNull();
     expect(fields.querySelectorAll("textarea").length).toBe(48);
     const save = view.getByRole("button", { name: "scn_edit_save" });

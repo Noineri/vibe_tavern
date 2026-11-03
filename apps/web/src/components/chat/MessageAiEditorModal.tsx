@@ -44,6 +44,7 @@ import { Modal } from "../shared/Modal.js";
 import { SegmentedControl } from "../shared/SegmentedControl.js";
 import { MessageReasoning } from "./MessageReasoning.js";
 import { TextDiffPreview, buildWordDiff, buildLineDiff, type TextDiffWordSummary, type TextDiffSummary } from "../shared/TextDiffPreview.js";
+import { MessageAiEditorCandidatePreview } from "./message-ai-editor-candidate-preview.js";
 import { AiAssistantConnectionFields } from "../shared/ai-assistant/AiAssistantConnectionFields.js";
 import { AiAssistantShell } from "../shared/ai-assistant/AiAssistantShell.js";
 import { AiAssistantPanel } from "../shared/ai-assistant/AiAssistantPanel.js";
@@ -804,26 +805,16 @@ export function MessageAiEditorModal() {
                 />
               )}
               {showCandidate && editShowPlainCandidate && !staleEditSource && (
-                <div className="mb-3 rounded-md border border-border bg-bg p-3">
-                  <div className="mb-2 text-[calc(var(--ui-fs)-3px)] font-semibold uppercase tracking-[0.06em] text-t3">
-                    {tDynamic("message_ai_editor_candidate_label")}
-                  </div>
-                  <pre className="max-h-[280px] overflow-auto whitespace-pre-wrap font-mono text-[calc(var(--ui-fs)-2px)] leading-[1.5] text-t1">
-                    {candidateText}
-                    {runner.streaming && <span className="animate-pulse text-accent">▌</span>}
-                  </pre>
-                </div>
+                <MessageAiEditorCandidatePreview label={tDynamic("message_ai_editor_candidate_label")}>
+                  {candidateText}
+                  {runner.streaming && <span className="animate-pulse text-accent">▌</span>}
+                </MessageAiEditorCandidatePreview>
               )}
               {showCandidate && activeMode === "message_merge" && (
-                <div className="mb-3 rounded-md border border-border bg-bg p-3">
-                  <div className="mb-2 text-[calc(var(--ui-fs)-3px)] font-semibold uppercase tracking-[0.06em] text-t3">
-                    {tDynamic("message_ai_editor_candidate_label")}
-                  </div>
-                  <pre className="max-h-[280px] overflow-auto whitespace-pre-wrap font-mono text-[calc(var(--ui-fs)-2px)] leading-[1.5] text-t1">
-                    {candidateText}
-                    {runner.streaming && <span className="animate-pulse text-accent">▌</span>}
-                  </pre>
-                </div>
+                <MessageAiEditorCandidatePreview label={tDynamic("message_ai_editor_candidate_label")}>
+                  {candidateText}
+                  {runner.streaming && <span className="animate-pulse text-accent">▌</span>}
+                </MessageAiEditorCandidatePreview>
               )}
 
               {/* Apply / conflict / errors */}

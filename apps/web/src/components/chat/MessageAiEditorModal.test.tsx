@@ -379,22 +379,24 @@ describe("MessageAiEditorModal — modal-body scroll wiring (CNR-8g)", () => {
     seedBootstrap("prov-1", "model-a");
     openEditorForEdit(brandId<MessageVariantId>("var-0"));
     const view = renderModal();
-    // The modal-level body scroller is the AiAssistantShell body — the ONE
-    // thin lane (3px rest / 5px hover, CNR-8f). Inner sub-surfaces (source
-    // list, candidate pre views) are CNR-8p scope and keep native chrome.
-    const lane = view.baseElement.querySelector('[data-scroll-area="thin"]');
-    expect(lane).toBeTruthy();
-    const viewport = lane!.querySelector("[data-scroll-viewport]");
+    // The modal-level body scroller is the AiAssistantShell body — the
+    // shell's thin lane (3px rest / 5px hover, CNR-8f). Since CNR-8p the
+    // inner sub-surfaces ride their OWN thin lanes too: the source list
+    // (present in every mode) and, when shown, the plain-candidate preview
+    // block (extracted to message-ai-editor-candidate-preview.tsx).
+    const lanes = view.baseElement.querySelectorAll('[data-scroll-area="thin"]');
+    expect(lanes.length).toBeGreaterThanOrEqual(1);
+    const lane = lanes.item(0);
+    const viewport = lane.querySelector("[data-scroll-viewport]");
     expect(viewport).toBeTruthy();
-    // The instruction textarea rides INSIDE the lane's viewport (modal body).
+    // The instruction textarea rides INSIDE the shell lane's viewport (modal body).
     expect(viewport!.querySelector("textarea")).toBeTruthy();
-    // The footer Cancel button stays docked OUTSIDE the scroller.
+    // The footer Cancel button stays docked OUTSIDE every scroller.
     expect(view.getByText("cancel_btn").closest("[data-scroll-area]")).toBeNull();
-    // Exactly one NON-EDITOR lane: no inner list lane was introduced (source
-    // list / candidate pre views keep native chrome, CNR-8p scope). The
-    // modal's own instruction field now rides its own editor lane — every
-    // AutoTextarea does since the CNR-8n default flip.
-    expect(view.baseElement.querySelectorAll('[data-scroll-area]:not([data-scroll-editor])')).toHaveLength(1);
+    // Edit mode renders exactly TWO non-editor lanes: the shell body plus the
+    // source list (CNR-8p). No candidate lane here — the plain-candidate
+    // preview only mounts when a diff bails or a candidate streams in.
+    expect(view.baseElement.querySelectorAll('[data-scroll-area]:not([data-scroll-editor])')).toHaveLength(2);
   });
 });
 

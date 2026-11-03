@@ -21,6 +21,7 @@ import type { AppMessage } from "../../api/types.js";
 import type { MessageVariantId } from "@vibe-tavern/domain";
 import { Icons } from "../shared/icons.js";
 import { Checkbox } from "../shared/Checkbox.js";
+import { ScrollArea } from "../shared/scroll-area.js";
 import { useT } from "../../i18n/context.js";
 
 export interface SourceRow {
@@ -75,7 +76,13 @@ export function MessageAiEditorSourceList({
     );
   }
   return (
-    <ul className="flex max-h-[280px] flex-col gap-1.5 overflow-y-auto">
+    // CNR-8p: the checklist rides the thin vertical lane (3px rest / 5px
+    // hover) instead of the native `overflow-y-auto` fallback; the 280px cap
+    // moves onto the ScrollArea root and the `ul` stays the semantic list
+    // inside the viewport (the 8c TextDiffPreview pre idiom). Merge mode
+    // renders the FULL variant checklist, so real chats overflow the cap.
+    <ScrollArea scrollbarSize="thin" className="max-h-[280px]">
+      <ul className="flex flex-col gap-1.5">
       {rows.map((row) =>
         mode === "message_merge" ? (
           <li key={row.variantId}>
@@ -125,6 +132,7 @@ export function MessageAiEditorSourceList({
           </li>
         ),
       )}
-    </ul>
+      </ul>
+    </ScrollArea>
   );
 }

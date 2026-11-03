@@ -269,13 +269,15 @@ describe("ToolActivityCard — operation previews (CED-6)", () => {
 			/>,
 		);
 		fireEvent.click(getByText("sharpen"));
-		// The scoped search + replace content is shown inside the original
-		// max-height scrolling preview. AnimatedDisclosure owns clipping on its
-		// outer motion wrapper; scrolling must remain on this inner content box.
+		// The scoped search + replace content is shown inside the max-height
+		// scrolling preview. AnimatedDisclosure owns clipping on its outer
+		// motion wrapper; scrolling lives on the thin ScrollArea lane (CNR-8p):
+		// the max-h-48 cap sits on the lane root, the px-3 py-2 body scrolls
+		// with the content element.
 		const searchText = getByText("Bold and direct.");
 		expect(searchText).toBeDefined();
 		expect(getByText("Bold, direct, and a little cruel.")).toBeDefined();
-		const scrollBody = searchText.closest(".overflow-auto") as HTMLElement | null;
+		const scrollBody = searchText.closest('[data-scroll-area="thin"]') as HTMLElement | null;
 		expect(scrollBody).toBeTruthy();
 		expect(scrollBody?.classList.contains("max-h-48")).toBe(true);
 		expect(scrollBody?.parentElement?.style.overflow).toBe("hidden");

@@ -8,6 +8,7 @@ import { useChatStore } from "../../stores/index.js";
 import type { AppMessage } from "../../api/types.js";
 import { Icons } from "../shared/icons.js";
 import { AnimatedDisclosure } from "../shared/AnimatedDisclosure.js";
+import { ScrollArea } from "../shared/scroll-area.js";
 import { useT } from "../../i18n/context.js";
 
 /**
@@ -472,13 +473,19 @@ function ToolActivityCard({ activity }: { activity: CoauthorToolActivity }) {
         <div className="px-3 py-1.5 font-ui text-[calc(var(--ui-fs)-3px)] text-danger-text">{t("coauthor_tool_error")}</div>
       )}
       <AnimatedDisclosure open={!streaming && !isRead && !isContextRead && open}>
-        <div className="ml-2 mt-1 max-h-48 overflow-auto border-l-2 border-border/50 px-3 py-2">
+        {/* CNR-8p: the expanded preview rides the thin vertical lane (3px at
+            rest / 5px on hover) instead of `overflow-auto`'s native fallback.
+            The max-h-48 cap and the border-l quote frame stay on the root; the
+            px-3 py-2 padding scrolls with the content. Every preview body
+            wraps (whitespace-pre-wrap / break-words), so the strip is
+            vertical-only — X clipping matches the old effective behavior. */}
+        <ScrollArea scrollbarSize="thin" className="ml-2 mt-1 max-h-48 border-l-2 border-border/50" contentClassName="px-3 py-2">
           {isSearch ? (
             <SearchResultsPreview results={activity.search!.results} />
           ) : (
             <OperationPreview op={parseOperation(activity.toolName, activity.args)} proposed={activity.proposed} summary={activity.summary} />
           )}
-        </div>
+        </ScrollArea>
       </AnimatedDisclosure>
     </div>
   );

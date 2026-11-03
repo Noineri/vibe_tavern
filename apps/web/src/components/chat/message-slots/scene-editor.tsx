@@ -20,6 +20,7 @@ import type { SceneTrackerDsl, SceneTrackerSchemaNode } from "@vibe-tavern/domai
 import { Toggle } from "../../shared/Toggle.js";
 import { NumberInput } from "../../shared/NumberInput.js";
 import { AutoTextarea } from "../../shared/auto-textarea.js";
+import { ScrollArea } from "../../shared/scroll-area.js";
 import { Ic } from "../../shared/icons.js";
 import { lblCls } from "../../../lib/field-tokens.js";
 import type { TFunc } from "../../../i18n/context.js";
@@ -35,9 +36,15 @@ export function SceneEditorBody({ schema, initial, onSave, onCancel, t }: {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      {/* CNR-8p: the schema-driven fields ride the thin vertical lane (3px
+          rest / 5px hover) — frame/body idiom: the flex share stays on the
+          ScrollArea root, the docked Cancel/Save footer stays outside. Array
+          editors grow without bound (add-item), so the body truly overflows.
+          Leaf AutoTextareas are already thin by the CNR-8n default. The lane
+          hides on phones (CNR-7g policy) under the shared BottomSheet body. */}
+      <ScrollArea scrollbarSize="thin" className="min-h-0 flex-1">
         <FieldsEditor schema={schema} value={draft} onChange={setDraft} t={t} />
-      </div>
+      </ScrollArea>
       <div className="flex shrink-0 items-center justify-end gap-2 border-t border-border pt-3">
         <button type="button" onClick={onCancel} className="h-[37px] cursor-pointer rounded-md bg-transparent px-4 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:text-t1">
           {t("scn_edit_cancel")}
