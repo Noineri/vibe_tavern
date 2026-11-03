@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { createUserThemeRoutes } from "./user-theme.js";
 import type { RuntimeApi } from "../contract/runtime-api.js";
 import { createDebugRoutes } from "./debug.js";
 import { createChatRoutes } from "./chat.js";
@@ -44,6 +45,7 @@ export type { RuntimeApi } from "../contract/runtime-api.js";
 
 export function createApiRouter(runtime: RuntimeApi) {
   return new Hono()
+    .route("/", createUserThemeRoutes(runtime.userThemes))
     .route("/", createDebugRoutes({ bootstrap: runtime.bootstrap }))
     .route("/", createChatRoutes(runtime.chat))
     .route("/", createCharacterRoutes(runtime.character))

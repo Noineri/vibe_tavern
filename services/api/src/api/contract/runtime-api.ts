@@ -1,4 +1,5 @@
 import type { ScriptKind } from "@vibe-tavern/domain";
+export type { RuntimeApi } from "./runtime-api-composite.js";
 import type { AiAssistantStreamChunk } from "../../domain/ai-assistant/reasoning-split.js";
 import type { AiAssistantStreamRequest } from "../../domain/ai-assistant/ai-assistant-stream.js";
 import type { PersonaRecord } from "../../domain/persona/persona-runtime.js";
@@ -36,7 +37,7 @@ export type { CoauthorConnectionSettingsRuntimeApi };
 import type { CoauthorModuleRuntimeApi } from "./coauthor-module-contracts.js";
 export type { CoauthorModuleRuntimeApi };
 import type { FormatTemplateRuntimeApi, AiInstructionTemplateRuntimeApi } from "./template-library-contracts.js";
-import type { TrackerTemplateApi, TrackerTemplateCharacterRuntimeApi, TrackerTemplateInsightsRuntimeApi } from "./tracker-template-api.js";
+import type { TrackerTemplateCharacterRuntimeApi, TrackerTemplateInsightsRuntimeApi } from "./tracker-template-api.js";
 export type { FormatTemplateRuntimeApi, AiInstructionTemplateRuntimeApi };
 // Lorebook + Script contracts live in their own module (extracted when the
 // «Текущие» participating queries grew them past this file's line baseline —
@@ -784,42 +785,3 @@ export interface SamplerSetRuntimeApi {
 /** Named custom format templates + AI-editor instruction templates live in
  *  template-library-contracts.ts (extracted for the size ratchet; re-exported
  *  above). */
-
-export interface RuntimeApi extends TrackerTemplateApi {
-	bootstrap: BootstrapRuntimeApi["bootstrap"];
-	servicePrompts: ServicePromptRuntimeApi;
-	imagePromptProfiles: ImagePromptProfileRuntimeApi;
-	chat: ChatRuntimeApi;
-	character: CharacterRuntimeApi & CharacterAssetRuntimeApi;
-	persona: PersonaRuntimeApi;
-	lorebook: LorebookRuntimeApi;
-	script: ScriptRuntimeApi;
-	regex: RegexRuntimeApi;
-	tts: TtsRuntimeApi;
-	stt: SttRuntimeApi;
-	imageGen: ImageGenRuntimeApi;
-	provider: ProviderRuntimeApi;
-	proxy: ProxyRuntimeApi;
-	preset: PresetRuntimeApi;
-	importExport: ImportExportRuntimeApi;
-	asset: AssetRuntimeApi;
-	coauthorSkills: CoauthorSkillsRuntimeApi;
-	/** Copilot skills (CP-5, AS-8d1) — same wire contract as coauthorSkills,
-	 * keyed by agent kind: each kind with a skill library answers `?kind=`. */
-	copilotSkills: CopilotSkillsByKindRuntimeApi;
-	aiAssistant: AiAssistantRuntimeApi;
-	settings: SettingsRuntimeApi;
-	mobileAccess: MobileAccessRuntimeApi;
-	insights: InsightsRuntimeApi;
-	dice: DiceRuntimeApi;
-	experience: ExperienceRuntimeApi;
-	experienceCopilot: ExperienceCopilotRuntimeApi;
-	/** Thread proposal resolution (SC-11) — the sidechat objective proposals'
-	 * apply/reject slice (its own adapter, like every sub-interface). */
-	agentThreadProposals: AgentThreadProposalsRuntimeApi;
-	copilotProfiles: CopilotProfileRuntimeApi;
-	agentPlan: AgentPlanRuntimeApi;
-	samplerSets: SamplerSetRuntimeApi;
-	formatTemplates: FormatTemplateRuntimeApi;
-	aiInstructionTemplates: AiInstructionTemplateRuntimeApi;
-}

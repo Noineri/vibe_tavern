@@ -1,4 +1,6 @@
 import type { RuntimeApi } from "../contract/runtime-api.js";
+import { UserThemeAdapter } from "./user-theme-adapter.js";
+import { UserThemeLibrary } from "../../domain/themes/user-theme-library.js";
 import type { StoreContainer } from "@vibe-tavern/db";
 import type { SessionRuntime } from "../../runtime/session/session-runtime.js";
 import type { ProviderProfileService } from "../../domain/providers/provider-profile-service.js";
@@ -67,6 +69,7 @@ import type { ExperienceContextService } from "../../domain/interactive/experien
  * dependencies. To add a new domain, create an adapter and wire it here.
  */
 export class RuntimeApiAdapter implements RuntimeApi {
+  readonly userThemes: UserThemeAdapter;
 	readonly bootstrap: RuntimeApi["bootstrap"];
 	readonly servicePrompts: ServicePromptAdapter;
 	readonly imagePromptProfiles: ImagePromptProfileAdapter;
@@ -143,6 +146,7 @@ export class RuntimeApiAdapter implements RuntimeApi {
 	) {
 		const bootstrapAdapter = new BootstrapAdapter(sessionRuntime);
 		this.bootstrap = bootstrapAdapter.bootstrap;
+    this.userThemes = new UserThemeAdapter(new UserThemeLibrary(stores.content.fileStore));
 		// STT first (ST-6): ChatAdapter receives the SttAdapter's bound
 		// transcription path for voice-message attachments — the adapter graph
 		// stays acyclic (no cross-imports, constructor injection only).
