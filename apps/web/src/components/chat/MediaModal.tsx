@@ -3,6 +3,7 @@ import { useKeyDown } from "../../hooks/use-key-down.js";
 import { useImageZoomPan } from "../../hooks/use-image-zoom-pan.js";
 import { Icons } from "../shared/icons.js";
 import { Modal } from "../shared/Modal.js";
+import { ScrollArea } from "../shared/scroll-area.js";
 import { useT } from "../../i18n/context.js";
 import { toast } from "sonner";
 import { serveCharacterAssetUrl } from "../../api/gallery-api.js";
@@ -85,23 +86,29 @@ export function MediaModal({ open, onClose, characterId, characterName }: MediaM
           </div>
         </div>
 
-        {/* Body: 3-column thumbnail grid / empty state. */}
-        <div className="flex-1 overflow-y-auto p-2">
-          {loading && list.length === 0 ? (
-            <div className="flex h-full items-center justify-center text-[var(--ui-fs)] leading-5 text-t3">{t("loading") || "…"}</div>
-          ) : list.length === 0 ? (
-            <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
-              <div className="text-[var(--ui-fs)] leading-5 text-t3">{t("media_empty")}</div>
-              <button
-                type="button"
-                className="cursor-pointer rounded-full bg-accent-dim px-4 py-2 text-[var(--ui-fs)] leading-5 font-medium text-accent-t transition-colors hover:bg-accent-hover"
-                onClick={() => { onClose(); setMode("build"); }}
-              >
-                {t("media_open_build")}
-              </button>
-            </div>
+        {/* Body: 3-column thumbnail grid / empty state. CNR-8k: only the
+            grid is a scroller — it rides the shared thin vertical lane with
+            flex-1 sizing on the root and the p-2 padding + grid layout on
+            the content element (8e idiom). The loading/empty states never
+            overflow, so they stay OUT of the lane as flex-1 siblings (their
+            old h-full centering only resolved against the flex-1 scroller).
+            Rendered only from the mobile branch, where CNR-7g hides the lane
+            chrome — scrolling itself is unchanged. */}
+        {loading && list.length === 0 ? (
+          <div className="flex flex-1 items-center justify-center text-[var(--ui-fs)] leading-5 text-t3">{t("loading") || "…"}</div>
+        ) : list.length === 0 ? (
+          <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
+            <div className="text-[var(--ui-fs)] leading-5 text-t3">{t("media_empty")}</div>
+            <button
+              type="button"
+              className="cursor-pointer rounded-full bg-accent-dim px-4 py-2 text-[var(--ui-fs)] leading-5 font-medium text-accent-t transition-colors hover:bg-accent-hover"
+              onClick={() => { onClose(); setMode("build"); }}
+            >
+              {t("media_open_build")}
+            </button>
+          </div>
           ) : (
-            <div className="grid grid-cols-3 gap-1.5">
+            <ScrollArea scrollbarSize="thin" className="flex-1" contentClassName="grid grid-cols-3 gap-1.5 p-2">
               {list.map((row, i) => {
                 const id = row.id as string;
                 const isSending = sendingId === id;
@@ -127,9 +134,8 @@ export function MediaModal({ open, onClose, characterId, characterName }: MediaM
                   </div>
                 );
               })}
-            </div>
+            </ScrollArea>
           )}
-        </div>
       </div>
 
       {/* Inline fullscreen lightbox: image + Send to chat. Browse-only — no edit/regenerate (those live in Build). */}
@@ -197,7 +203,9 @@ function MediaLightbox({
       </button>
       {/* overflow-hidden + the footer's z-10: a zoomed image visually scales
           past its box (transform ignores layout) — clip it at the image area so
-          it cannot cover the send bar or the close button. */}
+          it cannot cover the send bar or the close button. CNR-8k: this is an
+          INTERACTION viewport (pinch-zoom/pan, touch-action none), not a list —
+          it stays native by the 8g AvatarCrop principle, never a ScrollArea. */}
       <div ref={containerRef} className="flex flex-1 items-center justify-center overflow-hidden p-3">
         <img
           ref={imageRef}

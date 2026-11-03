@@ -137,4 +137,31 @@ describe("MediaMenu floating viewer across a character switch", () => {
     fireEvent.click(view.getByAltText("A shot"));
     expect(view.getAllByTestId("floating-viewer").length).toBe(1);
   });
+
+  it("rides the thin vertical lane in the desktop popover with the cap on the root (CNR-8k)", () => {
+    const view = render(
+      <>
+        <MediaMenu characterId="char-A" characterName="A" />
+        <FloatingGalleryViewers />
+      </>,
+    );
+
+    fireEvent.click(view.getByLabelText("media_button"));
+    // The popover portals into document.body (no modal-portal anchor here).
+    const lane = document.querySelector<HTMLElement>('[data-scroll-area="thin"]')!;
+    expect(lane).toBeTruthy();
+    // 8d popup-caps idiom: the 240px cap and 360px width sit on the ROOT,
+    // the grid layout on the content element.
+    expect(lane.classList.contains("max-h-[240px]")).toBe(true);
+    expect(lane.classList.contains("w-[360px]")).toBe(true);
+    const viewport = lane.querySelector<HTMLElement>("[data-scroll-viewport]")!;
+    expect(viewport.style.overflowX).toBe("hidden");
+    const content = lane.querySelector<HTMLElement>("[data-scroll-content]")!;
+    expect(content.classList.contains("grid-cols-3")).toBe(true);
+    expect(content.querySelector("img[alt='A shot']")).toBeTruthy();
+    // The tile click still opens the floating viewer through the lane.
+    fireEvent.click(view.getByAltText("A shot"));
+    expect(view.getByTestId("floating-viewer").getAttribute("data-src"))
+      .toContain("characters/char-A/assets/row-a1");
+  });
 });

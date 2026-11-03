@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import * as Popover from "@radix-ui/react-popover";
 import { Icons } from "../shared/icons.js";
+import { ScrollArea } from "../shared/scroll-area.js";
 import { getModalPortal } from "../shared/modal-helpers.js";
 import { CustomTooltip } from "../shared/Tooltip.js";
 import { useT } from "../../i18n/context.js";
@@ -143,7 +144,12 @@ function DesktopMediaMenu({ characterId }: { characterId: string }) {
                 </button>
               </div>
             ) : (
-              <div className="grid max-h-[240px] w-[360px] grid-cols-3 gap-1.5 overflow-y-auto">
+              // CNR-8k: the popover grid rides the shared thin vertical lane —
+              // the 240px cap and 360px width sit on the ROOT (the 8d
+              // popup-caps idiom), the grid layout on the content element.
+              // Desktop-only surface (mobile opens MediaModal instead), so
+              // the lane chrome is always visible here.
+              <ScrollArea scrollbarSize="thin" className="max-h-[240px] w-[360px]" contentClassName="grid grid-cols-3 gap-1.5">
                 {list.map((row) => {
                   const id = row.id as string;
                   const isSending = sendingId === id;
@@ -174,7 +180,7 @@ function DesktopMediaMenu({ characterId }: { characterId: string }) {
                     </div>
                   );
                 })}
-              </div>
+              </ScrollArea>
             )}
           </Popover.Content>
         </Popover.Portal>

@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { useKeyDown } from "../../../hooks/use-key-down.js";
 import { Icons } from "../../shared/icons.js";
 import { AutoTextarea } from "../../shared/auto-textarea.js";
+import { ScrollArea } from "../../shared/scroll-area.js";
 import { useT } from "../../../i18n/context.js";
 import { serveCharacterAssetUrl } from "../../../api/gallery-api.js";
 import type { CharacterAsset } from "@vibe-tavern/domain";
@@ -139,8 +140,20 @@ export function GalleryLightbox({ characterId, assets, index, onIndexChange, onC
         </>
       )}
 
-      {/* Image + description stack. */}
-      <div className="flex max-h-full w-full max-w-2xl flex-col items-center gap-3 overflow-y-auto p-2" onClick={(e) => e.stopPropagation()}>
+      {/* Image + description stack. CNR-8k: the stack rides the shared thin
+          vertical lane — the max-h-full cap and width stay on the ROOT (caps
+          as today), the centered stack layout + p-2 padding ride the content
+          element (padding scrolls with content, the 8e idiom), and the
+          backdrop-close click-guard moves to the root so clicks inside still
+          stop propagation. This lightbox has no film strip (paging is the
+          prev/next buttons + keyboard nav below), so no strip ref exists to
+          repoint; the image is a plain fit-to-view img, not a zoom/pan stage. */}
+      <ScrollArea
+        scrollbarSize="thin"
+        className="max-h-full w-full max-w-2xl"
+        contentClassName="flex flex-col items-center gap-3 p-2"
+        onClick={(e) => e.stopPropagation()}
+      >
         <img
           src={src}
           alt={alt}
@@ -203,7 +216,7 @@ export function GalleryLightbox({ characterId, assets, index, onIndexChange, onC
             </div>
           </div>
         )}
-      </div>
+      </ScrollArea>
     </div>
   );
 }

@@ -155,4 +155,20 @@ describe("MediaModal lightbox — one-finger pan parity (avatar-panel canon)", (
     // The button click path is what the phone executes for a zero-move tap.
     expect(sendBtn!.disabled).toBe(false);
   });
+
+  it("rides the thin vertical lane for the thumbnail grid; the gesture stage stays native (CNR-8k)", async () => {
+    setup();
+    const lane = document.querySelector<HTMLElement>('[data-scroll-area="thin"]')!;
+    expect(lane).toBeTruthy();
+    // The lane root takes the body's flex-1 fill; the grid layout and the
+    // old p-2 padding ride the content element.
+    expect(lane.classList.contains("flex-1")).toBe(true);
+    const viewport = lane.querySelector<HTMLElement>("[data-scroll-viewport]")!;
+    expect(viewport.style.overflowX).toBe("hidden");
+    expect(lane.querySelector("img[alt='test image']")).toBeTruthy();
+    // The zoom/pan lightbox is an INTERACTION viewport, not a list — by the
+    // 8g AvatarCrop principle it never mounts a ScrollArea.
+    const lightboxImg = openLightbox();
+    expect(lightboxImg.closest("[data-scroll-area]")).toBeNull();
+  });
 });

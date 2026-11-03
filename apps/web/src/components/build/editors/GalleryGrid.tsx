@@ -7,6 +7,7 @@ import { Toggle } from "../../shared/Toggle.js";
 import { AutoTextarea } from "../../shared/auto-textarea.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
 import { BottomSheet } from "../../shared/BottomSheet.js";
+import { ScrollArea } from "../../shared/scroll-area.js";
 import { getModalPortal } from "../../shared/modal-helpers.js";
 import { useIsMobile } from "../../../hooks/use-mobile.js";
 import { serveCharacterAssetUrl } from "../../../api/gallery-api.js";
@@ -482,8 +483,9 @@ export function GalleryGrid({ characterId, assets, selectedIds, onToggleSelectio
   // The lightbox is a single focused surface (separate from the panels).
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
 
-  // Cap the grid at two visible rows; anything taller scrolls (the build
-  // panel has room to the right for a scrollbar). Row height is invariant
+  // Cap the grid at two visible rows; anything taller scrolls (the pr-2
+  // gutter on the wrapping grid hosts the thin overlay lane at the edge).
+  // Row height is invariant
   // here — the image area is a fixed `tileHeight` and the footer is
   // `truncate`d to one line — so an image's aspect ratio only changes a
   // tile's WIDTH, never its row height. That makes "two rows" a stable
@@ -514,27 +516,32 @@ export function GalleryGrid({ characterId, assets, selectedIds, onToggleSelectio
       {/* Justified grid: fixed-height image area, width follows each image's
           aspect ratio. Portrait tiles are tall+narrow, landscape are
           tall+wide, wrapping left→right like a Google-Photos row. Capped at
-          two rows (see maxHeight above); taller galleries scroll. */}
-      <div
-        ref={gridRef}
-        className="flex flex-wrap gap-3 overflow-y-auto overflow-x-hidden pr-2"
-        style={maxHeight ? { maxHeight } : undefined}
-      >
-        {assets.map((asset, idx) => (
-          <GalleryTile
-            key={asset.id as string}
-            characterId={characterId}
-            asset={asset}
-            isSelected={selectedIds.has(asset.id as string)}
-            isMobile={isMobile}
-            onToggle={() => onToggleSelection(asset.id as string)}
-            onOpenLightbox={() => setLightboxIndex(idx)}
-            onOpenPanel={() => togglePanel(asset)}
-            onSetAsAvatar={() => onSetAsAvatar(asset)}
-            tileHeight={tileHeight}
-          />
-        ))}
-      </div>
+          two rows (see maxHeight above); taller galleries scroll.
+          CNR-8k: the capped grid rides the shared thin ScrollArea lane — the
+          two-row maxHeight cap sits on the ROOT (caps-outside, the 8e
+          idiom), while the wrapping grid keeps its own div so the two-row
+          measurement ref still reads the first TILE directly. Characterized
+          before migration: the grid wraps (flex-wrap) with X overflow hidden
+          — it never scrolls horizontally, so the lane is vertical-only and
+          no horizontal lane is created. */}
+      <ScrollArea scrollbarSize="thin" style={maxHeight ? { maxHeight } : undefined}>
+        <div ref={gridRef} className="flex flex-wrap gap-3 pr-2">
+          {assets.map((asset, idx) => (
+            <GalleryTile
+              key={asset.id as string}
+              characterId={characterId}
+              asset={asset}
+              isSelected={selectedIds.has(asset.id as string)}
+              isMobile={isMobile}
+              onToggle={() => onToggleSelection(asset.id as string)}
+              onOpenLightbox={() => setLightboxIndex(idx)}
+              onOpenPanel={() => togglePanel(asset)}
+              onSetAsAvatar={() => onSetAsAvatar(asset)}
+              tileHeight={tileHeight}
+            />
+          ))}
+        </div>
+      </ScrollArea>
 
       {lightboxIndex !== null && (
         <GalleryLightbox

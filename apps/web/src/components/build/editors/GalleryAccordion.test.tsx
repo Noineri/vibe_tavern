@@ -44,6 +44,21 @@ afterEach(() => {
   localStorage.clear();
 });
 
+function makeAsset(characterId: string, id: string, caption: string): CharacterAsset {
+  return {
+    id,
+    characterId,
+    ext: "png",
+    mimeType: "image/png",
+    caption,
+    description: null,
+    includeInPrompt: false,
+    avatarCropJson: null,
+    order: 0,
+    createdAt: "2026-01-01T00:00:00Z",
+  } as CharacterAsset;
+}
+
 describe("GalleryAccordion disclosure", () => {
   it("opens the real gallery body from its collapsed header", () => {
     const load = mock(async () => {});
@@ -78,21 +93,6 @@ describe("GalleryAccordion disclosure", () => {
 });
 
 describe("GalleryAccordion floating viewer across a character switch", () => {
-  function makeAsset(characterId: string, id: string, caption: string): CharacterAsset {
-    return {
-      id,
-      characterId,
-      ext: "png",
-      mimeType: "image/png",
-      caption,
-      description: null,
-      includeInPrompt: false,
-      avatarCropJson: null,
-      order: 0,
-      createdAt: "2026-01-01T00:00:00Z",
-    } as CharacterAsset;
-  }
-
   beforeEach(() => {
     useGalleryStore.setState({
       byCharacter: {
@@ -159,5 +159,59 @@ describe("GalleryAccordion floating viewer across a character switch", () => {
     expect(view.getByAltText("B one")).toBeTruthy();
     expect(view.getByTestId("floating-viewer").getAttribute("data-src"))
       .toContain("characters/char-A/assets/row-a1");
+  });
+});
+
+describe("GalleryGrid scroll chrome (CNR-8k)", () => {
+  beforeEach(() => {
+    useGalleryStore.setState({
+      byCharacter: {
+        "char-g": [
+          makeAsset("char-g", "g-1", "G one"),
+          makeAsset("char-g", "g-2", "G two"),
+          makeAsset("char-g", "g-3", "G three"),
+        ],
+      },
+      loading: {},
+      uploading: {},
+      describing: {},
+      error: {},
+      load: mock(async () => {}),
+      reload: mock(async () => {}),
+      upload: mock(async () => {}),
+      updateCaption: mock(async () => {}),
+      updateDescription: mock(async () => {}),
+      setIncludeInPrompt: mock(async () => {}),
+      reorder: mock(async () => {}),
+      remove: mock(async () => {}),
+      describe: mock(async () => {}),
+      cancelDescribe: mock(() => {}),
+      reset: mock(() => {}),
+    });
+  });
+
+  it("rides the thin vertical lane with the two-row cap on the root and the measured grid inside", () => {
+    const view = render(<GalleryAccordion characterId="char-g" />);
+    fireEvent.click(view.getByText("gallery_title"));
+
+    const lane = view.container.querySelector<HTMLElement>('[data-scroll-area="thin"]')!;
+    expect(lane).toBeTruthy();
+    // Characterized before migration: the grid wraps (flex-wrap) with X
+    // overflow hidden — it never scrolls horizontally, so the lane is
+    // vertical-only (the viewport clips X; no horizontal track is created).
+    const viewport = lane.querySelector<HTMLElement>("[data-scroll-viewport]")!;
+    expect(viewport.style.overflowX).toBe("hidden");
+    // Caps-outside idiom (8e): the two-row maxHeight cap sits on the root —
+    // the layout effect measured the first tile and wrote the cap inline.
+    expect(viewport.style.maxHeight).toBe("");
+    expect(lane.style.maxHeight).not.toBe("");
+    // The wrapping grid keeps its own div INSIDE the lane so the two-row
+    // measurement ref still reads the first TILE directly (grid.firstChild
+    // is a tile, not the viewport's content wrapper).
+    const content = lane.querySelector<HTMLElement>("[data-scroll-content]")!;
+    const grid = content.firstElementChild as HTMLElement;
+    expect(grid.classList.contains("flex-wrap")).toBe(true);
+    expect((grid.firstElementChild as HTMLElement).querySelector("img[alt='G one']")).toBeTruthy();
+    expect(lane.querySelectorAll("img").length).toBe(3);
   });
 });
