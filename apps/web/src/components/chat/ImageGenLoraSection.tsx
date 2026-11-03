@@ -29,6 +29,7 @@ import { toast } from "sonner";
 
 import { DropdownSelect } from "../shared/DropdownSelect.js";
 import { SearchInput } from "../shared/SearchInput.js";
+import { ScrollArea } from "../shared/scroll-area.js";
 import { SliderField } from "../shared/SliderField.js";
 import { Toggle } from "../shared/Toggle.js";
 import { IMAGE_GEN_PARAM_RANGES } from "@vibe-tavern/domain";
@@ -166,7 +167,13 @@ export function ImageGenLoraSection({ chatId, modelFamily, loras, failed, disabl
             data-testid="image-gen-ft-loras-search"
           />
 
-          <div className="flex max-h-56 flex-col gap-1 overflow-y-auto pr-0.5 @min-[480px]:col-span-2" data-testid="image-gen-ft-loras-list">
+          {/* CNR-8l: the capped lora well rides the shared thin vertical
+              lane (3px rest / 5px hover) instead of the native 8px fallback
+              — the max-h-56 cap and the grid span sit on the ScrollArea
+              root (caps-on-root), the row gap and the 2px edge inset
+              scroll with the rows on the content element. The lane hides
+              on phones (CNR-7g policy). */}
+          <ScrollArea scrollbarSize="thin" className="max-h-56 @min-[480px]:col-span-2" contentClassName="flex flex-col gap-1 pr-0.5" data-testid="image-gen-ft-loras-list">
                 {rows.length === 0 && (
                   <span
                     className="px-1 py-2 text-[calc(var(--ui-fs)-3px)] text-t4"
@@ -230,7 +237,7 @@ export function ImageGenLoraSection({ chatId, modelFamily, loras, failed, disabl
                     </div>
                   );
                 })}
-          </div>
+          </ScrollArea>
         </>
       )}
     </ImageGenChipSection>

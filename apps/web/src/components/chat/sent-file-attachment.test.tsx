@@ -185,6 +185,14 @@ describe("sent file actions (CA-2c)", () => {
     const dialog = await waitFor(() => view.getByRole("dialog", { name: file.name }));
     expect(dialog.textContent).toContain(summary.description!);
     expect(dialog.querySelector(".whitespace-pre-wrap")?.textContent).toBe(summary.description!);
+    // CNR-8l: the summary body rides the shared thin vertical lane — the
+    // panel's max-h cap still bounds the region (the ScrollArea root
+    // shrinks inside the panel column), the typography scrolls with the
+    // text on the content element; the read-only pin above is unchanged.
+    const summaryScroll = dialog.querySelector<HTMLElement>('[data-testid="sent-file-summary-scroll"]')!;
+    expect(summaryScroll.getAttribute("data-scroll-area")).toBe("thin");
+    expect(summaryScroll.querySelector<HTMLElement>("[data-scroll-viewport]")!.classList.contains("scrollbar-hide")).toBe(true);
+    expect(summaryScroll.querySelector(".whitespace-pre-wrap")?.textContent).toBe(summary.description!);
     expect(dialog.querySelector("textarea,input")).toBeNull();
     fireEvent.click(view.getByRole("button", { name: en.close }));
     await waitFor(() => expect(view.queryByRole("dialog")).toBeNull());

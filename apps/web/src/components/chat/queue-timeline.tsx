@@ -13,6 +13,7 @@ import { cn } from "../../lib/cn.js";
 import { resolveModelLabel } from "../../lib/model-resolve.js";
 import { AnimatedDisclosure } from "../shared/AnimatedDisclosure.js";
 import { Icons } from "../shared/icons.js";
+import { ScrollArea } from "../shared/scroll-area.js";
 import { QueueProgressRing } from "./queue-progress-ring.js";
 import { useQueueRows, type FinishedQueueRow, type QueueRow } from "./queue-rows.js";
 import { VariantStarButton } from "./variants/variant-jump.js";
@@ -82,7 +83,24 @@ export function QueueTimeline({ mobile = false, onClose }: QueueTimelineProps): 
         <span className={mobile ? "shrink-0 whitespace-nowrap text-[calc(var(--ui-fs)-2px)] text-t3" : "shrink-0 whitespace-nowrap text-[calc(var(--ui-fs)-3px)] text-t3"}>{t("queue_chip_progress", { done: rowsResult.summary.done, total: rowsResult.summary.total })}</span>
         {hasPending && <button type="button" onClick={() => { clearQueuePending(); onClose(); }} className={mobile ? "ml-auto shrink-0 whitespace-nowrap rounded px-2 py-1 text-[calc(var(--ui-fs)-2px)] text-t3 transition-colors hover:bg-s2 hover:text-danger-text" : "ml-auto shrink-0 whitespace-nowrap rounded px-2 py-1 text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors hover:bg-s2 hover:text-danger-text"}>{t("queue_timeline_clear")}</button>}
       </div>
-      <div className={mobile ? "relative max-h-[50vh] overflow-y-auto py-1" : "relative max-h-64 overflow-y-auto py-1"} data-queue-timeline>
+      {/* CNR-8l: the timeline body rides the shared thin vertical lane
+          (3px rest / 5px hover) instead of the native 8px fallback — the
+          height cap sits on the ScrollArea root, the py-1 row padding
+          scrolls with the rows on the content element, and the absolute
+          progress track keeps its exact old geometry: `relative` rides
+          the native viewport (the capped box), so top-4/bottom-4 still
+          resolve against the visible window minus 2rem and the track
+          still scrolls with the rows. The running-row follow stays
+          element-level — scrollIntoView block:"nearest" walks ancestors
+          to the viewport. The lane hides on phones (CNR-7g policy);
+          mobile keeps native scrolling under the sheet. */}
+      <ScrollArea
+        scrollbarSize="thin"
+        className={mobile ? "max-h-[50vh]" : "max-h-64"}
+        contentClassName="py-1"
+        viewportProps={{ className: "relative" }}
+        data-queue-timeline
+      >
         {mobile ? (
           <div className="absolute bottom-4 left-[25px] top-4 w-0.5 bg-border" aria-hidden="true" data-queue-timeline-track />
         ) : (
@@ -101,7 +119,7 @@ export function QueueTimeline({ mobile = false, onClose }: QueueTimelineProps): 
             <RecordRow key={row.record.id} row={row} mobile={mobile} accentBefore={accentBefore} accentAfter={accentAfter} accentStartInset={accentStartInset} ref={row.record.id === runningId ? runningRef : undefined} expanded={expandedError === row.record.id} onToggleError={() => setExpandedError((value) => value === row.record.id ? null : row.record.id)} jobId={jobs.find((job) => job.recordId === row.record.id)?.id} />
           );
         })}
-      </div>
+      </ScrollArea>
       {mobile ? (
         <button type="button" onClick={addCurrent} className="flex min-h-12 w-full min-w-0 items-center gap-1.5 border-t border-border px-4 py-2 text-left font-ui text-[calc(var(--ui-fs)-2px)] text-accent-t transition-colors hover:bg-s2">
           <Icons.Plus /><span className="flex min-w-0 flex-1 flex-col gap-px"><span className="whitespace-normal">{t("queue_timeline_one_more_mobile")}</span><span data-queue-timeline-metadata className="min-w-0 whitespace-normal break-words text-[calc(var(--ui-fs)-4px)] text-t3">{footerLabel}</span></span>

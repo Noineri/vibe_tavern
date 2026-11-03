@@ -21,6 +21,8 @@
 
 import type { ReactNode } from "react";
 
+import { ScrollArea } from "../shared/scroll-area.js";
+
 export interface ImageGenChipBodyLayoutProps {
   isMobile: boolean;
   /** Wide two-pane layout — the caller has already folded in "not mobile"
@@ -56,7 +58,11 @@ export function ImageGenChipBodyLayout({
           DiceTray 616–640 canon). The body root's max-h-[80dvh] is the same
           cap's mobile twin — the sheet does not bound height, the caller
           must (the DiceTray rule; inert on desktop where the popover caps
-          first). The scroll region's own px-3/pt-3 is the body's only inset. */}
+          first). CNR-8l: every region rides the shared thin vertical lane
+          (3px rest / 5px hover) instead of the native 8px fallback — caps
+          and flex sizing sit on the ScrollArea roots, the px-3/pt-3 body
+          inset scrolls with the fields on the content elements (still the
+          body's only inset). The lane hides on phones (CNR-7g policy). */}
       {twoPane ? (
         // Wide two-pane: the bounded single row lets each pane scroll by
         // itself — open samplers never push the prompt out of view.
@@ -65,23 +71,33 @@ export function ImageGenChipBodyLayout({
           data-testid="image-gen-ft-two-pane"
           data-ft-two-pane=""
         >
-          <div
-            className="flex min-h-0 flex-col gap-2.5 overflow-y-auto p-3"
+          <ScrollArea
+            scrollbarSize="thin"
+            className="min-h-0"
+            contentClassName="flex flex-col gap-2.5 p-3"
             data-testid="image-gen-ft-pane-left"
           >
             {baseFieldsDesktop}
             {promptsBlock}
-          </div>
+          </ScrollArea>
           <div className="bg-border" />
           {/* Its own container: the sections' two-column grids query this
-              pane's width, not the whole popover's. */}
-          <div className="@container min-h-0 overflow-y-auto p-3" data-testid="image-gen-ft-pane-right">
+              pane's width, not the whole popover's. The @container rides the
+              ScrollArea root — the grid cell with the pane's exact width. */}
+          <ScrollArea
+            scrollbarSize="thin"
+            className="@container min-h-0"
+            contentClassName="p-3"
+            data-testid="image-gen-ft-pane-right"
+          >
             {sectionsStack}
-          </div>
+          </ScrollArea>
         </div>
       ) : (
-        <div
-          className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto px-3 pb-3 pt-3"
+        <ScrollArea
+          scrollbarSize="thin"
+          className="min-h-0 flex-1"
+          contentClassName="flex flex-col gap-2.5 px-3 pb-3 pt-3"
           data-testid="image-gen-ft-scroll"
         >
           {isMobile ? (
@@ -97,7 +113,7 @@ export function ImageGenChipBodyLayout({
             </>
           )}
           {sectionsStack}
-        </div>
+        </ScrollArea>
       )}
       {isMobile ? (
         <div className="flex shrink-0 gap-2.5 border-t border-border px-4 pb-4 pt-2.5">

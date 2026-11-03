@@ -1010,6 +1010,15 @@ describe("ImageGenFineTuningChip — LoRA section (CG-C3)", () => {
     // The profile's model is krea2ray → family "Krea 2" auto-preselected:
     // only the two Krea loras render (dragonPony is SDXL, arden unknown).
     await waitFor(() => expect(rows(view).length).toBe(2));
+    // CNR-8l: the capped lora well rides the shared thin vertical lane —
+    // the max-h-56 cap and the grid span sit on the ScrollArea root
+    // (caps-on-root), the row gap + 2px edge inset scroll with the rows on
+    // the content element, and the native viewport keeps the scrolling.
+    const lorasWell = within(view.baseElement).getByTestId("image-gen-ft-loras-list");
+    expect(lorasWell.getAttribute("data-scroll-area")).toBe("thin");
+    expect(lorasWell.className).toContain("max-h-56");
+    expect(lorasWell.querySelector<HTMLElement>("[data-scroll-viewport]")!.classList.contains("scrollbar-hide")).toBe(true);
+    expect(lorasWell.querySelector<HTMLElement>("[data-scroll-content]")!.className).toContain("gap-1");
     expect(rows(view).map((r) => r.dataset.lora)).toEqual([
       "nijireol_krea2_v1_ep5.safetensors",
       "kreaDraw_v2.safetensors",
@@ -2012,17 +2021,24 @@ describe("ImageGenFineTuningChip — ICR-3 body layout (the redesign's single co
 
     // Report C: the scroll region is the body root's first child — the body
     // rolls inside it, the footer is pinned outside below it. ICR-3: the
-    // scroll region's own px-3 is the body's only horizontal inset.
+    // scroll region's own px-3 is the body's only horizontal inset. CNR-8l:
+    // the region rides the shared thin vertical lane — the flex sizing on
+    // the ScrollArea root, the insets + column layout on the content
+    // element so both scroll with the fields; the native viewport keeps
+    // the real scrolling.
     const scroll = within(view.baseElement).getByTestId("image-gen-ft-scroll");
-    expect(scroll.className).toContain("overflow-y-auto");
-    expect(scroll.className).toContain("px-3");
+    expect(scroll.getAttribute("data-scroll-area")).toBe("thin");
+    expect(scroll.className).toContain("flex-1");
+    expect(scroll.querySelector<HTMLElement>("[data-scroll-viewport]")!.classList.contains("scrollbar-hide")).toBe(true);
+    const scrollContent = scroll.querySelector<HTMLElement>("[data-scroll-content]")!;
+    expect(scrollContent.className).toContain("px-3");
     expect(scroll.parentElement).toBe(body);
 
     // The desktop base grid: two columns at a comfortable container width —
-    // the scroll region's first child, holding the four base fields in
+    // the scroll content's first child, holding the four base fields in
     // reading order. happy-dom computes no container-query layout — the pin
     // is the class contract the component owns.
-    const grid = scroll.firstElementChild as HTMLElement;
+    const grid = scrollContent.firstElementChild as HTMLElement;
     expect(grid.className).toContain("@min-[480px]:grid-cols-2");
     expect(grid.contains(within(view.baseElement).getByTestId("image-gen-ft-profile-select"))).toBe(true);
     expect(grid.contains(within(view.baseElement).getByTestId("image-gen-ft-target-select"))).toBe(true);
@@ -2120,8 +2136,13 @@ describe("ImageGenFineTuningChip — wide two-pane layout (owner mockup chip-wid
     const right = within(view.baseElement).getByTestId("image-gen-ft-pane-right");
     for (const pane of [left, right]) {
       expect(pane.parentElement).toBe(panes);
-      expect(pane.className).toContain("overflow-y-auto");
+      // CNR-8l: each pane rides its own thin vertical lane — the pane cap
+      // on the ScrollArea root (a grid child of the bounded row), the
+      // gap/inset layout on the content element, native scrolling on the
+      // viewport.
+      expect(pane.getAttribute("data-scroll-area")).toBe("thin");
       expect(pane.className).toContain("min-h-0");
+      expect(pane.querySelector<HTMLElement>("[data-scroll-viewport]")!.classList.contains("scrollbar-hide")).toBe(true);
     }
     // The right pane is its own container: the sections' two-column grids
     // query the pane's width, not the whole popover's.

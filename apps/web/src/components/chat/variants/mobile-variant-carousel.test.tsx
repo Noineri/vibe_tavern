@@ -359,4 +359,16 @@ describe("MobileVariantCarousel — native pager", () => {
     expect(s.onSelectVariant.mock.calls).toEqual([]);
     expect(observers.size).toBe(0);
   });
+
+  // CNR-8l non-regression pin: the carousel is DELIBERATELY hidden chrome
+  // (`.scrollbar-hide`, the plan row's named hidden strip) — a snap-pager
+  // whose gestures own the pointer must never grow a grab lane; scrolling
+  // stays native + hidden, with the busy lock still swapping overflow-x
+  // classes on the same element.
+  test("keeps its deliberate hidden chrome — no ScrollArea lane", () => {
+    const s = mount();
+    expect(s.viewport.classList.contains("scrollbar-hide")).toBe(true);
+    expect(s.viewport.classList.contains("snap-x")).toBe(true);
+    expect(s.viewport.closest("[data-scroll-area]")).toBeNull();
+  });
 });

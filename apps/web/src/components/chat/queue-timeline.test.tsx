@@ -303,7 +303,21 @@ describe("QueueTimeline desktop", () => {
     addRecord("failed", "provider/model-failed", "exact error");
     const view = renderTimeline();
     expect(view.container.querySelector("[data-queue-timeline-header]")?.getAttribute("class")).toContain("gap-2 border-b border-border px-3 py-2.5");
-    expect(view.container.querySelector("[data-queue-timeline]")?.getAttribute("class")).toContain("max-h-64 overflow-y-auto");
+    // CNR-8l: the timeline body rides the shared thin vertical lane — the
+    // max-h-64 cap sits on the ScrollArea root, the py-1 row padding scrolls
+    // with the rows on the content element, and the absolute progress track
+    // keeps resolving against the capped box: `relative` rides the native
+    // viewport (never the content element), preserving the old scroller's
+    // containing-block geometry exactly.
+    const timeline = view.container.querySelector<HTMLElement>("[data-queue-timeline]")!;
+    expect(timeline.getAttribute("class")).toContain("max-h-64");
+    expect(timeline.getAttribute("data-scroll-area")).toBe("thin");
+    const timelineViewport = timeline.querySelector<HTMLElement>("[data-scroll-viewport]")!;
+    expect(timelineViewport.classList.contains("scrollbar-hide")).toBe(true);
+    expect(timelineViewport.classList.contains("relative")).toBe(true);
+    expect(timeline.querySelector("[data-scroll-content]")?.getAttribute("class")).toContain("py-1");
+    expect(timeline.querySelector("[data-scroll-content]")?.getAttribute("class")).not.toContain("relative");
+    expect(view.container.querySelector("[data-queue-timeline-track]")?.getAttribute("class")).toBe("absolute bottom-4 left-[19px] top-4 w-0.5 bg-border");
     expect(view.container.querySelector("[data-queue-timeline-row=finished]")?.getAttribute("class")).toContain("min-h-9 items-center gap-2.5 px-3 py-1.5");
     expect(view.container.querySelector("[data-queue-timeline-row=finished] button span:nth-child(2)")?.getAttribute("class")).toBe("shrink-0 whitespace-nowrap");
     expect(view.container.querySelector("[data-queue-timeline-row=finished] button span:last-child")?.getAttribute("class")).toContain("min-w-0 truncate text-t3");
@@ -339,7 +353,11 @@ describe("QueueTimeline mobile", () => {
     const metadata = finished?.querySelector<HTMLElement>("[data-queue-timeline-metadata]");
     const footer = view.getByRole("button", { name: /One more/ });
 
-    expect(timeline?.getAttribute("class")).toContain("max-h-[50vh] overflow-y-auto py-1");
+    // CNR-8l: the mobile branch rides the same thin lane with its own cap
+    // (the lane chrome itself hides ≤768px by the CNR-7g policy; native
+    // scrolling under the sheet is unchanged).
+    expect(timeline?.getAttribute("class")).toContain("max-h-[50vh]");
+    expect(timeline?.getAttribute("data-scroll-area")).toBe("thin");
     expect(view.container.querySelector("[data-queue-timeline-track]")?.getAttribute("class")).toBe("absolute bottom-4 left-[25px] top-4 w-0.5 bg-border");
     expect(finished?.getAttribute("class")).toContain("min-h-12");
     expect(finished?.getAttribute("class")).toContain("px-4");

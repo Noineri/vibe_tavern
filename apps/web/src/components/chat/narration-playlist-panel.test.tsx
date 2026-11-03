@@ -178,12 +178,12 @@ mock.module("../../lib/platform.js", () => ({
 }));
 
 let NarrationPlaylistPanel: typeof import("./NarrationPlaylistPanel.js").NarrationPlaylistPanel;
-let isFetchIncomplete: typeof import("./NarrationPlaylist.js").isFetchIncomplete;
+let isFetchIncomplete: typeof import("./playlist-row.js").isFetchIncomplete;
 let scrollPlaylistListToMessage: typeof import("./NarrationPlaylist.js").scrollPlaylistListToMessage;
 beforeAll(async () => {
   ({ fireEvent, render, waitFor, act } = await import("@testing-library/react"));
   ({ NarrationPlaylistPanel } = await import("./NarrationPlaylistPanel.js"));
-  ({ isFetchIncomplete } = await import("./NarrationPlaylist.js"));
+  ({ isFetchIncomplete } = await import("./playlist-row.js"));
   ({ scrollPlaylistListToMessage } = await import("./NarrationPlaylist.js"));
 });
 
@@ -2750,6 +2750,17 @@ describe("narration playlist advance auto-scroll (RD-7)", () => {
       });
       // The list is the panel's own overflow container (the RD-7 seam).
       await waitFor(() => getByTestId("playlist-row-list"));
+      // CNR-8l: the row list rides the shared thin vertical lane — the flex
+      // sizing sits on the ScrollArea root, the <ul> keeps its own element
+      // (the RD-7 card query root + data-playlist-message-id anchors
+      // unchanged), and every card still resolves to the native viewport
+      // Base UI renders — the element-level scrollIntoView seam below is
+      // exactly the one pinned by this test.
+      const list = getByTestId("playlist-row-list");
+      const lane = list.closest<HTMLElement>('[data-scroll-area="thin"]');
+      expect(lane).not.toBeNull();
+      expect(lane!.classList.contains("flex-1")).toBe(true);
+      expect(list.closest("[data-scroll-viewport]")).not.toBeNull();
       // m1 completes → the advance edge starts m2 and owes exactly one
       // scroll: the m2 card. The target persists until the card lands,
       // so opening the panel late still scrolls deterministically.

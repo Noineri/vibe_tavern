@@ -189,4 +189,17 @@ describe("AttachmentPreview file chips (CA-1e)", () => {
     const view = render(<AttachmentPreview attachments={[{ ...file, tokenCount: 0 }]} onRemove={mock()} />);
     expect(view.getByText(en.attachment_tokens.replace("{tokens}", "0"))).toBeTruthy();
   });
+
+  // CNR-8l non-regression pin: the draft chip strip is DELIBERATELY hidden
+  // chrome (`.scrollbar-hide`, the plan row's named hidden strip) — chips
+  // sit next to the composer where a grab lane would fight the pointer, so
+  // it never mounts a ScrollArea lane; scrolling stays native and hidden.
+  test("the chip strip keeps its deliberate hidden chrome — no ScrollArea lane", () => {
+    const view = render(<AttachmentPreview attachments={[file]} onRemove={mock()} />);
+    const strip = view.container.querySelector<HTMLElement>("div.scrollbar-hide")!;
+    expect(strip).toBeTruthy();
+    expect(strip.className).toContain("overflow-x-auto");
+    expect(strip.contains(view.getByTestId("file-attachment-chip"))).toBe(true);
+    expect(strip.closest("[data-scroll-area]")).toBeNull();
+  });
 });
