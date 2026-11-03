@@ -185,6 +185,42 @@ describe("ScriptTester (characterization)", () => {
 		expect(await findByText("script_test_scenario")).toBeTruthy();
 	});
 
+	it("result quotes scroll on the thin ScrollArea lane (CNR-8j): cap + frame on the root, quote body on the content", async () => {
+		mockTestScript.mockResolvedValue({
+			kind: "prompt",
+			personality: "calm persona prose",
+			scenario: "forest scenario prose",
+			state: {},
+			injectedMessages: [],
+			console: [],
+			shared: {},
+			errors: [],
+		});
+		const { container, getByPlaceholderText, getByText, findByText } = renderTester();
+		await userEvent.setup().type(getByPlaceholderText("script_test_input_placeholder"), "hi");
+		fireEvent.click(getByText("script_test_run"));
+		await findByText("script_test_personality");
+		// Both capped quotes are thin-lane ScrollAreas: the frame classes and the
+		// max-h-[288px] cap ride the ROOT (border fixed at the cap — the old
+		// max-h + overflow-auto div's geometry), the quote body (padding + text)
+		// rides the content element so the padding scrolls with the text.
+		const lanes = Array.from(container.querySelectorAll<HTMLElement>("[data-scroll-area='thin']"));
+		expect(lanes.length).toBe(2);
+		for (const lane of lanes) {
+			expect(lane.className).toContain("max-h-[288px]");
+			expect(lane.className).toContain("rounded-[6px]");
+			expect(lane.className).toContain("border");
+			expect(lane.className).toContain("mt-1");
+			const content = lane.querySelector<HTMLElement>("[data-scroll-content]");
+			if (!content) throw new Error("quote content element missing");
+			expect(content.className).toContain("p-2");
+			expect(content.className).toContain("font-mono");
+			expect(content.className).toContain("whitespace-pre-wrap");
+		}
+		expect(lanes[0]!.textContent).toContain("calm persona prose");
+		expect(lanes[1]!.textContent).toContain("forest scenario prose");
+	});
+
 	it("result: shows the no-effect warning when the run returns no output", async () => {
 		mockTestScript.mockResolvedValue({
 			kind: "prompt",

@@ -7,6 +7,7 @@ import type { AssemblePromptResponse, PromptTraceRecordDto } from "@vibe-tavern/
 import type { AppCharacter } from "../../api/types.js";
 import { cn } from "../../lib/cn.js";
 import { DropdownSelect } from "../shared/DropdownSelect.js";
+import { ScrollArea } from "../shared/scroll-area.js";
 import { SearchInput } from "../shared/SearchInput.js";
 import { CharacterForm } from "./editors/CharacterForm.js";
 import { TracePayloadView } from "./trace-payload-view.js";
@@ -523,17 +524,38 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptTrac
   }
 
   // ── Desktop ──
+  // CNR-8j: the padded (non-full-bleed) mode surface scrolls on the shared
+  // thin ScrollArea lane (3px rest / 5px hover) instead of the native 8px
+  // fallback. The 32px/40px padding rides the VIEWPORT — the real scroller —
+  // and NOT the content element: CharacterForm's sticky action bar pins flush
+  // under the Build tabs header via a negative top that must land inside the
+  // scroll container's own padding region (inside the overflow clip
+  // rectangle); see CharacterForm.tsx's glass-bar doc comment. The vertical
+  // orientation's viewport overflow-x: hidden clips the same glass-bar
+  // ::before bleed the D4 overflow-x-clip guarded below. Full-bleed panels
+  // keep the plain host div: its h-full children manage their own scrolling.
+  if (isFullBleed) {
+    return (
+      <div
+        // D4 (v1.2.1): overflow-x-clip — same glass-bar ::before bleed as the
+        // mobile container above (bar spans exactly the 40px padding box).
+        // Class string preserved verbatim from the pre-CNR-8j container (the
+        // non-full-bleed base classes + the full-bleed extras as cn joined
+        // them); the axis utilities win over `overflow-hidden` in stylesheet
+        // order, so overflow-x clips while h-full children never overflow y.
+        className="flex-1 overflow-y-auto overflow-x-clip flex overflow-hidden p-0"
+      >
+        {renderPanelContent()}
+      </div>
+    );
+  }
   return (
-    <div
-      // D4 (v1.2.1): overflow-x-clip — same glass-bar ::before bleed as the
-      // mobile container above (bar spans exactly the 40px padding box).
-      className={cn(
-        "flex-1 overflow-y-auto overflow-x-clip",
-        isFullBleed && "flex overflow-hidden p-0",
-      )}
-      style={!isFullBleed ? { padding: "32px 40px" } : undefined}
+    <ScrollArea
+      scrollbarSize="thin"
+      className="flex-1"
+      viewportProps={{ style: { padding: "32px 40px" } }}
     >
       {renderPanelContent()}
-    </div>
+    </ScrollArea>
   );
 }

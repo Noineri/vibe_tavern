@@ -7,6 +7,7 @@ import { AddButton } from "../../shared/add-button.js";
 import { useIsMobile } from "../../../hooks/use-mobile.js";
 import { MobileExpandTextarea } from "../../shared/MobileExpandTextarea.js";
 import { AutoTextarea } from "../../shared/auto-textarea.js";
+import { ScrollArea } from "../../shared/scroll-area.js";
 import { DestructiveConfirmModal } from "../../shared/destructive-confirm-modal.js";
 import { SCRIPT_TEMPLATES, templateScriptKind } from "./script-templates/index.js";
 import { cn } from "../../../lib/cn.js";
@@ -499,7 +500,11 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, ownerId,
               <span className="text-[var(--ui-fs)] leading-5 font-semibold text-t1">{t("script_import_title")}</span>
               <div className="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-[5px] text-t3 transition-all hover:bg-s2 hover:text-t1" onClick={() => { setImportOpen(false); setImportCode(""); }}><Ic.close /></div>
             </div>
-            <div className="flex-1 overflow-y-auto" style={{ padding: 20 }}>
+            {/* CNR-8j: the import modal body rides the thin ScrollArea lane —
+                the 20px padding (an inline style on the native div) moves onto
+                the content element as p-5 so it scrolls with the body; the
+                header and footer rows stay docked outside the scroller. */}
+            <ScrollArea scrollbarSize="thin" className="flex-1" contentClassName="p-5">
               <div className="mb-3 text-[calc(var(--ui-fs)-1px)] text-t2">{t("script_import_paste")}</div>
               <MobileExpandTextarea value={importCode} onChange={setImportCode} label={t("script_import_import")}>
                 <AutoTextarea mono className="leading-[1.6]" maxRows={25} minRows={10} placeholder={t("script_import_placeholder")} value={importCode} onChange={e => setImportCode(e.target.value)} />
@@ -521,7 +526,7 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, ownerId,
                   <button type="button" key={key} className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[calc(var(--ui-fs)-3px)] text-t2 transition-all hover:bg-s2 hover:text-t1" onClick={() => { handleAddFromTemplate(key); setImportOpen(false); setImportCode(""); }}>{tDynamic("script_template_" + key) || tpl.name}</button>
                 ))}
               </div>
-            </div>
+            </ScrollArea>
             <div className="flex justify-end gap-2 border-t border-border" style={{ padding: "12px 20px" }}>
               <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-s3 px-4 font-ui text-[calc(var(--ui-fs)-2px)] leading-4 font-medium text-t2 transition-all hover:bg-border2 hover:text-t1" onClick={() => { setImportOpen(false); setImportCode(""); }}>{t("cancel")}</button>
               <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-[calc(var(--ui-fs)-2px)] leading-4 font-medium text-on-accent transition-all" onClick={() => handleImportScript(importCode)} disabled={!importCode.trim()}>{t("script_import_import")}</button>
@@ -556,8 +561,15 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, ownerId,
   );
 
   // ── Script list (for LorebookEditor list view) ────────────
+  // CNR-8j: the script list rides the thin ScrollArea lane — the list padding
+  // (an inline style on the native div) moves onto the content element so it
+  // scrolls with the cards. The pb-[calc(0.75rem+env(safe-area-inset-bottom))]
+  // utility is deliberately NOT carried over: it was dead on the native div
+  // (the inline `padding` shorthand overrode every padding class), so the
+  // effective padding is unchanged — p-3 mobile / py-5 px-6 desktop, exactly
+  // the old inline values.
   const scriptListContent = (
-    <div className="flex-1 overflow-y-auto pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))]" style={{ padding: isMobile ? "12px" : "20px 24px" }}>
+    <ScrollArea scrollbarSize="thin" className="flex-1" contentClassName={isMobile ? "p-3" : "py-5 px-6"}>
       {scripts.length === 0 ? (
         <div className="py-10 text-center">
           <div className="mb-2 text-[calc(var(--ui-fs)-1px)] text-t3">{t("script_no_scripts")}</div>
@@ -618,7 +630,7 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, ownerId,
           </DragOverlay>
         </DndContext>
       )}
-    </div>
+    </ScrollArea>
   );
 
   // ── No-script placeholder (for LorebookEditor editor view) ──

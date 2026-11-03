@@ -959,3 +959,50 @@ describe("useScriptPanel always-on assistant (AS-8c3b)", () => {
 		}
 	});
 });
+
+// ── CNR-8j: the script list + import-modal body ride the thin lane ─────────
+// The list view's own scroller and the import modal's body are thin
+// ScrollAreas now: the flex-1 rides the ROOT, the list/modal padding rides the
+// content element (so it scrolls with the rows), and the modal header/footer
+// stay docked OUTSIDE the scroller. List padding is pinned in its desktop
+// shape — py-5 px-6, the old inline "20px 24px" (mobile p-3 = old "12px");
+// the dead pb-[calc(safe-area)] utility is not carried (it never overrode the
+// inline padding shorthand on the native div).
+describe("useScriptPanel scroll wiring (CNR-8j)", () => {
+  it("the script list scrolls on a thin ScrollArea; desktop padding rides the content element", async () => {
+    listScripts.mockResolvedValue([{ ...baseScript }]);
+    const { container, findByText } = render(<Harness />);
+    await findByText("Test Script");
+
+    const lane = container.querySelector<HTMLElement>("[data-scroll-area='thin']");
+    if (!(lane instanceof HTMLElement)) throw new Error("thin ScrollArea missing on the script list");
+    expect(lane.className).toContain("flex-1");
+    expect(lane.textContent).toContain("Test Script");
+    const content = lane.querySelector<HTMLElement>("[data-scroll-content]");
+    if (!content) throw new Error("list content element missing");
+    expect(content.className).toContain("py-5");
+    expect(content.className).toContain("px-6");
+  });
+
+  it("the import modal body rides a thin ScrollArea; header and footer stay docked outside it", () => {
+    const { container, getByText } = render(<ImportHarness />);
+    fireEvent.click(getByText("open-import"));
+
+    const lane = container.querySelector<HTMLElement>("[data-scroll-area='thin']");
+    if (!(lane instanceof HTMLElement)) throw new Error("thin ScrollArea missing in the import modal");
+    expect(lane.className).toContain("flex-1");
+    const content = lane.querySelector<HTMLElement>("[data-scroll-content]");
+    if (!content) throw new Error("import body content element missing");
+    expect(content.className).toContain("p-5");
+    // The template groups scroll INSIDE the lane…
+    expect(content.textContent).toContain("script_template_group_prompt:");
+    expect(content.textContent).toContain("script_template_group_dice:");
+    // …while the header row and the footer (border-t) stay outside it.
+    const panel = lane.parentElement;
+    if (!panel) throw new Error("import modal panel missing");
+    const footer = panel.lastElementChild;
+    if (!footer) throw new Error("import modal footer missing");
+    expect(lane.contains(footer)).toBe(false);
+    expect(footer.className).toContain("border-t");
+  });
+});

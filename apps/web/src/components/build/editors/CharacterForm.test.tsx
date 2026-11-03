@@ -56,6 +56,14 @@ const realScriptApi = await import("../../../api/script-api.js");
 const realCharacterApi = await import("../../../api/character-api.js");
 const realRegexApi = await import("../../../api/regex-api.js");
 const realVersionSwitcher = await import("../VersionSwitcher.js");
+// CNR-8j pin support: the sticky-bar contract is pinned in its DESKTOP shape
+// (top −32 / −mx-10 — the geometry BuildMode's desktop scroll container
+// carries its 32px/40px padding for). Deterministic desktop, never UA-derived.
+const realMobileHook = await import("../../../hooks/use-mobile.js");
+mock.module("../../../hooks/use-mobile.js", () => ({
+  ...realMobileHook,
+  useIsMobile: () => false,
+}));
 
 let trackerTemplate: TrackerTemplate | null = null;
 const getTrackerTemplate = mock(() => Promise.resolve(trackerTemplate));
@@ -255,5 +263,26 @@ describe("CharacterForm — alt-greeting chips delete safely (E2)", () => {
     expect(document.body.textContent).toContain("Alt 1");
     expect(document.body.textContent).toContain("Alt 2");
     expect(dangerConfirm()).toBeNull();
+  });
+});
+
+// ── CNR-8j: the sticky action bar contract the desktop scroll surface must keep ──
+// BuildMode's desktop panel surface scrolls on a thin ScrollArea whose
+// VIEWPORT carries the 32px/40px padding (the sticky-bar carrier — see the
+// glass-bar doc comment in CharacterForm.tsx). The bar's own geometry is
+// pinned HERE so a future padding move (onto the content element, an outer
+// wrapper, …) breaks loudly instead of silently clipping the Save row.
+describe("CharacterForm — sticky action bar geometry (CNR-8j contract)", () => {
+  it("the glass bar stays sticky with the negative top and full-bleed side margins", () => {
+    const { container } = render(createElement(Harness, { greetings: [] }));
+    const bar = container.querySelector<HTMLElement>(".glass-bar");
+    if (!(bar instanceof HTMLElement)) throw new Error("glass-bar missing");
+    expect(bar.className).toContain("sticky");
+    // Desktop: top −32 pins flush with the scroll container's padding-box
+    // top (its own 32px top padding), and the −mx-10/px-10 pair bleeds the
+    // fill out to the container's full width (the 40px side padding).
+    expect(bar.style.top).toBe("-32px");
+    expect(bar.className).toContain("-mx-10");
+    expect(bar.className).toContain("px-10");
   });
 });

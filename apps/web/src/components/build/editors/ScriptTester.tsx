@@ -3,7 +3,8 @@ import { AutoTextarea } from "../../shared/auto-textarea.js";
 import { TextInput } from "../../shared/text-input.js";
 import { useT } from "../../../i18n/context.js";
 import { cn } from "../../../lib/cn.js";
-import { codeQuoteCls } from "../../../lib/field-tokens.js";
+import { codeQuoteFrameCls, codeQuoteBodyCls } from "../../../lib/field-tokens.js";
+import { ScrollArea } from "../../shared/scroll-area.js";
 import { testScript } from "../../../api/script-api.js";
 import { useScriptSafetySettingsStore } from "../../../stores/script-safety-settings-store.js";
 import {
@@ -235,7 +236,11 @@ export function ScriptTester({ scriptId, code, isMobile, characterName, script =
 								<div className="rounded-md border border-border bg-bg" style={{ padding: 10 }}>
 									<div className="text-[calc(var(--ui-fs)-3px)] font-semibold uppercase tracking-[0.06em] text-t3">{t("script_test_personality")}</div>
 									{testResult.personality ? (
-										<pre className={cn(codeQuoteCls, "mt-1 max-h-[288px] overflow-auto")}>{testResult.personality}</pre>
+										// CNR-8j: the capped result quote rides the thin ScrollArea lane —
+										// frame classes + the max-h-[288px] cap on the ROOT (border stays
+										// fixed at the cap), quote body (padding + text) on the content
+										// element (the 8i codeQuote frame/body split).
+										<ScrollArea scrollbarSize="thin" className={cn(codeQuoteFrameCls, "mt-1 max-h-[288px]")} contentClassName={codeQuoteBodyCls}>{testResult.personality}</ScrollArea>
 									) : (
 										<p className="mt-1 font-mono text-[calc(var(--ui-fs)-2px)] italic text-t3">({t("script_test_no_change")})</p>
 									)}
@@ -243,7 +248,8 @@ export function ScriptTester({ scriptId, code, isMobile, characterName, script =
 								<div className="rounded-md border border-border bg-bg" style={{ padding: 10 }}>
 									<div className="text-[calc(var(--ui-fs)-3px)] font-semibold uppercase tracking-[0.06em] text-t3">{t("script_test_scenario")}</div>
 									{testResult.scenario ? (
-										<pre className={cn(codeQuoteCls, "mt-1 max-h-[288px] overflow-auto")}>{testResult.scenario}</pre>
+										// CNR-8j: same thin-lane quote split as the personality block above.
+										<ScrollArea scrollbarSize="thin" className={cn(codeQuoteFrameCls, "mt-1 max-h-[288px]")} contentClassName={codeQuoteBodyCls}>{testResult.scenario}</ScrollArea>
 									) : (
 										<p className="mt-1 font-mono text-[calc(var(--ui-fs)-2px)] italic text-t3">({t("script_test_no_change")})</p>
 									)}
