@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import {
+	codeQuoteBodyCls,
 	codeQuoteCls,
+	codeQuoteFrameCls,
 	composerCls,
 	inputCls,
 	lblCls,
@@ -67,6 +69,25 @@ describe("field-tokens canon", () => {
 		// ladder size; the old fixed 11px display size is dead
 		expect(codeQuoteCls).toContain("text-[calc(var(--ui-fs)-2px)]");
 		expect(codeQuoteCls).not.toContain("text-[11px]");
+	});
+
+	test("codeQuoteCls — frame/body split for thin-ScrollArea quotes (CNR-8i)", () => {
+		// The whole token stays the composition of the two halves — one
+		// derivation, never a parallel literal.
+		expect(codeQuoteCls).toBe(`${codeQuoteFrameCls} ${codeQuoteBodyCls}`);
+		// Frame: chrome only — rides the ScrollArea ROOT, so the border stays
+		// fixed at the call-site height cap like the old max-h-* overflow div.
+		expect(codeQuoteFrameCls).toContain("rounded-[6px]");
+		expect(codeQuoteFrameCls).toContain("border");
+		expect(codeQuoteFrameCls).toContain("bg-s2");
+		expect(codeQuoteFrameCls).not.toContain("p-2");
+		expect(codeQuoteFrameCls).not.toContain("font-mono");
+		// Body: padding + text — rides the CONTENT element, so padding scrolls
+		// with the text on the custom lane (8c–8e rule).
+		expect(codeQuoteBodyCls).toContain("p-2");
+		expect(codeQuoteBodyCls).toContain("font-mono");
+		expect(codeQuoteBodyCls).toContain("whitespace-pre-wrap");
+		expect(codeQuoteBodyCls).not.toContain("border");
 	});
 
 	test("monoMod — modifier only, NEVER carries its own size", () => {

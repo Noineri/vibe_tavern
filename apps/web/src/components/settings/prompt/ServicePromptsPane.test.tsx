@@ -228,6 +228,39 @@ describe("ServicePromptsPane", () => {
 		expect(queryByText("promptManager.servicePrompts.reset")).toBeNull();
 	});
 
+	test("Default-detail canon quotes ride the thin ScrollArea lane with the cap on the root (CNR-8i)", async () => {
+		const def = makeDefaultProfile();
+		listMock.mockResolvedValue({ profiles: [def], activeProfileId: null });
+		getDetailMock.mockResolvedValue({ profile: def, resolved: makeResolved() });
+
+		const { getByTestId } = render(<Harness active={true} />);
+		const detail = getByTestId("detail");
+		// A request being called is not its resolved detail being committed —
+		// wait for the real family controls before expanding them.
+		await waitFor(() => expect(detail.textContent).toContain("promptManager.servicePrompts.family.assistant"));
+		await openAllFamilies(detail);
+		// Every field's canon quote is a thin-lane ScrollArea; the frame +
+		// max-h-40 cap sit on the ROOT (border fixed at the cap), the quote
+		// body (padding + text) on the content element.
+		const lanes = await waitFor(() => {
+			const found = Array.from(detail.querySelectorAll("[data-scroll-area='thin']"));
+			expect(found.length).toBe(SERVICE_PROMPT_FIELD_KEYS.length);
+			return found as HTMLElement[];
+		});
+		for (const lane of lanes) {
+			expect(lane.className).toContain("max-h-40");
+			expect(lane.className).toContain("border");
+			const content = lane.querySelector("[data-scroll-content]");
+			expect(content?.className).toContain("whitespace-pre-wrap");
+			expect(content?.className).toContain("p-2");
+		}
+		// The canon bytes ride INSIDE the lanes' viewports, not beside them.
+		const viewportText = Array.from(detail.querySelectorAll("[data-scroll-area='thin'] [data-scroll-viewport]"))
+			.map((node) => node.textContent ?? "")
+			.join("");
+		expect(viewportText).toContain("default-summary-value");
+	});
+
 	test("reset clears override and enables save (footer Save on right)", async () => {
 		const def = makeDefaultProfile();
 		const p2 = makeProfile({ id: "p2", name: "Alpha", sortOrder: 1, overrides: { summary: "hello world" } });

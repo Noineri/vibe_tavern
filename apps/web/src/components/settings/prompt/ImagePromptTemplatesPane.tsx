@@ -25,7 +25,7 @@ import {
 import { listImagePromptFamilies } from "../../../api/image-gen-api.js";
 import { useT } from "../../../i18n/context.js";
 import { cn } from "../../../lib/cn.js";
-import { codeQuoteCls, lblCls, listHeaderCls } from "../../../lib/field-tokens.js";
+import { codeQuoteBodyCls, codeQuoteFrameCls, lblCls, listHeaderCls } from "../../../lib/field-tokens.js";
 import { AutoTextarea } from "../../shared/auto-textarea.js";
 import { AnimatedDisclosure } from "../../shared/AnimatedDisclosure.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
@@ -35,6 +35,7 @@ import { Icons } from "../../shared/icons.js";
 import { InlineRenameInput } from "../../shared/InlineRenameInput.js";
 import { MasterDetailFooter } from "../../shared/MasterDetailModal.js";
 import { SaveButton } from "../../shared/SaveBar.js";
+import { ScrollArea } from "../../shared/scroll-area.js";
 import { TextInput } from "../../shared/text-input.js";
 import { Toggle } from "../../shared/Toggle.js";
 import { useIsMobile } from "../../../hooks/use-mobile.js";
@@ -707,6 +708,13 @@ export function ImagePromptTemplatesPane({
     const familyInfo = family ? families.find((f) => f.id === family) : undefined;
     const qualityCanon = family ? detail?.catalog.qualityCanon[family] : undefined;
     const hasQualityLayer = cell !== null && cell.rowKey !== "negative" && familyInfo?.ownQuality === true && qualityCanon !== undefined;
+    // CNR-8i: both quality branches render this one thin-lane canon quote — frame + cap ride the ScrollArea root, body rides the content element.
+    const qualityCanonQuote = (
+      <div>
+        <div className={lblCls}>{t("imagePromptTemplates.qualityCanon")}</div>
+        <ScrollArea scrollbarSize="thin" data-testid="image-prompt-template-quality-canon" className={cn(codeQuoteFrameCls, "max-h-40")} contentClassName={codeQuoteBodyCls}>{qualityCanon}</ScrollArea>
+      </div>
+    );
     return (
       <section key={rowId} data-testid={`image-prompt-template-row-${rowId}`} className="flex flex-col rounded-md border border-border">
         <div className="flex min-w-0 items-center gap-1.5 px-3 py-2.5">
@@ -791,10 +799,7 @@ export function ImagePromptTemplatesPane({
                         aria-label={t("imagePromptTemplates.customQualityToggle")}
                       />
                     </div>
-                    <div>
-                      <div className={lblCls}>{t("imagePromptTemplates.qualityCanon")}</div>
-                      <div data-testid="image-prompt-template-quality-canon" className={cn(codeQuoteCls, "max-h-40 overflow-auto")}>{qualityCanon}</div>
-                    </div>
+                    {qualityCanonQuote}
                     {(draftCell?.qualityText ?? cell.qualityText) !== null && (
                       <div>
                         <div className={lblCls}>{t("imagePromptTemplates.customQuality")}</div>
@@ -818,13 +823,8 @@ export function ImagePromptTemplatesPane({
             )}
             {cell && isDefaultSelected && (
               <>
-                <div className={cn(codeQuoteCls, "max-h-40 overflow-auto")}>{cell.customText ?? cell.canonText}</div>
-                {hasQualityLayer && (
-                  <div>
-                    <div className={lblCls}>{t("imagePromptTemplates.qualityCanon")}</div>
-                    <div data-testid="image-prompt-template-quality-canon" className={cn(codeQuoteCls, "max-h-40 overflow-auto")}>{qualityCanon}</div>
-                  </div>
-                )}
+                <ScrollArea scrollbarSize="thin" className={cn(codeQuoteFrameCls, "max-h-40")} contentClassName={codeQuoteBodyCls}>{cell.customText ?? cell.canonText}</ScrollArea>
+                {hasQualityLayer && qualityCanonQuote}
               </>
             )}
           </div>

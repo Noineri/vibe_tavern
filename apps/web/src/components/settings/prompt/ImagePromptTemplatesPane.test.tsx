@@ -266,6 +266,40 @@ describe("ImagePromptTemplatesPane (IF-1d profile fork)", () => {
     expect(getByTestId("footer").textContent).not.toContain("Delete");
   });
 
+  test("read-only canon blocks ride the thin ScrollArea lane with the cap on the root (CNR-8i)", async () => {
+    const { api } = makeApi({ profiles: [makeDefaultProfile()], activeProfileId: null });
+    const { getByTestId } = render(<Harness api={api} />);
+    await waitFor(() => expect(getByTestId("image-prompt-template-row-portrait")).toBeTruthy());
+    await openRow(getByTestId, "portrait");
+    const detail = getByTestId("detail");
+    // Default cell view: a thin-lane ScrollArea carries the canon bytes in its
+    // viewport; frame + max-h-40 cap on the ROOT, quote body (padding + text)
+    // on the content element.
+    const cellLane = Array.from(detail.querySelectorAll("[data-scroll-area='thin']")).find(
+      (lane) => lane.querySelector("[data-scroll-viewport]")?.textContent?.includes("canon portrait prose"),
+    );
+    expect(cellLane).toBeTruthy();
+    expect(cellLane?.className).toContain("max-h-40");
+    expect(cellLane?.className).toContain("border");
+    expect(cellLane?.querySelector("[data-scroll-content]")?.className).toContain("whitespace-pre-wrap");
+    // The canon-quality quote (Pony owns a quality layer) rides the same
+    // thin-lane shape under its own testid.
+    await selectFamily(getByTestId, "portrait", "Pony");
+    const qualityLane = getByTestId("image-prompt-template-quality-canon");
+    expect(qualityLane.getAttribute("data-scroll-area")).toBe("thin");
+    expect(qualityLane.className).toContain("max-h-40");
+    expect(qualityLane.textContent).toContain("canon quality pony");
+    // Assist row on Default: both read-only parts are max-h-56 thin lanes.
+    await openRow(getByTestId, "assist");
+    const core = getByTestId("image-prompt-template-assist-core");
+    expect(core.getAttribute("data-scroll-area")).toBe("thin");
+    expect(core.className).toContain("max-h-56");
+    expect(core.textContent).toContain("extract the visible scene");
+    const addendum = getByTestId("image-prompt-template-assist-addendum");
+    expect(addendum.getAttribute("data-scroll-area")).toBe("thin");
+    expect(addendum.textContent).toContain("No family addendum");
+  });
+
   test("clicking a profile row selects AND makes it live (null for Default)", async () => {
     const { api } = makeApi({ profiles: [makeDefaultProfile(), makeProfile({ id: "p2", name: "Second" })], activeProfileId: "p2" });
     const { getByTestId } = render(<Harness api={api} />);

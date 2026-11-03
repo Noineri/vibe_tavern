@@ -20,12 +20,13 @@ import { IMAGE_PROMPT_DEFAULT_FAMILY } from "@vibe-tavern/domain";
 import { useT } from "../../../i18n/context.js";
 import { normalizeDraftCell } from "./image-prompt-draft.js";
 import { cn } from "../../../lib/cn.js";
-import { codeQuoteCls, lblCls } from "../../../lib/field-tokens.js";
+import { codeQuoteBodyCls, codeQuoteFrameCls, lblCls } from "../../../lib/field-tokens.js";
 import { AutoTextarea } from "../../shared/auto-textarea.js";
 import { AnimatedDisclosure } from "../../shared/AnimatedDisclosure.js";
 import { DestructiveConfirmModal } from "../../shared/destructive-confirm-modal.js";
 import { DropdownSelect } from "../../shared/DropdownSelect.js";
 import { Icons } from "../../shared/icons.js";
+import { ScrollArea } from "../../shared/scroll-area.js";
 
 /** SC-8e — the assist extraction-core override key (one per profile, every
  *  family); addenda ride `assist|<family>` for the canon-addendum family. */
@@ -162,11 +163,28 @@ export function ImagePromptAssistRow({
             <>
               <div>
                 <div className={lblCls}>{t("imagePromptTemplates.assistCore")}</div>
-                <div data-testid="image-prompt-template-assist-core" className={cn(codeQuoteCls, "max-h-56 overflow-auto")}>{assist.core}</div>
+                {/* CNR-8i: the read-only canon parts scroll on the shared thin
+                    lane; frame + `max-h-56` cap on the ScrollArea root, quote
+                    body on the content element (padding scrolls with text). */}
+                <ScrollArea
+                  scrollbarSize="thin"
+                  data-testid="image-prompt-template-assist-core"
+                  className={cn(codeQuoteFrameCls, "max-h-56")}
+                  contentClassName={codeQuoteBodyCls}
+                >
+                  {assist.core}
+                </ScrollArea>
               </div>
               <div>
                 <div className={lblCls}>{t("imagePromptTemplates.assistAddendum")}</div>
-                <div data-testid="image-prompt-template-assist-addendum" className={cn(codeQuoteCls, "max-h-56 overflow-auto")}>{addendumCanon ?? t("imagePromptTemplates.noAssistAddendum")}</div>
+                <ScrollArea
+                  scrollbarSize="thin"
+                  data-testid="image-prompt-template-assist-addendum"
+                  className={cn(codeQuoteFrameCls, "max-h-56")}
+                  contentClassName={codeQuoteBodyCls}
+                >
+                  {addendumCanon ?? t("imagePromptTemplates.noAssistAddendum")}
+                </ScrollArea>
               </div>
             </>
           )}
@@ -203,7 +221,14 @@ export function ImagePromptAssistRow({
               <div>
                 <div className={lblCls}>{t("imagePromptTemplates.assistAddendum")}</div>
                 {addendumCanon === undefined ? (
-                  <div data-testid="image-prompt-template-assist-addendum" className={cn(codeQuoteCls, "max-h-56 overflow-auto")}>{t("imagePromptTemplates.noAssistAddendum")}</div>
+                  <ScrollArea
+                    scrollbarSize="thin"
+                    data-testid="image-prompt-template-assist-addendum"
+                    className={cn(codeQuoteFrameCls, "max-h-56")}
+                    contentClassName={codeQuoteBodyCls}
+                  >
+                    {t("imagePromptTemplates.noAssistAddendum")}
+                  </ScrollArea>
                 ) : (
                   <>
                     <AutoTextarea

@@ -41,10 +41,22 @@ export const composerCls =
 /** Display canon for command/code quotes in help content (curl examples,
  *  DSL snippets, disabled default texts). Owner 2026-09-10: let's make
  *  a canon for those too. This is a READ-ONLY display, not a field: mono,
- *  wrapped, breakable. Content-specific ceilings (`max-h-* overflow-auto`)
- *  are local extensions at the call site. */
-export const codeQuoteCls =
-	"min-w-0 whitespace-pre-wrap break-all rounded-[6px] border border-border bg-s2 p-2 font-mono text-[calc(var(--ui-fs)-2px)] leading-relaxed text-t2";
+ *  wrapped, breakable. Content-specific ceilings (`max-h-*` on the ScrollArea
+ *  root — see the frame/body split below) are local extensions at the call
+ *  site. */
+export const codeQuoteFrameCls =
+	"min-w-0 rounded-[6px] border border-border bg-s2";
+export const codeQuoteBodyCls =
+	"whitespace-pre-wrap break-all p-2 font-mono text-[calc(var(--ui-fs)-2px)] leading-relaxed text-t2";
+export const codeQuoteCls = `${codeQuoteFrameCls} ${codeQuoteBodyCls}`;
+
+/* CNR-8i split: a capped quote that scrolls on the shared thin ScrollArea
+ * lane composes the halves instead of the whole token — the FRAME (border +
+ * bg + call-site `max-h-*` cap) rides the ScrollArea root so the border stays
+ * fixed at the cap exactly like the old `max-h-* overflow-auto` div, and the
+ * BODY (padding + text) rides the content element so padding scrolls with
+ * the text (8c–8e rule). `codeQuoteCls` stays the composition of the two —
+ * one derivation, never a parallel literal. */
 
 /** Mono modifier for opaque technical content (keys, voice IDs, regex
  *  patterns, template sequences). NEVER carries its own size — the base sets

@@ -13,11 +13,12 @@ import { cn } from "../../../lib/cn.js";
 import { Icons } from "../../shared/icons.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
 import { DestructiveConfirmModal } from "../../shared/destructive-confirm-modal.js";
+import { ScrollArea } from "../../shared/scroll-area.js";
 import { AutoTextarea } from "../../shared/auto-textarea.js";
 import { AnimatedDisclosure } from "../../shared/AnimatedDisclosure.js";
 import { MasterDetailFooter } from "../../shared/MasterDetailModal.js";
 import { SaveButton } from "../../shared/SaveBar.js";
-import { lblCls, codeQuoteCls, listHeaderCls } from "../../../lib/field-tokens.js";
+import { lblCls, codeQuoteFrameCls, codeQuoteBodyCls, listHeaderCls } from "../../../lib/field-tokens.js";
 import { TextInput } from "../../shared/text-input.js";
 import { InlineRenameInput } from "../../shared/InlineRenameInput.js";
 import { FIELD_LABEL_KEYS } from "./service-prompt-field-labels.js";
@@ -601,7 +602,17 @@ export function ServicePromptsPane({
 			return (
 				<div key={field} className="flex flex-col">
 					<label className={lblCls}>{tDynamic(labelKey)}</label>
-					<div className={cn(codeQuoteCls, "max-h-40 overflow-auto")}>{defaultText}</div>
+					{/* CNR-8i: the read-only canon quote scrolls on the shared thin
+					lane (3px rest / 5px hover); the frame + `max-h-40` cap ride the
+					ScrollArea root (border stays fixed at the cap), the quote body
+					rides the content element so padding scrolls with the text. */}
+					<ScrollArea
+						scrollbarSize="thin"
+						className={cn(codeQuoteFrameCls, "max-h-40")}
+						contentClassName={codeQuoteBodyCls}
+					>
+						{defaultText}
+					</ScrollArea>
 				</div>
 			);
 		}
