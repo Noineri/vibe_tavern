@@ -61,6 +61,7 @@ import { Icons } from "../../shared/icons.js";
 import { InlineRenameInput } from "../../shared/InlineRenameInput.js";
 import { AnimatedDisclosure } from "../../shared/AnimatedDisclosure.js";
 import { popoverMaxHeight } from "../../shared/popover-constants.js";
+import { ScrollArea } from "../../shared/scroll-area.js";
 import { SegmentedControl } from "../../shared/SegmentedControl.js";
 import { NumberInput } from "../../shared/NumberInput.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
@@ -341,7 +342,13 @@ export function VibeMdView({ form, characterId, isSaving }: VibeMdViewProps) {
                 {coauthorChats.length === 0 ? (
                   <div className="px-3 py-3 font-ui text-[var(--ui-fs)] text-t3">{t("coauthor.list_empty")}</div>
                 ) : (
-                  <ul className="overflow-y-auto py-1" style={{ maxHeight: popoverMaxHeight("twoLine") }}>
+                  <ScrollArea scrollbarSize="thin" style={{ maxHeight: popoverMaxHeight("twoLine") }}>
+                  {/* CNR-8o: the chat list rides the thin lane (8e/8l idiom)
+                      — the twoLine cap moved onto the ScrollArea root, the ul
+                      keeps its element/semantics and py-1 inside the scroller
+                      (NarrationPlaylist 8l idiom), so rename/delete rows and
+                      the li structure are untouched. */}
+                  <ul className="py-1">
                     {coauthorChats.map((chat) => (
                       <li key={chat.id} className="group relative">
                         {renamingChatId === chat.id ? (
@@ -403,6 +410,7 @@ export function VibeMdView({ form, characterId, isSaving }: VibeMdViewProps) {
                       </li>
                     ))}
                   </ul>
+                  </ScrollArea>
                 )}
               </Popover.Content>
             </Popover.Portal>

@@ -23,6 +23,9 @@ import type { act as testingAct } from "@testing-library/react";
 import { EditorView } from "@codemirror/view";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { buildCharacterDraftSchema, type BuildCharacterDraft } from "@vibe-tavern/api-contracts";
+import type { ChatListItem } from "@vibe-tavern/api-contracts";
+import { brandId, type ChatId, type CharacterId } from "@vibe-tavern/domain";
+import { popoverMaxHeight } from "../../shared/popover-constants.js";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 
@@ -120,6 +123,64 @@ describe("VibeMdView (rework)", () => {
 		expect(host.style.minHeight).toBeTruthy();
 		// ...but maxHeight must be absent (the cap that caused the inner scroll).
 		expect(host.style.maxHeight).toBeFalsy();
+		// CNR-8o characterization: the auto-grow CM6 area NEVER scrolls (its
+		// theme pins `.cm-scroller` overflow hidden and the page scroll is the
+		// only scroll — VTF-13), so it stays lane-less: no delegation wrapper,
+		// no custom chrome, nothing to own a scroll that cannot happen.
+		expect(host.closest("[data-scroll-area]")).toBeNull();
+	});
+
+	it("the co-author chat list rides the thin lane with the twoLine cap on its root (CNR-8o)", async () => {
+		// The popover's chat list loads through a real fetch — serve two chats
+		// (fetch restored in finally; no global leak to sibling files).
+		const realFetch = globalThis.fetch;
+		const chat = (id: string, title: string): ChatListItem => ({
+			id: brandId<ChatId>(id),
+			title,
+			characterId: brandId<CharacterId>("char_test"),
+			characterName: "Kira",
+			subtitle: "",
+			activeBranchLabel: "main",
+			mode: "coauthor",
+			messageCount: 3,
+			lastMessageAt: "2026-01-01T00:00:00.000Z",
+			updatedAt: "2026-01-01T00:00:00.000Z",
+		});
+		// Same fetch-double pattern as agent-branch-plan-api.test.ts: keep the
+		// original's `preconnect` so the assignment is a full typeof fetch.
+		const fetchChats: typeof fetch = Object.assign(
+			async () =>
+				new Response(JSON.stringify([chat("c1", "First draft"), chat("c2", "Second draft")]), {
+					status: 200,
+					headers: { "content-type": "application/json" },
+				}),
+			{ preconnect: realFetch.preconnect },
+		);
+		globalThis.fetch = fetchChats;
+		try {
+			const view = render(<Harness draft={makeDraft()} />);
+			const trigger = view.getByText("coauthor.entry.list");
+			act(() => {
+				fireEvent.pointerDown(trigger);
+				fireEvent.click(trigger);
+			});
+			// The popover is CONTROLLED: onOpenChange fetches the chat list first,
+			// then flips open — wait for the popper to mount.
+			await waitFor(() => expect(document.body.querySelector("[data-radix-popper-content-wrapper]")).not.toBeNull());
+			const wrapper = document.body.querySelector("[data-radix-popper-content-wrapper]");
+			if (!(wrapper instanceof HTMLElement)) throw new Error("popover not open");
+			const lane = wrapper.querySelector("[data-scroll-area]");
+			if (!(lane instanceof HTMLElement)) throw new Error("chat-list lane missing");
+			expect(lane.getAttribute("data-scroll-area")).toBe("thin");
+			// The twoLine budget moved onto the ScrollArea root (same value, same
+			// boundary) — the ul keeps its element and the li rows inside the lane.
+			expect(lane.style.maxHeight).toBe(`${popoverMaxHeight("twoLine")}px`);
+			const list = lane.querySelector("ul");
+			expect(list?.className).toContain("py-1");
+			expect(list?.querySelectorAll("li")).toHaveLength(2);
+		} finally {
+			globalThis.fetch = realFetch;
+		}
 	});
 
 	it("does NOT show frontmatter (name) inside the MD area", () => {

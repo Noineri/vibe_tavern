@@ -21,6 +21,7 @@ import { FormProvider } from "react-hook-form";
 import { Ic } from "../../shared/icons.js";
 import { AddButton } from "../../shared/add-button.js";
 import { cn } from "../../../lib/cn.js";
+import { ScrollArea } from "../../shared/scroll-area.js";
 import { toast } from "sonner";
 import { useT } from "../../../i18n/context.js";
 import { createLorebook, updateLorebookMeta, deleteLorebook, createLoreEntry, updateLoreEntry, reorderLoreEntries, duplicateLorebook, exportLorebookSt } from "../../../api/lorebook-api.js";
@@ -526,18 +527,17 @@ export function LorebookEditor({
   );
 
   // ── Lorebook list ──
+  // CNR-8o: thin lane; the old inline padding became classes that scroll
+  // with the rows. The pb safe-area class was inert (inline shorthand won) — dropped.
   const lorebookListContent = (
-    <div
-      className={cn(
-        "flex-1 overflow-y-auto pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))]",
-        // D3 (v1.2.1): the touch-target booster must exclude role=switch —
-        // the Toggle track IS its button (h-[20px] root, absolute inset-0
-        // track), so a blanket min-h stretched it into a 44px orange blob.
-        isMobile &&
-          "[&_button:not([role=switch])]:min-h-[44px] [&_input]:text-[calc(var(--ui-fs)+2px)] leading-6 [&_textarea]:text-[calc(var(--ui-fs)+2px)] leading-6 [&_select]:text-[calc(var(--ui-fs)+2px)] leading-6"
-      )}
-      style={{ padding: isMobile ? "12px" : "20px 24px" }}
-    >
+    <ScrollArea scrollbarSize="thin" className="min-h-0 flex-1" contentClassName={cn(
+      isMobile ? "p-3" : "px-6 py-5",
+      // D3 (v1.2.1): the touch-target booster must exclude role=switch —
+      // the Toggle track IS its button (h-[20px] root, absolute inset-0
+      // track), so a blanket min-h stretched it into a 44px orange blob.
+      isMobile &&
+        "[&_button:not([role=switch])]:min-h-[44px] [&_input]:text-[calc(var(--ui-fs)+2px)] leading-6 [&_textarea]:text-[calc(var(--ui-fs)+2px)] leading-6 [&_select]:text-[calc(var(--ui-fs)+2px)] leading-6"
+    )}>
       {/* Empty state */}
       {visibleLorebooks.length === 0 && (
         <div className="py-10 text-center">
@@ -624,7 +624,7 @@ export function LorebookEditor({
           </AddButton>
         </div>
       )}
-    </div>
+    </ScrollArea>
   );
 
   // Header bar (list) is extracted so this editor stays below its line baseline.

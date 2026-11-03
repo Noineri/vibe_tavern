@@ -372,6 +372,24 @@ describe("LorebookEditor (characterization)", () => {
     expect(getByTestId("lb-name").textContent).toBe("Bestiary");
   });
 
+  it("CNR-8o: the lorebook list rides the thin lane; the padding scrolls with the rows", async () => {
+    const utils = await renderAtList();
+    // The list lane is the thin ScrollArea containing the accordion rows
+    // (desktop: the WorldLore list body — the scope/merge sidebar rides
+    // its own surfaces, not this scroller).
+    const lanes = [...utils.container.querySelectorAll<HTMLElement>("[data-scroll-area]")];
+    const listLane = lanes.find((l) => l.querySelector('[data-testid="lb-name"]'));
+    if (!listLane) throw new Error("lorebook list lane missing");
+    expect(listLane.getAttribute("data-scroll-area")).toBe("thin");
+    // Desktop padding (the old inline 20px 24px, now classes) rides the
+    // content element — it scrolls with the rows exactly as the old
+    // scrollport padding did; the lane keeps the flex-1 role the div had.
+    const content = listLane.querySelector("[data-scroll-content]");
+    expect(content?.classList.contains("px-6")).toBe(true);
+    expect(content?.classList.contains("py-5")).toBe(true);
+    expect(listLane.classList.contains("flex-1")).toBe(true);
+  });
+
   it("data-loading: switching scope re-fetches via listLorebooks(scope, ownerId)", async () => {
     // Mobile viewport so the scope chip bar renders its labels (the desktop
     // scope column shows only icons — labels live in the tooltip `content`).

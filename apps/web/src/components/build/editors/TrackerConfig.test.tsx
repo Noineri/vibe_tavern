@@ -17,6 +17,7 @@ import { useDomEnv } from "../../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 import { brandId, computeSceneSchemaHash, type ChatId, type SceneTrackerConfig } from "@vibe-tavern/domain";
 import { IMPLEMENTED_SCENE_RENDER_VARIANTS, useSceneRenderStore } from "../../../stores/scene-render-store.js";
+import { codeQuoteFrameCls, codeQuoteBodyCls } from "../../../lib/field-tokens.js";
 
 useDomEnv();
 const { render, fireEvent, waitFor, act } = await import("@testing-library/react");
@@ -226,6 +227,29 @@ describe("TrackerConfig (SCN-11)", () => {
     expect(getByTestId("scn-dsl")).toBeTruthy();
   });
 
+  it("CNR-8o: the capped DSL example rides the thin frame/body lane; the never-scrolling DSL editor gains NO lane", () => {
+    seed();
+    const view = render(createElement(TrackerConfig, { chatId: CHAT_ID }));
+    // The capped DSL example quote (8i/8j idiom): cap on the ScrollArea root,
+    // canon quote frame on the root, mono body + the pr-9 copy-button
+    // clearance on the content.
+    const exampleLane = view.container.querySelector("[data-scroll-area]");
+    if (!(exampleLane instanceof HTMLElement)) throw new Error("DSL example lane missing");
+    expect(exampleLane.getAttribute("data-scroll-area")).toBe("thin");
+    expect(exampleLane.className).toContain(codeQuoteFrameCls);
+    expect(exampleLane.className).toContain("max-h-56");
+    const body = exampleLane.querySelector("[data-scroll-content]");
+    expect(body?.className).toContain(codeQuoteBodyCls);
+    expect(body?.className).toContain("pr-9");
+    // Characterization (CNR-8o contract): the schema DSL CodeEditor is an
+    // auto-grow editor that NEVER scrolls (its host grows with the document,
+    // minHeight 160px) — no lane is created where none exists. The stubbed
+    // editor's host wrapper keeps its native overflow-hidden frame.
+    const dslHost = view.getByTestId("scn-dsl").parentElement!;
+    expect(dslHost.className).toContain("overflow-hidden");
+    expect(dslHost.closest("[data-scroll-area]")).toBeNull();
+  });
+
   it("shows the Raw XML disclosure under XML format, not under JSON", () => {
     seed({ promptFormat: "xml", schema: { mood: { $type: "string" as const } } });
     const xmlView = render(createElement(TrackerConfig, { chatId: CHAT_ID }));
@@ -325,6 +349,17 @@ describe("TrackerConfig (SCN-11)", () => {
     const meter = container.querySelector('[role="meter"]');
     expect(meter).not.toBeNull();
     expect(meter!.getAttribute("aria-valuenow")).toBe("5");
+    // CNR-8o: the preview region's capped scrollers ride thin lanes — the
+    // rendered preview (max-h-64 rounded root, p-1 gutter scrolls with the
+    // content) and the raw-JSON disclosure quote (8i/8j frame/body idiom,
+    // max-h-48 cap on the root).
+    const lanes = [...container.querySelectorAll<HTMLElement>("[data-scroll-area]")];
+    const previewLane = lanes.find((l) => l.className.includes("max-h-64"));
+    expect(previewLane?.getAttribute("data-scroll-area")).toBe("thin");
+    expect(previewLane?.querySelector("[data-scroll-content]")?.className).toContain("p-1");
+    const jsonLane = lanes.find((l) => l.className.includes("max-h-48"));
+    expect(jsonLane?.className).toContain(codeQuoteFrameCls);
+    expect(jsonLane?.querySelector("[data-scroll-content]")?.className).toContain(codeQuoteBodyCls);
   });
 
   it("Test generation trial-runs with the DRAFT config + the selected variant target", async () => {

@@ -15,7 +15,8 @@ import { SegmentedControl } from "../../shared/SegmentedControl.js";
 import { SceneStateView } from "../../shared/SceneStateView.js";
 import { AiAssistantModal } from "../../shared/AiAssistantModal.js";
 import { formatSceneHistory } from "@vibe-tavern/prompt-pipeline";
-import { lblCls, codeQuoteCls } from "../../../lib/field-tokens.js";
+import { lblCls, codeQuoteFrameCls, codeQuoteBodyCls } from "../../../lib/field-tokens.js";
+import { ScrollArea } from "../../shared/scroll-area.js";
 import { SceneHistoryBackfill } from "./SceneHistoryBackfill.js";
 import { SceneSchemaReference } from "./scene-schema-reference.js";
 import { PromptField } from "./prompt-field.js";
@@ -275,7 +276,11 @@ export function TrackerConfig({ chatId }: { chatId: ChatId }) {
           <div className="mt-2 space-y-2 rounded-md border border-border2 bg-s2/40 p-2.5">
             <p className="font-ui text-[calc(var(--ui-fs)-3px)] leading-relaxed text-t3">{t("scn_schema_grammar")}</p>
             <div className="relative">
-              <pre className={cn(codeQuoteCls, "max-h-56 overflow-auto pr-9")}>{SCENE_DSL_EXAMPLE}</pre>
+              {/* CNR-8o: the capped DSL example rides the thin lane — the
+                  frame/body split idiom (8i/8j); the cap sits on the ScrollArea
+                  root, the pr-9 body clearance for the pinned copy button
+                  scrolls with the content. */}
+              <ScrollArea scrollbarSize="thin" className={cn(codeQuoteFrameCls, "max-h-56")} contentClassName={cn(codeQuoteBodyCls, "pr-9")}>{SCENE_DSL_EXAMPLE}</ScrollArea>
               <CustomTooltip content={t("copy")}>
                 <button
                   type="button"
@@ -471,21 +476,27 @@ export function TrackerConfig({ chatId }: { chatId: ChatId }) {
             <Ic.eye />
             {t("scn_preview_title")}
           </div>
-          <div className="max-h-64 overflow-auto rounded p-1">
+          {/* CNR-8o: the rendered preview's capped region rides the thin
+              lane — cap + rounding on the root (fixed frame at the cap), the
+              p-1 gutter scrolls with the content (8i idiom). */}
+          <ScrollArea scrollbarSize="thin" className="max-h-64 rounded" contentClassName="p-1">
             <SceneStateView schema={draft.schema} data={previewState} variant={renderVariant} className="gap-1" />
-          </div>
+          </ScrollArea>
           <details className="mt-2">
             <summary className="cursor-pointer select-none font-ui text-[calc(var(--ui-fs)-3px)] text-t4 hover:text-t3">{t("scn_preview_raw_json")}</summary>
-            <pre className={cn(codeQuoteCls, "mt-1 max-h-48 overflow-auto")}>
+            {/* CNR-8o: the capped raw-JSON quote rides the thin lane (the
+                8i/8j frame/body quote idiom — cap on the root, mono body
+                scrolls with the content). */}
+            <ScrollArea scrollbarSize="thin" className={cn(codeQuoteFrameCls, "mt-1 max-h-48")} contentClassName={codeQuoteBodyCls}>
               {JSON.stringify(previewState, null, 2)}
-            </pre>
+            </ScrollArea>
           </details>
           {draft.promptFormat === SCENE_PROMPT_FORMAT.xml && (
             <details className="mt-2">
               <summary className="cursor-pointer select-none font-ui text-[calc(var(--ui-fs)-3px)] text-t4 hover:text-t3">{t("scn_preview_raw_xml")}</summary>
-              <pre className={cn(codeQuoteCls, "mt-1 max-h-48 overflow-auto")}>
+              <ScrollArea scrollbarSize="thin" className={cn(codeQuoteFrameCls, "mt-1 max-h-48")} contentClassName={codeQuoteBodyCls}>
                 {formatSceneHistory([previewState], "xml")}
-              </pre>
+              </ScrollArea>
             </details>
           )}
         </div>
