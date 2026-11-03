@@ -591,3 +591,5 @@ export {
   providerQuotaConfigSchema,
   updateProviderQuotaConfigSchema,
 } from "./provider-quota-schema.js";
+export { MAX_USER_THEME_BYTES, USER_THEME_SLUG_PATTERN, userThemeSlugSchema, uploadUserThemeSchema, userThemeSummarySchema, userThemeSchema } from "./user-theme-schema.js";
+export type { UploadUserTheme, UserThemeSummary, UserTheme } from "./user-theme-schema.js";
