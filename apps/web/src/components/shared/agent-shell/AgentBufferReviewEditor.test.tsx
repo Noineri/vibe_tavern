@@ -27,9 +27,10 @@ useDomEnv();
 
 let render: typeof import("@testing-library/react").render;
 let fireEvent: typeof import("@testing-library/react").fireEvent;
+let act: typeof import("@testing-library/react").act;
 
 beforeAll(async () => {
-  ({ render, fireEvent } = await import("@testing-library/react"));
+  ({ render, fireEvent, act } = await import("@testing-library/react"));
 });
 
 const BASE = "a\nb\nc";
@@ -306,20 +307,58 @@ mock.module("../../../hooks/use-mobile.js", () => ({
 describe("ExperienceCopilotEditorPanel — mobile editor surface", () => {
   beforeEach(() => { mobileOverride = false; });
 
-  it("desktop: inner scroll, fixed-fill frame, no expand button", () => {
+  it("desktop: delegated scroll — page-mode CodeMirror inside the thin biaxial lane, fill-when-short frame", async () => {
     const { container, queryByTestId } = renderPanel({ fullscreenLabel: "rules" });
     const frame = container.querySelector('[data-testid="copilot-editor-frame"]');
     if (!(frame instanceof HTMLElement)) throw new Error("frame missing");
-    expect(frame.classList.contains("max-md:h-auto")).toBe(true); // inert below md
-    expect(frame.classList.contains("h-full")).toBe(true);
+    // CNR-8o: the frame fills the lane while the document is short (flex-1 +
+    // the content's min-h-full keep the old full-height border) — the old
+    // viewport-coupled classes (h-full/max-md:h-auto) are gone.
+    expect(frame.classList.contains("flex-1")).toBe(true);
+    expect(frame.classList.contains("h-full")).toBe(false);
     expect(queryByTestId("mobile-expand-code-btn")).toBeNull();
-    // Inner scroll mode: CodeEditor's container clips (overflow auto).
+    // Page mode on DESKTOP too now: the editor host lets the document flow
+    // (overflow visible — the probe C delegation) and the outer lane owns
+    // the scroll the `.cm-scroller` used to own.
     const editorHost = frame.querySelector(".cm-editor")?.parentElement;
     if (!(editorHost instanceof HTMLElement)) throw new Error("editor host missing");
-    expect(editorHost.style.overflow).toBe("auto");
+    expect(editorHost.style.overflow).toBe("visible");
+    const lane = frame.closest("[data-scroll-area]");
+    if (!(lane instanceof HTMLElement)) throw new Error("code-area lane missing");
+    expect(lane.getAttribute("data-scroll-area")).toBe("thin");
+    // The lane keeps the flex-remainder role the native div had, and the
+    // fill-when-short contract rides the content element.
+    expect(lane.classList.contains("flex-1")).toBe(true);
+    expect(lane.classList.contains("max-md:flex-none")).toBe(true);
+    const laneContent = lane.querySelector("[data-scroll-content]");
+    expect(laneContent?.classList.contains("min-h-full")).toBe(true);
+    // One scroller, made real: fake the overflow Base UI observes (happy-dom
+    // has no layout) and the lane mounts EXACTLY ONE custom vertical track —
+    // the delegated scroll owner. CodeMirror contributes no second scroller
+    // in page mode (probe C pinned the computed `.cm-scroller` overflow in a
+    // real browser); the corner exists for the biaxial layout.
+    const laneViewport = lane.querySelector<HTMLElement>("[data-scroll-viewport]")!;
+    Object.defineProperties(laneViewport, {
+      clientHeight: { configurable: true, value: 100 },
+      scrollHeight: { configurable: true, value: 1000 },
+      clientWidth: { configurable: true, value: 200 },
+      scrollWidth: { configurable: true, value: 200 },
+    });
+    await act(async () => {
+      laneViewport.scrollTop = 200;
+      fireEvent.scroll(laneViewport);
+    });
+    await waitForIt(() => {
+      expect(lane.querySelectorAll('[data-scroll-track][data-orientation="vertical"]')).toHaveLength(1);
+    });
+    expect(lane.querySelectorAll("[data-scroll-track]")).toHaveLength(1);
+    // Biaxial wiring (probe C shape): the viewport keeps Base UI's own
+    // overflow:scroll on both axes — the wrapper adds no overflowX clip
+    // (a vertical-only lane would carry overflowX: hidden here).
+    expect(laneViewport.style.overflowX).toBe("");
   });
 
-  it("mobile: page-scroll CodeMirror (grows to content) inside the frame", () => {
+  it("mobile: page-scroll CodeMirror grows inside a lane that never scrolls (pane root stays the single document)", () => {
     mobileOverride = true;
     const { container } = renderPanel();
     const editorHost = container.querySelector('.cm-editor')?.parentElement;
@@ -327,18 +366,13 @@ describe("ExperienceCopilotEditorPanel — mobile editor surface", () => {
     // page mode: the host lets the document flow (overflow visible) — the
     // pane scrolls, not the editor.
     expect(editorHost.style.overflow).toBe("visible");
-    expect(editorHost.classList.contains("max-md:h-auto")).toBe(true);
-
-    // 4a follow-up round 2: the panel's own scroll container takes its
-    // NATURAL height on mobile (flex-none, no inner scroll) so the shell's
-    // pane root becomes the single scroll document. Desktop keeps the
-    // flex-1 inner-scroll remainder (asserted in the desktop case above via
-    // overflow auto; the flex classes stay unpinned there by design).
-    const scrollHost = editorHost.closest(".p-3");
+    // 4a follow-up round 2 contract, restated for the lane (CNR-8o): the
+    // code-area root takes its NATURAL height on mobile (max-md:flex-none)
+    // so the shell's pane root stays the single scroll document — the
+    // delegation wrapper introduces no inner scroller here.
+    const scrollHost = editorHost.closest("[data-scroll-area]");
     if (!(scrollHost instanceof HTMLElement)) throw new Error("scroll container missing");
     expect(scrollHost.classList.contains("max-md:flex-none")).toBe(true);
-    expect(scrollHost.classList.contains("max-md:overflow-y-visible")).toBe(true);
-    expect(scrollHost.classList.contains("overflow-y-auto")).toBe(true); // desktop unchanged
   });
 
   it("mobile: expand opens a fullscreen CodeMirror session with the label; Готово closes", () => {
@@ -352,6 +386,13 @@ describe("ExperienceCopilotEditorPanel — mobile editor surface", () => {
     expect(overlay.textContent?.includes("done_btn")).toBe(true);
     // The fullscreen session mounts its OWN CodeMirror inside the overlay.
     expect(overlay.querySelectorAll(".cm-editor").length).toBe(1);
+    // CNR-8o: the session rides the delegation lane — the biaxial thin
+    // ScrollArea is the session's ONE scroller, with page-mode CodeMirror
+    // inside (the old inner `.cm-scroller` scroll is delegated to it).
+    const sessionLane = overlay.querySelector("[data-scroll-area]");
+    expect(sessionLane?.getAttribute("data-scroll-area")).toBe("thin");
+    const sessionHost = sessionLane?.querySelector(".cm-editor")?.parentElement;
+    expect((sessionHost as HTMLElement).style.overflow).toBe("visible");
     // Готово closes the overlay; the inline editor stays mounted.
     const done = [...overlay.querySelectorAll("div")].find(
       (d) => (d.textContent ?? "").trim() === "done_btn",

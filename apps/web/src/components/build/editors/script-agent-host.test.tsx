@@ -1050,3 +1050,38 @@ describe("script-agent-host — AP-15: pending-review summary seam", () => {
     await waitFor(() => expect(seamEntry()).toBeUndefined());
   });
 });
+
+describe("script-agent-editor-pane — CM delegation wiring (CNR-8o)", () => {
+  it("the code area and Test body ride thin lanes; the pane root stays the scroll document owner", async () => {
+    const script = makeScript({ id: "lane-wiring-script", code: BASE_CODE });
+    const utils = renderScriptShell(script);
+    try {
+      await flushSessionLoad();
+      // Code tab (default): the editor frame sits inside the thin biaxial
+      // delegation lane (page-mode CodeMirror — probe C), and the lane's
+      // content carries the fill-when-short contract (flex + min-h-full).
+      const frame = utils.container.querySelector('[data-testid="copilot-editor-frame"]');
+      if (!(frame instanceof HTMLElement)) throw new Error("frame missing");
+      const codeLane = frame.closest("[data-scroll-area]");
+      expect(codeLane?.getAttribute("data-scroll-area")).toBe("thin");
+      expect((frame.querySelector(".cm-editor")?.parentElement as HTMLElement).style.overflow).toBe("visible");
+      expect(codeLane?.querySelector("[data-scroll-content]")?.classList.contains("min-h-full")).toBe(true);
+      // The pane root itself is a thin lane: desktop children keep their own
+      // scrollers through the h-full content column (the lane never
+      // overflows); the frame lane fills the pane's flex remainder.
+      const paneLane = frame.closest("[data-scroll-area]")?.parentElement?.closest("[data-scroll-area]");
+      expect(paneLane).not.toBeNull();
+      expect(paneLane?.querySelector("[data-scroll-content]")?.classList.contains("h-full")).toBe(true);
+      // Test tab: the tester body is its own thin lane (inner scroll kept on
+      // both viewports, padding scrolls with the content).
+      fireEvent.click(utils.getByRole("radio", { name: "script_tab_check" }));
+      await waitFor(() => expect(utils.getByRole("radio", { name: "agent_code" }).getAttribute("aria-checked")).toBe("false"));
+      const lanes = [...utils.container.querySelectorAll("[data-scroll-area]")];
+      const bodyLane = lanes.find((l) => l !== paneLane && paneLane?.contains(l));
+      expect(bodyLane).toBeDefined();
+      expect(bodyLane?.querySelector("[data-scroll-content]")?.classList.contains("p-3")).toBe(true);
+    } finally {
+      utils.unmount();
+    }
+  });
+});

@@ -1099,10 +1099,15 @@ describe("ExperienceCopilotShell — mobile tabs", () => {
     if (!(messageListRoot instanceof HTMLElement)) throw new Error("message list root missing");
     expect(messageListRoot.classList.contains("min-w-0")).toBe(true);
 
-    // 4a follow-up round 2: on mobile the EDIT pane content root is the single
-    // scroll document — the toolbar wall (visual buffer ~322px) scrolls away
-    // with the code instead of pinning above a ~72px flex remainder.
-    expect(editRoot.classList.contains("max-md:overflow-y-auto")).toBe(true);
+    // 4a follow-up round 2, restated for the CNR-8o lane: on mobile the EDIT
+    // pane content root is the single scroll document — the toolbar wall
+    // (visual buffer ~322px) scrolls away with the code instead of pinning
+    // above a ~72px flex remainder. The pane root is now the thin ScrollArea
+    // lane; its viewport (Base UI overflow:scroll, chrome hidden on phones
+    // by the 7g rule) owns that document scroll.
+    expect(editRoot.hasAttribute("data-scroll-area")).toBe(true);
+    const editViewport = editRoot.querySelector("[data-scroll-viewport]");
+    expect((editViewport as HTMLElement).style.overflow).toBe("scroll");
   });
 });
 

@@ -97,6 +97,15 @@ interface CodeEditorProps {
   minHeight?: string;
   className?: string;
   readOnly?: boolean;
+  /** Scroll ownership (CNR-8o delegation contract, probe C):
+   *  - `"inner"` (default): CodeMirror's own `.cm-scroller` is the scroller
+   *    (native scroll, no outer wrapper needed).
+   *  - `"page"`: DELEGATION — the pageScrollTheme neutralizes `.cm-scroller`
+   *    overflow (`visible !important`, static gutters) and the editor grows
+   *    to its document; an OUTER biaxial thin ScrollArea owns the scrolling
+   *    (one scroller per surface). Without such a wrapper the editor simply
+   *    grows into the page scroll (the mobile page-mode consumers).
+   *  Rebuild dep: changing it rebuilds the extension set — the view remounts. */
   scrollMode?: "inner" | "page";
   /** Extra CM6 extensions (CD-4: the copilot inline diff decorations), applied
    *  AFTER the built-ins so callers can override styling. Changing the array

@@ -27,6 +27,7 @@ import {
   startExperienceCopilotSession,
 } from "../../../../api/experience-copilot-api.js";
 import { AgentBufferReviewEditor } from "../../../shared/agent-shell/AgentBufferReviewEditor.js";
+import { ScrollArea } from "../../../shared/scroll-area.js";
 import {
   useExperienceCopilotReviewFeedback,
   useExperienceCopilotReviewSession,
@@ -267,7 +268,8 @@ function ExperienceEditorPane({
   const playground = <ExperiencePlayground code={rulesCode} visualSource={visualSource || null} scriptId={ownerId} script={script} onSendToCopilot={handleSendToCopilot} onShowInCode={(line) => setRulesRevealLine({ line })} onLaunchContextChange={handleLaunchContextChange} />;
 
   /* 4a follow-up round 2: on mobile the code branch is ONE scroll document
-     — the pane root itself scrolls (max-md:overflow-y-auto) and every fixed
+     — the pane-root lane's viewport scrolls it (the max-md overflow the
+     native div owned) and every fixed
      row above the editor (buffer radios, sub-toggle, the visual toolbar wall,
      validator) scrolls away with it. Previously the toolbar stack (measured
      322px for the visual buffer) stayed pinned as shrink-0 rows and the
@@ -279,8 +281,17 @@ function ExperienceEditorPane({
      branches keep their inner scroll (their containers stay flex-1 min-h-0,
      so the root never overflows there — no double scrollbar). Desktop (>=md)
      is untouched. */
+  /* CNR-8o (fork of script-agent-editor-pane's pane root): the pane root
+     rides the thin ScrollArea lane — on mobile (Code branch) it stays the
+     single scroll DOCUMENT the max-md overflow made it; on desktop the
+     content column is h-full so the preview/sandbox bodies keep their own
+     inner scrollers and the lane never overflows (no chrome mounts). */
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-bg max-md:overflow-y-auto">
+    <ScrollArea
+      scrollbarSize="thin"
+      className="min-h-0 min-w-0 flex-1 bg-bg"
+      contentClassName="flex h-full min-h-0 min-w-0 flex-col"
+    >
       {/* XU-5 outer tabs: [Preview | Code | Try] — preview is the default
           layer; the Try tab renders the shared playground inline in BOTH modes
           (XU-6, quote 10 — the old sandbox "Test it" button + modal are gone). */}
@@ -390,7 +401,7 @@ function ExperienceEditorPane({
           />
         </>
       )}
-    </div>
+    </ScrollArea>
   );
 }
 

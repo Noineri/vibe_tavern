@@ -3,12 +3,11 @@ import { useMemo } from "react";
 import type { ScriptKind } from "@vibe-tavern/domain";
 import { buildLineDiff, type TextDiffSummary } from "../TextDiffPreview.js";
 import { allHunkIds, groupHunks, mergeSelectedBody, type DiffHunk } from "../../../lib/coauthor-hunk-merge.js";
-import { cn } from "../../../lib/cn.js";
 import { scriptSafetyLint } from "../../../lib/script-safety-lint.js";
 import { CodeEditor } from "../CodeEditor.js";
 import { MobileExpandCodeEditor } from "../MobileExpandCodeEditor.js";
+import { ScrollArea } from "../scroll-area.js";
 import { scriptSafetyRevealLine } from "../../../lib/script-safety-reveal.js";
-import { useIsMobile } from "../../../hooks/use-mobile.js";
 import { GeneratingScrim } from "../generation-feedback.js";
 import { computeDiffDecorationSpecs, agentDiffExtensions } from "./AgentDiffDecorations.js";
 import { useT } from "../../../i18n/context.js";
@@ -253,13 +252,11 @@ export function AgentBufferReviewEditor({
   revealLine,
 }: AgentBufferReviewEditorProps) {
   const { t } = useT();
-  // Mobile (4a follow-up): CodeMirror runs in page-scroll mode on phones —
-  // the editor grows to its content and the pane scrolls as one (a narrow
-  // screen scrolls down naturally; an inner scrollbar inside a squeezed flex
-  // remainder is unusable). NOTE scrollMode is a CodeEditor rebuild dep: the
-  // view remounts when the viewport crosses the 768px breakpoint — rare and
-  // acceptable (same class of rebuild as the existing readOnly toggling).
-  const isMobile = useIsMobile();
+  // CNR-8o: CodeMirror runs in page-scroll mode on BOTH viewports — the
+  // editor grows to its document and an outer biaxial thin ScrollArea owns
+  // the scrolling (mobile page-level document scroll via the pane root is
+  // preserved by max-md:flex-none on the lane root; a constant scrollMode
+  // also ends the 768px-breakpoint editor rebuild the conditional caused).
 
   // Dismissed hunks decorate like accepted ones (nothing) — the resolved set
   // drives the decoration engine (RV-2).
@@ -350,26 +347,30 @@ export function AgentBufferReviewEditor({
           </div>
         </div>
       )}
-      {/* 4a follow-up round 2: on mobile this container takes its NATURAL
-          height (flex-none, no inner scroll) so the shell's pane root becomes
-          the single scroll document — see the editorPane root comment in
-          ExperienceCopilotShell.tsx. Desktop keeps the inner-scroll flex
-          remainder exactly as before. */}
-      <div className="min-h-0 flex-1 overflow-y-auto p-3 max-md:flex-none max-md:overflow-y-visible">
+      {/* CNR-8o delegation: the code area rides the outer biaxial thin
+          ScrollArea — ONE scroller per surface. CodeMirror runs in page mode
+          on BOTH viewports (`.cm-scroller` overflow neutralized — probe C),
+          so the desktop viewport now owns the scroll the `.cm-scroller`
+          owned. Mobile keeps the 4a follow-up contract: the root takes its
+          NATURAL height (max-md:flex-none) so it never scrolls and the
+          shell's pane root stays the single scroll document — see the
+          editorPane root comment in ExperienceCopilotShell.tsx. The frame
+          fills the lane while the document is short (flex-1 + the content's
+          min-h-full keep today's full-height border) and grows past it when
+          long — the viewport scrolls the grown frame, exactly as the mobile
+          document did before. */}
+      <ScrollArea
+        scrollbarSize="thin"
+        orientation="both"
+        className="min-h-0 flex-1 max-md:flex-none"
+        contentClassName="flex min-h-full flex-col p-3"
+      >
         {/* CD-3: frozen (read-only + shared GeneratingScrim dim) while the model
             works — the scrim alone dims the surface (same as the coauthor
             editor); no extra frame opacity, which would double-darken. */}
-        {/* Mobile (4a follow-up): the frame grows to the document (h-auto)
-            instead of filling the squeezed flex remainder — with the toolbar
-            stack above (the visual buffer's five rows) the remainder collapsed
-            to ~2px, making the editor unreachable. The scroll container above
-            scrolls the grown frame. */}
         <div
           data-testid="copilot-editor-frame"
-          className={cn(
-            "relative h-full min-h-0 rounded-md border border-border bg-bg",
-            "max-md:h-auto",
-          )}
+          className="relative flex-1 rounded-md border border-border bg-bg"
         >
           <MobileExpandCodeEditor
             value={docValue}
@@ -379,11 +380,10 @@ export function AgentBufferReviewEditor({
             label={fullscreenLabel}
           >
             <CodeEditor
-              className="h-full max-md:h-auto"
               value={docValue}
               onChange={onChange}
               minHeight="300px"
-              scrollMode={isMobile ? "page" : "inner"}
+              scrollMode="page"
               readOnly={readOnly}
               extensions={extensions}
             />
@@ -397,7 +397,7 @@ export function AgentBufferReviewEditor({
             />
           )}
         </div>
-      </div>
+      </ScrollArea>
     </>
   );
 }

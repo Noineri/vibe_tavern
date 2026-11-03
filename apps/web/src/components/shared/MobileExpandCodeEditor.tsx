@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { Extension } from "@codemirror/state";
 import { Icons } from "./icons.js";
 import { CodeEditor } from "./CodeEditor.js";
+import { ScrollArea } from "./scroll-area.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { useT } from "../../i18n/context.js";
 
@@ -84,17 +85,23 @@ export function MobileExpandCodeEditor({
               {t("done_btn")}
             </div>
           </div>
-          {/* Inner scroll fullscreen: the session owns the whole viewport, so
-              the scroller IS the natural mobile scroll region. */}
-          <div className="min-h-0 flex-1 px-2 pb-2">
+          {/* CNR-8o delegation fullscreen: the session owns the whole
+              viewport, and the thin biaxial ScrollArea is its ONE scroller —
+              CodeMirror runs in page mode (`.cm-scroller` overflow
+              neutralized, probe C) and the viewport scrolls the grown
+              document. The padding stays fixed on the root (outside the
+              scroll), exactly as before; the session's page-level scrolling
+              is preserved, now through the lane (the phone-hiding policy
+              hides its thumb on phones like every non-composer lane). */}
+          <ScrollArea scrollbarSize="thin" orientation="both" className="min-h-0 flex-1 px-2 pb-2">
             <CodeEditor
-              className="h-full"
               value={value}
               onChange={onChange}
               readOnly={readOnly}
               extensions={extensions}
+              scrollMode="page"
             />
-          </div>
+          </ScrollArea>
         </div>
       )}
     </>

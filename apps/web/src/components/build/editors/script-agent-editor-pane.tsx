@@ -8,6 +8,7 @@ import { cn } from "../../../lib/cn.js";
 import { Ic } from "../../shared/icons.js";
 import { CodeEditor } from "../../shared/CodeEditor.js";
 import { MobileExpandCodeEditor } from "../../shared/MobileExpandCodeEditor.js";
+import { ScrollArea } from "../../shared/scroll-area.js";
 import { GeneratingScrim } from "../../shared/generation-feedback.js";
 import { SegmentedControl } from "../../shared/SegmentedControl.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
@@ -126,8 +127,17 @@ export function ScriptAgentEditorTabs({
     )
     : t("agent_code");
 
+  // CNR-8o: the pane root rides the thin ScrollArea lane — on mobile
+  // (Code tab) it stays the single scroll DOCUMENT (max-md overflow was
+  // the pane's own job before; the lane's viewport owns it now); on
+  // desktop the content column is h-full so children keep their own
+  // inner scrollers and the lane never overflows (no chrome mounts).
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-bg max-md:overflow-y-auto">
+    <ScrollArea
+      scrollbarSize="thin"
+      className="min-h-0 min-w-0 flex-1 bg-bg"
+      contentClassName="flex h-full min-h-0 min-w-0 flex-col"
+    >
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border bg-surface px-3 py-2">
         <SegmentedControl
           value={tab}
@@ -140,14 +150,17 @@ export function ScriptAgentEditorTabs({
         />
       </div>
 
+      {/* CNR-8o: the Test tab body rides the thin vertical lane (both
+          viewports — it scrolled internally before too); the p-3 padding
+          scrolls with the content (ScriptEditor 8j idiom). */}
       {tab === "check" ? (
-        <div className="min-h-0 flex-1 overflow-y-auto p-3">
+        <ScrollArea scrollbarSize="thin" className="min-h-0 flex-1" contentClassName="p-3">
           {scriptKind === "dice" ? (
             <DiceScriptTester scriptId={scriptId} code={script.code} script={script} onRevealLine={(line) => onRevealLine(line)} isMobile={isMobile} characterName={characterName} />
           ) : (
             <ScriptTester scriptId={scriptId} code={script.code} script={script} onRevealLine={(line) => onRevealLine(line)} isMobile={isMobile} characterName={characterName} />
           )}
-        </div>
+        </ScrollArea>
       ) : (
         <>
           <div className="flex shrink-0 flex-col gap-2 border-b border-border bg-surface px-3 py-2">
@@ -213,26 +226,28 @@ export function ScriptAgentEditorTabs({
             )}
           </div>
           {reviewBar}
-          {/* 4a follow-up round 2: on mobile this container takes its NATURAL
-              height (flex-none, no inner scroll) so the shell's pane root becomes
-              the single scroll document — see the editorPane root comment in
-              ExperienceCopilotShell.tsx. Desktop keeps the inner-scroll flex
-              remainder exactly as before. */}
-          <div className="min-h-0 flex-1 overflow-y-auto p-3 max-md:flex-none max-md:overflow-y-visible">
+          {/* CNR-8o delegation (fork of the AgentBufferReviewEditor code area):
+              the editor area rides the outer biaxial thin ScrollArea — ONE
+              scroller per surface. CodeMirror runs in page mode on BOTH
+              viewports (`.cm-scroller` overflow neutralized — probe C), so
+              the desktop viewport owns the scroll the `.cm-scroller` owned.
+              Mobile keeps the 4a follow-up contract: the root takes its
+              NATURAL height (max-md:flex-none) so the pane-root lane above
+              stays the single scroll document. The frame fills the lane
+              while the document is short (flex-1 + min-h-full) and grows
+              past it when long. */}
+          <ScrollArea
+            scrollbarSize="thin"
+            orientation="both"
+            className="min-h-0 flex-1 max-md:flex-none"
+            contentClassName="flex min-h-full flex-col p-3"
+          >
             {/* CD-3: frozen (read-only + shared GeneratingScrim dim) while the model
                 works — the scrim alone dims the surface (same as the coauthor
                 editor); no extra frame opacity, which would double-darken. */}
-            {/* Mobile (4a follow-up): the frame grows to the document (h-auto)
-                instead of filling the squeezed flex remainder — with the toolbar
-                stack above (the visual buffer's five rows) the remainder collapsed
-                to ~2px, making the editor unreachable. The scroll container above
-                scrolls the grown frame. */}
             <div
               data-testid="copilot-editor-frame"
-              className={cn(
-                "relative h-full min-h-0 rounded-md border border-border bg-bg",
-                "max-md:h-auto",
-              )}
+              className="relative flex-1 rounded-md border border-border bg-bg"
             >
               <MobileExpandCodeEditor
                 value={script.code}
@@ -242,11 +257,10 @@ export function ScriptAgentEditorTabs({
                 label={t("script_code_label")}
               >
                 <CodeEditor
-                  className="h-full max-md:h-auto"
                   value={script.code}
                   onChange={(code) => onUpdateDraft({ code })}
                   minHeight="300px"
-                  scrollMode={isMobile ? "page" : "inner"}
+                  scrollMode="page"
                   readOnly={readOnly}
                   extensions={extensions}
                 />
@@ -260,9 +274,9 @@ export function ScriptAgentEditorTabs({
                 />
               )}
             </div>
-          </div>
+          </ScrollArea>
         </>
       )}
-    </div>
+    </ScrollArea>
   );
 }
