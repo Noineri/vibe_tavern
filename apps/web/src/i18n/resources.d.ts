@@ -3250,6 +3250,7 @@ export default interface Resources {
     "session_revoked": "Session revoked",
     "session_revoked_description": "Mobile access was disabled or the token was regenerated from another device.",
     "set_default_persona": "Set as default for new chats",
+    "settings_all": "All settings…",
     "settings_modal_title": "Vibe Tavern settings",
     "settings_section_about": "About",
     "settings_section_data": "Data",

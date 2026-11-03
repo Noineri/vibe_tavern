@@ -3,6 +3,8 @@ import { useT } from '../../../i18n/context.js';
 import { Icons } from '../../shared/icons.js';
 import { useIsMobile } from '../../../hooks/use-mobile.js';
 import { InterfaceSettingsBody } from '../interface-settings-body.js';
+import { useModalStore } from '../../../stores/modal-store.js';
+import { SETTINGS_SECTION } from '../../../lib/settings-section-registry.js';
 
 interface TweaksPanelProps {
   onOpenMobileAccess: () => void;
@@ -50,6 +52,14 @@ export function TweaksPanelBody({ onOpenMobileAccess, proxyCount = 0, defaultPro
           <button type="button" className="rounded bg-accent px-2.5 py-1 text-[calc(var(--ui-fs)-3px)] text-on-accent hover:opacity-90" onClick={onOpenProxyManager}>{t("manage")}</button>
         </div>
       </div>
+      <button
+        type="button"
+        className="mt-2 flex w-full cursor-pointer items-center justify-between gap-3 border-t border-border2 pt-3 pb-1 text-left text-[calc(var(--ui-fs)-2px)] text-t2 transition-colors hover:text-t1"
+        onClick={() => useModalStore.getState().openSettings(SETTINGS_SECTION.interface)}
+      >
+        <span className="flex items-center gap-1.5"><Icons.Settings />{t("settings_all")}</span>
+        <Icons.Caret direction="r" />
+      </button>
     </div>
   );
 }

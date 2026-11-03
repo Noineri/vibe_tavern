@@ -2,6 +2,8 @@ import { useT } from "../../../i18n/context.js";
 import { Icons } from "../../shared/icons.js";
 import { ScrollArea } from "../../shared/scroll-area.js";
 import { InterfaceSettingsBody } from "../interface-settings-body.js";
+import { useModalStore } from "../../../stores/modal-store.js";
+import { SETTINGS_SECTION } from "../../../lib/settings-section-registry.js";
 
 interface MobileSettingsProps {
 	open: boolean;
@@ -84,6 +86,14 @@ export function MobileSettings({ open, onClose, onOpenProxyManager = () => {} }:
 				<div className="px-5 py-2.5">
 					<button type="button" className="flex min-h-[48px] w-full items-center justify-between rounded-lg border border-border bg-s2 px-3 text-left text-t2 transition-colors active:bg-s3" onClick={onOpenProxyManager}>
 						<span className="flex items-center gap-3"><Icons.Globe />{t("proxies")}</span>
+						<Icons.Caret direction="r" />
+					</button>
+				</div>
+
+				{/* Full settings entry */}
+				<div className="px-5 py-2.5">
+					<button type="button" className="flex min-h-[48px] w-full items-center justify-between rounded-lg border border-border bg-s2 px-3 text-left text-t2 transition-colors active:bg-s3" onClick={() => useModalStore.getState().openSettings(SETTINGS_SECTION.interface)}>
+						<span className="flex items-center gap-3"><Icons.Settings />{t("settings_all")}</span>
 						<Icons.Caret direction="r" />
 					</button>
 				</div>

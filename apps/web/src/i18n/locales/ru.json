@@ -1,6 +1,7 @@
 {
 	"app_name": "Vibe Tavern",
 	"settings_modal_title": "Настройки Vibe Tavern",
+	"settings_all": "Все настройки…",
 	"settings_section_interface": "Интерфейс",
 	"settings_section_sound": "Звук и уведомления",
 	"settings_section_data": "Данные",
