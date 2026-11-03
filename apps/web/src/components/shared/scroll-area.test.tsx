@@ -7,12 +7,15 @@ const { act, fireEvent, render, waitFor } = await import("@testing-library/react
 const { ScrollArea } = await import("./scroll-area.js");
 
 describe("ScrollArea", () => {
-  it("declares mobile content-track hiding separately from native chrome and preserves editor tracks", async () => {
+  it("declares mobile content-track hiding separately from native chrome; only composer lanes survive", async () => {
     const css = await Bun.file(`${import.meta.dir}/../../styles.css`).text();
     expect(css).toContain("@media (max-width: 768px), (hover: none) and (pointer: coarse)");
     expect(css).toContain(":where(:not(textarea)) { scrollbar-width: none; }");
     expect(css).toContain(":not(textarea)::-webkit-scrollbar { display: none; }");
-    expect(css).toContain("[data-scroll-area]:not([data-scroll-editor]) > [data-scroll-track]");
+    // Owner ruling 2026-11-02 (CNR-8n rider on CNR-8o): phones hide EVERY DOM
+    // lane except the composer family's — the selector excludes exactly the
+    // composer marker, not editor roots (flipped form fields hide too).
+    expect(css).toContain("[data-scroll-area]:not([data-scroll-composer]) > [data-scroll-track]");
     const view = render(<>
       <ScrollArea viewportProps={{ "aria-label": "List" }}>Characters</ScrollArea>
       <ScrollArea scrollbarSize="thin" viewportRender={<textarea aria-label="Draft" readOnly value="Keep this draft" />} />
@@ -20,7 +23,11 @@ describe("ScrollArea", () => {
     await act(async () => {});
     expect(view.getByLabelText("List").closest("[data-scroll-area]")!.hasAttribute("data-scroll-editor")).toBe(false);
     const textarea = view.getByRole("textbox");
+    // `data-scroll-editor` still marks editor roots (the textarea IS the
+    // viewport), but it no longer earns phone visibility — only the composer
+    // marker does, and this plain editor root carries no such marker.
     expect(textarea.closest("[data-scroll-area]")!.hasAttribute("data-scroll-editor")).toBe(true);
+    expect(textarea.closest("[data-scroll-area]")!.hasAttribute("data-scroll-composer")).toBe(false);
     expect(textarea.hasAttribute("data-scroll-viewport")).toBe(true);
   });
 

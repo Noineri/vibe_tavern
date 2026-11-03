@@ -169,8 +169,10 @@ export function MobileInputArea({ data }: { data: InputAreaData }) {
               (ScrollArea viewportRender — same seam as the desktop composers)
               for the 3px custom thumb; the element, its ref, the 40vh growth
               cap and touch input stay native. The root takes the row's flex-1
-              role the textarea held as a direct child. */}
-          <ScrollArea scrollbarSize="thin" className="flex-1" viewportRender={
+              role the textarea held as a direct child. `data-scroll-composer`
+              marks this lane as the one phone-visible exception (CNR-8n rider
+              on CNR-8o: on phones only the composer keeps its thumb). */}
+          <ScrollArea scrollbarSize="thin" className="flex-1" data-scroll-composer viewportRender={
             <textarea
               ref={mobileTextareaRef}
               className={composerCls}

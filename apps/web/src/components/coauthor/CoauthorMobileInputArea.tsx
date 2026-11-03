@@ -141,8 +141,9 @@ export function CoauthorMobileInputArea({ data }: { data: CoauthorInputAreaData 
 						composers) for the 3px custom thumb; the element, its ref,
 						the 40vh growth cap and touch input stay native. The root
 						takes the row's flex-1 role the textarea held as a direct
-						child. */}
-					<ScrollArea scrollbarSize="thin" className="flex-1" viewportRender={
+						child. `data-scroll-composer` marks this lane as the one
+						phone-visible exception (CNR-8n rider on CNR-8o). */}
+					<ScrollArea scrollbarSize="thin" className="flex-1" data-scroll-composer viewportRender={
 						<textarea
 							ref={mobileTextareaRef}
 							data-testid="coauthor-input-textarea"

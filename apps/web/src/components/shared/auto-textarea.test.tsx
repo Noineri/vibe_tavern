@@ -243,17 +243,29 @@ describe("AutoTextarea — thin-lane default (CNR-8n)", () => {
     expect(root.classList.contains("bubble-chrome")).toBe(false);
   });
 
-  it("rides the CNR-7g mobile editor exception: the field lane stays on phones, non-editor lanes hide", async () => {
+  it("hides the field lane on phones; only the composer family keeps its thumb (owner ruling, CNR-8n rider)", async () => {
     const css = await Bun.file(`${import.meta.dir}/../../styles.css`).text();
-    // The ≤768px / coarse-pointer policy hides lane chrome for NON-editor
-    // areas only (native chrome hiding cannot hide a DOM track); editors —
-    // composers and, since the flip, every form field — keep their 3px thumb,
-    // the only scrollbar affordance once scrollbar-hide removed the native one.
+    // The ≤768px / coarse-pointer policy hides EVERY DOM lane except the
+    // composer family's (owner ruling 2026-11-02: on phones hide everything
+    // except the composer). Since the CNR-8n flip every form field is an
+    // editor root, so the old `:not([data-scroll-editor])` exception would
+    // keep a 3px thumb on overflowing fields where the native bar was fully
+    // hidden before — the rule now excludes exactly the composer marker.
     expect(css).toContain("@media (max-width: 768px), (hover: none) and (pointer: coarse)");
-    expect(css).toContain("[data-scroll-area]:not([data-scroll-editor]) > [data-scroll-track]");
-    const view = render(<AutoTextarea defaultValue="" minRows={2} />);
+    expect(css).toContain("[data-scroll-area]:not([data-scroll-composer]) > [data-scroll-track]");
+    const field = render(<AutoTextarea defaultValue="" minRows={2} />);
     await act(async () => {});
-    const root = (view.getByRole("textbox") as HTMLTextAreaElement).closest("[data-scroll-area]");
-    expect(root!.hasAttribute("data-scroll-editor")).toBe(true);
+    const fieldRoot = (field.getByRole("textbox") as HTMLTextAreaElement).closest("[data-scroll-area]");
+    // A form field is still an editor root, but NOT the composer: no marker,
+    // so its lane hides on phone widths like every other lane.
+    expect(fieldRoot!.hasAttribute("data-scroll-editor")).toBe(true);
+    expect(fieldRoot!.hasAttribute("data-scroll-composer")).toBe(false);
+    field.unmount();
+    const composer = render(<AutoTextarea bare className="composer-chrome" defaultValue="" minRows={1} />);
+    await act(async () => {});
+    const composerRoot = (composer.getByRole("textbox") as HTMLTextAreaElement).closest("[data-scroll-area]");
+    // `bare` is the composer-family escape hatch — exactly these lanes carry
+    // the marker and keep their 3px thumb when overflowing on phones.
+    expect(composerRoot!.hasAttribute("data-scroll-composer")).toBe(true);
   });
 });

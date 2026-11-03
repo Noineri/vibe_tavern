@@ -131,9 +131,11 @@ const textareaValueSetter = typeof window === "undefined"
  * node); the native scrollbar is hidden by the viewport's `scrollbar-hide`
  * and the overlay lane appears only when the capped field really overflows
  * (Base UI mounts tracks on real overflow only). Non-scrolling fields render
- * no chrome. On phones the field rides the CNR-7g mobile editor exception:
- * its 3px thumb stays visible when overflowing (native chrome hiding cannot
- * hide a DOM track, and `scrollbar-hide` removed the native affordance).
+ * no chrome. On phones the field lane hides with every other non-composer
+ * lane (owner ruling 2026-11-02, CNR-8n rider on CNR-8o): only the composer
+ * family (`bare`, marked `data-scroll-composer`) keeps its 3px thumb —
+ * `scrollbar-hide` removed the native affordance, and phones scroll by touch,
+ * so an overflowing field is reachable without any visible chrome.
  */
 export function AutoTextarea({
   className,
@@ -341,7 +343,10 @@ export function AutoTextarea({
   );
   return (
     <>
-      <ScrollArea className={containerClassName} scrollbarSize={scrollbarSize} viewportRender={input} />
+      {/* `bare` is the composer-family marker (FS-8b): exactly these lanes
+          carry data-scroll-composer, the one exception the phone-hiding rule
+          keeps visible (owner ruling 2026-11-02, CNR-8n rider on CNR-8o). */}
+      <ScrollArea className={containerClassName} scrollbarSize={scrollbarSize} data-scroll-composer={bare ? "" : undefined} viewportRender={input} />
       {macroAutocomplete && acOpen
         ? createPortal(
             <MacroAutocomplete

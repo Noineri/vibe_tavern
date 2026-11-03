@@ -664,14 +664,17 @@ select option{padding:2px 6px}
 }
 
 /* Phone-sized viewports and touch-first tablets: hide chrome, not scrolling.
-   Native textareas keep their scrollbar; composer ScrollArea editors keep the
-   custom thumb instead. Hiding only native chrome cannot hide a DOM track.
+   Native textareas keep their scrollbar; every DOM lane hides EXCEPT the
+   composer family's (owner ruling 2026-11-02, CNR-8n rider on CNR-8o: on
+   phones hide everything except the composer — `data-scroll-composer` is set
+   only by the composer seams, so flipped form fields hide like every other
+   lane). Hiding only native chrome cannot hide a DOM track.
    CSS responds to open-surface resizes without remounting editors or lists. */
 @media (max-width: 768px), (hover: none) and (pointer: coarse) {
   :where(:not(textarea)) { scrollbar-width: none; }
   :not(textarea)::-webkit-scrollbar { display: none; }
-  [data-scroll-area]:not([data-scroll-editor]) > [data-scroll-track],
-  [data-scroll-area]:not([data-scroll-editor]) > [data-scroll-corner] {
+  [data-scroll-area]:not([data-scroll-composer]) > [data-scroll-track],
+  [data-scroll-area]:not([data-scroll-composer]) > [data-scroll-corner] {
     display: none;
     pointer-events: none;
   }

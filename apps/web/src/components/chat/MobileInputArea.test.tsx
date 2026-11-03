@@ -236,6 +236,10 @@ describe("MobileInputArea draft growth (CNR-7e)", () => {
     // geometry contract, pinned in scroll-area.test.tsx).
     expect(track.closest("[data-scroll-area]")!.getAttribute("data-scroll-area")).toBe("thin");
     expect(track.getAttribute("data-orientation")).toBe("vertical");
+    // CNR-8n rider (owner ruling): the composer lane carries the ONE phone
+    // exception marker — its thumb stays visible on phones, everything else
+    // hides (styles.css selector pinned in auto-textarea.test.tsx).
+    expect(track.closest("[data-scroll-area]")!.hasAttribute("data-scroll-composer")).toBe(true);
     expect(textbox(view)).toBe(ta);
   });
 });
