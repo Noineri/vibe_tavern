@@ -5,6 +5,7 @@ import { useIsMobile } from "../../../hooks/use-mobile.js";
 import { useT } from "../../../i18n/context.js";
 import { registerMessageMeta, type MessageMetaDescriptor } from "../../../lib/message-meta-registry.js";
 import { BottomSheet } from "../../shared/BottomSheet.js";
+import { ScrollArea } from "../../shared/scroll-area.js";
 import { Icons } from "../../shared/icons.js";
 import { getModalPortal } from "../../shared/modal-helpers.js";
 
@@ -62,7 +63,11 @@ export function ExperienceReportChip({ report }: { report: ExperienceMessageRepo
 export function ExperienceReportDetail({ report }: { report: ExperienceMessageReport }) {
   const { t } = useT();
   return (
-    <div className="max-h-[70vh] space-y-2 overflow-y-auto p-3 font-ui [overflow-wrap:anywhere]" data-testid="experience-report-chip-detail">
+    // CNR-8p: the shared detail body (desktop popover + mobile sheet) rides
+    // the thin vertical lane instead of the native overflow-y-auto fallback;
+    // the 70vh cap sits on the root, spacing + p-3 scroll with the lines.
+    // Long sessions freeze many events, so the body truly overflows.
+    <ScrollArea scrollbarSize="thin" className="max-h-[70vh]" contentClassName="space-y-2 p-3 font-ui [overflow-wrap:anywhere]" data-testid="experience-report-chip-detail">
       <h3 className="text-[calc(var(--ui-fs)-1px)] font-semibold text-t1">{report.title}</h3>
       <p className="text-[calc(var(--ui-fs)-3px)] text-t3">{t("experience_report_event_count", { count: report.eventCount })}</p>
       {report.summary && <p className="text-[calc(var(--ui-fs)-2px)] text-t2">{report.summary}</p>}
@@ -74,7 +79,7 @@ export function ExperienceReportDetail({ report }: { report: ExperienceMessageRe
       <ul className="space-y-1 text-[calc(var(--ui-fs)-2px)] leading-relaxed text-t2">
         {report.events.map((event, index) => <li key={index} className="whitespace-pre-wrap">{renderExperienceEventLine(event, report.participants)}</li>)}
       </ul>
-    </div>
+    </ScrollArea>
   );
 }
 

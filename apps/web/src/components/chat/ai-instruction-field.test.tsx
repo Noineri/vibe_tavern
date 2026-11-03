@@ -22,6 +22,7 @@ import type { AiInstructionTemplate } from "@vibe-tavern/api-contracts";
 const realApi = await import("../../api/ai-instruction-template-api.js");
 const realMobileHook = await import("../../hooks/use-mobile.js");
 const { RpcError } = await import("../../api/unwrap.js");
+const { popoverMaxHeight } = await import("../shared/popover-constants.js");
 
 const listMock = mock(() => Promise.resolve<AiInstructionTemplate[]>([]));
 const createMock = mock((input: { name: string; text: string }) =>
@@ -194,6 +195,22 @@ describe("AiInstructionField — trigger and popover chrome (follow-up review)",
 		expect(content.className).toContain("data-[state=closed]:animate-out");
 		expect(content.className).toContain("border-border2");
 		expect(content.className).toContain("py-2");
+	});
+
+	it("scrolls the template list on the shared thin lane, save-current footer outside (CNR-8p)", async () => {
+		render(<FieldHarness initial="" />);
+		await openMenu();
+		const content = document.querySelector("[data-radix-popper-content-wrapper]")?.firstElementChild;
+		if (!(content instanceof HTMLElement)) throw new Error("popover content not found");
+		const lane = content.querySelector('[data-scroll-area="thin"]');
+		if (!(lane instanceof HTMLElement)) throw new Error("thin lane not found");
+		// The ~6-row cap moved from the native ul onto the ScrollArea root.
+		expect(lane.style.maxHeight).toBe(`${popoverMaxHeight("touchRow")}px`);
+		// The rows ride inside the lane's viewport (the ul stays the semantic list).
+		expect(lane.querySelectorAll("[data-scroll-viewport] li")).toHaveLength(2);
+		// The save-current footer stays docked outside the scroller.
+		const save = await body().findByText("message_ai_editor_templates_save_current");
+		expect(lane.contains(save)).toBe(false);
 	});
 
 	it("mobile sheet: row icon buttons carry the 44px touch floor (h-11 w-11)", async () => {

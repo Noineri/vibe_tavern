@@ -28,6 +28,7 @@ import { useIsMobile } from "../../../hooks/use-mobile.js";
 import { useT } from "../../../i18n/context.js";
 import { DiceFaces } from "../../shared/dice-faces.js";
 import { BottomSheet } from "../../shared/BottomSheet.js";
+import { ScrollArea } from "../../shared/scroll-area.js";
 import { Ic } from "../../shared/icons.js";
 import { getModalPortal } from "../../shared/modal-helpers.js";
 import {
@@ -128,11 +129,16 @@ export function DiceRollsBadge({ rolls }: { rolls: DiceRollSnapshot[] }) {
  *  Exported for direct testing without the Popover/portal harness. */
 export function DiceRollDetailContent({ rolls }: { rolls: DiceRollSnapshot[] }) {
   return (
-    <div className="max-h-[70vh] space-y-2 overflow-y-auto p-3">
+    // CNR-8p: the shared detail body (desktop popover + mobile sheet) rides
+    // the thin vertical lane instead of the native overflow-y-auto fallback;
+    // the 70vh cap sits on the root, the space-y-2 rhythm + p-3 padding scroll
+    // with the cards on the content element. Attempt cards are tall (dice
+    // rows, subtotals, outcomes), so multi-roll details truly overflow.
+    <ScrollArea scrollbarSize="thin" className="max-h-[70vh]" contentClassName="space-y-2 p-3">
       {rolls.map((roll) => (
         <DetailRollCard key={String(roll.rollId)} roll={roll} />
       ))}
-    </div>
+    </ScrollArea>
   );
 }
 

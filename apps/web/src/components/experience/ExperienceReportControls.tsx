@@ -32,6 +32,7 @@ import { renderExperienceEventLine, toExperienceMessageReport } from "@vibe-tave
 import { cn } from "../../lib/cn.js";
 import { useT } from "../../i18n/context.js";
 import { Icons } from "../shared/icons.js";
+import { ScrollArea } from "../shared/scroll-area.js";
 import type {
   ExperienceQueuedAttachmentView,
   ExperienceReportStatus,
@@ -161,9 +162,16 @@ export function ExperienceReportControls(props: ExperienceReportControlsProps): 
             )}
           </div>
           {preview && expanded && (
-            <div
+            // CNR-8p: the frozen-events preview rides the thin vertical lane
+            // (frame/body idiom): the max-h-48 cap + card chrome stay on the
+            // ScrollArea root, the event lines + p-2 padding scroll with the
+            // content. Sessions freeze many events, so the quote truly
+            // overflows; the testid + aria-controls id stay on the root.
+            <ScrollArea
+              scrollbarSize="thin"
               id={previewId}
-              className="max-h-48 min-w-0 space-y-1 overflow-y-auto rounded-md border border-border bg-s2 p-2 font-ui text-[calc(var(--ui-fs)-2px)] leading-relaxed text-t2 [overflow-wrap:anywhere]"
+              className="max-h-48 min-w-0 rounded-md border border-border bg-s2"
+              contentClassName="space-y-1 p-2 font-ui text-[calc(var(--ui-fs)-2px)] leading-relaxed text-t2 [overflow-wrap:anywhere]"
               data-testid="experience-report-preview"
             >
               <h3 className="font-medium text-t1">{preview.title}</h3>
@@ -174,7 +182,7 @@ export function ExperienceReportControls(props: ExperienceReportControlsProps): 
               <ul className="space-y-1">
                 {preview.events.map((event, index) => <li key={index} className="whitespace-pre-wrap">{renderExperienceEventLine(event, preview.participants)}</li>)}
               </ul>
-            </div>
+            </ScrollArea>
           )}
           <span className="font-ui text-[calc(var(--ui-fs)-3px)] text-t4" data-testid="experience-report-pending">
             {t("experience_report_pending_events", { n: pendingCount })}

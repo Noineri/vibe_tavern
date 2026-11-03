@@ -224,6 +224,12 @@ describe("ExperienceReportControls — frozen preview (ERX-10)", () => {
       fireEvent.click(toggle);
       const preview = view.getByTestId("experience-report-preview");
       expect(preview.id).toBe(toggle.getAttribute("aria-controls")!);
+      // CNR-8p: the preview rides the shared thin scroll lane — the max-h-48
+      // cap + card chrome sit on the lane root, the event lines scroll with
+      // the content element inside the viewport.
+      expect(preview.getAttribute("data-scroll-area")).toBe("thin");
+      expect(preview.className).toContain("max-h-48");
+      expect(preview.querySelector("[data-scroll-viewport]")?.textContent).toContain("The match ended.");
       expect(preview.textContent).toContain("Frozen Hearts");
       expect(preview.textContent).toContain("The opening deal");
       expect(preview.textContent).toContain("Player: played a red six");

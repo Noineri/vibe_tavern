@@ -72,4 +72,15 @@ describe("experience report message chip (ERX-8)", () => {
     expect(view.container.textContent).toContain("Showing the last 3 of 105 events.");
     expect(view.container.textContent).toContain('old: {"n":2}');
   });
+
+  it("rides the shared thin scroll lane with the 70vh cap on the root (CNR-8p)", () => {
+    const view = render(<ExperienceReportDetail report={report()} />);
+    const lane = view.container.querySelector('[data-scroll-area="thin"]');
+    expect(lane).toBeTruthy();
+    expect((lane as HTMLElement).classList.contains("max-h-[70vh]")).toBe(true);
+    // The frozen lines ride inside the lane's viewport; this one body serves
+    // the desktop popover and the mobile sheet alike (the lane chrome hides
+    // on phones per the CNR-7g policy; native scrolling continues).
+    expect(lane!.querySelector("[data-scroll-viewport]")?.textContent).toContain("The match ended.");
+  });
 });

@@ -180,6 +180,18 @@ describe("DICE-F10 DiceRollDetailContent — read-only historical truth", () => 
     expect(text).toContain("5");
     expect(text).toContain("18");
   });
+
+  it("rides the shared thin scroll lane with the 70vh cap on the root (CNR-8p)", () => {
+    const { container } = render(<DiceRollDetailContent rolls={[makeRoll()]} />);
+    const lane = container.querySelector('[data-scroll-area="thin"]');
+    expect(lane).toBeTruthy();
+    expect((lane as HTMLElement).classList.contains("max-h-[70vh]")).toBe(true);
+    // The roll cards ride inside the lane's viewport; this one body serves the
+    // desktop popover and the mobile sheet alike (the lane chrome hides on
+    // phones per the CNR-7g policy; native scrolling continues).
+    const viewport = lane!.querySelector("[data-scroll-viewport]");
+    expect(viewport?.textContent).toContain("Luck");
+  });
 });
 
 describe("DICE-F10 message isolation (registry renders per-message)", () => {

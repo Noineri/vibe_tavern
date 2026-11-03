@@ -32,6 +32,7 @@ import { BottomSheet } from "../shared/BottomSheet.js";
 import { InlineRenameInput } from "../shared/InlineRenameInput.js";
 import { DestructiveConfirmModal } from "../shared/destructive-confirm-modal.js";
 import { OverflowTooltip } from "../shared/OverflowTooltip.js";
+import { ScrollArea } from "../shared/scroll-area.js";
 import { getModalPortal } from "../shared/modal-helpers.js";
 import { popoverMaxHeight } from "../shared/popover-constants.js";
 import { useAiInstructionTemplates } from "./use-ai-instruction-templates.js";
@@ -197,56 +198,65 @@ function TemplateMenuBody(props: TemplateMenuBodyProps) {
           {loading ? t("message_ai_editor_templates_loading") : t("message_ai_editor_templates_empty")}
         </div>
       ) : (
-        <ul className="flex flex-col overflow-y-auto" style={{ maxHeight: popoverMaxHeight("touchRow") }}>
-          {templates.map((tpl) => (
-            <li key={tpl.id} className="flex min-h-11 items-center gap-1">
-              {renaming?.id === tpl.id ? (
-                <InlineRenameInput
-                  autoFocus
-                  className="min-w-0 flex-1"
-                  value={renaming.draft}
-                  onChange={(e) => props.onDraftRename(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      props.onCommitRename();
-                    } else if (e.key === "Escape") {
-                      e.preventDefault();
-                      props.onCancelRename();
-                    }
-                  }}
-                  onBlur={props.onCommitRename}
-                />
-              ) : (
+        <ScrollArea scrollbarSize="thin" style={{ maxHeight: popoverMaxHeight("touchRow") }}>
+          {/* CNR-8p: the template list rides the thin vertical lane instead
+              of the native overflow-y-auto fallback (the 8d ToolbarSelect
+              select idiom): the popoverMaxHeight cap moves onto the ScrollArea
+              root and the `ul` stays the semantic list inside the viewport.
+              The list scrolls past MAX_VISIBLE_ITEMS rows by the
+              popover-constants rule, and this body is shared verbatim by the
+              desktop popover and the mobile sheet (one body, two shells). */}
+          <ul className="flex flex-col">
+            {templates.map((tpl) => (
+              <li key={tpl.id} className="flex min-h-11 items-center gap-1">
+                {renaming?.id === tpl.id ? (
+                  <InlineRenameInput
+                    autoFocus
+                    className="min-w-0 flex-1"
+                    value={renaming.draft}
+                    onChange={(e) => props.onDraftRename(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        props.onCommitRename();
+                      } else if (e.key === "Escape") {
+                        e.preventDefault();
+                        props.onCancelRename();
+                      }
+                    }}
+                    onBlur={props.onCommitRename}
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    className="min-w-0 flex-1 cursor-pointer rounded px-2 py-2 text-left font-ui text-[calc(var(--ui-fs)-2px)] text-t2 transition-colors hover:bg-s2 hover:text-t1"
+                    onClick={() => props.onPick(tpl)}
+                  >
+                    <OverflowTooltip text={tpl.name} side="top" />
+                  </button>
+                )}
                 <button
                   type="button"
-                  className="min-w-0 flex-1 cursor-pointer rounded px-2 py-2 text-left font-ui text-[calc(var(--ui-fs)-2px)] text-t2 transition-colors hover:bg-s2 hover:text-t1"
-                  onClick={() => props.onPick(tpl)}
+                  className={`${iconBtnCls} hover:bg-s2 hover:text-t1`}
+                  onClick={() => props.onStartRename(tpl)}
+                  aria-label={t("message_ai_editor_templates_rename")}
+                  disabled={renaming !== null}
                 >
-                  <OverflowTooltip text={tpl.name} side="top" />
+                  <Icons.edit />
                 </button>
-              )}
-              <button
-                type="button"
-                className={`${iconBtnCls} hover:bg-s2 hover:text-t1`}
-                onClick={() => props.onStartRename(tpl)}
-                aria-label={t("message_ai_editor_templates_rename")}
-                disabled={renaming !== null}
-              >
-                <Icons.edit />
-              </button>
-              <button
-                type="button"
-                className={`${iconBtnCls} hover:bg-s2 hover:text-danger-text`}
-                onClick={() => props.onRequestDelete(tpl)}
-                aria-label={t("message_ai_editor_templates_delete")}
-                disabled={renaming !== null}
-              >
-                <Icons.del />
-              </button>
-            </li>
-          ))}
-        </ul>
+                <button
+                  type="button"
+                  className={`${iconBtnCls} hover:bg-s2 hover:text-danger-text`}
+                  onClick={() => props.onRequestDelete(tpl)}
+                  aria-label={t("message_ai_editor_templates_delete")}
+                  disabled={renaming !== null}
+                >
+                  <Icons.del />
+                </button>
+              </li>
+            ))}
+          </ul>
+        </ScrollArea>
       )}
       <button
         type="button"
