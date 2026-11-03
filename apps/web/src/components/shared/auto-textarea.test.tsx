@@ -182,3 +182,78 @@ describe("AutoTextarea — macro autocomplete", () => {
     expect(first!.closest("[data-scroll-viewport]")).not.toBeNull();
   });
 });
+
+describe("AutoTextarea — thin-lane default (CNR-8n)", () => {
+  it("wraps the default field in the thin editor root; the textarea stays the native viewport with its field base", async () => {
+    const view = render(<AutoTextarea defaultValue="" minRows={2} />);
+    await act(async () => {});
+    const ta = view.getByRole("textbox") as HTMLTextAreaElement;
+    // No props passed: the thin custom chrome is the DEFAULT now — the field
+    // composes into the shared ScrollArea exactly like the composer seam.
+    const root = ta.closest('[data-scroll-area="thin"]');
+    expect(root).not.toBeNull();
+    expect(root!.hasAttribute("data-scroll-editor")).toBe(true);
+    expect(ta.hasAttribute("data-scroll-viewport")).toBe(true);
+    // The textarea itself is unchanged as the real field + scroller: the
+    // canon base (field-tokens) still composes on it, and the native
+    // scrollbar is hidden by the viewport wiring (the lane replaces it).
+    expect(ta.className).toContain("field-input-pad");
+    expect(ta.className).toContain("overflow-y-auto");
+    expect(ta.className).toContain("scrollbar-hide");
+    // Non-scrolling fields show no chrome: Base UI mounts tracks on real
+    // overflow only (happy-dom has none, so no track may render here).
+    expect(root!.querySelector("[data-scroll-track]")).toBeNull();
+  });
+
+  it("keeps the same textarea node, caret and focus across the default wrap while the value grows", async () => {
+    const content = (value: string) => <AutoTextarea value={value} onChange={() => {}} minRows={2} />;
+    const view = render(content("One line"));
+    await act(async () => {});
+    const ta = view.getByRole("textbox") as HTMLTextAreaElement;
+    const root = ta.closest('[data-scroll-area="thin"]')!;
+    ta.focus();
+    await act(async () => view.rerender(content("One line and a capped tail")));
+    const next = view.getByRole("textbox") as HTMLTextAreaElement;
+    // 8h2's node-identity pin, now for the default field: autosize growth
+    // never remounts the editor — same DOM node, same root, focus retained.
+    // (The caret is asserted on a same-value rerender below — a controlled
+    // VALUE change legitimately resets it, React's own behavior.)
+    expect(next).toBe(ta);
+    expect(next.closest('[data-scroll-area="thin"]')).toBe(root);
+    expect(document.activeElement).toBe(next);
+    expect(next.value).toBe("One line and a capped tail");
+    next.setSelectionRange(3, 5);
+    await act(async () => view.rerender(content("One line and a capped tail")));
+    expect(view.getByRole("textbox")).toBe(next);
+    expect([next.selectionStart, next.selectionEnd]).toEqual([3, 5]);
+  });
+
+  it("carries row layout on containerClassName while className keeps styling the textarea (bare row shape)", async () => {
+    const view = render(
+      <AutoTextarea bare containerClassName="min-w-0 flex-1" className="bubble-chrome" minRows={1} maxRows={6} defaultValue="" />,
+    );
+    await act(async () => {});
+    const ta = view.getByRole("textbox") as HTMLTextAreaElement;
+    const root = ta.closest('[data-scroll-area="thin"]')!;
+    // 8h2 lesson, now the default: in a horizontal flex row the remaining
+    // width must size the ROOT — a flex class on the nested textarea cannot.
+    expect(root.classList.contains("min-w-0")).toBe(true);
+    expect(root.classList.contains("flex-1")).toBe(true);
+    expect(ta.classList.contains("bubble-chrome")).toBe(true);
+    expect(root.classList.contains("bubble-chrome")).toBe(false);
+  });
+
+  it("rides the CNR-7g mobile editor exception: the field lane stays on phones, non-editor lanes hide", async () => {
+    const css = await Bun.file(`${import.meta.dir}/../../styles.css`).text();
+    // The ≤768px / coarse-pointer policy hides lane chrome for NON-editor
+    // areas only (native chrome hiding cannot hide a DOM track); editors —
+    // composers and, since the flip, every form field — keep their 3px thumb,
+    // the only scrollbar affordance once scrollbar-hide removed the native one.
+    expect(css).toContain("@media (max-width: 768px), (hover: none) and (pointer: coarse)");
+    expect(css).toContain("[data-scroll-area]:not([data-scroll-editor]) > [data-scroll-track]");
+    const view = render(<AutoTextarea defaultValue="" minRows={2} />);
+    await act(async () => {});
+    const root = (view.getByRole("textbox") as HTMLTextAreaElement).closest("[data-scroll-area]");
+    expect(root!.hasAttribute("data-scroll-editor")).toBe(true);
+  });
+});

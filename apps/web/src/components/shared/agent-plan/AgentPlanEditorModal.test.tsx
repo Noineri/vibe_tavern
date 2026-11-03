@@ -187,7 +187,9 @@ describe("AgentPlanEditorModal — scroll surface (CNR-8h)", () => {
   it("the editor body scrolls on the thin ScrollArea lane; header and footer stay docked", async () => {
     const { getByLabelText, getByTestId } = renderModal("scroll-plan");
     const goal = await waitFor(() => getByLabelText("agent_plan_goal"));
-    const area = goal.closest<HTMLElement>("[data-scroll-area]")!;
+    // The goal field itself is an editor lane since the CNR-8n AutoTextarea
+    // flip — the modal BODY lane is the closest non-editor scroll area.
+    const area = goal.closest<HTMLElement>('[data-scroll-area]:not([data-scroll-editor])')!;
     expect(area.getAttribute("data-scroll-area")).toBe("thin");
     // The shared body rides the lane for BOTH viewports (the CNR-7g policy
     // hides it on phones): fields sit on the scroller's content with the

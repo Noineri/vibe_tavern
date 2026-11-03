@@ -33,7 +33,10 @@ export interface AutoTextareaProps extends AutoTextareaPassthrough {
    *  lib/field-tokens.ts). Since the FS-8b flip a passed className EXTENDS
    *  the base (base always composes) — the silent-replace window is closed. */
   className?: string;
-  /** Layout of the optional ScrollArea root; className still styles the editor. */
+  /** Layout classes on the custom-scrollbar root (always rendered since the
+   *  CNR-8n flip), e.g. `flex-1` when the field sits in a horizontal flex row —
+   *  the row's remaining width must size the ROOT; a flex class on the nested
+   *  textarea cannot size it (8h2 lesson). className still styles the editor. */
   containerClassName?: string;
   /** Explicit no-base mode — the composer-family escape hatch (FS-8b).
    *  When set, the primitive applies NO base at all: the caller's className
@@ -43,7 +46,10 @@ export interface AutoTextareaProps extends AutoTextareaPassthrough {
    *  under prose font), so the composer family opts out DELIBERATELY.
    *  Regular fields never set this. */
   bare?: boolean;
-  /** Composer-only custom 3px chrome; the textarea remains the real viewport. */
+  /** Accepted for explicitness at the existing composer seams (CNR-7d/7f/8h2)
+   *  — since the CNR-8n flip `"thin"` IS the default for every consumer, so
+   *  ordinary form fields never pass it. The textarea remains the real
+   *  viewport: native focus/caret/IME element, autosized by the lib. */
   scrollbarSize?: "thin";
   /** Inline styles. NOTE: `minHeight` / `maxHeight` / `height` are NOT supported
    *  here — the underlying library owns element height and throws at runtime if
@@ -116,12 +122,24 @@ const textareaValueSetter = typeof window === "undefined"
  * via the native-value-setter + `input` dispatch so both react-hook-form and
  * controlled-mode handlers see the change. Unresolved macros are harmless
  * (resolved at chat time), so the picker is on by default everywhere.
+ *
+ * Scroll chrome (CNR-8n flip): the DEFAULT is the shared thin custom lane
+ * (3px thumb, 5px on hover/drag — the CNR-8b contract) — the field is
+ * composed into `ScrollArea` as a native-editor viewport, exactly like the
+ * composer seam proven by 7d/7f/8h2. The textarea itself stays the native
+ * scroller (focus, caret, IME, autosize, register refs — all on the same DOM
+ * node); the native scrollbar is hidden by the viewport's `scrollbar-hide`
+ * and the overlay lane appears only when the capped field really overflows
+ * (Base UI mounts tracks on real overflow only). Non-scrolling fields render
+ * no chrome. On phones the field rides the CNR-7g mobile editor exception:
+ * its 3px thumb stays visible when overflowing (native chrome hiding cannot
+ * hide a DOM track, and `scrollbar-hide` removed the native affordance).
  */
 export function AutoTextarea({
   className,
   containerClassName,
   bare,
-  scrollbarSize,
+  scrollbarSize = "thin",
   mono,
   style,
   disabled,
@@ -323,7 +341,7 @@ export function AutoTextarea({
   );
   return (
     <>
-      {scrollbarSize ? <ScrollArea className={containerClassName} scrollbarSize={scrollbarSize} viewportRender={input} /> : input}
+      <ScrollArea className={containerClassName} scrollbarSize={scrollbarSize} viewportRender={input} />
       {macroAutocomplete && acOpen
         ? createPortal(
             <MacroAutocomplete

@@ -253,7 +253,7 @@ function LongTermGoalEditor({ chatId, goal }: { chatId: ChatId; goal: ObjectiveL
         {goal ? <StatusDot status={goal.status} onClick={() => void cycleStatus()} title={t("obj_cycle_status")} /> : <span className="mt-1 text-accent"><Ic.target /></span>}
         <AutoTextarea
           key={goal?.description ?? "empty-long-term"}
-          className="flex-1"
+          containerClassName="flex-1"
           defaultValue={goal?.description ?? ""}
           placeholder={t("obj_long_term_placeholder")}
           minRows={2}

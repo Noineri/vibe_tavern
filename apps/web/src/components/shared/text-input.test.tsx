@@ -51,12 +51,23 @@ describe("FS-2 primitives carry the canon by default", () => {
 	it("AutoTextarea bare opts out of the base entirely — the composer escape hatch (FS-8b)", () => {
 		const { getByRole } = render(<AutoTextarea bare className="composer-chrome" minRows={2} />);
 		const cls = (getByRole("textbox") as HTMLTextAreaElement).className;
-		expect(cls).toBe("composer-chrome"); // nothing else — no border, no field pad
+		// Since the CNR-8n flip the thin-lane viewport wiring composes onto the
+		// textarea (scrollbar-hide etc. — the scroll chrome, not field chrome);
+		// the FIELD base is still fully opted out of: no border, no field pad.
+		expect(cls).toContain("composer-chrome");
+		expect(cls).not.toContain("rounded-[6px]");
+		expect(cls).not.toContain("field-input-pad");
+		expect(cls).not.toContain("focus:border-accent");
 	});
 
-	it("AutoTextarea bare without a className renders classless (shell owns everything)", () => {
+	it("AutoTextarea bare without a className keeps the shell owning the field chrome (scroll wiring only)", () => {
 		const { getByRole } = render(<AutoTextarea bare minRows={2} />);
-		expect((getByRole("textbox") as HTMLTextAreaElement).className).toBe("");
+		const cls = (getByRole("textbox") as HTMLTextAreaElement).className;
+		// Bare = no field classes of any kind; the CNR-8n thin-lane viewport
+		// wiring (native-hide + focus passthrough) is the only chrome left.
+		expect(cls).not.toContain("rounded-[6px]");
+		expect(cls).not.toContain("field-input-pad");
+		expect(cls).toContain("scrollbar-hide");
 	});
 
 	it("bare TextInput renders the canonical single-line shape", () => {

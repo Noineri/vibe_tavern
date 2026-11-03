@@ -390,8 +390,11 @@ describe("MessageAiEditorModal — modal-body scroll wiring (CNR-8g)", () => {
     expect(viewport!.querySelector("textarea")).toBeTruthy();
     // The footer Cancel button stays docked OUTSIDE the scroller.
     expect(view.getByText("cancel_btn").closest("[data-scroll-area]")).toBeNull();
-    // Exactly one scroll area: no second (inner) lane was introduced.
-    expect(view.baseElement.querySelectorAll("[data-scroll-area]")).toHaveLength(1);
+    // Exactly one NON-EDITOR lane: no inner list lane was introduced (source
+    // list / candidate pre views keep native chrome, CNR-8p scope). The
+    // modal's own instruction field now rides its own editor lane — every
+    // AutoTextarea does since the CNR-8n default flip.
+    expect(view.baseElement.querySelectorAll('[data-scroll-area]:not([data-scroll-editor])')).toHaveLength(1);
   });
 });
 

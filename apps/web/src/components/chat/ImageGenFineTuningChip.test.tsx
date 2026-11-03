@@ -462,7 +462,9 @@ describe("ImageGenFineTuningChip — AI quick pill (FT-B1)", () => {
     const view = renderChip(<ImageGenFineTuningChip chatId="chat-b1" />);
     act(() => armChat("chat-b1"));
     openChip();
-    const promptRow = await waitFor(() => within(view.baseElement).getByTestId("image-gen-ft-prompt").parentElement as HTMLElement);
+    // CNR-8n: the thin-lane root sits between the field and its zone — walk
+    // past it to the zone that carries the pill row (same boundary as before).
+    const promptRow = await waitFor(() => within(view.baseElement).getByTestId("image-gen-ft-prompt").closest('[data-scroll-area]')!.parentElement as HTMLElement);
     const pillButtons = within(promptRow).getAllByRole("button");
     expect(pillButtons).toHaveLength(2);
 
@@ -490,7 +492,7 @@ describe("ImageGenFineTuningChip — AI prompt draft (FT-B2)", () => {
     act(() => armChat("chat-b2-fill"));
     act(() => useImageGenChatStore.getState().setFineTuningDraft("chat-b2-fill", { target: "portrait" }));
     openChip();
-    const promptRow = await waitFor(() => within(view.baseElement).getByTestId("image-gen-ft-prompt").parentElement as HTMLElement);
+    const promptRow = await waitFor(() => within(view.baseElement).getByTestId("image-gen-ft-prompt").closest('[data-scroll-area]')!.parentElement as HTMLElement);
     await act(async () => { fireEvent.click(within(promptRow).getAllByRole("button")[0]!); });
     await waitFor(() => expect(useImageGenChatStore.getState().fineTuningDraftByChat["chat-b2-fill"]).toEqual({
       prompt: "English portrait prompt",
@@ -507,7 +509,7 @@ describe("ImageGenFineTuningChip — AI prompt draft (FT-B2)", () => {
     act(() => armChat("chat-b2-no-negative"));
     act(() => useImageGenChatStore.getState().setFineTuningDraft("chat-b2-no-negative", { target: "portrait" }));
     openChip();
-    const noNegativeRow = await waitFor(() => within(noNegative.baseElement).getByTestId("image-gen-ft-prompt").parentElement as HTMLElement);
+    const noNegativeRow = await waitFor(() => within(noNegative.baseElement).getByTestId("image-gen-ft-prompt").closest('[data-scroll-area]')!.parentElement as HTMLElement);
     await act(async () => { fireEvent.click(within(noNegativeRow).getAllByRole("button")[0]!); });
     await waitFor(() => expect(useImageGenChatStore.getState().fineTuningDraftByChat["chat-b2-no-negative"]).toEqual({
       prompt: "Only positive",
@@ -525,7 +527,7 @@ describe("ImageGenFineTuningChip — AI prompt draft (FT-B2)", () => {
     act(() => armChat("chat-b2-cancel"));
     act(() => useImageGenChatStore.getState().setFineTuningDraft("chat-b2-cancel", { target: "portrait" }));
     openChip();
-    const promptRow = await waitFor(() => within(view.baseElement).getByTestId("image-gen-ft-prompt").parentElement as HTMLElement);
+    const promptRow = await waitFor(() => within(view.baseElement).getByTestId("image-gen-ft-prompt").closest('[data-scroll-area]')!.parentElement as HTMLElement);
     const star = within(promptRow).getAllByRole("button")[0]!;
     await act(async () => { fireEvent.click(star); });
     await waitFor(() => expect(draftPromptCalls).toHaveLength(1));

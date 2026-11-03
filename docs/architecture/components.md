@@ -20,7 +20,7 @@
 | `<SegmentedControl>` | `<select>` for 2-5 items | `SegmentedControl.tsx` | Radio pill bar |
 | `<DropdownSelect>` | `<select>` | `DropdownSelect.tsx` | Searchable combobox (cmdk + Radix Popover) |
 | `<TextInput>` | raw `<input>` | `text-input.tsx` | Canonical single-line input — bakes in `inputCls`; `mono` / `readOnly` modifiers compose |
-| `<AutoTextarea>` | `<textarea>` | `auto-textarea.tsx` | Auto-resizing textarea; canon field base by default, `className` extends (FS-8b), `bare` = composer escape hatch |
+| `<AutoTextarea>` | `<textarea>` | `auto-textarea.tsx` | Auto-resizing textarea; canon field base + thin custom scroll lane by default (CNR-8n), `className` extends (FS-8b), `bare` = composer-family chrome escape hatch, `containerClassName` = scrollbar-root layout |
 | `<SearchInput>` | hand-rolled search shells | `SearchInput.tsx` | Search field: shell owns chrome, borderless input inside, glass icon default, `trailing` slot (clear-✕) |
 | `<InlineRenameInput>` | hand-rolled rename inputs | `InlineRenameInput.tsx` | Compact inline-rename field; accent-at-rest border = edit-state marker |
 | `<ChipInput>` | Custom tag input | `ChipInput.tsx` | Tag/chip input, chips inside the box; `mode="tokens"` (Shift+Enter commits) / `mode="words"` (Enter commits) |
@@ -77,8 +77,8 @@ Use `render={<section />}` when the existing semantic root must remain a section
 Base UI owns measurement, conditional scrollbar mounting, thumb dragging and native keyboard/wheel/touch interaction; non-overflowing viewports stay out of tab order.
 `viewportRender` composes a native editor element as the vertical viewport without a Content wrapper (it implies `orientation="vertical"`); native inputs remain focusable even without overflow and keep their own focus chrome.
 After editor renders, a programmatic scroll notification refreshes Base UI's measurements when a capped textarea's value changes scrollHeight without resizing its box; no scroll position is assigned and the editor is not remounted.
-`AutoTextarea scrollbarSize="thin"` uses this composition for the desktop RP/Co-Author composers, retaining autosizing, native selection/caret scrolling, register refs and macro autocomplete.
-Both agent-shell composers (`AgentInputArea` and `AgentMobileInputArea`, including Experience Copilot) use the same `AutoTextarea scrollbarSize="thin"` opt-in, preserving their 3–12 / 1–6 row autosizing, controlled prefills, mentions, attachments and desktop Enter-to-send / mobile button-only send behavior; agent message/profile form fields do not opt in.
+Since the CNR-8n flip every `AutoTextarea` (form fields and composers alike) composes into the thin lane by default, with the textarea itself as the native viewport — autosizing, native selection/caret scrolling, register refs and macro autocomplete retained; the lane mounts only when the capped field really overflows.
+Both agent-shell composers (`AgentInputArea` and `AgentMobileInputArea`, including Experience Copilot) keep their explicit `AutoTextarea scrollbarSize="thin"` (pre-flip opt-ins, still valid), preserving their 3–12 / 1–6 row autosizing, controlled prefills, mentions, attachments and desktop Enter-to-send / mobile button-only send behavior; form fields get the same chrome without passing anything.
 In the mobile agent input row, `containerClassName="flex-1"` assigns the row's remaining width to the ScrollArea root; a flex class on the nested textarea alone cannot size that root.
 The mobile RP/Co-Author composers (hand-rolled px-capped `<textarea>`, no autosize lib) compose the same way directly — `ScrollArea scrollbarSize="thin" viewportRender={<textarea …/>}` with the root taking the input row's `flex-1` — keeping their imperative 40vh growth cap, native refs, attachment/send controls and touch input.
 The primitive does not replace the message navigation rail, CodeMirror, or sandboxed iframe documents (their integrations are later Wave-7 migration units).
@@ -365,11 +365,13 @@ Masked write-only key input + show/hide eye toggle + "empty keeps stored key" st
 
 Size control is **row-based** (`minRows` / `maxRows`), never pixel heights — the app drives font-size through user-adjustable CSS variables, so rows scale with the font while a pixel cap would fight the user. The lib throws at runtime on `style.minHeight` / `style.maxHeight`.
 
+**Scroll chrome (CNR-8n):** the default is the shared thin custom lane (3px thumb, 5px on hover/drag) — the same composition the composers proved: the field is a `ScrollArea` editor viewport, the textarea stays the real native scroller (focus/caret/IME/autosize on one DOM node), the native scrollbar is hidden, and the overlay lane mounts only when the capped field actually overflows — non-scrolling fields show no chrome. On phones the field rides the CNR-7g mobile editor exception: its 3px thumb stays the scrollbar affordance. A field inside a horizontal flex row must carry its row layout (`flex-1` etc.) on `containerClassName` — a flex class on the nested textarea cannot size the scrollbar root (the 8h2 lesson).
+
 | Prop | Type | Description |
 |------|------|-------------|
 | `className` | `string?` | Extension appended AFTER the base (base always composes — the FS-8b flip killed the silent-replace window) |
-| `containerClassName` | `string?` | Layout classes on the optional custom-scrollbar root, e.g. `flex-1` in a horizontal composer row; does not change the native textarea's classes |
-| `scrollbarSize` | `"thin"?` | Opt into the shared custom chrome with the textarea itself as the native viewport; absent keeps the unwrapped editor |
+| `containerClassName` | `string?` | Layout classes on the always-rendered custom-scrollbar root (CNR-8n), e.g. `flex-1` in a horizontal composer row; does not change the native textarea's classes |
+| `scrollbarSize` | `"thin"?` | Accepted for explicitness at the pre-flip composer seams; `"thin"` IS the default for every consumer — the textarea remains the native viewport |
 | `bare` | `boolean?` | Explicit no-base mode — the composer-family escape hatch; the caller's className carries everything |
 | `mono` | `boolean?` | Composes `monoMod` onto the base |
 | `value` / `onChange` | `string?` / `(e) => void?` | Controlled mode |

@@ -140,7 +140,7 @@ export function ScriptTester({ scriptId, code, isMobile, characterName, script =
 			</div>
 			<div className={cn("flex gap-2.5", isMobile && "flex-col")}>
 				<AutoTextarea
-					className="flex-1"
+					containerClassName="flex-1"
 					value={testInput}
 					onChange={(e) => setTestInput(e.target.value)}
 					onKeyDown={(e) => {
