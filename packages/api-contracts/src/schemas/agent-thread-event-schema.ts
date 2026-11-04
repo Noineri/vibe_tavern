@@ -29,10 +29,15 @@ import { z } from "zod";
  * `rp_summary` is NOT here on purpose: summaries are never stored as
  * events (SC-6 renders them live from coverage), so no stored row maps to
  * that kind — the events route can never emit it.
+ *
+ * The five payload schemas below are exported since AFP-7
+ * (AGENT_FEED_PERFORMANCE_PLAN Wave 2): `agent-feed-schema.ts` reuses their
+ * element schemas for the paged frozen-detail responses — ONE derivation of
+ * every frozen shape, never a second parser.
  */
 
 /** `rp_sync` payload wire — mirrors `RpSyncPayload` (domain/sidechat/rp-sync.ts). */
-const rpSyncPayloadSchema = z.object({
+export const rpSyncPayloadSchema = z.object({
   fromPosition: z.number(),
   toPosition: z.number(),
   messages: z.array(
@@ -51,7 +56,7 @@ const rpSyncPayloadSchema = z.object({
 
 /** `variants_attached` payload wire — mirrors `VariantsAttachedPayload`
  * (domain/sidechat/sidechat-xml.ts), readonly modifiers included. */
-const variantsAttachedPayloadSchema = z
+export const variantsAttachedPayloadSchema = z
   .object({
     position: z.number(),
     variants: z.array(
@@ -79,7 +84,7 @@ const variantSelectionSchema = z.object({
 
 /** `selection_changed` payload wire — mirrors `SelectionChangedPayload`
  * (domain/sidechat/rp-sync.ts). */
-const selectionChangedPayloadSchema = z.object({
+export const selectionChangedPayloadSchema = z.object({
   messageId: z.string(),
   position: z.number(),
   previous: variantSelectionSchema,
@@ -88,7 +93,7 @@ const selectionChangedPayloadSchema = z.object({
 
 /** `branch_forked` payload wire — mirrors `BranchForkedPayload`
  * (domain/sidechat/sidechat-xml.ts), readonly modifiers included. */
-const branchForkedPayloadSchema = z.object({
+export const branchForkedPayloadSchema = z.object({
   at: z.number(),
 }).readonly();
 
@@ -99,7 +104,7 @@ const branchForkedPayloadSchema = z.object({
  * back to the frozen name for user profiles, exactly like the profile chip).
  * DR-12: user-feed provenance only — the context loader and the compaction
  * service skip this kind; only the events route serves it. */
-const profileChangedPayloadSchema = z
+export const profileChangedPayloadSchema = z
   .object({
     from: z.object({ id: z.string(), name: z.string() }).readonly(),
     to: z.object({ id: z.string(), name: z.string() }).readonly(),

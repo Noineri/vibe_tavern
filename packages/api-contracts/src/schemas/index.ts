@@ -26,6 +26,37 @@ export type {
 } from "./agent-branch-sidechat-schema.js";
 export { agentThreadEventSchema } from "./agent-thread-event-schema.js";
 export type { AgentThreadEventWire } from "./agent-thread-event-schema.js";
+export {
+  agentFeedOrderPositionSchema,
+  agentFeedCursorPayloadSchema,
+  agentFeedQuerySchema,
+  resolveAgentFeedMode,
+  agentFeedDefaultLimit,
+  agentFeedEventSummarySchema,
+  agentFeedBoundarySchema,
+  agentFeedResponseSchema,
+  agentFeedStaleWindowErrorSchema,
+  agentEventDetailQuerySchema,
+  agentEventDetailCursorPayloadSchema,
+  agentEventDetailResponseSchema,
+  AGENT_EVENT_DETAIL_ERROR_CODES,
+  agentEventDetailErrorSchema,
+} from "./agent-feed-schema.js";
+export type {
+  AgentFeedOrderPosition,
+  AgentFeedCursorPayload,
+  AgentFeedQuery,
+  AgentFeedMode,
+  AgentFeedEventSummary,
+  AgentFeedBoundary,
+  AgentFeedResponse,
+  AgentFeedStaleWindowError,
+  AgentEventDetailQuery,
+  AgentEventDetailCursorPayload,
+  AgentEventDetailResponse,
+  AgentEventDetailErrorCode,
+  AgentEventDetailError,
+} from "./agent-feed-schema.js";
 export { agentThreadProposalApplyRequestSchema } from "./agent-thread-proposal-schema.js";
 export type { AgentThreadProposalApplyRequest } from "./agent-thread-proposal-schema.js";
 export {
