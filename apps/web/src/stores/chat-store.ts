@@ -75,7 +75,7 @@ function defaultGenState(): ChatGenerationState {
  * (DICE-F9). Returns `[]` when Dice is off, `chatId` is not the active chat
  * (dice context is active-chat-scoped — branchId/mode come from the snapshot
  * store), no branch is active, or the active lane has no included rolls.
- * Mirrors the lane selection in `readDiceSendState` (use-chat-controller) but
+ * Mirrors the lane selection in `readDiceSendState` (chat-send-conflict-handlers) but
  * returns the rolls themselves rather than a commit intent — the pending-user
  * shell renders them frozen until the committed message's own `diceRolls`
  * arrives, so the badge neither flickers nor duplicates across the

@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { createUserThemeRoutes } from "./user-theme.js";
 import type { RuntimeApi } from "../contract/runtime-api.js";
 import { createDebugRoutes } from "./debug.js";
 import { createChatRoutes } from "./chat.js";
@@ -22,6 +23,7 @@ import { createMobileAccessRoutes } from "./mobile-access.js";
 import { createInsightsRoutes } from "./insights.js";
 import { createRuntimeRoutes } from "./runtime.js";
 import { createFsRoutes } from "./fs.js";
+import { createDiagnosticsRoutes } from "./diagnostics.js";
 import { createCoauthorSkillRoutes } from "./coauthor-skill.js";
 import { createCopilotSkillRoutes } from "./copilot-skill.js";
 import { createCopilotProfileRoutes } from "./copilot-profile.js";
@@ -44,6 +46,7 @@ export type { RuntimeApi } from "../contract/runtime-api.js";
 
 export function createApiRouter(runtime: RuntimeApi) {
   return new Hono()
+    .route("/", createUserThemeRoutes(runtime.userThemes))
     .route("/", createDebugRoutes({ bootstrap: runtime.bootstrap }))
     .route("/", createChatRoutes(runtime.chat))
     .route("/", createCharacterRoutes(runtime.character))
@@ -74,7 +77,8 @@ export function createApiRouter(runtime: RuntimeApi) {
     .route("/", createAgentThreadEventsRoutes(runtime.experienceCopilot))
     .route("/", createAgentBranchSidechatRoutes(runtime.experienceCopilot))
     .route("/", createRuntimeRoutes())
-    .route("/", createFsRoutes())
+    .route("/", createFsRoutes(runtime.system))
+    .route("/", createDiagnosticsRoutes(runtime.diagnostics))
     .route("/", createCoauthorSkillRoutes(runtime.coauthorSkills))
     .route("/", createCopilotSkillRoutes(runtime.copilotSkills))
     .route("/", createCopilotProfileRoutes(runtime.copilotProfiles))

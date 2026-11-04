@@ -1,30 +1,15 @@
 import * as Popover from "@radix-ui/react-popover";
 import { useT } from '../../../i18n/context.js';
-import { LOCALES } from '../../../i18n/registry.js';
 import { Icons } from '../../shared/icons.js';
-import { SegmentedControl } from '../../shared/SegmentedControl.js';
-import { DropdownSelect } from '../../shared/DropdownSelect.js';
-import { Toggle } from '../../shared/Toggle.js';
-import { THEMES, type ThemeMode } from '../../../themes/registry.js';
 import { useIsMobile } from '../../../hooks/use-mobile.js';
-import { useScriptWarningsToggle } from '../../../hooks/use-script-warnings-toggle.js';
-
-interface TweaksSettings {
-  theme: ThemeMode;
-  fontSize: number;
-  uiFontSize: number;
-  messageWidth: 'narrow' | 'medium' | 'wide';
-  lang: string;
-  lavaBlobs: boolean;
-}
+import { InterfaceSettingsBody } from '../interface-settings-body.js';
+import { useModalStore } from '../../../stores/modal-store.js';
+import { SETTINGS_SECTION } from '../../../lib/settings-section-registry.js';
+import { openNetworkSettings } from '../network-settings-section.js';
 
 interface TweaksPanelProps {
-  settings: TweaksSettings;
-  setSetting: <K extends keyof TweaksSettings>(key: K, value: TweaksSettings[K]) => void;
-  onOpenMobileAccess: () => void;
   proxyCount?: number;
   defaultProxyName?: string | null;
-  onOpenProxyManager?: () => void;
 }
 
 // ── Presentational body ────────────────────────────────────────────────
@@ -35,132 +20,28 @@ interface TweaksPanelProps {
 // NOTE in LinkBindingPopover.test.tsx). `<TweaksPanel>` below wraps this body
 // in `<Popover.Content>`; the body is what the rows-coverage test renders.
 
-export function TweaksPanelBody({ settings, setSetting, onOpenMobileAccess, proxyCount = 0, defaultProxyName = null, onOpenProxyManager = () => {} }: TweaksPanelProps) {
+export function TweaksPanelBody({ proxyCount = 0, defaultProxyName = null }: TweaksPanelProps) {
   const { t } = useT();
   const isMobile = useIsMobile();
-  const scriptWarnings = useScriptWarningsToggle();
-
-  // Theme options derive from the registry — a newly added theme appears
-  // here automatically (no hardcoded icon list to keep in sync).
-  const themeOptions = THEMES.map((tm) => {
-    const Icon = Icons[tm.icon];
-    return { value: tm.id, label: <Icon /> };
-  });
-
-  const fontSizeOptions = [
-    { value: '17', label: <span className="font-body text-[calc(var(--ui-fs)-3px)] font-semibold">Aa</span> },
-    { value: '18', label: <span className="font-body text-[calc(var(--ui-fs)-1px)] font-semibold">Aa</span> },
-    { value: '19', label: <span className="font-body text-[calc(var(--ui-fs)+1px)] font-semibold">Aa</span> },
-  ];
-
-  const uiFontSizeOptions = [
-    { value: '15', label: <span className="font-body text-[calc(var(--ui-fs)-4px)] font-semibold">Aa</span> },
-    { value: '17', label: <span className="font-body text-[calc(var(--ui-fs)-1px)] font-semibold">Aa</span> },
-    { value: '19', label: <span className="font-body text-[calc(var(--ui-fs)+2px)] font-semibold">Aa</span> },
-  ];
-
-  const widthOptions = [
-    { value: 'narrow', label: <Icons.widthNarrow /> },
-    { value: 'medium', label: <Icons.widthMedium /> },
-    { value: 'wide', label: <Icons.widthWide /> },
-  ];
-
-  const langOptions = LOCALES.map((l) => ({ id: l.id, label: l.label }));
 
   return (
     <div className="glass-blur w-[280px] rounded-lg border border-border2 bg-glass-bg shadow-[0_12px_28px_rgba(0,0,0,0.45)] p-3">
       <div className="mb-3 font-ui text-[calc(var(--ui-fs)-3px)] font-semibold uppercase tracking-[0.05em] text-t1">{t("tweaks_title")}</div>
 
-      {/* Theme */}
-      <div className="flex items-center justify-between gap-3 py-2">
-        <span className="text-[calc(var(--ui-fs)-2px)] text-t2">{t("tweaks_theme")}</span>
-        <SegmentedControl
-          value={settings.theme}
-          options={themeOptions}
-          onChange={v => setSetting('theme', v as ThemeMode)}
-          compact
-        />
-      </div>
-
-      {/* Lava blobs — relevant on lava themes (the WebGL lamp). */}
-      {(settings.theme === 'dark-lava' || settings.theme === 'light-lava') && (
-        <div className="flex items-center justify-between gap-3 py-2">
-          <span className="text-[calc(var(--ui-fs)-2px)] text-t2">{t("tweaks_lava_blobs")}</span>
-          <Toggle checked={settings.lavaBlobs} onChange={(v) => setSetting('lavaBlobs', v)} />
-        </div>
-      )}
-
-      {/* Message font size */}
-      <div className="flex items-center justify-between gap-3 py-2">
-        <span className="text-[calc(var(--ui-fs)-2px)] text-t2">{t("tweaks_font_size")}</span>
-        <SegmentedControl
-          value={String(settings.fontSize)}
-          options={fontSizeOptions}
-          onChange={v => setSetting('fontSize', parseInt(v))}
-          compact
-        />
-      </div>
-
-      {/* UI font size */}
-      <div className="flex items-center justify-between gap-3 py-2">
-        <span className="text-[calc(var(--ui-fs)-2px)] text-t2">{t("tweaks_ui_font_size")}</span>
-        <SegmentedControl
-          value={String(settings.uiFontSize)}
-          options={uiFontSizeOptions}
-          onChange={v => setSetting('uiFontSize', parseInt(v))}
-          compact
-        />
-      </div>
-
-      {/* Message width */}
-      <div className="flex items-center justify-between gap-3 py-2">
-        <span className="text-[calc(var(--ui-fs)-2px)] text-t2">{t("tweaks_message_width")}</span>
-        <SegmentedControl
-          value={settings.messageWidth}
-          options={widthOptions}
-          onChange={v => setSetting('messageWidth', v as 'narrow' | 'medium' | 'wide')}
-          compact
-        />
-      </div>
-
-      {/* Language */}
-      <div className="flex items-center justify-between gap-3 py-2">
-        <span className="text-[calc(var(--ui-fs)-2px)] text-t2">{t("tweaks_language")}</span>
-        <DropdownSelect
-          value={settings.lang}
-          options={langOptions}
-          onChange={v => setSetting('lang', v)}
-          className="w-[110px]"
-          searchable={false}
-        />
-      </div>
-
-      {/* Script import warnings — the switch for the editors' imported-script
-          banner (moved here from the banner's own link, owner ruling 4b).
-          Row budget: 280 - 24 padding - 36 toggle - 12 gap = 208px for the
-          label — more room per character than the RU message-font-size
-          label has beside its three-option segmented control, so the longer
-          RU label stays on one line wherever that one does. */}
-      <div className="flex items-center justify-between gap-3 py-2">
-        <span className="text-[calc(var(--ui-fs)-2px)] text-t2">{t("tweaks_script_warnings")}</span>
-        <Toggle
-          checked={scriptWarnings.checked}
-          onChange={scriptWarnings.onChange}
-          aria-label={t("tweaks_script_warnings")}
-        />
-      </div>
+      <InterfaceSettingsBody />
 
       <div className="mt-2 border-t border-border2 pt-2">
         {!isMobile && (
           <div className="flex items-center justify-between gap-3 py-2">
-            <span className="flex items-center gap-1.5 text-[calc(var(--ui-fs)-2px)] text-t2">
+            <span className="flex min-w-0 items-center gap-1.5 text-[calc(var(--ui-fs)-2px)] text-t2">
               <Icons.phone />
               {t("mobile_access")}
             </span>
             <button type="button"
-              className="rounded bg-accent px-2.5 py-1 text-[calc(var(--ui-fs)-3px)] text-on-accent hover:opacity-90"
-              onClick={onOpenMobileAccess}
-            >{t("mobile_access_enable")}</button>
+              aria-label={t("mobile_access")}
+              className="shrink-0 rounded bg-accent px-2.5 py-1 text-[calc(var(--ui-fs)-3px)] text-on-accent hover:opacity-90"
+              onClick={openNetworkSettings}
+            >{t("manage")}</button>
           </div>
         )}
         <div className="flex items-center justify-between gap-3 py-2">
@@ -168,9 +49,17 @@ export function TweaksPanelBody({ settings, setSetting, onOpenMobileAccess, prox
             <span className="flex items-center gap-1.5 text-[calc(var(--ui-fs)-2px)] text-t2"><Icons.Globe />{t("proxies")}</span>
             <span className="block truncate pl-[19px] font-ui text-[calc(var(--ui-fs)-3px)] text-t4">{defaultProxyName ? t("proxy_status_default", { name: defaultProxyName }) : t("proxy_status_configured", { count: proxyCount })}</span>
           </div>
-          <button type="button" className="rounded bg-accent px-2.5 py-1 text-[calc(var(--ui-fs)-3px)] text-on-accent hover:opacity-90" onClick={onOpenProxyManager}>{t("manage")}</button>
+          <button type="button" className="rounded bg-accent px-2.5 py-1 text-[calc(var(--ui-fs)-3px)] text-on-accent hover:opacity-90" onClick={openNetworkSettings}>{t("manage")}</button>
         </div>
       </div>
+      <button
+        type="button"
+        className="mt-2 flex w-full cursor-pointer items-center justify-between gap-3 border-t border-border2 pt-3 pb-1 text-left text-[calc(var(--ui-fs)-2px)] text-t2 transition-colors hover:text-t1"
+        onClick={() => useModalStore.getState().openSettings(SETTINGS_SECTION.interface)}
+      >
+        <span className="flex items-center gap-1.5"><Icons.Settings />{t("settings_all")}</span>
+        <Icons.Caret direction="r" />
+      </button>
     </div>
   );
 }

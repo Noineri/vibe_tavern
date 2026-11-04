@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { createWebTestCommand, discoverWebTestFiles, failingFiles, filesWithTests, junitCrossAttribution, runWebTestCli } from "./test-web.js";
+import { createWebTestCommand, createWebTestCommands, discoverWebTestFiles, failingFiles, filesWithTests, junitCrossAttribution, mergeWebTestReports, runWebTestCli } from "./test-web.js";
 
 interface CliResult {
 	readonly exitCode: number;
@@ -84,6 +84,32 @@ test("passes randomized ordering and its seed through to bun", () => {
 	const seeded = command(["a.test.tsx"], true, "1234");
 	expect(seeded).toContain("--seed");
 	expect(seeded[seeded.indexOf("--seed") + 1]).toBe("1234");
+});
+
+test("bounds command length without losing files, isolation, seed or per-batch reports", () => {
+	const files = Array.from({ length: 800 }, (_, index) => `apps/web/src/components/${"nested/".repeat(5)}fixture-${index}.test.tsx`);
+	const commands = createWebTestCommands(files, "report.xml", { randomize: true, seed: "1234" });
+	expect(commands.length).toBeGreaterThan(1);
+	expect(commands.flatMap((args) => args.slice(args.indexOf("--reporter-outfile") + 2))).toEqual(files);
+	for (const args of commands) {
+		expect(args.reduce((length, arg) => length + JSON.stringify(arg).length + 1, 0)).toBeLessThanOrEqual(24_000);
+		expect(args).toContain("--parallel=8");
+		expect(args).toContain("--randomize");
+		expect(args[args.indexOf("--seed") + 1]).toBe("1234");
+	}
+	expect(new Set(commands.map((args) => args[args.indexOf("--reporter-outfile") + 1])).size).toBe(commands.length);
+});
+
+test("merges batch coverage and later-batch failures into one JUnit document", () => {
+	const merged = mergeWebTestReports([
+		'<?xml version="1.0"?><testsuites><testsuite><testcase file="apps/web/a.test.ts" name="a" /></testsuite></testsuites>',
+		'<?xml version="1.0"?><testsuites><testsuite><testcase file="apps/web/b.test.ts" name="b"><failure>later batch failure</failure></testcase></testsuite></testsuites>',
+	]);
+	expect([...filesWithTests(merged)]).toEqual(["apps/web/a.test.ts", "apps/web/b.test.ts"]);
+	expect(failingFiles(merged).get("apps/web/b.test.ts")?.entries[0]?.message).toBe("later batch failure");
+	expect(merged.match(/<testsuites>/g)).toHaveLength(1);
+	expect(merged.match(/<\/testsuites>/g)).toHaveLength(1);
+	expect(merged).not.toContain("<?xml");
 });
 
 test("reads covered files out of a JUnit report", () => {

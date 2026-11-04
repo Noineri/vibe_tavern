@@ -26,6 +26,7 @@ import { toast } from "sonner";
 
 import { brandId, type ChatId, type ImageGenerationMode } from "@vibe-tavern/domain";
 import { generateImageGen, interruptImageGenProfile } from "../api/image-gen-api.js";
+import { notifyImageGenerationSettled } from "../lib/sound-alerts-subscriber.js";
 import { fetchChatAction } from "./api-actions/chat-actions.js";
 import type { GenerateImageGenInput, ImageGenGenerateOverridesValue } from "@vibe-tavern/api-contracts";
 
@@ -362,6 +363,9 @@ export const useImageGenChatStore = create<ImageGenChatStore>()((set, get) => ({
           delete next[chatId];
           return { runningByChat: next };
         });
+        // SM-8: the generation itself settled — the snapshot refresh below only
+        // makes it visible, so its failure must not swallow the alert.
+        notifyImageGenerationSettled("done");
         // The server already appended the image slot — pull the fresh
         // snapshot through the standard chat refresh path.
         try {
@@ -381,6 +385,7 @@ export const useImageGenChatStore = create<ImageGenChatStore>()((set, get) => ({
         // User cancel is silent by design (the owner's explicit Stop — the
         // route maps it to a silent abort, not an error).
         if (!isAbortError(err)) {
+          notifyImageGenerationSettled("failed");
           toast.error(err instanceof Error ? err.message : "Image generation failed");
         }
       }

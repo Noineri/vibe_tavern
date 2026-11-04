@@ -6,7 +6,7 @@ import { useIsMobile } from "../../hooks/use-mobile.js";
 import { useT } from "../../i18n/context.js";
 import { cn } from "../../lib/cn.js";
 import { FileAttachmentChip } from "./file-attachment-chip.js";
-import { formatBytes } from "./attachment-format.js";
+import { formatBytes } from "../../lib/format-bytes.js";
 
 /** Audio draft chip duration (ST-6): "0:07" / "1:23" from durationMs. */
 function formatDuration(ms: number): string {

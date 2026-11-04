@@ -32,7 +32,12 @@
           'light-lava':{bg:'oklch(0.97 0.010 210)',accent:'oklch(0.65 0.22 35)',mid:'oklch(0.55 0.165 35)'}
         };
         var id='coffee';
-        try{var s=localStorage.getItem('vibe-tavern.theme');if(s&&T[s])id=s;}catch(e){}
+        // Pre-bundle code cannot import the preference store; read its persisted
+        // envelope first, with the old raw key only as a migration fallback.
+        var s=null;
+        try{var raw=localStorage.getItem('vibe-tavern.interface-settings');var saved=raw&&JSON.parse(raw);if(saved&&saved.state&&saved.state.settings&&typeof saved.state.settings.theme==='string')s=saved.state.settings.theme;}catch(e){s=null;}
+        try{if(!s)s=localStorage.getItem('vibe-tavern.theme');}catch(e){s=null;}
+        if(s&&T[s])id=s;
         var p=T[id],r=document.documentElement.style;
         r.setProperty('--bg',p.bg);r.setProperty('--accent',p.accent);r.setProperty('--accent-mid',p.mid);
       })();

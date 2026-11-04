@@ -3,16 +3,16 @@ import { toast } from "sonner";
 import * as Popover from "@radix-ui/react-popover";
 import * as buildConfig from "../../build-config.js";
 import { useT } from "../../i18n/context.js";
-import { normalizeLocale } from "../../i18n/registry.js";
 import { Icons } from "../shared/icons.js";
 import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
-import { apiFetch } from "../../api/client.js";
 import { resolveAssistantPrefillSupport } from "@vibe-tavern/domain";
-import { type ThemeMode } from "../../themes/registry.js";
 import { useChatStore, useNavigationStore, useCharacterStore, useProviderStore, useModalStore } from "../../stores/index.js";
 import { saveCharacterAction } from "../../stores/api-actions/character-actions.js";
 import { useActiveTrace, useLazyContextPreview } from "../../stores/chat-selectors.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
+import { useInterfaceSettingsStore } from "../../stores/interface-settings-store.js";
+import { SETTINGS_SECTION } from "../../lib/settings-section-registry.js";
+import { installSoundAlerts } from "../../lib/sound-alerts-subscriber.js";
 import { useBootstrapStore, fetchPersonasAction } from "../../stores/api-actions/bootstrap-actions.js";
 import { summarizeChatAction, saveChatSummaryAction, updateChatDynamicPromptAction } from "../../stores/api-actions/chat-actions.js";
 import { useChatController } from "../../hooks/use-chat-controller.js";
@@ -36,38 +36,34 @@ import { ProviderModal } from "../modals/ProviderModal.js";
 import { CoauthorProviderModal } from "../modals/CoauthorProviderModal.js";
 import { SetupWizard } from "../layout/SetupWizard.js";
 import { LavaBackground, useLavaBackgroundActive } from "./LavaBackground.js";
+import { useUserThemesStore } from "../../stores/user-themes-store.js";
 import { ShellDestructiveConfirmModal } from "../shared/destructive-confirm-modal.js";
 import { TweaksPanel } from "../settings/popovers/TweaksPanel.js";
 import { MobileSettings } from "../settings/popovers/MobileSettings.js";
-import { MobileAccessModal } from "../modals/MobileAccessModal.js";
-import { ProxyManagerModal } from "../modals/ProxyManagerModal.js";
-import { UpdateModal } from "../modals/UpdateModal.js";
+import { NetworkSettingsProvider } from "../settings/network-settings-section.js";
 import { StarPromptModal } from "../modals/StarPromptModal.js";
+import { SettingsModal } from "../modals/SettingsModal.js";
 import { CoauthorModuleModal } from "../coauthor/CoauthorModuleModal.js";
 import { CoauthorSkillModal } from "../coauthor/CoauthorSkillModal.js";
 import { AppToaster } from "./AppToaster.js";
 import { AvatarPanel } from "../settings/popovers/AvatarPanel.js";
-import type { TweaksSettings } from "../../lib/local-storage.js";
 import type { ProxyRecord } from "../../api/types.js";
 import { deleteProxy, getDefaultProxy, listProxies, saveProxy, setDefaultProxy, updateProxy } from "../../api/proxy-api.js";
 
-interface AppShellProps {
-  tweaksSettings: TweaksSettings;
-  setTweaksSettings: React.Dispatch<React.SetStateAction<TweaksSettings>>;
-}
-
-export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
-  const { t, setLocale } = useT();
+export function AppShell() {
+  const { t } = useT();
 
   // --- Store subscriptions (reactive) ---
   const isMobile = useIsMobile();
-  const showRail = tweaksSettings.showRail;
-  const theme = useNavigationStore((s) => s.theme);
-  const setTheme = useNavigationStore((s) => s.setTheme);
+  const showRail = useInterfaceSettingsStore((s) => s.settings.showRail);
+  const lavaBlobs = useInterfaceSettingsStore((s) => s.settings.lavaBlobs);
+  const messageWidth = useInterfaceSettingsStore((s) => s.settings.messageWidth);
+  const theme = useInterfaceSettingsStore((s) => s.settings.theme);
   // WebGL lava-lamp overlay (progressive enhancement over the <body> gradient).
   // Only active for lava themes on wide screens with WebGL + motion allowed;
   // otherwise it renders nothing and the legacy CSS gradient shows through.
-  const lavaActive = useLavaBackgroundActive(theme, tweaksSettings.lavaBlobs);
+  const userThemeLava = useUserThemesStore((s) => s.appliedThemeId === theme && s.appliedLava);
+  const lavaActive = useLavaBackgroundActive(theme, lavaBlobs, userThemeLava);
   const activeChatId = useChatStore((s) => s.activeChatId);
   const activeChat = useSnapshotStore((s) => s.activeChat);
   const activeCharacter = useSnapshotStore((s) => s.character);
@@ -87,9 +83,6 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
   const setTweaksOpen = useModalStore((s) => s.setTweaksOpen);
   const avatarOpen = useModalStore((s) => s.avatarOpen);
   const setAvatarOpen = useModalStore((s) => s.setAvatarOpen);
-  const mobileAccessOpen = useModalStore((s) => s.mobileAccessOpen);
-  const setMobileAccessOpen = useModalStore((s) => s.setMobileAccessOpen);
-  const setIsProxyManagerOpen = useModalStore((s) => s.setIsProxyManagerOpen);
   const isContextMemoryOpen = useModalStore((s) => s.isContextMemoryOpen);
   const setContextMemoryOpen = useModalStore((s) => s.setContextMemoryOpen);
   const isProviderModalOpen = useModalStore((s) => s.isProviderModalOpen);
@@ -103,7 +96,7 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
   const setIsPersonaModalOpen = useModalStore((s) => s.setIsPersonaModalOpen);
   const isCreateCharacterModalOpen = useModalStore((s) => s.isCreateCharacterModalOpen);
   const setCreateCharacterModalOpen = useModalStore((s) => s.setCreateCharacterModalOpen);
-  const setUpdateModalOpen = useModalStore((s) => s.setUpdateModalOpen);
+  const openSettings = useModalStore((s) => s.openSettings);
 
   // --- Sub-hooks (self-contained) ---
   const bootstrapData = useBootstrapStore((s) => s.data);
@@ -121,6 +114,9 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
   useAgentRunEvents();
   // Register the queue pump's runner (Q3) once runRegenerateJob is available.
   useGenerationQueue();
+  // SM-8: one queue-store subscription for the "queue finished" sound alert
+  // (the other three events are notified from their settling seams).
+  useEffect(() => installSoundAlerts(), []);
   const character = useCharacterController();
   const provider = useProviderProfiles();
   const preset = usePresetController();
@@ -156,7 +152,7 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
       return; // storage disabled — suppress rather than re-fire on every render
     }
     const message = t("update_available", { version: updateCheck.latestVersion });
-    const openUpdateModal = () => setUpdateModalOpen(true);
+    const openAboutUpdates = () => openSettings(SETTINGS_SECTION.about);
     toast.custom(
       (id) => (
         <div className="flex items-center gap-3 px-3.5 py-2.5">
@@ -164,7 +160,7 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
           <button
             type="button"
             className="cursor-pointer rounded-md bg-accent px-2.5 py-1 text-[calc(var(--ui-fs)-3px)] font-semibold text-on-accent transition-[filter] hover:brightness-110"
-            onClick={() => { openUpdateModal(); toast.dismiss(id); }}
+            onClick={() => { openAboutUpdates(); toast.dismiss(id); }}
           >
             {t("update_button")}
           </button>
@@ -172,7 +168,7 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
       ),
       { duration: 5000, style: { borderRadius: "var(--r)" } },
     );
-  }, [updateCheck.hasUpdate, updateCheck.latestVersion, updateCheck.releaseUrl, t, setUpdateModalOpen]);
+  }, [updateCheck.hasUpdate, updateCheck.latestVersion, updateCheck.releaseUrl, t, openSettings]);
 
   const promptPresets = bootstrapData?.promptPresets ?? [];
   const [wizardVisible, setWizardVisible] = useState(false);
@@ -209,14 +205,6 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
     if (!chatId) throw new Error("No active chat.");
     const result = await saveChatSummaryAction(chatId, summary);
     return result.summary;
-  }
-
-  // --- Tweak helpers ---
-  function updateTweak(key: string, value: unknown): void {
-    setTweaksSettings(prev => {
-      const next = { ...prev, [key]: value };
-      return next;
-    });
   }
 
   // --- Derived values for rendering ---
@@ -325,16 +313,6 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
     ? resolveEntityAvatarUrl({ kind: "characters", id: activeCharacter.id, avatarExt: activeCharacter.avatarExt, avatarAssetId: activeCharacter.avatarAssetId, avatarFullAssetId: activeCharacter.avatarFullAssetId, updatedAt: activeCharacter.updatedAt, preferFull: true }) ?? undefined
     : undefined;
 
-  const tweaksPanelSettings = {
-    theme: theme as ThemeMode,
-    fontSize: tweaksSettings.fontSize,
-    uiFontSize: tweaksSettings.uiFontSize,
-    messageWidth: tweaksSettings.messageWidth,
-    lang: tweaksSettings.lang,
-    showRail: tweaksSettings.showRail,
-    lavaBlobs: tweaksSettings.lavaBlobs,
-  };
-
   const handleSetDefaultProxy = async (proxyId: string | null) => {
     try {
       const setting = await setDefaultProxy(proxyId);
@@ -342,15 +320,6 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
     } catch (error) {
       toast.error(error instanceof Error ? error.message : t("request_failed"));
     }
-  };
-
-  const handleSetTweak = (key: string, value: unknown) => {
-    if (key === 'theme') setTheme(value as ThemeMode);
-    else if (key === 'showRail') updateTweak(key, value as boolean);
-    else if (key === 'lavaBlobs') updateTweak(key, value as boolean);
-    else if (key === 'fontSize' || key === 'uiFontSize') updateTweak(key, value as number);
-    else if (key === 'messageWidth') updateTweak(key, value as 'narrow' | 'medium' | 'wide');
-    else if (key === 'lang') { updateTweak(key, value as string); setLocale(normalizeLocale(value as string)); }
   };
 
   // Root is intentionally transparent: the page background (solid --bg or a
@@ -362,7 +331,7 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
     <div className="chat-shell flex text-t1 font-ui" style={{ height: "100dvh", paddingBottom: "env(safe-area-inset-bottom, 0px)", overflow: "hidden" }}>
       {/* Portals a fixed full-screen <canvas> to <body> behind all content.
           No-op (renders null) unless lavaActive. See LavaBackground.tsx. */}
-      <LavaBackground active={lavaActive} messageWidth={tweaksSettings.messageWidth} />
+      <LavaBackground active={lavaActive} messageWidth={messageWidth} />
       {shell.leftChrome}
       {/* One Radix Popover.Root owns the desktop TweaksPanel: the Trigger lives
           in the mode-specific top bar (TopBar for rp, CoauthorTopBar for
@@ -379,22 +348,8 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
         </main>
         {!isMobile && (
           <TweaksPanel
-            settings={tweaksPanelSettings}
-            setSetting={handleSetTweak}
-            onOpenMobileAccess={async () => {
-              // Ensure a token exists before opening the modal
-              try {
-                const resp = await apiFetch("/api/settings/mobile-access");
-                if (resp.ok) {
-                  const data = await resp.json();
-                  if (!data.token) await apiFetch("/api/settings/mobile-access/regenerate", { method: "POST" });
-                }
-              } catch { /* ignore */ }
-              setMobileAccessOpen(true);
-            }}
             proxyCount={proxies.length}
             defaultProxyName={proxies.find((proxy) => proxy.id === defaultProxyId)?.name ?? null}
-            onOpenProxyManager={() => setIsProxyManagerOpen(true)}
           />
         )}
       </Popover.Root>
@@ -402,30 +357,7 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
       {isMobile && <MobileSettings
         open={tweaksOpen}
         onClose={() => setTweaksOpen(false)}
-        settings={tweaksPanelSettings}
-        setSetting={handleSetTweak}
-        onOpenMobileAccess={async () => {
-          try {
-            const resp = await apiFetch("/api/settings/mobile-access");
-            if (resp.ok) {
-              const data = await resp.json();
-              if (!data.token) await apiFetch("/api/settings/mobile-access/regenerate", { method: "POST" });
-            }
-          } catch { /* ignore */ }
-          setMobileAccessOpen(true);
-        }}
-        onOpenProxyManager={() => setIsProxyManagerOpen(true)}
       />}
-      {mobileAccessOpen && !isMobile && <MobileAccessModal open={mobileAccessOpen} onClose={() => setMobileAccessOpen(false)} onDisabled={() => {}} />}
-      <ProxyManagerModal
-        proxies={proxies}
-        defaultProxyId={defaultProxyId}
-        onCreate={saveProxy}
-        onUpdate={updateProxy}
-        onDelete={async (id) => { await deleteProxy(id); }}
-        onRefresh={refreshProxies}
-        onProvidersChanged={provider.handleRefreshProfiles}
-      />
       {avatarOpen && avatarSrc && <AvatarPanel src={avatarSrc} onClose={() => setAvatarOpen(false)} />}
 
       <ContextMemoryModal
@@ -555,13 +487,12 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
       )}
 
       <ShellDestructiveConfirmModal />
-      <UpdateModal
-        latestVersion={updateCheck.latestVersion}
-        latestTag={updateCheck.latestTag}
-        releaseUrl={updateCheck.releaseUrl}
-        releaseNotes={updateCheck.releaseNotes}
-      />
       <StarPromptModal />
+      <NetworkSettingsProvider value={{
+        proxies, defaultProxyId, onCreate: saveProxy, onUpdate: updateProxy,
+        onDelete: async (id) => { await deleteProxy(id); },
+        onRefresh: refreshProxies, onProvidersChanged: provider.handleRefreshProfiles,
+      }}><SettingsModal /></NetworkSettingsProvider>
       <CoauthorModuleModal />
       <CoauthorSkillModal />
       <SetupWizard onVisibilityChange={setWizardVisible} />

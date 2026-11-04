@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { unlink } from "node:fs/promises";
+import type { SystemRuntimeApi } from "../contract/system-api.js";
 
 /**
  * Native OS filesystem dialog routes.
@@ -304,9 +305,17 @@ export function mapDialogResult(run: DialogRunResult, fileContent?: string): Nat
 	return { path };
 }
 
-export function createFsRoutes() {
-	return new Hono().post("/api/fs/native-dialog", async (c) => {
-		const result = await openNativeFolderDialog();
-		return c.json(result);
-	});
+export function createFsRoutes(system?: SystemRuntimeApi) {
+  return new Hono()
+    .post("/api/fs/native-dialog", async (c) => {
+      const result = await openNativeFolderDialog();
+      return c.json(result);
+    })
+    // SM-6: «Открыть папку данных» — opens the server's data directory in the
+    // OS file manager (explorer / open / xdg-open). POST for the same reason
+    // as native-dialog: it triggers a host-side side effect.
+    .post("/api/fs/open-data-dir", async (c) => {
+      if (!system) return c.json({ available: false } as const);
+      return c.json(await system.openDataDir());
+    });
 }

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Globe, Brain, Crop, Dices, FileText, Film, Flame, Grip, Images, Repeat, Send, Settings, Sparkles, Star, Volume2, VolumeX, Square, AudioLines, Play, Pause } from 'lucide-react';
+import { Globe, Brain, Crop, Dices, FileText, Film, Flame, Grip, Images, Repeat, Send, Settings, Sparkles, Star, Volume2, VolumeX, Square, AudioLines, Play, Pause, Folder } from 'lucide-react';
 
 // Props forwarded so call sites passing `className` (e.g. "h-5 w-5 text-t3")
 // actually apply — the previous `() => <svg/>` no-arg shape silently dropped
@@ -173,6 +173,9 @@ export const Ic = {
   // hand-off row icon; adopts through the registry's usual lucide path
   // (native size/stroke, className passthrough).
   film: (props?: { className?: string }) => <Film size={13} strokeWidth={2} {...props} />,
+  // Lucide `Folder` — «Открыть папку данных» in the About settings section
+  // (SM-6); same lucide adoption path as film/play above.
+  folder: (props?: { className?: string }) => <Folder size={13} strokeWidth={2} {...props} />,
 };
 
 // Icon props actually used at call sites: `className` (any icon) and `direction`

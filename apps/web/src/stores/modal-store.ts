@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import type { SettingsSectionId } from "../lib/settings-section-registry.js";
 
 export interface ModalState {
   isProviderModalOpen: boolean;
@@ -14,10 +15,11 @@ export interface ModalState {
   isCoauthorSkillModalOpen: boolean;
   tweaksOpen: boolean;
   avatarOpen: boolean;
-  mobileAccessOpen: boolean;
-  isProxyManagerOpen: boolean;
-  isUpdateModalOpen: boolean;
   isStarPromptOpen: boolean;
+  isSettingsOpen: boolean;
+  settingsSection: SettingsSectionId | null;
+  /** Repeated deep links are distinct navigation requests, even to the same id. */
+  settingsOpenRequest: number;
 }
 
 export interface ModalActions {
@@ -35,10 +37,9 @@ export interface ModalActions {
   setCoauthorSkillModalOpen: (open: boolean) => void;
   setTweaksOpen: (open: boolean) => void;
   setAvatarOpen: (open: boolean) => void;
-  setMobileAccessOpen: (open: boolean) => void;
-  setIsProxyManagerOpen: (open: boolean) => void;
-  setUpdateModalOpen: (open: boolean) => void;
   setStarPromptOpen: (open: boolean) => void;
+  setIsSettingsOpen: (open: boolean) => void;
+  openSettings: (section?: SettingsSectionId) => void;
 }
 
 export type ModalStore = ModalState & ModalActions;
@@ -56,10 +57,10 @@ export const useModalStore = create<ModalStore>()((set, get) => ({
   isCoauthorSkillModalOpen: false,
   tweaksOpen: false,
   avatarOpen: false,
-  mobileAccessOpen: false,
-  isProxyManagerOpen: false,
-  isUpdateModalOpen: false,
   isStarPromptOpen: false,
+  isSettingsOpen: false,
+  settingsSection: null,
+  settingsOpenRequest: 0,
   setIsProviderModalOpen: (open) => set(open ? { isProviderModalOpen: true, providerModalOrigin: null } : { isProviderModalOpen: false, providerModalOrigin: null }),
   setCoauthorProviderModalOpen: (open) => set({ isCoauthorProviderModalOpen: open }),
   openProviderModalFromCoauthor: () => set({ isCoauthorProviderModalOpen: false, isProviderModalOpen: true, providerModalOrigin: "coauthor" }),
@@ -78,10 +79,14 @@ export const useModalStore = create<ModalStore>()((set, get) => ({
   setCoauthorSkillModalOpen: (open) => set({ isCoauthorSkillModalOpen: open }),
   setTweaksOpen: (open) => set({ tweaksOpen: open }),
   setAvatarOpen: (open) => set({ avatarOpen: open }),
-  setMobileAccessOpen: (open) => set({ mobileAccessOpen: open }),
-  setIsProxyManagerOpen: (open) => set({ isProxyManagerOpen: open }),
-  setUpdateModalOpen: (open) => set({ isUpdateModalOpen: open }),
   setStarPromptOpen: (open) => set({ isStarPromptOpen: open }),
+  setIsSettingsOpen: (open) => set({ isSettingsOpen: open, ...(!open ? { settingsSection: null } : {}) }),
+  openSettings: (section) => set((state) => ({
+    isSettingsOpen: true,
+    settingsSection: section ?? null,
+    settingsOpenRequest: state.settingsOpenRequest + 1,
+    tweaksOpen: false,
+  })),
 }));
 
 if (typeof window !== "undefined") window.__useModalStore = useModalStore;

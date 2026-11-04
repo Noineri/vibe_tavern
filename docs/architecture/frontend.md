@@ -25,13 +25,35 @@ The stores split into three layers: **canonical backend-confirmed state**, **UI/
 | `useGalleryStore` | `stores/gallery-store.ts` | Per-character media-gallery cache (UI/cache, not canonical — the server owns the gallery). See [Media Gallery](#media-gallery). |
 | `useProviderDataStore` | `stores/provider-data-store.ts` | Provider profiles, favorite models per profile. |
 | `useCharacterStore` | `stores/character-store.ts` | Build-mode UI state, rename/confirm-destroy dialogs. |
-| `useNavigationStore` | `stores/navigation-store.ts` | Theme, mode (play/build), sidebar/rail state. (`coauthor` is a `ChatMode` on the chat, not a nav mode — see [Shell Dispatch & Chat Modes](#shell-dispatch--chat-modes).) |
+| `useNavigationStore` | `stores/navigation-store.ts` | Mode (play/build), sidebar/rail state and list sorting. (`coauthor` is a `ChatMode` on the chat, not a nav mode — see [Shell Dispatch & Chat Modes](#shell-dispatch--chat-modes).) |
+| `useInterfaceSettingsStore` | `stores/interface-settings-store.ts` | Device-local theme, chat/UI font sizes, message width, locale, rail visibility and lava preference; Zustand `persist` over localStorage, not server settings. |
 | `useProviderStore` | `stores/provider-store.ts` | Connection test UI state. |
 | `useModalStore` | `stores/modal-store.ts` | Modal open/close state. |
 
 Bootstrap reference data (prompt presets, personas, first-run/loading state) lives in the action module `stores/api-actions/bootstrap-actions.ts`, not a dedicated store.
 
 **Key pattern:** `useSnapshotStore.ingestSnapshot(snapshot)` is the normal entry point for snapshot-shaped backend data. API actions (`stores/api-actions/*.ts`) call the backend, receive a snapshot or partial response, and write it through this method. The deliberate exception is `applyInsightsCompletionPatch()`: completion refreshes are not snapshots, so this action first verifies the echoed chat/branch/message target and then merges only `objectiveState` and/or the one target message. No individual component `setState` calls are used for server data.
+
+### Device-local interface settings
+
+`useInterfaceSettingsStore` synchronously hydrates `vibe-tavern.interface-settings` and migrates the old raw `vibe-tavern.theme` / JSON `vibe-tavern.tweaks` keys without deleting them.
+Only preference data is persisted; invalid stored fields fall back independently, and unavailable storage retains working in-memory controls.
+The store resolves saved locale before browser/default fallback, so `main.tsx` initializes i18next before the first render with the same value that the settings control shows.
+`useVibeTavernApp` applies preference-driven CSS/theme effects; `AppShell` and the shared settings body read their own focused store slices instead of receiving a preference prop thread.
+
+`InterfaceSettingsBody` owns both compact rows (desktop quick access and the app-settings Interface section) and the existing mobile quick-access controls.
+Both layouts derive their option sets once; the mobile shell retains its live preview and scroll/chrome, while the section has no popover glass or fixed width.
+The script-warning switch remains backed by `useScriptWarningsToggle` and the existing server-setting API, not by the device preference store.
+`settings-section-registry.ts` is the single source of registered section descriptors and canonical id order; `SettingsModal` renders only registered bodies and uses `MasterDetailModal` for desktop/mobile navigation.
+
+`NetworkSettingsSection` renders blocks from `network-settings-registry.ts`; the core registration at boot adds proxies, then desktop-only mobile access.
+`NETWORK_SETTINGS_ORDER.modelCatalog` is the extension slot between them; the catalog feature registers its own body without editing the section or shipping a placeholder here.
+Each block can specify the same desktop/mobile layout gate as the section registry; the mobile-access body is not mounted or fetched on phone layouts.
+`NetworkSettingsProvider` supplies AppShell's existing proxy collection/default id and operation callbacks, also used by provider selectors; there is no second proxy cache.
+Proxy drafts stay local to the block, survive parent refreshes, and reset when leaving the section; the shared settings lifecycle host docks editor actions and guards discard on Back, section changes and closing.
+Mobile access uses the existing API-fetch seam and only enables after an explicit action in its disabled row, not when navigating to Network.
+The former proxy/mobile-access modal bodies are now `ProxySettingsSection` and `MobileAccessSection`; their standalone shells have been removed.
+Quick-access rows use `openNetworkSettings()` → `openSettings("network")`, which closes quick access in the same store update; no proxy/mobile-access modal flags or opener callback props remain.
 
 ### Selectors
 

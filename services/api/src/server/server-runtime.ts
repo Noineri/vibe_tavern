@@ -384,6 +384,7 @@ export async function createRuntimeApp(config: RuntimeAppConfig): Promise<Hono> 
 		sidechatSkillService,
 		summaryAssetLoader,
 		storyPlanSync,
+		config.dataDir,
 	);
 
 	features.register(createAiAssistantFeature(runtime.aiAssistant));

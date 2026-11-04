@@ -201,6 +201,8 @@ export interface MasterDetailModalProps<T extends string = string> {
 
   /** Hook for when user clicks back on mobile */
   onBack?: () => void;
+  /** Optional leave guard: invoke the continuation only after navigation is approved. */
+  beforeBack?: (continueBack: () => void) => void;
 
   /** Optional parent-level back (AP-3): a quiet «‹ {label}» link above the
    *  desktop title and a back chevron before the phone MAIN-header title.
@@ -235,6 +237,7 @@ export function MasterDetailModal<T extends string = string>({
   detailContent,
   footer,
   onBack,
+  beforeBack,
   parentBack,
   // Sizes only — the panel chrome rides modalPanelCls at the composition
   // below, so a custom containerClassName can never drop the canon shape.
@@ -258,8 +261,12 @@ export function MasterDetailModal<T extends string = string>({
   if (!isOpen) return null;
 
   const handleBack = () => {
-    setIsDetailOpen(false);
-    if (onBack) onBack();
+    const continueBack = () => {
+      setIsDetailOpen(false);
+      if (onBack) onBack();
+    };
+    if (beforeBack) beforeBack(continueBack);
+    else continueBack();
   };
 
   const desktopHeader = (

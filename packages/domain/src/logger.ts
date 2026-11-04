@@ -57,6 +57,62 @@ function resolveMinLevel(): LogLevel {
 
 const MIN_LEVEL = LEVEL_ORDER[resolveMinLevel()];
 
+// ── Recent-lines ring buffer (SM-7 diagnostics) ─────────────────────────────
+//
+// Pure in-memory capture of the lines this logger prints, so the diagnostics
+// zip can carry "recent server log lines" without any I/O or dependency (the
+// domain package stays dependency-free). The same visibility gate as the
+// console applies — a level hidden from the console is hidden here too, so
+// the buffer is exactly "what the operator saw".
+
+/** Lines kept; ~500 × a few hundred bytes is a small, bounded ceiling. */
+const RING_CAPACITY = 500;
+
+const ring: string[] = [];
+
+function inspectArg(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (value instanceof Error) return value.stack ?? `${value.name}: ${value.message}`;
+  if (typeof value === "object" && value !== null) {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return "[unserializable]";
+    }
+  }
+  return String(value);
+}
+
+/** Minimal printf substitution (%s/%d/%j) + trailing args, no util dependency. */
+function formatLine(level: LogLevel, prefix: string, fmt: string, args: unknown[]): string {
+  let message = fmt;
+  let argIndex = 0;
+  message = message.replace(/%[sdj]/g, (token) => {
+    if (argIndex >= args.length) return token;
+    const arg = args[argIndex]!;
+    argIndex++;
+    return inspectArg(arg);
+  });
+  const rest = args.slice(argIndex).map(inspectArg);
+  if (rest.length > 0) message = `${message} ${rest.join(" ")}`;
+  return `${new Date().toISOString()} ${level.toUpperCase()}${prefix} ${message}`;
+}
+
+function record(level: LogLevel, prefix: string, fmt: string, args: unknown[]): void {
+  ring.push(formatLine(level, prefix, fmt, args));
+  if (ring.length > RING_CAPACITY) ring.splice(0, ring.length - RING_CAPACITY);
+}
+
+/** Snapshot of the most recent captured log lines (oldest first). */
+export function recentLogLines(): readonly string[] {
+  return ring;
+}
+
+/** Test seam — production never calls this. */
+export function _resetLogRingForTests(): void {
+  ring.length = 0;
+}
+
 export class Logger {
   private prefix: string;
 
@@ -71,21 +127,25 @@ export class Logger {
 
   debug(fmt: string, ...args: unknown[]): void {
     if (MIN_LEVEL > LEVEL_ORDER.debug) return;
+    record("debug", this.prefix, fmt, args);
     console.debug(this.fmt(fmt), ...args);
   }
 
   info(fmt: string, ...args: unknown[]): void {
     if (MIN_LEVEL > LEVEL_ORDER.info) return;
+    record("info", this.prefix, fmt, args);
     console.log(this.fmt(fmt), ...args);
   }
 
   warn(fmt: string, ...args: unknown[]): void {
     if (MIN_LEVEL > LEVEL_ORDER.warn) return;
+    record("warn", this.prefix, fmt, args);
     console.warn(this.fmt(fmt), ...args);
   }
 
   error(fmt: string, ...args: unknown[]): void {
-    // errors always shown
+    // errors always shown — and always captured.
+    record("error", this.prefix, fmt, args);
     console.error(this.fmt(fmt), ...args);
   }
 

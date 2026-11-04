@@ -98,7 +98,7 @@ async function validateFiles(root: string, files: readonly string[], write: Outp
 }
 
 /**
- * One `bun test` invocation for the whole suite.
+ * A bounded number of `bun test` invocations, each with the same isolated pool.
  *
  * `--parallel` implies `--isolate`: every file gets a fresh global object AND a
  * fresh module registry, which is the property this suite actually depends on.
@@ -128,6 +128,38 @@ export function createWebTestCommand(
 		reportPath,
 		...files,
 	];
+}
+
+/** Windows caps a process command line at 32K UTF-16 units. Leave space for
+ * quoting/runtime overhead and keep explicit selection (directory filters can
+ * accidentally discover fixtures). Batches run sequentially, not per file. */
+export function createWebTestCommands(
+	files: readonly string[],
+	reportPath: string,
+	options: { readonly randomize: boolean; readonly seed: string | undefined },
+): readonly (readonly string[])[] {
+	const budget = 24_000;
+	const size = (arg: string) => JSON.stringify(arg).length + 1;
+	const commands: Array<readonly string[]> = [];
+	let batch: string[] = [];
+	const reportForBatch = () => `${reportPath}.${commands.length}`;
+	const baseSize = () => createWebTestCommand([], reportForBatch(), options).reduce((total, arg) => total + size(arg), 0);
+	let length = baseSize();
+	for (const file of files) {
+		if (length + size(file) > budget && batch.length > 0) {
+			commands.push(createWebTestCommand(batch, reportForBatch(), options));
+			batch = []; length = baseSize();
+		}
+		if (length + size(file) > budget) throw new Error(`Web test path exceeds command budget: ${file}`);
+		batch.push(file); length += size(file);
+	}
+	if (batch.length > 0) commands.push(createWebTestCommand(batch, reportForBatch(), options));
+	return commands;
+}
+
+/** Preserve one valid JUnit document for the orchestrator's existing parser. */
+export function mergeWebTestReports(reports: readonly string[]): string {
+	return `<testsuites>\n${reports.map((report) => report.replace(/<\?xml[^?]*\?>/g, "").replace(/<\/?testsuites\b[^>]*>/g, "")).join("\n")}\n</testsuites>`;
 }
 
 async function forward(stream: ReadableStream<Uint8Array>, write: OutputWriter): Promise<void> {
@@ -218,8 +250,19 @@ export async function runWebTestCli(
 	const reportPath = join(reportDirectory, "web.xml");
 	let outcome: RunOutcome;
 	try {
-		const command = createWebTestCommand(files, reportPath, parsed);
-		outcome = await runBunTest(root, command, reportPath, write);
+		const commands = createWebTestCommands(files, reportPath, parsed);
+		const outcomes: RunOutcome[] = [];
+		for (const [index, command] of commands.entries()) {
+			if (commands.length > 1) write(`Web test batch ${index + 1}/${commands.length}`);
+			const result = await runBunTest(root, command, `${reportPath}.${index}`, write);
+			outcomes.push(result);
+			if (result.spawnError !== null) break;
+		}
+		outcome = {
+			exitCode: outcomes.some((result) => result.exitCode !== 0) ? 1 : 0,
+			report: mergeWebTestReports(outcomes.map((result) => result.report)),
+			spawnError: outcomes.find((result) => result.spawnError !== null)?.spawnError ?? null,
+		};
 		// The orchestrator's handoff: it cannot append reporter flags to this
 		// suite's `bun run test` command (strict parseArgs exits 2 on unknown
 		// flags), so it hands a target path down instead and classifies the web

@@ -2,6 +2,7 @@ import type {
   ChatBranchId,
   ChatId,
   MessageId,
+  MessageVariantId,
 } from "./ids.js";
 import type { ActivatedLoreDetail, ProviderResponseTrace } from "./entities.js";
 import type { GenerationFormat } from "./generation-format.js";
@@ -78,6 +79,11 @@ export interface PromptTraceRecordDto extends AssemblePromptResponse {
   chatId: ChatId;
   branchId: ChatBranchId;
   messageId: MessageId;
+  /** SC-23b link: the swipe (message_variants row) this trace produced; null =
+   *  unknown producer (greeting traces, rows predating the link). Absent on
+   *  previews. Diagnostics (SM-9b) uses it as part of the full identity tuple
+   *  that pins a selected generation. */
+  variantId?: MessageVariantId | null;
   model: string;
   presetName: string;
   latencyMs: number;

@@ -2036,12 +2036,14 @@ describe("PromptManagerModal — service prompts tab (SP-9)", () => {
     );
     fireEvent.click(within(view.baseElement).getByText("promptManager.servicePrompts.tabLabel"));
     await waitFor(() => expect(getServiceDetailMock).toHaveBeenCalled());
+    // The API-call observation precedes the async detail commit. Wait for the
+    // real accordion before interacting, not the transient loading frame.
     // Open ONLY the assistant family accordion — the new key must land there.
-    const assistantToggle = Array.from(view.baseElement.querySelectorAll("button")).find((b) =>
-      b.textContent?.includes("promptManager.servicePrompts.family.assistant"),
-    );
+    const assistantToggle = await within(view.baseElement).findByRole("button", {
+      name: "promptManager.servicePrompts.family.assistant",
+    });
     expect(assistantToggle).toBeTruthy();
-    await act(async () => { fireEvent.click(assistantToggle!); });
+    await act(async () => { fireEvent.click(assistantToggle); });
     const q = within(view.baseElement);
     await waitFor(() => expect(q.getByText("promptManager.servicePrompts.field.skill")).toBeTruthy());
     // Siblings in the same family stay intact (label-key queries per the i18n mock).

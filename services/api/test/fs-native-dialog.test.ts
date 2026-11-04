@@ -34,6 +34,7 @@ import {
 	linuxCmd,
 	_resetLinuxDialogCacheForTests,
 } from "../src/api/routes/fs.js";
+import { SystemAdapter, openDirCommand, type SpawnFn } from "../src/api/adapters/system-adapter.js";
 
 /** A subprocess that exited normally: no signal, zero exit, `stdout` as given. */
 function ok(stdout: string): { stdout: string; exitCode: number; signalCode: null } {
@@ -278,5 +279,78 @@ describe("createFsRoutes — Linux + unknown-platform integration", () => {
 		const body = await res.json();
 		// Must round-trip through JSON with no undefined fields leaking.
 		expect(JSON.parse(JSON.stringify(body))).toEqual({ available: false });
+	});
+});
+
+// ── SM-6: open-data-dir ─────────────────────────────────────────────────────
+//
+// The per-platform argv is pinned (the command built, never run); a hostile
+// directory name stays ONE argv element, which is the structural no-shell-
+// injection guarantee — Bun.spawn execs directly, no shell ever parses it.
+
+describe("openDirCommand — per-platform argv, no shell re-parsing", () => {
+	test("each desktop platform gets its file manager with the dir as one argv element", () => {
+		expect(openDirCommand("win32", "C:\\VT Data")).toEqual(["explorer.exe", "C:\\VT Data"]);
+		expect(openDirCommand("darwin", "/Users/aa/VT Data")).toEqual(["open", "/Users/aa/VT Data"]);
+		expect(openDirCommand("linux", "/home/aa/vt data")).toEqual(["xdg-open", "/home/aa/vt data"]);
+	});
+
+	test("a hostile directory name is never split into commands", () => {
+		const hostile = 'C:\\data & del /f; "quoted" `backtick` $(echo pwned)';
+		for (const platform of ["win32", "darwin", "linux"] as const) {
+			const argv = openDirCommand(platform, hostile);
+			expect(argv.length).toBe(2);
+			expect(argv[1]).toBe(hostile);
+		}
+	});
+});
+
+describe("SystemAdapter.openDataDir", () => {
+	function adapter(platform: string, spawn: SpawnFn, dataDir = "/vt/data") {
+		return new SystemAdapter({ dataDir, platform, spawn });
+	}
+
+	test("zero exit → { opened: true }", async () => {
+		const seen: string[][] = [];
+		const spawn: SpawnFn = async (cmd) => { seen.push(cmd); return { exitCode: 0, stderr: "" }; };
+		expect(await adapter("linux", spawn).openDataDir()).toEqual({ opened: true });
+		expect(seen).toEqual([["xdg-open", "/vt/data"]]);
+	});
+
+	test("non-zero exit is an error outside Windows; explorer's success-shaped 1 is accepted on Windows", async () => {
+		const fail: SpawnFn = async () => ({ exitCode: 3, stderr: "no such directory" });
+		expect(await adapter("linux", fail).openDataDir()).toEqual({ error: "no such directory" });
+		const quiet: SpawnFn = async () => ({ exitCode: 3, stderr: "" });
+		expect(await adapter("darwin", quiet).openDataDir()).toEqual({ error: "exit code 3" });
+		const explorerish: SpawnFn = async () => ({ exitCode: 1, stderr: "" });
+		expect(await adapter("win32", explorerish).openDataDir()).toEqual({ opened: true });
+	});
+
+	test("a missing file-manager binary surfaces as { error }, never a throw", async () => {
+		const spawn: SpawnFn = async () => { throw new Error("spawn xdg-open ENOENT"); };
+		expect(await adapter("linux", spawn).openDataDir()).toEqual({ error: "spawn xdg-open ENOENT" });
+	});
+
+	test("android and empty-dir harnesses answer { available: false } without spawning", async () => {
+		let calls = 0;
+		const spawn: SpawnFn = async () => { calls++; return { exitCode: 0, stderr: "" }; };
+		expect(await adapter("android", spawn).openDataDir()).toEqual({ available: false });
+		expect(await adapter("linux", spawn, "").openDataDir()).toEqual({ available: false });
+		expect(calls).toBe(0);
+	});
+});
+
+describe("createFsRoutes — open-data-dir integration", () => {
+	test("delegates to the system adapter; a missing adapter stays available:false", async () => {
+		const spawn: SpawnFn = async () => ({ exitCode: 0, stderr: "" });
+		const system = new SystemAdapter({ dataDir: "/vt/data", platform: "linux", spawn });
+		const app = createFsRoutes(system);
+		const res = await app.request("/api/fs/open-data-dir", { method: "POST" });
+		expect(res.status).toBe(200);
+		expect(await res.json()).toEqual({ opened: true });
+
+		const bare = createFsRoutes();
+		const bareRes = await bare.request("/api/fs/open-data-dir", { method: "POST" });
+		expect(await bareRes.json()).toEqual({ available: false });
 	});
 });

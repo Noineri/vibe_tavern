@@ -2,7 +2,10 @@
 
 > Companion to [Frontend Architecture](../architecture/frontend.md) and [AD-021](../architecture/decisions.md#ad-021-locale-registry-over-scattered-type-literals-for-i18n) / [AD-022](../architecture/decisions.md#ad-022-flexible-layouts-over-fixed-widths-for-translated-text).
 
-Localization is **registry-driven**, exactly like theming. There is one source of truth — `apps/web/src/i18n/registry.ts` — and every consumer (the `Locale` type, storage validation, browser-language detection, and both language pickers in desktop Tweaks *and* mobile settings) derives from it. Adding a language is three mechanical steps: a JSON file of translated strings, one array entry in the runtime registry, and one array entry in the `i18next-cli` config (so the validation gate covers the new locale). `LocaleProvider` loads the JSON dynamically, so it needs no change.
+Localization is **registry-driven**, exactly like theming.
+There is one source of truth for available languages — `apps/web/src/i18n/registry.ts` — and every consumer (the `Locale` type, storage validation, browser-language detection, and both language controls in `InterfaceSettingsBody`) derives from it.
+Adding a language is four mechanical steps: create its translation JSON, register its id, bundle its resource in `i18n/i18n.ts`, and include its id in the `i18next-cli` config.
+Resources are bundled synchronously; `LocaleProvider` needs no change.
 
 The two things that are *not* automatic — layout breakage from longer strings, and the pre-React placeholder exception — are documented below; read those sections before you translate.
 
@@ -14,24 +17,25 @@ The two things that are *not* automatic — layout breakage from longer strings,
 apps/web/src/
 ├── i18n/
 │   ├── registry.ts                ← LOCALES array — the single source of truth
+│   ├── i18n.ts                     static imports + RESOURCES — edit to bundle a language
 │   ├── context.tsx                 LocaleProvider + useT() hook
 │   ├── locale-helpers.ts           getT()/getLocale() for non-React contexts
 │   └── locales/
 │       ├── en.json                 flat key → string (copy this, translate every value)
 │       └── ru.json
 └── (consumers — no edits needed when adding a language)
-    ├── main.tsx                    detectLocale() uses isLocale() + detectBrowserLocale()
-    ├── components/layout/AppShell.tsx   setLocale() goes through normalizeLocale()
+    ├── main.tsx                    initializes i18next from the hydrated preference store
+    ├── stores/interface-settings-store.ts   saved locale validation + browser fallback
     ├── lib/local-storage.ts        DEFAULT_TWEAKS.lang = DEFAULT_LOCALE
-    ├── components/settings/popovers/TweaksPanel.tsx      desktop picker (LOCALES.map)
-    └── components/settings/popovers/MobileSettings.tsx   mobile picker (LOCALES.map)
+    └── components/settings/interface-settings-body.tsx   shared compact/mobile language controls
 ```
 
-Everything below `registry.ts` in that tree adapts automatically. **Do not touch the consumers when adding a language.**
+The consumers adapt automatically; only the registry, bundled resources and CLI locale list need registration edits.
+**Do not touch the consumers when adding a language.**
 
 ---
 
-## The 3 steps
+## The 4 steps
 
 ### 1. Create the translation JSON
 
@@ -46,9 +50,10 @@ Copy `apps/web/src/i18n/locales/en.json` to `<id>.json` (e.g. `de.json`) and tra
 }
 ```
 
-The filename **must** match the `id` you register in step 2 — `LocaleProvider` loads it via `import(\`./locales/${locale}.json\`)`, so a mismatch is a runtime load error (the provider catches it and falls back to raw keys, but that is visibly broken). Leave no English values behind: a missing key renders as the key string itself (`t()` returns its argument when no translation is found), so untranslated keys stick out as literal `tweaks_title`-style text in the UI.
+The filename **must** match the `id` you register in step 2 and bundle in step 3.
+Leave no untranslated values behind: missing translations fall back to English, and a key absent from both the selected locale and English renders as the key itself.
 
-> **Don't merge partial translations incrementally into `en.json`.** New keys are added to `en.json` first (English is the source), then propagated to every other locale file. If you are adding keys as part of a feature, add them to *all* locale files in the same change — a key present in `en.json` but absent in `ru.json` renders as the raw key in Russian.
+> **Don't merge partial translations incrementally into `en.json`.** New keys are added to `en.json` first (English is the source), then propagated to every other locale file. If you are adding keys as part of a feature, add them to *all* locale files in the same change — a key present in `en.json` but absent in `ru.json` falls back to English in Russian.
 
 ### 2. Register it
 
@@ -62,11 +67,12 @@ export const LOCALES: readonly LocaleDef[] = [
 ];
 ```
 
-That's it. The language now appears in both pickers, persists across reloads, and is auto-detected from the browser language when `match` is set.
+The registry entry adds the language to both shared controls and to preference validation/browser detection.
+Complete the bundled-resource and validation steps below before shipping it.
 
 | Field | What it is |
 |-------|------------|
-| `id` | Persistent id (stored in localStorage as `tweaks.lang`) and the JSON filename. **Lowercase, no region suffix** unless you ship region variants (`pt-br` is fine; `de-DE` is not — use `de`). |
+| `id` | Persistent id (`state.settings.lang` inside the `vibe-tavern.interface-settings` localStorage envelope) and the JSON filename. **Lowercase, no region suffix** unless you ship region variants (`pt-br` is fine; `de-DE` is not — use `de`). |
 | `label` | Native-language name shown in the picker — **write it in that language**, not English ("Deutsch", not "German"). |
 | `match` | BCP-47 prefixes matched against `navigator.language` for auto-detection, case-insensitive. `["de"]` matches both `de` and `de-AT`. **Omit for locales that should never auto-select** (e.g. a deliberately-added language a user must pick explicitly). Without `match`, the locale is reachable only via the picker. |
 
@@ -74,7 +80,26 @@ That's it. The language now appears in both pickers, persists across reloads, an
 >
 > **The default** is controlled by `DEFAULT_LOCALE` in the same file (currently `"en"`), not by array position. Most additions should leave the default alone.
 
-### 3. Add it to the validation gate's locale list
+### 3. Bundle the translation resource
+
+Add a static import and a matching `RESOURCES` entry in `apps/web/src/i18n/i18n.ts`:
+
+```ts
+import de from "./locales/de.json";
+
+export const RESOURCES = {
+  en: { translation: en },
+  ru: { translation: ru },
+  de: { translation: de },
+} as const;
+```
+
+Initialization and language switches use these in-memory resources, not dynamic JSON imports.
+`main.tsx` seeds i18next from the synchronously hydrated `interface-settings-store.ts`: a valid saved choice wins over browser detection, then the default.
+The store migrates the legacy `vibe-tavern.tweaks` locale without deleting the legacy key.
+The shared body updates both the persisted preference and the active locale context.
+
+### 4. Add it to the validation gate's locale list
 
 Append the same `id` to the `locales` array in `apps/web/i18next.config.ts`:
 
@@ -85,7 +110,9 @@ export default defineConfig({
 });
 ```
 
-This is the config the `i18next-cli` gate consumes (`bun run i18n:check`). If the id is missing here, the gate will not extract into or check the new locale file, so a key forgotten in `de.json` would ship silently. The runtime registry (step 2) and this array must list the same ids — the registry drives the running app, this array drives the CI gate.
+This is the config the `i18next-cli` gate consumes (`bun run i18n:check`).
+If the id is missing here, the gate will not extract into or check the new locale file, so a key forgotten in `de.json` would ship silently.
+The runtime registry (step 2), bundled `RESOURCES` (step 3) and this array must list the same ids — the registry drives available languages, resources supply their strings, and this array drives the CI gate.
 
 ---
 
@@ -106,7 +133,8 @@ cd apps/web && bunx i18next-cli extract --ci && bunx i18next-cli status
 
 `en.json` is the source of truth (the primary locale). `extract` adds new keys to every locale in the `locales` array with a derived placeholder value; you then fill in real translations and `status` confirms nothing is empty.
 
-When adding a language, your loop is: create the JSON, register it (steps 1–3), run `bun run i18n:check`, and fix until both commands pass — `extract --ci` prints `✅ No files were updated` and `status` shows your locale at `100%`. Empty-value errors from `status` mean a key you left untranslated (or the derived placeholder you forgot to replace); `extract --ci` failures mean a key used in code is missing from your file.
+When adding a language, your loop is: create the JSON, register and bundle it (steps 1–4), run `bun run i18n:types`, then run `bun run i18n:check`, and fix until both commands pass — `extract --ci` prints `✅ No files were updated` and `status` shows your locale at `100%`.
+Empty-value errors from `status` mean a key you left untranslated (or the derived placeholder you forgot to replace); `extract --ci` failures mean a key used in code is missing from your file.
 
 > **Count-bearing keys and CLDR plurals.** A key called as `t("summary_messages_count", { count: n })` is pluralized automatically: the tool expects `summary_messages_count_one`/`_other` (English) and `summary_messages_count_one`/`_few`/`_many`/`_other` (Russian, Polish, etc.). When you copy `en.json`, copy the `_one`/`_other` plural pairs too, and add the extra `_few`/`_many` forms your language's CLDR rule requires. The plural suffix separator is `_` (set via `pluralSeparator` in the config). If your language has a count-bearing call site the extractor hasn't seen, `extract` will generate the right suffix set for your locale automatically — just translate the values.
 
@@ -170,11 +198,13 @@ These are **legitimate per-locale logic, not registration sites.** They do not n
 
 - [ ] New `apps/web/src/i18n/locales/<id>.json` with **every** key from `en.json` translated (including `_one`/`_other` plural pairs — and the extra `_few`/`_many` forms your language's CLDR rule requires); no English values left behind, no raw keys missing.
 - [ ] One `LocaleDef` appended to `LOCALES` in `registry.ts`; `id` matches the JSON filename; `label` in the native language; `match` set if the browser language should auto-detect it.
+- [ ] Static JSON import and matching `RESOURCES` entry added in `apps/web/src/i18n/i18n.ts`.
 - [ ] Same `id` appended to the `locales` array in `apps/web/i18next.config.ts` (so the gate checks the new locale).
 - [ ] `DEFAULT_LOCALE` left as `"en"` unless this is an intentional default change.
 - [ ] No fixed-width (`w-[…px]`, `w-[…ch]`) containers on i18n strings touched or added in the same change (AD-022).
 - [ ] No "Loading…" text added to `loading-placeholder.ts` or `index.html` (pre-React exception).
 - [ ] `bun run i18n:check` green for the new locale — `extract --ci` reports `✅ No files were updated` and `status` shows the locale at `100%`.
 - [ ] `bun run typecheck` green.
+- [ ] `bun run i18n:types` regenerated the resource types.
 - [ ] Verified in `bun run dev`: the new option appears in **both** the desktop Tweaks panel and mobile settings; it persists across reload; selecting it switches the UI text; with the browser language set to match `match[]`, a fresh profile auto-detects it.
 - [ ] Checked at mobile width (375px) in the new locale — no clipping, wrapping, or overflow in the areas the change touches.

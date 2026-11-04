@@ -21,7 +21,7 @@ import {
  * looks better (metaball wax, backlit, physically shaded).
  *
  * Gating (hybrid progressive enhancement):
- *   - only for lava themes (dark-lava + light-lava),
+ *   - only for built-in lava themes or applied user CSS with a lamp palette,
  *   - only when the viewport is wide enough ({@link LAMP_MIN_VIEWPORT}px — there
  *     must be room for the lamp to breathe; narrow/mobile falls back),
  *   - only when WebGL is available,
@@ -90,15 +90,28 @@ const clamp01 = (x: number): number => (x < 0 ? 0 : x > 1 ? 1 : x);
  * probed once (memoised) and folded in so we never mount the canvas at all
  * when the context can't be created.
  */
-export function useLavaBackgroundActive(theme: string | undefined, enabled: boolean): boolean {
+interface LavaEnvironment {
+  webglAvailable: () => boolean;
+  matchMedia: (query: string) => {
+    readonly matches: boolean;
+    addEventListener: (type: "change", listener: () => void) => void;
+    removeEventListener: (type: "change", listener: () => void) => void;
+  };
+}
+const browserLavaEnvironment: LavaEnvironment = {
+  webglAvailable,
+  matchMedia: (query) => window.matchMedia(query),
+};
+
+export function useLavaBackgroundActive(theme: string | undefined, enabled: boolean, userThemeLava = false, environment = browserLavaEnvironment): boolean {
   const [active, setActive] = useState(false);
   useEffect(() => {
-    if (!enabled || !theme || !LAMP_THEMES.has(theme) || !webglAvailable()) {
+    if (!enabled || !theme || (!LAMP_THEMES.has(theme) && !userThemeLava) || !environment.webglAvailable()) {
       setActive(false);
       return;
     }
-    const widthMq = window.matchMedia(`(min-width: ${LAMP_MIN_VIEWPORT}px)`);
-    const motionMq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const widthMq = environment.matchMedia(`(min-width: ${LAMP_MIN_VIEWPORT}px)`);
+    const motionMq = environment.matchMedia("(prefers-reduced-motion: reduce)");
     const recompute = () => setActive(widthMq.matches && !motionMq.matches);
     recompute();
     widthMq.addEventListener("change", recompute);
@@ -107,7 +120,7 @@ export function useLavaBackgroundActive(theme: string | undefined, enabled: bool
       widthMq.removeEventListener("change", recompute);
       motionMq.removeEventListener("change", recompute);
     };
-  }, [theme, enabled]);
+  }, [theme, enabled, userThemeLava, environment]);
   return active;
 }
 

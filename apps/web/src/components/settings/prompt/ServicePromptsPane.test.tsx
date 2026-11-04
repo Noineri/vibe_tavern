@@ -135,11 +135,17 @@ function Harness({ active = true, onClose }: { active?: boolean; onClose?: () =>
 // tap below uses pointerDown. Clicks on buttons (edit, retry, confirm, drill)
 // keep fireEvent.click: those are real click handlers.
 async function openAllFamilies(detailEl: HTMLElement) {
-	const buttons = Array.from(detailEl.querySelectorAll("button")) as HTMLButtonElement[];
+	// Request invocation can precede the resolved detail commit. An empty
+	// button snapshot silently skipped every accordion under full-suite load.
+	const buttons = await waitFor(() => {
+		const families = Array.from(detailEl.querySelectorAll("button")).filter((button) =>
+			button.textContent?.includes("promptManager.servicePrompts.family."),
+		);
+		expect(families.length).toBeGreaterThan(0);
+		return families;
+	});
 	for (const btn of buttons) {
-		if (btn.textContent?.includes("promptManager.servicePrompts.family.")) {
-			await act(async () => { fireEvent.click(btn); });
-		}
+		await act(async () => { fireEvent.click(btn); });
 	}
 }
 
@@ -216,13 +222,13 @@ describe("ServicePromptsPane", () => {
 		// FS-6: default texts render as codeQuoteCls displays — the boundary is
 		// "the default profile is read-only": zero editable textareas, and every
 		// field's default value is visible in the detail pane.
+		const resolved = makeResolved();
 		await waitFor(() => {
 			expect(detail.querySelectorAll("textarea").length).toBe(0);
+			for (const key of SERVICE_PROMPT_FIELD_KEYS.slice(0, 3)) {
+				expect(detail.textContent).toContain(resolved[key].default.slice(0, 20));
+			}
 		});
-		const resolved = makeResolved();
-		for (const key of SERVICE_PROMPT_FIELD_KEYS.slice(0, 3)) {
-			expect(detail.textContent).toContain(resolved[key].default.slice(0, 20));
-		}
 		const footer = getByTestId("footer");
 		expect(footer.textContent).toContain("promptManager.servicePrompts.duplicateButton");
 		expect(queryByText("promptManager.servicePrompts.reset")).toBeNull();

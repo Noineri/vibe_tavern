@@ -1,23 +1,23 @@
 /**
  * Locale registry — the single source of truth for available UI languages.
  *
- * Adding a new language is a two-step change:
+ * Adding a new language requires:
  *   1. Create `apps/web/src/i18n/locales/<id>.json` with the translated keys
  *      (copy `en.json` and translate every value).
  *   2. Append a {@link LocaleDef} entry to {@link LOCALES} below.
+ *   3. Bundle the resource in i18n.ts and include it in i18next.config.ts.
  *
  * Everything else — the `Locale` type, storage validation, browser-language
- * auto-detection, and the language selectors in TweaksPanel / MobileSettings —
- * derives from this array, so no other file needs editing when a language is
- * added. `LocaleProvider` loads the matching JSON dynamically
- * (`import(\`./locales/${locale}.json\`)`), so it needs no change either.
+ * auto-detection, and both language controls in InterfaceSettingsBody —
+ * derives from this array. Consumers need no edits; i18n.ts bundles resources
+ * synchronously, and i18next.config.ts declares the validation locale list.
  *
  * ## Auto-detection
  *
  * {@link detectBrowserLocale} matches `navigator.language` against each
  * locale's {@link LocaleDef.match} prefixes (case-insensitive). A locale with
  * no `match` is never auto-selected — it is only reachable when the user picks
- * it explicitly. See `detectLocale` in `main.tsx` for the full priority chain
+ * it explicitly. See interface-settings-store.ts for the full priority chain
  * (saved choice → browser → default).
  */
 

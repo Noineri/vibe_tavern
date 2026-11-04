@@ -2,6 +2,7 @@ import type {
 	RuntimeDownloadProgress,
 	RuntimeInfo,
 	RuntimeTriggerResult,
+	RuntimeUpdateCheck,
 	RuntimeUpdateFailure,
 	RuntimeUpdatePhase,
 	RuntimeUpdateStatus,
@@ -28,6 +29,7 @@ export type {
 	RuntimeDownloadProgress,
 	RuntimeInfo,
 	RuntimeTriggerResult,
+	RuntimeUpdateCheck,
 	RuntimeUpdateFailure,
 	RuntimeUpdatePhase,
 	RuntimeUpdateStatus,
@@ -38,6 +40,12 @@ export async function fetchRuntimeInfo(): Promise<RuntimeInfo> {
 	const resp = await fetch(url("/api/runtime/info"), { headers: authHeaders() });
 	if (!resp.ok) throw new Error(`runtime/info: HTTP ${resp.status}`);
 	return (await resp.json()) as RuntimeInfo;
+}
+
+export async function fetchUpdateCheck(): Promise<RuntimeUpdateCheck> {
+	const resp = await fetch(url("/api/runtime/update/check"), { headers: authHeaders() });
+	if (!resp.ok) throw new Error(`runtime/update/check: HTTP ${resp.status}`);
+	return (await resp.json()) as RuntimeUpdateCheck;
 }
 
 export async function fetchRuntimeVersion(): Promise<RuntimeVersionInfo> {

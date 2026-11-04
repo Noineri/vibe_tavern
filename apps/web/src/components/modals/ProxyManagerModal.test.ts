@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { buildProxyWrite, emptyProxyDraft, proxyToDraft } from "./ProxyManagerModal.js";
+import { buildProxyWrite, emptyProxyDraft, proxyToDraft } from "../settings/proxy-draft.js";
 import type { ProxyRecord } from "../../api/types.js";
 
 const storedProxy: ProxyRecord = {

@@ -1,6 +1,7 @@
 import { Icons } from "../shared/icons.js";
 import { CustomTooltip } from "../shared/Tooltip.js";
 import { useT } from "../../i18n/context.js";
+import { SETTINGS_SECTION } from "../../lib/settings-section-registry.js";
 import { useModalStore } from "../../stores/index.js";
 
 interface UpdateBadgeProps {
@@ -15,17 +16,16 @@ interface UpdateBadgeProps {
  * of the Build/Play mode toggle when a newer GitHub release is available.
  *
  * Rendered only when the parent has already confirmed `hasUpdate === true`.
- * Clicking it opens the in-app UpdateModal (release notes + self-update
- * flow) when self-update is available, otherwise falls back to opening the
- * GitHub release page in a new tab.
+ * Clicking it opens the settings modal on О программе (release notes +
+ * self-update flow) via the same deep link the update toast uses.
  */
 export function UpdateBadge({ latestVersion, releaseUrl }: UpdateBadgeProps) {
 	const { t } = useT();
-	const setUpdateModalOpen = useModalStore((s) => s.setUpdateModalOpen);
+	const openSettings = useModalStore((s) => s.openSettings);
 	const tooltip = `${t("update_tooltip")} — Vibe Tavern ${latestVersion}`;
 
 	const onClick = () => {
-		setUpdateModalOpen(true);
+		openSettings(SETTINGS_SECTION.about);
 		void releaseUrl;
 	};
 

@@ -4,7 +4,7 @@ import { cn } from "../../lib/cn.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { useT } from "../../i18n/context.js";
 import { Icons } from "../shared/icons.js";
-import { formatBytes } from "./attachment-format.js";
+import { formatBytes } from "../../lib/format-bytes.js";
 
 /** One file shape for pending and sent attachments. The shell and thumbnail
  *  footprint match AttachmentPreview; only the file-name line may ellipsize. */

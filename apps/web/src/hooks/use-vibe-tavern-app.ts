@@ -4,19 +4,13 @@ import { PROVIDER_PROFILE_GENERATION_DEFAULTS as D, PROVIDER_TYPE } from "@vibe-
 import { getT } from "../i18n/locale-helpers.js";
 import type { ConnectionState } from "../components/layout/app-shell-types.js";
 import { normalizeOpenAiCompatibleBaseUrl } from "../openai-compatible.js";
-import { useNavigationStore, useProviderStore, useChatStore } from "../stores/index.js";
+import { useProviderStore, useChatStore } from "../stores/index.js";
+import { useInterfaceSettingsStore } from "../stores/interface-settings-store.js";
 import { useBootstrapStore, fetchBootstrapAction, fetchPersonasAction } from "../stores/api-actions/bootstrap-actions.js";
 import { restoreNavigationSession } from "../stores/navigation-persistence.js";
 import { useSnapshotStore } from "../stores/snapshot-store.js";
-import {
-  readSavedTheme,
-  persistTheme,
-  persistTweaks,
-  readSavedTweaks,
-  type TweaksSettings,
-  MESSAGE_WIDTH_MAP,
-} from "../lib/local-storage.js";
-import { applyThemeClass } from "../themes/registry.js";
+import { MESSAGE_WIDTH_MAP } from "../lib/local-storage.js";
+import { useInterfaceTheme } from "./use-interface-theme.js";
 import { extractTokenFromHash, saveMobileToken, clearMobileToken } from "../lib/mobile-token.js";
 
 function createInitialConnectionState(): ConnectionState {
@@ -67,6 +61,7 @@ function createInitialConnectionState(): ConnectionState {
  * Components import sub-hooks directly — not through this hook.
  */
 export function useVibeTavernApp() {
+  useInterfaceTheme();
   const [loadError, setLoadError] = useState("");
 
   const isLoading = useBootstrapStore((s) => s.isLoading);
@@ -111,36 +106,20 @@ export function useVibeTavernApp() {
 
   const editingMessageId = useChatStore((s) => s.editingMessageId);
 
-  const theme = useNavigationStore((s) => s.theme);
+  const settings = useInterfaceSettingsStore((s) => s.settings);
 
-  // Local tweak state (not in a store — only needed by AppShell/TweaksPanel)
-  const [tweaksSettings, setTweaksSettings] = useState<TweaksSettings>(() => readSavedTweaks());
-
-  // --- Bootstrap: load persisted theme and connection defaults ---
+  // --- Bootstrap: connection defaults (preferences hydrate synchronously) ---
   useLayoutEffect(() => {
-    useNavigationStore.getState().setTheme(readSavedTheme());
     useProviderStore.getState().setConnection(createInitialConnectionState());
   }, []);
 
   // --- Theme + CSS effects ---
   useEffect(() => {
     const root = document.documentElement;
-    root.style.setProperty('--mfs', `${tweaksSettings.fontSize}px`);
-    root.style.setProperty('--ui-fs', `${tweaksSettings.uiFontSize}px`);
-    root.style.setProperty('--mw', MESSAGE_WIDTH_MAP[tweaksSettings.messageWidth]);
-    persistTweaks(tweaksSettings);
-    applyThemeClass(root, theme);
-    persistTheme(theme);
-    // The pre-React splash in index.html paints by setting theme tokens
-    // (--bg, --accent, --accent-mid) as inline styles on <html>. Those inline
-    // values beat the theme CSS class in the cascade, so without clearing them
-    // a live theme switch mixes colors (the old theme's tokens persist via
-    // inline while the new theme only takes effect through its class). Remove
-    // them once the real theme effect has run so the class is the sole source.
-    root.style.removeProperty('--bg');
-    root.style.removeProperty('--accent');
-    root.style.removeProperty('--accent-mid');
-  }, [tweaksSettings, theme]);
+    root.style.setProperty('--mfs', `${settings.fontSize}px`);
+    root.style.setProperty('--ui-fs', `${settings.uiFontSize}px`);
+    root.style.setProperty('--mw', MESSAGE_WIDTH_MAP[settings.messageWidth]);
+  }, [settings]);
 
   const promptTraceId = promptTrace?.id ?? null;
 
@@ -168,7 +147,5 @@ export function useVibeTavernApp() {
     isLoading,
     loadError,
     retryLoad: load,
-    tweaksSettings,
-    setTweaksSettings,
   };
 }

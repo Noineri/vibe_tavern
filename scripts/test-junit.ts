@@ -101,7 +101,8 @@ function parseFailingEntry(block: string): FailingEntry | null {
 
 export function failingFiles(report: string): ReadonlyMap<string, FailingFile> {
 	const byFile = new Map<string, FailingFile>();
-	const blocks = report.match(/<testcase\b[^>]*>[\s\S]*?<\/testcase>|<testcase\b[^>]*\/>/g) ?? [];
+	// Consume self-closing passes first, so they cannot swallow a later failure.
+	const blocks = report.match(/<testcase\b[^>]*\/>|<testcase\b[^>]*>[\s\S]*?<\/testcase>/g) ?? [];
 	for (const block of blocks) {
 		const entry = parseFailingEntry(block);
 		if (entry === null) continue;
