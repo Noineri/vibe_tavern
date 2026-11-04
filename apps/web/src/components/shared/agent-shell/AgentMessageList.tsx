@@ -1,3 +1,6 @@
+/** forks: 1 — the `historyActivities` + TA-1 anchor folds below (~lines
+ * 226–295) are copied in `agent-feed-model.ts` (AFP-3); AFP-6 deletes both
+ * halves together when the list consumes the model. */
 import { Fragment, useMemo, type ReactNode } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { type AgentThreadEventWire, type ExperienceCopilotMessageWire } from "@vibe-tavern/api-contracts";
