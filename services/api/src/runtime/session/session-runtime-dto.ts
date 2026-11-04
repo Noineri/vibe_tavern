@@ -1,4 +1,4 @@
-import { brandId, type CharacterId, type ChatId, type ChatBranchId, type MessageId, type PersonaId, type PromptPresetId, type PromptTraceRecordDto, type ModelSettingsOverlay } from "@vibe-tavern/domain";
+import { brandId, type CharacterId, type ChatId, type ChatBranchId, type MessageId, type MessageVariantId, type PersonaId, type PromptPresetId, type PromptTraceRecordDto, type ModelSettingsOverlay } from "@vibe-tavern/domain";
 import type { ChatBranch, LoreEntry, Message, MessageVariant, Attachment, SceneTrackerRecord, DiceRollSnapshot, ExperienceMessageReport } from "@vibe-tavern/domain";
 import { parseStoredAttachments } from "@vibe-tavern/domain";
 import type { Chat as DbChat, ChatBranch as DbChatBranch, PromptTrace as DbPromptTrace, Message as DbMessage, MessageVariant as DbMessageVariant } from "@vibe-tavern/db";
@@ -77,6 +77,7 @@ export function mapPromptTraceRecord(trace: DbPromptTrace): PromptTraceRecordDto
     chatId: brandId<ChatId>(trace.chatId),
     branchId: brandId<ChatBranchId>(trace.branchId),
     messageId: brandId<MessageId>(trace.messageId),
+    variantId: trace.variantId ? brandId<MessageVariantId>(trace.variantId) : null,
     model: trace.model,
     presetName: trace.presetName,
     latencyMs: trace.latencyMs,
