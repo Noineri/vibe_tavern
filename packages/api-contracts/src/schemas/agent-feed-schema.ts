@@ -260,8 +260,12 @@ export const agentFeedBoundarySchema = z
           })
           .strict(),
       ),
-    // The last user row at-or-before the range start (null when none
-    // exists) — "last-user identity", the regenerate/edit boundary anchor.
+    // The THREAD's newest user row (null when the thread has none) —
+    // "last-user identity", the regenerate/edit boundary anchor: a windowed
+    // page reading old history still learns which row the thread's last
+    // turn regenerates from (AP-9) without loading it. The RANGE-scoped
+    // twin ("last user at-or-before the page start") is
+    // `turnOpenerMessageId` — the two facts coincide only on head pages.
     lastUserMessageId: z.string().nullable(),
     // Digest coverage FACTS independent of loaded anchors — the contract
     // fix for the conservative missing-anchor fallback that today treats
