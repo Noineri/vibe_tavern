@@ -29,7 +29,7 @@ export interface AgentTurnErrorSlotProps {
   onRetryTurn?: () => void;
 }
 
-export function AgentTurnErrorSlot({ turnFailure, visibleMessages, isSending, onRetryTurn }: AgentTurnErrorSlotProps) {
+export function hasAgentTurnError({ turnFailure, visibleMessages, isSending, onRetryTurn }: AgentTurnErrorSlotProps): boolean {
   // The quiet after-reload card — the live failure state is gone (a reload
   // drops it), but the thread still waits. Content order: the loud card
   // wins when both hold (a retry's failure replaces the quiet content).
@@ -44,6 +44,11 @@ export function AgentTurnErrorSlot({ turnFailure, visibleMessages, isSending, on
     break;
   }
   const showUnansweredCard = lastVisibleRole === "user" && !isSending;
-  if (onRetryTurn === undefined || (turnFailure === null && !showUnansweredCard)) return null;
+  return onRetryTurn !== undefined && (turnFailure !== null || showUnansweredCard);
+}
+
+export function AgentTurnErrorSlot(props: AgentTurnErrorSlotProps) {
+  const { turnFailure, onRetryTurn } = props;
+  if (!hasAgentTurnError(props) || onRetryTurn === undefined) return null;
   return <AgentTurnErrorCard failure={turnFailure} onRetry={onRetryTurn} />;
 }

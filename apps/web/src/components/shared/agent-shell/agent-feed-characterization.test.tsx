@@ -386,7 +386,9 @@ describe("AgentMessageList characterization — bottom pin (AFP-1)", () => {
       viewport.scrollTop = 1000;
       fireEvent.scroll(viewport);
     });
-    expect(viewport.scrollTop).toBe(1000);
+    // Native browsers clamp scrollTop to scrollHeight - clientHeight. The
+    // shared core writes that exact offset; happy-dom's old 1000 was overscroll.
+    expect(viewport.scrollTop).toBe(900);
 
     // Growth while pinned → the view follows to the new bottom.
     view.rerender(
@@ -395,10 +397,11 @@ describe("AgentMessageList characterization — bottom pin (AFP-1)", () => {
         messages={withRows(6)} pendingUserContent=""
       />,
     );
-    expect(viewport.scrollTop).toBe(1000);
+    expect(viewport.scrollTop).toBe(900);
 
     // Reader scrolls up → unpinned; the jump affordance appears.
     await act(async () => {
+      fireEvent.wheel(viewport, { deltaY: -100 });
       viewport.scrollTop = 0;
       fireEvent.scroll(viewport);
     });
@@ -419,7 +422,7 @@ describe("AgentMessageList characterization — bottom pin (AFP-1)", () => {
     await act(async () => {
       fireEvent.click(jumpButton!);
     });
-    expect(viewport.scrollTop).toBe(1000);
+    expect(viewport.scrollTop).toBe(900);
   });
 });
 
@@ -469,8 +472,8 @@ describe("AgentMessageList characterization — row identity (AFP-1)", () => {
 
 // ─── Flat-mount baseline: the defect, measured (superseded by AFP-6) ────────
 
-describe("AgentMessageList characterization — flat mount baseline (AFP-1)", () => {
-  it("every persisted row mounts today — a 160-row thread renders 160 data-role elements", () => {
+describe("AgentMessageList characterization — AFP-6 supersedes the flat mount defect", () => {
+  it("the same 160-row thread now mounts only its bounded recent tail without cutting stored rows", () => {
     const rows: ExperienceCopilotMessageWire[] = [];
     for (let i = 1; i <= 80; i++) {
       rows.push(message({ id: `u${i}`, role: "user", content: `question ${i}` }));
@@ -483,11 +486,10 @@ describe("AgentMessageList characterization — flat mount baseline (AFP-1)", ()
       />,
     );
 
-    // THE DEFECT, pinned: the flat `.map()` mounts the WHOLE thread — DOM
-    // grows linearly with history, which is exactly what AFP-6 replaces
-    // with a windowed mount. This pin is DELIBERATELY replaced by
-    // agent-feed-virtualization.test.tsx when the port lands — it exists
-    // so the port's diff is reviewable against a mechanical baseline.
-    expect(container.querySelectorAll("[data-role]")).toHaveLength(160);
+    // Same real-list boundary and fixture. happy-dom cannot lay out the older
+    // virtual prefix; the stable suffix mounts while ALL source rows remain.
+    expect(container.querySelectorAll("[data-role]")).toHaveLength(100);
+    expect(rows).toHaveLength(160);
+    expect(container.querySelector('[data-scroller-message-id="msg:a80"]')).not.toBeNull();
   });
 });

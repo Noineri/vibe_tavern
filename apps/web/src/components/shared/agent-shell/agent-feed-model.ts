@@ -12,28 +12,14 @@
  * this module. Feed the memoized builder stable references
  * (`memoizedAgentFeedModel`) and the snapshot object survives every flush.
  *
- * The folds themselves are VERBATIM moves of the `useMemo` bodies in
- * `AgentMessageList.tsx` (TA-1 / AP-4 / AP-33 / SC-19b semantics — the
- * AFP-1 characterization suite pins their rendered output). The list port
- * (AFP-6) swaps its inline folds for this module; until then it lands
- * unused-by-design, tested in isolation.
+ * The folds were moved from AgentMessageList (TA-1 / AP-4 / AP-33 / SC-19b);
+ * AFP-6 makes this their single implementation, consumed by the real list.
  *
  * Pure — no React, no store reads at call time (`extractHistoricalTurnActivities`
  * is a pure wire→activity derivation exported by the turn store module).
  *
- * fork #1 of AgentMessageList.tsx — the `historyActivities` map and the
- * TA-1 anchor pass below are copies of the list's live inline `useMemo`
- * bodies (the two folds over `messages`, ~lines 226–295 there). The other
- * folds call the already-extracted shared modules (`orderMessagesWithDigests`,
- * `agent-flow-boundaries`, `agent-turn-captions`, `agent-event-anchors`) —
- * no fork, one derivation. The source keeps its originals until AFP-6
- * swaps the list onto this model and deletes both halves together.
- *
- * Named deviations from the source bodies:
- *  - the source's anchor fold also tracks `lastHistoryActivityId` (the
- *    thread's chronologically last history tool activity); omitted here —
- *    it is list state feeding the ask/permission interactivity rules, not
- *    a render fold (AFP-6 re-derives it from stores/activities as today).
+ * The anchor pass also owns lastHistoryActivityId for permission interactivity;
+ * it follows raw message order and excludes activities owned by the live feed.
  */
 import type { AgentThreadEventWire, ExperienceCopilotMessageWire } from "@vibe-tavern/api-contracts";
 import type { OrderedCopilotMessage } from "../../../lib/copilot-context.js";
@@ -70,6 +56,7 @@ export interface AgentFeedModelInput {
 
 /** One memoized snapshot of every historical fold the feed renders from. */
 export interface AgentFeedModel {
+  lastHistoryActivityId: string | null;
   /** Digest-ordered visible flow (CM-9 / AP-33): user/assistant/digest rows
    *  in list order, tool rows excluded, each digest at its own chronological
    *  slot with its covered-count caption. */
@@ -113,10 +100,12 @@ export function buildAgentFeedModel(input: AgentFeedModelInput): AgentFeedModel 
   const anchor = new Map<string, CopilotTurnAnchorItem[]>();
   let pending: CopilotTurnAnchorItem[] = [];
   let turnTools: AgentToolActivity[] | null = null;
+  let lastHistoryActivityId: string | null = null;
   for (const m of messages) {
     if (m.role === "tool") {
       const activity = historyActivities.get(m.toolCallId ?? m.id);
       if (!activity || liveToolCallIds.has(activity.toolCallId)) continue;
+      lastHistoryActivityId = activity.toolCallId;
       if (activity.ask) {
         pending.push({ kind: "ask", activity });
         continue;
@@ -166,6 +155,7 @@ export function buildAgentFeedModel(input: AgentFeedModelInput): AgentFeedModel 
   );
 
   return {
+    lastHistoryActivityId,
     visibleMessages,
     boundaries,
     anchorItems: anchor,

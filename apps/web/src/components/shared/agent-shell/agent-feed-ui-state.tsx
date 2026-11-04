@@ -149,6 +149,11 @@ export function useAgentFeedUiStateStore(): AgentFeedUiStateStore {
   return store;
 }
 
+/** Feed lifecycle cleanup must also reach drafts whose rows are unmounted. */
+export function useOptionalAgentFeedUiStateStore(): AgentFeedUiStateStore | null {
+  return useContext(AgentFeedUiStateContext);
+}
+
 /** No-op store backing the OPTIONAL consumer access (AFP-4): reads return
  * nothing, writes/subscriptions are no-ops, so a consumer mounted OUTSIDE a
  * feed session (the RP chat, provider-less tests, the pre-AFP-6 list) keeps

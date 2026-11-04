@@ -24,6 +24,7 @@ import { AgentContextRing } from "./AgentContextRing.js";
 import { AgentTodoSection } from "./AgentTodoSection.js";
 import { AgentPlanSection } from "./AgentPlanSection.js";
 import { AgentMessageList } from "./AgentMessageList.js";
+import { AgentFeedUiStateProvider } from "./agent-feed-ui-state.js";
 import { DestructiveConfirmModal } from "../destructive-confirm-modal.js";
 import type { AgentTurnRowCallbacks } from "./use-agent-turn-actions.js";
 import { AgentInputArea } from "./AgentInputArea.js";
@@ -281,6 +282,7 @@ export function AgentChatPane({
     : null;
 
   return (
+    <AgentFeedUiStateProvider sessionKey={agentThreadKey(kind, threadId ?? "")}>
     <AgentAttachmentActionsContext.Provider value={attachmentActions}>
     <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-surface">
       {sessionLoading ? (
@@ -476,5 +478,6 @@ export function AgentChatPane({
       )}
     </div>
     </AgentAttachmentActionsContext.Provider>
+    </AgentFeedUiStateProvider>
   );
 }

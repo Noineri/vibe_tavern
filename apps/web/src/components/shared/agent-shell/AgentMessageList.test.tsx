@@ -144,6 +144,13 @@ function message(over: Partial<ExperienceCopilotMessageWire>): ExperienceCopilot
   };
 }
 
+// AFP-6 introduces measured virtual-row wrappers. Preserve the SAME logical
+// adjacency boundary, whether the caption shares its text row or owns a row.
+function nextFeedItem(caption: Element): Element | null {
+  return caption.nextElementSibling ?? caption.closest("[data-scroller-message-id]")?.nextElementSibling
+    ?.querySelector('[data-role], [data-testid="copilot-tool-accordion"]') ?? null;
+}
+
 // LAG-3: the live stream pair arrives through the live-stream store (the
 // ONE derivation), not props — the seeds below replace the pre-LAG-3
 // pendingText/pendingReasoning props with the SAME values at the SAME
@@ -192,7 +199,7 @@ describe("ExperienceCopilotMessageList", () => {
   // ── CNR-8h: the feed scrolls on the shared thin lane ──────────────────
   // ONE thin ScrollArea wraps the whole feed (streaming flushes reconcile
   // rows inside the stable viewport — no per-message wrapper), and the
-  // bottom-pinning scroller from `useAgentListScroll` IS that viewport
+  // bottom-pinning scroller from the shared core IS that viewport
   // (the PersonaModal ref repoint): scrolling it away from the bottom
   // reveals the jump button, and the jump writes the viewport's own
   // scrollTop back to the bottom — the pre-conversion div behavior, now
@@ -224,6 +231,7 @@ describe("ExperienceCopilotMessageList", () => {
       clientWidth: { value: 200 }, scrollWidth: { value: 200 },
     });
     await act(async () => {
+      fireEvent.wheel(viewport, { deltaY: -100 });
       viewport.scrollTop = 0;
       fireEvent.scroll(viewport);
     });
@@ -233,7 +241,7 @@ describe("ExperienceCopilotMessageList", () => {
       return button!;
     });
     fireEvent.click(jumpButton);
-    expect(viewport.scrollTop).toBe(1000);
+    expect(viewport.scrollTop).toBe(900);
   });
 
   // ── AP-29: the live block is the inline preset on the live caption line ─
@@ -1425,7 +1433,7 @@ describe("ExperienceCopilotMessageList — flat assistant captions (AP-4)", () =
     const accordion = getByTestId("copilot-tool-accordion");
     expect(caption.compareDocumentPosition(accordion) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
     expect(accordion.compareDocumentPosition(getByText("visible reply")) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
-    expect(caption.nextElementSibling!.getAttribute("data-testid")).toBe("copilot-tool-accordion");
+    expect(nextFeedItem(caption)!.getAttribute("data-testid")).toBe("copilot-tool-accordion");
   });
 
   it("a turn with neither text nor reasoning shows no caption", () => {
@@ -1476,7 +1484,7 @@ describe("ExperienceCopilotMessageList — flat assistant captions (AP-4)", () =
     const captions = getAllByTestId("copilot-host-caption");
     expect(captions).toHaveLength(1);
     expect(captions[0]!.textContent).toBe("✦ agent_title");
-    expect(captions[0]!.nextElementSibling!.textContent).toContain("streaming reply…");
+    expect(nextFeedItem(captions[0]!)!.textContent).toContain("streaming reply…");
   });
 
   it("no caption on the pending reply when the turn already showed persisted text", () => {
@@ -1520,7 +1528,7 @@ describe("ExperienceCopilotMessageList — flat assistant captions (AP-4)", () =
 
     const captions = getAllByTestId("copilot-host-caption");
     expect(captions).toHaveLength(1);
-    expect(captions[0]!.nextElementSibling!.textContent).toContain("Step one");
+    expect(nextFeedItem(captions[0]!)!.textContent).toContain("Step one");
   });
 });
 
@@ -1758,7 +1766,7 @@ describe("ExperienceCopilotMessageList — kept reasoning (AP-29)", () => {
     const caption = getByTestId("copilot-host-caption");
     const accordion = getByTestId("copilot-tool-accordion");
     expect(caption.compareDocumentPosition(accordion) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
-    expect(caption.nextElementSibling!.getAttribute("data-testid")).toBe("copilot-tool-accordion");
+    expect(nextFeedItem(caption)!.getAttribute("data-testid")).toBe("copilot-tool-accordion");
     fireEvent.click(getByText("reasoning"));
     expect(getByText("carrier thought")).toBeDefined();
   });
@@ -1784,7 +1792,7 @@ describe("ExperienceCopilotMessageList — kept reasoning (AP-29)", () => {
       />,
     );
 
-    expect(getByTestId("copilot-host-caption").nextElementSibling!.getAttribute("data-testid")).toBe(
+    expect(nextFeedItem(getByTestId("copilot-host-caption"))!.getAttribute("data-testid")).toBe(
       "copilot-tool-accordion",
     );
     // Land the turn: the persisted caption takes the same site. The settle
@@ -1815,7 +1823,7 @@ describe("ExperienceCopilotMessageList — kept reasoning (AP-29)", () => {
         pendingUserContent=""
       />,
     );
-    expect(getByTestId("copilot-host-caption").nextElementSibling!.getAttribute("data-testid")).toBe(
+    expect(nextFeedItem(getByTestId("copilot-host-caption"))!.getAttribute("data-testid")).toBe(
       "copilot-tool-accordion",
     );
   });
@@ -2378,7 +2386,7 @@ describe("ExperienceCopilotMessageList — regenerate in flight (AP-29 follow-up
     const captions = getAllByTestId("copilot-host-caption");
     expect(captions).toHaveLength(2);
     expect(captions[0]!.nextElementSibling!.textContent).toContain("earlier answer");
-    expect(captions[1]!.nextElementSibling!.textContent).toContain("new reply");
+    expect(nextFeedItem(captions[1]!)!.textContent).toContain("new reply");
     // The fresh caption carries ONLY the live reasoning — never joined to
     // the replaced turn's block.
     fireEvent.click(captions[1]!.querySelector("button")!);
