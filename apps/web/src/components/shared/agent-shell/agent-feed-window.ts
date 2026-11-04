@@ -124,7 +124,8 @@ export interface AgentFeedWindowInput {
  * flow message), so their cluster keeps its slot.
  */
 export function isNullCarrierMessage(message: ExperienceCopilotMessageWire): boolean {
-  return message.role === "assistant" && message.content.trim().length === 0 && message.toolCallsJson !== null;
+  return message.role === "assistant" && message.content.trim().length === 0
+    && message.toolCallsJson !== null && (message.attachments?.length ?? 0) === 0;
 }
 
 // ─── Stable unit-id builders (AFP-4) ────────────────────────────────────────
@@ -182,7 +183,9 @@ export function agentFeedRenderUnits(input: AgentFeedWindowInput): AgentFeedRend
       }
       continue;
     }
-    if (isNullCarrierMessage(message)) continue; // null carrier: no unit, semantics kept above
+    // Match the block's body gate, including empty non-carrier messages: none
+    // may become a zero-height virtual item. Attachment-only bodies stay real.
+    if (message.content.trim().length === 0 && (message.attachments?.length ?? 0) === 0) continue;
     if (!hidden) {
       units.push({ kind: "message", unitId: agentFeedMessageUnitId(message.id), message });
     }

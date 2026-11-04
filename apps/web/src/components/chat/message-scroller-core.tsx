@@ -2,6 +2,7 @@ import { useCallback, useId, useMemo, useRef, useState, type ReactNode } from "r
 import { Virtuoso } from "react-virtuoso";
 import type { Components, ContextProp, VirtuosoHandle } from "react-virtuoso";
 import { cn } from "../../lib/cn.js";
+import type { ScrollMetrics } from "../../lib/stick-to-bottom.js";
 import { useStickToBottom, type CompleteExplicitNavigation } from "./use-stick-to-bottom.js";
 import { partitionMessageRenderWindow, type MessageRenderWindow } from "./message-render-window.js";
 import type { RevealMessageStart } from "./message-scroll-context.js";
@@ -48,6 +49,11 @@ export interface MessageScrollerCoreApi {
 }
 
 export interface MessageScrollerCoreProps {
+  /** Preserve an adapter's existing pin boundary; omitted = RP's 2px rule. */
+  isAtBottom?: (metrics: ScrollMetrics) => boolean;
+  /** Notify overlay chrome when virtual content changes without resizing its
+   * viewport or normal-flow content wrapper. Does not own scroll writes. */
+  onViewportLayoutChange?: (viewport: HTMLElement) => void;
   /** Identity for scroll-state reset: changing this re-pins to the bottom
    *  (the adapter derives it from its own stores, e.g. `chat:branch`). */
   resetKey: string;
@@ -171,6 +177,8 @@ const components: Components<string, MessageScrollerCoreContext> = {
 };
 
 export function MessageScrollerCore({
+  isAtBottom,
+  onViewportLayoutChange,
   resetKey,
   suppressFollow = false,
   displayIds,
@@ -201,7 +209,7 @@ export function MessageScrollerCore({
     revealStart,
     beginExplicitNavigation,
     beginPrependAnchor,
-  } = useStickToBottom(resetKey, suppressFollow);
+  } = useStickToBottom(resetKey, suppressFollow, { isAtBottom, onViewportLayoutChange });
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const scrollId = useId();
   const [scrollerElement, setScrollerElement] = useState<HTMLElement | null>(null);

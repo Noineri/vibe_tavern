@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useCallback, type ReactNode } from "react";
 import type { AgentThreadEventWire, ExperienceCopilotMessageWire } from "@vibe-tavern/api-contracts";
 import { Icons } from "../icons.js";
 import { ScrollArea } from "../scroll-area.js";
@@ -7,7 +7,7 @@ import { useT } from "../../../i18n/context.js";
 import { formatRelativeTime } from "../../layout/sidebar-utils.js";
 import { builtinProfileDisplayName } from "../../../lib/agent-builtin-profiles.js";
 import { SIDECHAT_AGENT_KIND } from "../../../api/agent-kind-served-modes.js";
-import { useAgentFeedDisclosure } from "./agent-feed-ui-state.js";
+import { useAgentFeedDisclosure, useOptionalAgentFeedUiStateStore } from "./agent-feed-ui-state.js";
 import { agentFeedEventUnitId, agentFeedMessageUnitId } from "./agent-feed-window.js";
 
 /**
@@ -85,6 +85,7 @@ export function AgentTimelineSeparator({ event }: { event: AgentThreadEventWire 
 
   return (
     <TimelineSeparatorFrame
+      stateKey={agentFeedEventUnitId(event.id)}
       kind={event.kind}
       label={label}
       expanded={disclosure.open}
@@ -104,6 +105,7 @@ export function AgentTimelineSeparator({ event }: { event: AgentThreadEventWire 
  * body content differ per consumer.
  */
 function TimelineSeparatorFrame({
+  stateKey,
   kind,
   label,
   expanded,
@@ -111,6 +113,7 @@ function TimelineSeparatorFrame({
   children,
   dataRole,
 }: {
+  stateKey: string;
   kind: string;
   label: string;
   expanded: boolean;
@@ -120,6 +123,10 @@ function TimelineSeparatorFrame({
    *  (order, regenerate keep) read it; event separators carry none. */
   dataRole?: string;
 }) {
+  const store = useOptionalAgentFeedUiStateStore();
+  const restoreViewport = useCallback((viewport: HTMLDivElement | null) => {
+    if (viewport && store) viewport.scrollTop = store.getRowState(stateKey)?.scrollTop ?? 0;
+  }, [store, stateKey]);
   return (
     <div
       data-testid="timeline-separator"
@@ -146,6 +153,10 @@ function TimelineSeparatorFrame({
           data-testid="timeline-separator-body"
           className="max-h-64 rounded-md bg-s3 font-ui text-[calc(var(--ui-fs)-2px)] leading-[1.5] text-msg-t1"
           contentClassName="p-2.5"
+          viewportProps={{
+            ref: restoreViewport,
+            onScroll: (event) => store?.setRowState(stateKey, { scrollTop: event.currentTarget.scrollTop }),
+          }}
         >
           {children}
         </ScrollArea>
@@ -188,6 +199,7 @@ export function AgentDigestSeparator({
 
   return (
     <TimelineSeparatorFrame
+      stateKey={agentFeedMessageUnitId(message.id)}
       kind="digest"
       dataRole="digest"
       label={label}

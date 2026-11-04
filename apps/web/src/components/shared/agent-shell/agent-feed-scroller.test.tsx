@@ -1,4 +1,4 @@
-import { describe, expect, it, mock } from "bun:test";
+import { afterAll, afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { createRef } from "react";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import type { MessageScrollerCoreApi } from "../../chat/message-scroller-core.js";
@@ -8,8 +8,15 @@ const { act, fireEvent, render, waitFor } = await import("@testing-library/react
 const { AgentFeedScroll } = await import("./AgentFeedScroll.js");
 const { AgentFeedScroller } = await import("./agent-feed-scroller.js");
 const { ScrollArea } = await import("../scroll-area.js");
+const { MessageScrollerCore } = await import("../../chat/message-scroller-core.js");
 
-// L1: repo-relative imports only; no global patches/registries/i18n; waits assert
+const originalResizeObserver = globalThis.ResizeObserver;
+beforeEach(() => { globalThis.ResizeObserver = originalResizeObserver; });
+afterEach(() => { globalThis.ResizeObserver = originalResizeObserver; });
+afterAll(() => { globalThis.ResizeObserver = originalResizeObserver; });
+
+// L1: repo-relative imports only; the geometry observer patch is restored in
+// beforeEach/afterEach/afterAll; no registries/i18n; waits assert
 // resolved DOM state; no OS assumptions, module mocks, sleeps or database setup.
 // Geometry is local to mounted elements (happy-dom does not perform layout).
 function tallGeometry(view: ReturnType<typeof render>): HTMLElement {
@@ -170,5 +177,56 @@ describe("agent feed scroll surface", () => {
     fireEvent.scroll(viewport);
     expect(viewport.scrollTop).toBe(1600);
     expect(view.queryByRole("button", { name: "Jump" })).toBeNull();
+  });
+
+  it("preserves the agent's strict 40px near-bottom policy without changing the RP core's 2px rule", () => {
+    const agent = render(feed());
+    const viewport = tallGeometry(agent);
+    fireEvent.wheel(viewport, { deltaY: -100 });
+    viewport.scrollTop = 1560.5; // 39.5px from the bottom: still agent-pinned.
+    fireEvent.scroll(viewport);
+    expect(agent.queryByRole("button", { name: "Jump" })).toBeNull();
+    fireEvent.wheel(viewport, { deltaY: -100 });
+    viewport.scrollTop = 1560; // Exactly 40px: detached, as in the old hook.
+    fireEvent.scroll(viewport);
+    expect(agent.getByRole("button", { name: "Jump" })).toBeDefined();
+    agent.unmount();
+    const rp = render(<MessageScrollerCore resetKey="rp" displayIds={["m1"]} renderItem={() => <p>RP</p>}
+      renderJumpToBottom={(jump) => <button type="button" onClick={jump}>RP jump</button>} />);
+    const rpViewport = rp.container.querySelector<HTMLElement>("[data-virtuoso-scroller]")!;
+    Object.defineProperties(rpViewport, { clientHeight: { value: 400 }, scrollHeight: { value: 2000 } });
+    fireEvent.wheel(rpViewport, { deltaY: -100 });
+    rpViewport.scrollTop = 1560.5;
+    fireEvent.scroll(rpViewport);
+    expect(rp.getByRole("button", { name: "RP jump" })).toBeDefined();
+  });
+
+  it("remeasures the lane on observed virtual-content growth without moving a detached reader", () => {
+    const observers = new Map<ResizeObserver, { callback: ResizeObserverCallback; targets: Set<Element> }>();
+    globalThis.ResizeObserver = class implements ResizeObserver {
+      constructor(callback: ResizeObserverCallback) { observers.set(this, { callback, targets: new Set() }); }
+      observe(target: Element) { observers.get(this)!.targets.add(target); }
+      unobserve(target: Element) { observers.get(this)!.targets.delete(target); }
+      disconnect() { observers.delete(this); }
+    };
+    const view = render(feed());
+    const viewport = tallGeometry(view);
+    fireEvent.wheel(viewport, { deltaY: -100 });
+    viewport.scrollTop = 200;
+    fireEvent.scroll(viewport);
+    const onMeasuredScroll = mock();
+    viewport.addEventListener("scroll", onMeasuredScroll);
+    const tail = view.container.querySelector("[data-message-stable-tail]")!;
+    const tailObservers = [...observers].filter(([, value]) => value.targets.has(tail));
+    expect(tailObservers.length).toBeGreaterThan(0); // Prove the geometry seam.
+    act(() => {
+      for (const [observer, { callback }] of tailObservers) callback([], observer);
+    });
+    expect(onMeasuredScroll).toHaveBeenCalled();
+    expect(viewport.scrollTop).toBe(200);
+    expect(view.getByRole("button", { name: "Jump" })).toBeDefined();
+    view.unmount();
+    expect([...observers.values()].some((value) => value.targets.has(tail))).toBe(false);
+    viewport.removeEventListener("scroll", onMeasuredScroll);
   });
 });

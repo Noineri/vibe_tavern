@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, spyOn
 import { useDomEnv } from "../../../../test/dom-env.js";
 import { installAgentMessageMarkdownSeam } from "../../../../test/agent-message-markdown-seam.js";
 import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
-import type { ExperienceCopilotMessageWire } from "@vibe-tavern/api-contracts";
+import type { AgentThreadEventWire, ExperienceCopilotMessageWire } from "@vibe-tavern/api-contracts";
 import { useAgentTurnStore } from "../../../stores/agent-turn-store.js";
 import { useAgentLiveStreamStore } from "../../../stores/agent-live-stream-store.js";
 
@@ -41,12 +41,12 @@ function StateProbe() {
   retainedStore = useAgentFeedUiStateStore();
   return null;
 }
-function session(messages: ExperienceCopilotMessageWire[], options: { key?: string; visible?: boolean; busy?: boolean; mobileHidden?: boolean } = {}) {
+function session(messages: ExperienceCopilotMessageWire[], options: { key?: string; visible?: boolean; busy?: boolean; mobileHidden?: boolean; events?: AgentThreadEventWire[] } = {}) {
   return <TooltipProvider><AgentFeedUiStateProvider sessionKey={options.key ?? "thread"}>
     <StateProbe />
     <div className={options.mobileHidden ? "hidden" : "flex"}>
       {options.visible !== false && <AgentMessageList kind="experience" threadId={options.key ?? "thread"}
-        messages={messages} pendingUserContent="" turnRow={turnRow} isSending={options.busy}
+        messages={messages} events={options.events} pendingUserContent="" turnRow={turnRow} isSending={options.busy}
         onEditAssistant={async () => false} onEditLast={() => {}} />}
     </div>
   </AgentFeedUiStateProvider></TooltipProvider>;
@@ -163,5 +163,27 @@ describe("real agent feed virtualization", () => {
     view.rerender(session(messages, { key: "other-thread" }));
     expect(view.queryByTestId("copilot-edit-message")).toBeNull();
     await waitFor(() => expect(view.queryByText("Kept reasoning")).toBeNull());
+  });
+
+  it("restores the expanded frozen separator's INNER reading offset after actual virtual unmount", () => {
+    const messages = [message("u"), message("a", "assistant")];
+    const events: AgentThreadEventWire[] = [{ id: "snapshot", kind: "rp_sync", beforeMessageId: "u", payload: {
+      fromPosition: 0, toPosition: 1, messages: [{ id: "rp", position: 0, role: "assistant", authorName: null,
+        variantId: null, model: null, preset: null, text: "Frozen text\n".repeat(200) }],
+    } }];
+    const view = render(session(messages, { events }));
+    fireEvent.click(view.getByTestId("timeline-separator-toggle"));
+    const inner = view.getByTestId("timeline-separator-body").querySelector<HTMLElement>("[data-scroll-viewport]")!;
+    inner.scrollTop = 321;
+    fireEvent.scroll(inner);
+    expect(retainedStore.getRowState("event:snapshot")?.scrollTop).toBe(321);
+    view.rerender(session(retiredFixture(messages), { events }));
+    expect(inner.isConnected).toBe(false);
+    expect(view.queryByTestId("timeline-separator-body")).toBeNull();
+    view.rerender(session(messages, { events }));
+    const restored = view.getByTestId("timeline-separator-body").querySelector<HTMLElement>("[data-scroll-viewport]")!;
+    expect(restored).not.toBe(inner);
+    expect(restored.scrollTop).toBe(321);
+    expect(view.getByTestId("timeline-separator-toggle").getAttribute("aria-expanded")).toBe("true");
   });
 });

@@ -136,6 +136,21 @@ describe("agent-feed-window — render units (AFP-3)", () => {
     expect(isNullCarrierMessage(message({ id: "u", role: "user", content: "" }))).toBe(false);
   });
 
+  it("keeps attachment-only carrier bodies but omits every truly empty body without losing its events", () => {
+    const attached = carrier("attached", EMPTY_CALLS);
+    attached.attachments = [{ id: "attachment", type: "image", assetId: "asset", mimeType: "image/png", name: "photo.png", sizeBytes: 100 }];
+    const model = buildAgentFeedModel({
+      messages: [message({ id: "empty-user", content: "" }),
+        message({ id: "empty-assistant", role: "assistant", content: "" }), attached],
+      events: [branchForkedEvent("trailing"), rpSyncEvent("anchored", "empty-assistant")],
+      liveToolCallIds: EMPTY_AGENT_FEED_LIVE_TOOL_CALL_IDS,
+    });
+    expect(isNullCarrierMessage(attached)).toBe(false);
+    expect(agentFeedUnitIds(agentFeedRenderUnits({ model }))).toEqual([
+      "event:anchored", "msg:attached", "event:trailing",
+    ]);
+  });
+
   it("hidden anchors (AP-29 regenerate cut) drop their whole fragment; trailing events survive", () => {
     const units = agentFeedRenderUnits({
       model: compositeUnits(),
@@ -197,7 +212,6 @@ describe("agent-feed-window — render units (AFP-3)", () => {
     const units = agentFeedRenderUnits({ model });
     expect(agentFeedUnitIds(units)).toEqual([
       "msg:u1",
-      "msg:r1",
       "caption:trailing",
       "card:accordion:c1",
       "event:e-b",

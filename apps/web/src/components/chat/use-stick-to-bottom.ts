@@ -73,7 +73,10 @@ function readMetrics(element: HTMLElement): ScrollMetrics {
  *  action), and text streaming is unaffected — the caller only raises the
  *  flag for image-gen runs.
  */
-export function useStickToBottom(resetKey: string, suppressFollow: boolean = false): StickToBottom {
+export function useStickToBottom(resetKey: string, suppressFollow: boolean = false, options: {
+  isAtBottom?: (metrics: ScrollMetrics) => boolean;
+  onViewportLayoutChange?: (viewport: HTMLElement) => void;
+} = {}): StickToBottom {
   const scrollerElementRef = useRef<HTMLElement | null>(null);
   const stableTailObserverRef = useRef<ResizeObserver | null>(null);
   const viewportObserverRef = useRef<ResizeObserver | null>(null);
@@ -88,6 +91,11 @@ export function useStickToBottom(resetKey: string, suppressFollow: boolean = fal
   // reconcile time).
   const suppressFollowRef = useRef(suppressFollow);
   suppressFollowRef.current = suppressFollow;
+  // Adapters retain their existing pin policy without changing RP geometry.
+  const atBottomRef = useRef(options.isAtBottom ?? isAtBottom);
+  atBottomRef.current = options.isAtBottom ?? isAtBottom;
+  const notifyLayoutRef = useRef(options.onViewportLayoutChange);
+  notifyLayoutRef.current = options.onViewportLayoutChange;
 
   const setPinned = useCallback((next: boolean) => {
     if (pinnedRef.current === next) return;
@@ -173,7 +181,7 @@ export function useStickToBottom(resetKey: string, suppressFollow: boolean = fal
       revealReadingStart();
       readingNavigationRef.current = null;
       const current = scrollerElementRef.current;
-      if (current) setPinned(isAtBottom(readMetrics(current)));
+      if (current) setPinned(atBottomRef.current(readMetrics(current)));
     };
   }, [revealReadingStart, setPinned]);
 
@@ -193,7 +201,7 @@ export function useStickToBottom(resetKey: string, suppressFollow: boolean = fal
         element.scrollTop = Math.max(0, Math.min(element.scrollHeight - element.clientHeight, element.scrollTop + delta));
       }
       explicitNavigationRef.current = null;
-      if (element) setPinned(isAtBottom(readMetrics(element)));
+      if (element) setPinned(atBottomRef.current(readMetrics(element)));
       return true;
     };
   }, [setPinned]);
@@ -201,20 +209,26 @@ export function useStickToBottom(resetKey: string, suppressFollow: boolean = fal
   const reconcileAfterLayoutChange = useCallback(() => {
     const element = scrollerElementRef.current;
     if (!element) return;
-    if (explicitNavigationRef.current) return;
-    if (readingNavigationRef.current) {
-      revealReadingStart();
-      return;
+    try {
+      if (explicitNavigationRef.current) return;
+      if (readingNavigationRef.current) {
+        revealReadingStart();
+        return;
+      }
+      if (pinnedRef.current) {
+        // Suppressed: leave the position alone; re-evaluate the pin so an
+        // out-of-reach bottom surfaces the "to the end" button instead of a
+        // silent stale pin (the next unsuppressed reconcile follows again).
+        if (!suppressFollowRef.current) followBottom();
+        else setPinned(atBottomRef.current(readMetrics(element)));
+        return;
+      }
+      setPinned(atBottomRef.current(readMetrics(element)));
+    } finally {
+      // Notify after reconciliation: a chrome measurement's scroll event
+      // must not re-pin a suppressed view before its pin has been dropped.
+      notifyLayoutRef.current?.(element);
     }
-    if (pinnedRef.current) {
-      // Suppressed: leave the position alone; re-evaluate the pin so an
-      // out-of-reach bottom surfaces the "to the end" button instead of a
-      // silent stale pin (the next unsuppressed reconcile follows again).
-      if (!suppressFollowRef.current) followBottom();
-      else setPinned(isAtBottom(readMetrics(element)));
-      return;
-    }
-    setPinned(isAtBottom(readMetrics(element)));
   }, [followBottom, revealReadingStart, setPinned]);
 
   const handleScroll = useCallback(() => {
@@ -230,7 +244,7 @@ export function useStickToBottom(resetKey: string, suppressFollow: boolean = fal
       return;
     }
     userScrollIntentRef.current = false;
-    setPinned(isAtBottom(readMetrics(element)));
+    setPinned(atBottomRef.current(readMetrics(element)));
   }, [followBottom, setPinned]);
 
   const markUserScrollIntent = useCallback(() => {
