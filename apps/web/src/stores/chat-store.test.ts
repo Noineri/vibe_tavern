@@ -8,7 +8,7 @@
  * message's own `diceRolls` lands — the badge neither flickers nor duplicates
  * across the pending→committed transition. finish/abort clear the bundle.
  *
- * This mirrors the lane selection in `readDiceSendState` (use-chat-controller)
+ * This mirrors the lane selection in `readDiceSendState` (chat-send-conflict-handlers)
  * but asserts the captured rolls themselves, not a commit intent. The
  * capture is `pendingContent`-independent (it always reads the active lane),
  * which is what makes attachment-only sends bind Dice exactly like prose.

@@ -12,6 +12,7 @@ import { useActiveTrace, useLazyContextPreview } from "../../stores/chat-selecto
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useInterfaceSettingsStore } from "../../stores/interface-settings-store.js";
 import { SETTINGS_SECTION } from "../../lib/settings-section-registry.js";
+import { installSoundAlerts } from "../../lib/sound-alerts-subscriber.js";
 import { useBootstrapStore, fetchPersonasAction } from "../../stores/api-actions/bootstrap-actions.js";
 import { summarizeChatAction, saveChatSummaryAction, updateChatDynamicPromptAction } from "../../stores/api-actions/chat-actions.js";
 import { useChatController } from "../../hooks/use-chat-controller.js";
@@ -113,6 +114,9 @@ export function AppShell() {
   useAgentRunEvents();
   // Register the queue pump's runner (Q3) once runRegenerateJob is available.
   useGenerationQueue();
+  // SM-8: one queue-store subscription for the "queue finished" sound alert
+  // (the other three events are notified from their settling seams).
+  useEffect(() => installSoundAlerts(), []);
   const character = useCharacterController();
   const provider = useProviderProfiles();
   const preset = usePresetController();

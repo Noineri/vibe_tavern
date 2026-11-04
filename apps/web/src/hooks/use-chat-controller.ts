@@ -26,6 +26,7 @@ import {
 } from "./generation-batch-lifecycle.js";
 import { useCoauthorBindingState } from "./use-coauthor-provider-binding.js";
 import { notifyUserTurnSettled } from "../lib/star-prompt-trigger.js";
+import { notifyChatGenerationSettled } from "../lib/sound-alerts-subscriber.js";
 import { useTraceHistoryStore } from "../stores/trace-history-store.js";
 import { useCoauthorTurnStore } from "../stores/coauthor-turn-store.js";
 import type { RegenerateOverride } from "@vibe-tavern/api-contracts";
@@ -44,79 +45,21 @@ import {
   deleteBranchAction,
   renameBranchAction,
 } from "../stores/api-actions/chat-actions.js";
-import { useDiceStore } from "../stores/dice-store.js";
 import { usePerSendPrefillStore } from "../stores/per-send-prefill-store.js";
 import { useExperienceStore } from "../stores/experience-store.js";
-import type { DiceSendCommitIntent } from "../api/types.js";
 import { readExperienceSendState } from "./experience-send-state.js";
 import { findCurrentInsightsCompletionTarget, startInsightsCompletionRefreshFromSnapshot } from "../stores/api-actions/insights-completion-actions.js";
 import { ProviderStreamError } from "../api/provider-stream-error.js";
-import { diceConflictCode, experienceConflictCode, gateErrorCode } from "./chat-controller-error-codes.js";
+import { gateErrorCode } from "./chat-controller-error-codes.js";
 export { diceSendBlockReason, type DiceSendBlock } from "./dice-send-gate.js";
-import { diceSendBlockReason, type DiceSendBlock } from "./dice-send-gate.js";
+import { readDiceSendState, tryHandleDiceSendConflict, tryHandleExperienceSendConflict } from "./chat-send-conflict-handlers.js";
 import { captureQuickSwitchGenerationMetadata, type GenerationMetadata } from "../lib/generation-metadata.js";
 import { getActiveChatId, getDraft, getEditingDraft, getEditingMessageId, getIsSending } from "./chat-controller-store-reads.js";
 
 // ─── Dice send gate (DICE-F3) ───────────────────────────────────────────
-// Subtractive-only: when Dice is disabled, the lane is absent/empty, or there
-// is nothing bindable, every helper below collapses to "no Dice" so a no-Dice
-// send stays byte-identical to before. Dice can only ever BLOCK a send, never
-// make an otherwise-unsendable draft sendable.
-
-/** Imperative read (at send time) of the dice commit intent + any block, for the
- *  CURRENT `{chatId, branchId}` and the chat's configured `diceMode`. The intent
- *  is captured ONLY when the active lane has a bindable (included) roll —
- *  otherwise it is undefined and the send body is byte-identical to a no-Dice
- *  send. */
-function readDiceSendState(): { commitIntent: DiceSendCommitIntent | undefined; blockReason: DiceSendBlock | null } {
-  const snapshot = useSnapshotStore.getState();
-  const chatId = snapshot.activeChat?.id ?? null;
-  const branchId = snapshot.activeBranch?.id ?? null;
-  const insights = snapshot.activeChat?.insightsConfig;
-  if (!insights?.diceEnabled || !chatId || !branchId) return { commitIntent: undefined, blockReason: null };
-  const diceMode = insights.diceMode;
-  const lane = useDiceStore.getState().byScope[`${chatId}|${branchId}`]?.lanes?.[diceMode] ?? null;
-  const blockReason = diceSendBlockReason(lane, snapshot.persona?.id ?? null, snapshot.activeChat?.characterId ?? null);
-  if (blockReason) return { commitIntent: undefined, blockReason };
-  const hasBindable = lane !== null && lane.rolls.some((roll) => roll.included);
-  const commitIntent = lane && hasBindable ? { diceMode, pendingRevision: lane.revision } : undefined;
-  return { commitIntent, blockReason: null };
-}
-
-/** A send that failed with a dice commit conflict (stale lane revision /
- *  unresolved choose) is NOT a provider error — the lane moved under us. Resync
- *  the pending lane and KEEP the draft so the user can re-review and resend.
- *  Returns true when the error was a dice conflict (caller must skip the generic
- *  provider-error path). */
-function tryHandleDiceSendConflict(
-  error: unknown,
-  chatId: ChatId,
-  pendingUserContent: string | null | undefined,
-  pendingAttachments: Attachment[] | undefined,
-): boolean {
-  if (diceConflictCode(error) === undefined) return false;
-  restoreDraftAfterSendError(pendingUserContent, pendingAttachments);
-  const branchId = useSnapshotStore.getState().activeBranch?.id ?? null;
-  if (branchId) void useDiceStore.getState().refreshPending(chatId, branchId);
-  return true;
-}
-
-/** A send that failed with an experience bind conflict (not_found /
- *  already_bound / stale_queue / stale_session — IR-70H) is NOT a provider
- *  error — the attachment moved under us. Restore the draft so the user can
- *  re-review and resend. The authoritative attachment refresh is handled by
- *  the post-settlement refresh in handleSend (requirement 3), not here. Returns
- *  true when the error was an experience conflict (caller must skip the generic
- *  provider-error path). */
-function tryHandleExperienceSendConflict(
-  error: unknown,
-  pendingUserContent: string | null | undefined,
-  pendingAttachments: Attachment[] | undefined,
-): boolean {
-  if (experienceConflictCode(error) === undefined) return false;
-  restoreDraftAfterSendError(pendingUserContent, pendingAttachments);
-  return true;
-}
+// The gate helpers live in chat-send-conflict-handlers.ts (extracted SM-8):
+// subtractive-only — with Dice disabled or nothing bindable they collapse to
+// "no Dice" and a no-Dice send stays byte-identical to before.
 
 /** Outcome of a single generation attempt, surfaced to the queue pump (Q3). */
 export type StreamOutcome = "done" | "cancelled" | "failed";
@@ -189,8 +132,12 @@ export function useChatController(): ChatControllerActions {
   /**
    * Execute a streaming action (send, regenerate, generateReply) with
    * per-chat generation state management.
+   *
+   * SM-8 wrapper contract: every caller goes through {@link executeStreamAction}
+   * / {@link executeNonStreamAction} so a settled generation is reported to
+   * the sound-alerts subscriber exactly once per lifecycle.
    */
-  async function executeStreamAction(
+  async function runStreamAction(
     chatId: ChatId,
     streamFn: (opts: StreamOpts & { signal: AbortSignal }) => Promise<{ finishReason: string; usage?: Record<string, number>; metrics?: unknown; lorebookOverflows?: Array<{ name: string; dropped: number }> }>,
     pendingUserContent?: string | null,
@@ -206,7 +153,6 @@ export function useChatController(): ChatControllerActions {
     pendingExperienceReport?: ExperienceMessageReport | null,
     attachment?: { signal: AbortSignal },
   ): Promise<StreamOutcome> {
-    if (getIsSending(chatId)) return "failed";
     const completionTargetBeforeStream = streamingMessageId
       ? null
       : findCurrentInsightsCompletionTarget(chatId);
@@ -376,6 +322,16 @@ export function useChatController(): ChatControllerActions {
     }
   }
 
+  async function executeStreamAction(
+    ...args: Parameters<typeof runStreamAction>
+  ): Promise<StreamOutcome> {
+    // A duplicate launch never started a generation — no lifecycle, no sound.
+    if (getIsSending(args[0])) return "failed";
+    const outcome = await runStreamAction(...args);
+    notifyChatGenerationSettled(outcome);
+    return outcome;
+  }
+
   // --- Non-streaming helper ---
 
   /**
@@ -402,7 +358,7 @@ export function useChatController(): ChatControllerActions {
    * nothing reads it for non-stream paths today (only executeStreamAction
    * sets "failed" there, and only for debug consumption).
    */
-  async function executeNonStreamAction(
+  async function runNonStreamAction(
     chatId: ChatId,
     fn: (signal: AbortSignal) => Promise<unknown>,
     opts: {
@@ -445,6 +401,14 @@ export function useChatController(): ChatControllerActions {
     } finally {
       useChatStore.getState().finishGeneration(chatId);
     }
+  }
+
+  async function executeNonStreamAction(
+    ...args: Parameters<typeof runNonStreamAction>
+  ): Promise<StreamOutcome> {
+    const outcome = await runNonStreamAction(...args);
+    notifyChatGenerationSettled(outcome);
+    return outcome;
   }
 
   // --- Actions ---

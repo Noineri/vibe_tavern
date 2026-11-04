@@ -9,6 +9,7 @@ import { useInterfaceSettingsStore } from "./stores/interface-settings-store.js"
 import { registerInterfaceSettingsSection } from "./components/settings/interface-settings-section.js";
 import { registerNetworkSettingsSection } from "./components/settings/network-settings-section.js";
 import { registerAboutSettingsSection } from "./components/settings/about-settings-section.js";
+import { registerSoundAlertsSection } from "./components/settings/sound-alerts-section.js";
 import { ThemeTuner } from "./components/dev/ThemeTuner.js";
 import { VibeMdThemePreview } from "./components/build/editors/VibeMdThemePreview.js";
 import { ExperienceDetachedHost, isDetachedExperienceWindow } from "./components/experience/ExperienceDetachedWindow.js";
@@ -52,6 +53,7 @@ const initialLocale = useInterfaceSettingsStore.getState().settings.lang;
 // idempotently to cover the test/SSR path where this module isn't the entry.
 initI18n(initialLocale);
 registerInterfaceSettingsSection();
+registerSoundAlertsSection();
 registerNetworkSettingsSection();
 registerAboutSettingsSection();
 
