@@ -3,6 +3,7 @@ import type { ContextProp, ScrollerProps } from "react-virtuoso";
 import { MessageScrollerCore, type MessageScrollerCoreContext, type MessageScrollerCoreProps } from "../../chat/message-scroller-core.js";
 import { ScrollArea } from "../scroll-area.js";
 import { distanceFromBottom, type ScrollMetrics } from "../../../lib/stick-to-bottom.js";
+import { notifyScrollLayout } from "../../chat/scroll-layout-notification.js";
 
 // Existing agent-list-scroll policy, not a change to the RP core's 2px rule.
 function isAtAgentBottom(metrics: ScrollMetrics): boolean {
@@ -15,7 +16,7 @@ function notifyLaneLayout(viewport: HTMLElement): void {
   // and receives totalListHeightChanged for the prefix; forward those measured
   // changes using ScrollArea's existing native-editor remeasurement idiom.
   // This refreshes thumb geometry even while reading away from the bottom.
-  viewport.dispatchEvent(new Event("scroll"));
+  notifyScrollLayout(viewport);
 }
 
 // Module-scope identity is essential: a fresh Scroller type remounts Virtuoso's

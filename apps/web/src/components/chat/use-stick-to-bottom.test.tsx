@@ -49,6 +49,7 @@ beforeAll(async () => {
 });
 
 beforeEach(() => {
+  globalThis.ResizeObserver = ControlledResizeObserver;
   ControlledResizeObserver.instances = [];
 });
 
@@ -131,6 +132,93 @@ function observerFor(testId: string): ControlledResizeObserver {
 }
 
 describe("useStickToBottom", () => {
+  it.each(["wheel", "touch", "keyboard", "pointer"] as const)("releases on the first 1px %s frame and retains continuous reading through layout and growth", (input) => {
+    const metrics = { scrollTop: 0, scrollHeight: 1000, clientHeight: 400 };
+    const view = render(<Harness metrics={metrics} resetKey="release" />);
+    const viewport = view.getByTestId("scroller");
+    if (input === "wheel") fireEvent.wheel(viewport, { deltaY: -12 });
+    if (input === "touch") fireEvent.touchMove(viewport);
+    if (input === "keyboard") fireEvent.keyDown(viewport, { key: "ArrowUp" });
+    if (input === "pointer") fireEvent.pointerDown(viewport, { button: 0 });
+    // A no-movement frame must not consume a held drag/gesture.
+    fireEvent.scroll(viewport);
+    metrics.scrollTop = 599;
+    fireEvent.scroll(viewport);
+    expect(view.getByTestId("pinned").textContent).toBe("false");
+    act(() => observerFor("stable-tail").notify());
+    expect(metrics.scrollTop).toBe(599);
+    metrics.scrollTop = 590;
+    fireEvent.scroll(viewport);
+    metrics.scrollHeight = 1200;
+    act(() => observerFor("stable-tail").notify());
+    expect(metrics.scrollTop).toBe(590);
+    expect(view.getByTestId("pinned").textContent).toBe("false");
+    // Continuation toward the bottom reclaims the existing geometry policy.
+    metrics.scrollTop = 799;
+    fireEvent.scroll(viewport);
+    expect(view.getByTestId("pinned").textContent).toBe("true");
+    metrics.scrollHeight = 1300;
+    act(() => observerFor("stable-tail").notify());
+    expect(metrics.scrollTop).toBe(900);
+  });
+
+  it("bottom jump and reset revoke old gesture permission and still reject restoration", () => {
+    const metrics = { scrollTop: 0, scrollHeight: 1000, clientHeight: 400 };
+    const view = render(<Harness metrics={metrics} resetKey="a" />);
+    const viewport = view.getByTestId("scroller");
+    fireEvent.wheel(viewport, { deltaY: -12 });
+    fireEvent.click(view.getByText("bottom"));
+    metrics.scrollTop = 500;
+    fireEvent.scroll(viewport);
+    expect(metrics.scrollTop).toBe(600);
+    fireEvent.touchMove(viewport);
+    view.rerender(<Harness metrics={metrics} resetKey="b" />);
+    metrics.scrollTop = 599;
+    fireEvent.scroll(viewport);
+    expect(metrics.scrollTop).toBe(600);
+  });
+
+  it("manual input drops a stale pin when stationary geometry is already outside the bottom band", () => {
+    const metrics = { scrollTop: 0, scrollHeight: 1000, clientHeight: 400 };
+    const view = render(<Harness metrics={metrics} resetKey="stale-geometry" />);
+    metrics.scrollHeight = 1200;
+    const viewport = view.getByTestId("scroller");
+    fireEvent.wheel(viewport, { deltaY: -12 });
+    fireEvent.scroll(viewport);
+    expect(metrics.scrollTop).toBe(600);
+    expect(view.getByTestId("pinned").textContent).toBe("false");
+    act(() => observerFor("stable-tail").notify());
+    expect(metrics.scrollTop).toBe(600);
+  });
+
+  it.each(["pointerUp", "pointerCancel"] as const)("a %s without displacement does not leave following suspended", (end) => {
+    const metrics = { scrollTop: 0, scrollHeight: 1000, clientHeight: 400 };
+    const view = render(<Harness metrics={metrics} resetKey="no-drag" />);
+    const viewport = view.getByTestId("scroller");
+    fireEvent.pointerDown(viewport, { button: 0, pointerId: 5 });
+    metrics.scrollHeight = 1100;
+    act(() => observerFor("stable-tail").notify());
+    fireEvent[end](document, { button: 0, pointerId: 5 });
+    expect(metrics.scrollTop).toBe(700);
+    expect(view.getByTestId("pinned").textContent).toBe("true");
+    metrics.scrollTop = 500;
+    fireEvent.scroll(viewport);
+    expect(metrics.scrollTop).toBe(700);
+  });
+
+  it("disconnects observers and native follow listeners on unmount", () => {
+    const metrics = { scrollTop: 0, scrollHeight: 1000, clientHeight: 400 };
+    const view = render(<Harness metrics={metrics} resetKey="cleanup" />);
+    const viewport = view.getByTestId("scroller");
+    const observers = [...ControlledResizeObserver.instances];
+    expect(observers.some((observer) => observer.target === viewport)).toBe(true);
+    view.unmount();
+    expect(observers.every((observer) => observer.target === null)).toBe(true);
+    metrics.scrollTop = 200;
+    fireEvent.scroll(viewport);
+    expect(metrics.scrollTop).toBe(200);
+  });
+
   it("tail jumps align a scoped row through the controller without the virtualizer", () => {
     const metrics = { scrollTop: 0, scrollHeight: 1000, clientHeight: 400 };
     const view = render(<Harness metrics={metrics} resetKey="chat-1" />);

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { isAtBottom, type ScrollMetrics } from "../../lib/stick-to-bottom.js";
 import type { RevealMessageStart } from "./message-scroll-context.js";
+import { isScrollLayoutNotification } from "./scroll-layout-notification.js";
 
 /** A stale completion must not align a row or change the pin. */
 export type CompleteExplicitNavigation = (target?: HTMLElement | null) => boolean;
@@ -47,6 +48,23 @@ function readMetrics(element: HTMLElement): ScrollMetrics {
   };
 }
 
+/** A card's independent viewport owns its input; plain row text does not.
+ * Wheel may chain at an inner edge, while touch/key direction is resolved by
+ * the inner native viewport (and must not pre-authorize outer restoration). */
+function isNestedScrollInput(event: Event, direction = 0): boolean {
+  if (event.defaultPrevented) return true;
+  let target = event.target instanceof HTMLElement ? event.target : null;
+  while (target && target !== event.currentTarget) {
+    if (target.scrollHeight > target.clientHeight
+      && /auto|scroll/.test(getComputedStyle(target).overflowY)) {
+      if (direction === 0 || (direction < 0 ? target.scrollTop > 0
+        : target.scrollTop + target.clientHeight < target.scrollHeight)) return true;
+    }
+    target = target.parentElement;
+  }
+  return false;
+}
+
 /**
  * Owns the scroll invariant for a message list with a stable recent tail.
  *
@@ -82,6 +100,10 @@ export function useStickToBottom(resetKey: string, suppressFollow: boolean = fal
   const viewportObserverRef = useRef<ResizeObserver | null>(null);
   const pinnedRef = useRef(true);
   const userScrollIntentRef = useRef(false);
+  // Manual reading outlives the input event (inertia and held-thumb frames).
+  // Proximity alone cannot reclaim ownership after an upward displacement.
+  const manualReadingRef = useRef(false);
+  const lastScrollTopRef = useRef(0);
   const readingNavigationRef = useRef<{ target: HTMLElement } | null>(null);
   const explicitNavigationRef = useRef<object | null>(null);
   const prependAnchorRef = useRef<{ rowId: string; rowViewportTop: number } | null>(null);
@@ -107,6 +129,7 @@ export function useStickToBottom(resetKey: string, suppressFollow: boolean = fal
     const element = scrollerElementRef.current;
     if (!element) return;
     element.scrollTop = Math.max(0, element.scrollHeight - element.clientHeight);
+    lastScrollTopRef.current = element.scrollTop;
   }, []);
 
   const revealReadingStart = useCallback(() => {
@@ -117,6 +140,7 @@ export function useStickToBottom(resetKey: string, suppressFollow: boolean = fal
     const delta = navigation.target.getBoundingClientRect().top - viewportTop;
     // Preserve a visible start; only bring hidden text back into view.
     if (delta < 0) element.scrollTop = Math.max(0, element.scrollTop + delta);
+    lastScrollTopRef.current = element.scrollTop;
   }, []);
 
   /** Clear any pending prepend anchor: a newer interaction owns the
@@ -161,6 +185,7 @@ export function useStickToBottom(resetKey: string, suppressFollow: boolean = fal
         0,
         Math.min(scroller.scrollHeight - scroller.clientHeight, scroller.scrollTop + delta),
       );
+      lastScrollTopRef.current = scroller.scrollTop;
     };
   }, []);
 
@@ -172,6 +197,7 @@ export function useStickToBottom(resetKey: string, suppressFollow: boolean = fal
     const navigation = { target };
     readingNavigationRef.current = navigation;
     userScrollIntentRef.current = false;
+    manualReadingRef.current = false;
     // Detach before the selected panel resizes, even if its old start is
     // visible: a short -> long landing must not follow the new bottom.
     setPinned(false);
@@ -191,6 +217,7 @@ export function useStickToBottom(resetKey: string, suppressFollow: boolean = fal
     readingNavigationRef.current = null;
     cancelPrependAnchor();
     userScrollIntentRef.current = false;
+    manualReadingRef.current = false;
     setPinned(false);
     return (target) => {
       if (explicitNavigationRef.current !== navigation) return false;
@@ -201,6 +228,7 @@ export function useStickToBottom(resetKey: string, suppressFollow: boolean = fal
         element.scrollTop = Math.max(0, Math.min(element.scrollHeight - element.clientHeight, element.scrollTop + delta));
       }
       explicitNavigationRef.current = null;
+      if (element) lastScrollTopRef.current = element.scrollTop;
       if (element) setPinned(atBottomRef.current(readMetrics(element)));
       return true;
     };
@@ -215,6 +243,9 @@ export function useStickToBottom(resetKey: string, suppressFollow: boolean = fal
         revealReadingStart();
         return;
       }
+      // An input may precede its first native scroll frame. Do not overwrite
+      // that frame or re-pin a reader merely because layout is still near-bottom.
+      if (userScrollIntentRef.current || manualReadingRef.current) return;
       if (pinnedRef.current) {
         // Suppressed: leave the position alone; re-evaluate the pin so an
         // out-of-reach bottom surfaces the "to the end" button instead of a
@@ -231,11 +262,12 @@ export function useStickToBottom(resetKey: string, suppressFollow: boolean = fal
     }
   }, [followBottom, revealReadingStart, setPinned]);
 
-  const handleScroll = useCallback(() => {
+  const handleScroll = useCallback((event: Event) => {
+    if (isScrollLayoutNotification(event)) return;
     const element = scrollerElementRef.current;
     if (!element) return;
     if (readingNavigationRef.current || explicitNavigationRef.current) return;
-    if (pinnedRef.current && !userScrollIntentRef.current) {
+    if (pinnedRef.current && !userScrollIntentRef.current && !manualReadingRef.current) {
       // Firefox can restore a nested scroll container after React's layout
       // effects have already aligned a freshly loaded chat. That browser-owned
       // scroll has no preceding user input, so it must not detach the pinned
@@ -243,7 +275,19 @@ export function useStickToBottom(resetKey: string, suppressFollow: boolean = fal
       followBottom();
       return;
     }
-    userScrollIntentRef.current = false;
+    const delta = element.scrollTop - lastScrollTopRef.current;
+    lastScrollTopRef.current = element.scrollTop;
+    if (userScrollIntentRef.current || manualReadingRef.current) {
+      // Near-bottom no-movement frames must not spend the input's permission.
+      // If geometry is already away, user input may release a stale pin even
+      // without displacement (for example a top-edge wheel after reflow).
+      if (delta === 0 && atBottomRef.current(readMetrics(element))) return;
+      userScrollIntentRef.current = false;
+      const returningToBottom = delta > 0 && atBottomRef.current(readMetrics(element));
+      manualReadingRef.current = !returningToBottom;
+      setPinned(returningToBottom);
+      return;
+    }
     setPinned(atBottomRef.current(readMetrics(element)));
   }, [followBottom, setPinned]);
 
@@ -251,24 +295,48 @@ export function useStickToBottom(resetKey: string, suppressFollow: boolean = fal
     explicitNavigationRef.current = null;
     readingNavigationRef.current = null;
     cancelPrependAnchor();
+    const element = scrollerElementRef.current;
+    if (!element || element.scrollHeight <= element.clientHeight) return;
+    if (!userScrollIntentRef.current && !manualReadingRef.current) {
+      lastScrollTopRef.current = element.scrollTop;
+    }
     userScrollIntentRef.current = true;
   }, [cancelPrependAnchor]);
 
+  const finishPointerIntent = useCallback(() => {
+    const element = scrollerElementRef.current;
+    // A press/release with no drag is not permanent manual-reading ownership.
+    // Leave a displaced-but-not-yet-delivered native frame authorized.
+    if (!element || !userScrollIntentRef.current || manualReadingRef.current
+      || element.scrollTop !== lastScrollTopRef.current) return;
+    userScrollIntentRef.current = false;
+    reconcileAfterLayoutChange();
+  }, [reconcileAfterLayoutChange]);
+
   const markWheelScrollIntent = useCallback((event: WheelEvent) => {
+    if (isNestedScrollInput(event, event.deltaY)) return;
     // At the bottom, a downward wheel has nowhere to go and must not leave a
     // stale intent that could legitimize a later browser-owned scroll.
     if (event.deltaY < 0 || !pinnedRef.current) markUserScrollIntent();
   }, [markUserScrollIntent]);
 
+  const markTouchScrollIntent = useCallback((event: TouchEvent) => {
+    if (!isNestedScrollInput(event)) markUserScrollIntent();
+  }, [markUserScrollIntent]);
+
   const markDirectPointerIntent = useCallback((event: PointerEvent) => {
     // A scrollbar-thumb drag targets the scroller itself. Pointer presses on a
     // disclosure or message control must not be mistaken for scroll intent.
-    if (event.target === event.currentTarget) markUserScrollIntent();
+    if (event.button === 0 && event.target === event.currentTarget) markUserScrollIntent();
   }, [markUserScrollIntent]);
 
   const markKeyboardScrollIntent = useCallback((event: KeyboardEvent) => {
+    if (isNestedScrollInput(event)) return;
+    if (event.target instanceof HTMLElement
+      && event.target.closest("input, textarea, select, button, [contenteditable]:not([contenteditable=false])")) return;
     if (["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(event.key)) {
-      markUserScrollIntent();
+      const upward = ["ArrowUp", "PageUp", "Home"].includes(event.key) || (event.key === " " && event.shiftKey);
+      if (upward || !pinnedRef.current) markUserScrollIntent();
     }
   }, [markUserScrollIntent]);
 
@@ -286,7 +354,7 @@ export function useStickToBottom(resetKey: string, suppressFollow: boolean = fal
     if (previous) {
       previous.removeEventListener("scroll", handleScroll);
       previous.removeEventListener("wheel", markWheelScrollIntent);
-      previous.removeEventListener("touchmove", markUserScrollIntent);
+      previous.removeEventListener("touchmove", markTouchScrollIntent);
       previous.removeEventListener("pointerdown", markDirectPointerIntent);
       previous.removeEventListener("keydown", markKeyboardScrollIntent);
     }
@@ -295,12 +363,12 @@ export function useStickToBottom(resetKey: string, suppressFollow: boolean = fal
     if (element) {
       element.addEventListener("scroll", handleScroll, { passive: true });
       element.addEventListener("wheel", markWheelScrollIntent, { passive: true });
-      element.addEventListener("touchmove", markUserScrollIntent, { passive: true });
+      element.addEventListener("touchmove", markTouchScrollIntent, { passive: true });
       element.addEventListener("pointerdown", markDirectPointerIntent, { passive: true });
       element.addEventListener("keydown", markKeyboardScrollIntent);
     }
     observeViewport(element);
-  }, [handleScroll, markDirectPointerIntent, markKeyboardScrollIntent, markUserScrollIntent, markWheelScrollIntent, observeViewport]);
+  }, [handleScroll, markDirectPointerIntent, markKeyboardScrollIntent, markTouchScrollIntent, markWheelScrollIntent, observeViewport]);
 
   const stableTailRef = useCallback((node: HTMLElement | null) => {
     stableTailObserverRef.current?.disconnect();
@@ -315,6 +383,8 @@ export function useStickToBottom(resetKey: string, suppressFollow: boolean = fal
     explicitNavigationRef.current = null;
     readingNavigationRef.current = null;
     cancelPrependAnchor();
+    userScrollIntentRef.current = false;
+    manualReadingRef.current = false;
     setPinned(true);
     followBottom();
   }, [followBottom, setPinned, cancelPrependAnchor]);
@@ -324,23 +394,29 @@ export function useStickToBottom(resetKey: string, suppressFollow: boolean = fal
     readingNavigationRef.current = null;
     cancelPrependAnchor();
     userScrollIntentRef.current = false;
+    manualReadingRef.current = false;
     setPinned(true);
     followBottom();
   }, [followBottom, resetKey, setPinned, cancelPrependAnchor]);
 
   useEffect(() => {
+    // The thin thumb is a viewport sibling and may release outside the feed.
+    document.addEventListener("pointerup", finishPointerIntent);
+    document.addEventListener("pointercancel", finishPointerIntent);
     return () => {
+      document.removeEventListener("pointerup", finishPointerIntent);
+      document.removeEventListener("pointercancel", finishPointerIntent);
       explicitNavigationRef.current = null;
       const element = scrollerElementRef.current;
       element?.removeEventListener("scroll", handleScroll);
       element?.removeEventListener("wheel", markWheelScrollIntent);
-      element?.removeEventListener("touchmove", markUserScrollIntent);
+      element?.removeEventListener("touchmove", markTouchScrollIntent);
       element?.removeEventListener("pointerdown", markDirectPointerIntent);
       element?.removeEventListener("keydown", markKeyboardScrollIntent);
       stableTailObserverRef.current?.disconnect();
       viewportObserverRef.current?.disconnect();
     };
-  }, [handleScroll, markDirectPointerIntent, markKeyboardScrollIntent, markUserScrollIntent, markWheelScrollIntent]);
+  }, [finishPointerIntent, handleScroll, markDirectPointerIntent, markKeyboardScrollIntent, markTouchScrollIntent, markWheelScrollIntent]);
 
   return {
     scrollerRef,
