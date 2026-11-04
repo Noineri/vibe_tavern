@@ -22,6 +22,7 @@ import {
   useCallback,
   useContext,
   useMemo,
+  useState,
   useSyncExternalStore,
   type ReactNode,
 } from "react";
@@ -148,6 +149,18 @@ export function useAgentFeedUiStateStore(): AgentFeedUiStateStore {
   return store;
 }
 
+/** No-op store backing the OPTIONAL consumer access (AFP-4): reads return
+ * nothing, writes/subscriptions are no-ops, so a consumer mounted OUTSIDE a
+ * feed session (the RP chat, provider-less tests, the pre-AFP-6 list) keeps
+ * exactly its local fallback semantics. */
+const NOOP_FEED_UI_STATE_STORE: AgentFeedUiStateStore = {
+  getRowState: () => undefined,
+  setRowState: () => {},
+  clearRowState: () => {},
+  subscribeRow: () => () => {},
+  reset: () => {},
+};
+
 /** Stable empty entry for rows with no retained state (so consumers never
  *  see `undefined` and the snapshot identity is constant). */
 const EMPTY_ROW_ENTRY: Readonly<AgentFeedRowUiEntry> = Object.freeze({});
@@ -164,13 +177,7 @@ export interface AgentFeedRowUiState {
   clear: () => void;
 }
 
-/**
- * One row's retained UI state, subscribed by the row's key ONLY — a patch
- * to any other row (or the whole-map `reset`) does not re-render this row
- * unless its own state actually changed.
- */
-export function useAgentFeedRowUiState(key: string): AgentFeedRowUiState {
-  const store = useAgentFeedUiStateStore();
+function useRowUiState(store: AgentFeedUiStateStore, key: string): AgentFeedRowUiState {
   const subscribe = useCallback(
     (listener: () => void) => store.subscribeRow(key, listener),
     [store, key],
@@ -191,4 +198,49 @@ export function useAgentFeedRowUiState(key: string): AgentFeedRowUiState {
   );
   const clear = useCallback(() => store.clearRowState(key), [store, key]);
   return { entry: entry ?? EMPTY_ROW_ENTRY, setDisclosed, setDraft, setScrollTop, clear };
+}
+
+/**
+ * One row's retained UI state, subscribed by the row's key ONLY — a patch
+ * to any other row (or the whole-map `reset`) does not re-render this row
+ * unless its own state actually changed.
+ */
+export function useAgentFeedRowUiState(key: string): AgentFeedRowUiState {
+  return useRowUiState(useAgentFeedUiStateStore(), key);
+}
+
+/**
+ * AFP-4 consumer access: the row's retained state, or `null` when no
+ * `AgentFeedUiStateProvider` wraps the tree — the caller then keeps its
+ * local fallback (identical default/toggle/write semantics, nothing
+ * retained). Never throws, so shared components (`MessageReasoning`,
+ * `AgentToolAccordion`, …) render unchanged in non-feed surfaces.
+ */
+export function useOptionalAgentFeedRowUiState(key: string): AgentFeedRowUiState | null {
+  const store = useContext(AgentFeedUiStateContext);
+  const row = useRowUiState(store ?? NOOP_FEED_UI_STATE_STORE, key);
+  return store === null ? null : row;
+}
+
+/**
+ * AFP-4 convenience: one collapsible row's open state — retained in the
+ * session store (the entry's `disclosed` field) when a provider is present,
+ * plain `useState` otherwise. Both arms have identical default/toggle
+ * semantics; the retained arm survives row unmount/remount.
+ */
+export function useAgentFeedDisclosure(
+  key: string,
+  defaultOpen: boolean,
+): { open: boolean; toggle: () => void; setOpen: (open: boolean) => void } {
+  const row = useOptionalAgentFeedRowUiState(key);
+  const [localOpen, setLocalOpen] = useState(defaultOpen);
+  if (row === null) {
+    return {
+      open: localOpen,
+      toggle: () => setLocalOpen((v) => !v),
+      setOpen: setLocalOpen,
+    };
+  }
+  const open = row.entry.disclosed ?? defaultOpen;
+  return { open, toggle: () => row.setDisclosed(!open), setOpen: row.setDisclosed };
 }

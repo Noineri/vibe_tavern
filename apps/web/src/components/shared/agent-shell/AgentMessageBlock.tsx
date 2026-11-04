@@ -15,6 +15,8 @@ import { PENDING_USER_MESSAGE_ID } from "./agent-synthetic-message.js";
 import { AgentFileAttachment } from "./agent-file-attachment.js";
 import { agentLightboxActions } from "./agent-lightbox-actions.js";
 import { useAgentAttachmentActions } from "./agent-attachment-actions-context.js";
+import { useOptionalAgentFeedRowUiState } from "./agent-feed-ui-state.js";
+import { agentFeedMessageUnitId } from "./agent-feed-window.js";
 
 /**
  * One experience-copilot message bubble (ER-11c). Props-driven presentation:
@@ -104,8 +106,36 @@ export const AgentMessageBlock = memo(function AgentMessageBlock({
   // `AgentEditMessage` (local useState; the agent shell has no chat store
   // seam). Unconditional hooks: the digest/empty early returns below must
   // stay AFTER them.
-  const [editing, setEditing] = useState(false);
-  useEffect(() => { if (isBusy) setEditing(false); }, [isBusy]);
+  // AFP-4: when a feed session provider wraps the tree, "editor open" is the
+  // retained entry's `draft` field (keyed `msg:<id>`) and its VALUE is the
+  // retained text — a dirty inline draft survives virtual unmount and a
+  // settle refetch never replaces it with server text. Without a provider
+  // the local fallback below is byte-identical to the pre-AFP-4 path.
+  const row = useOptionalAgentFeedRowUiState(agentFeedMessageUnitId(message.id));
+  const retainedDraft = row?.entry.draft;
+  const setRetainedDraft = row?.setDraft;
+  const [editingLocal, setEditingLocal] = useState(false);
+  const editing = row !== null ? retainedDraft !== undefined : editingLocal;
+  const openEditor = () => {
+    if (setRetainedDraft !== undefined) setRetainedDraft(message.content);
+    else setEditingLocal(true);
+  };
+  const closeEditor = () => {
+    if (setRetainedDraft !== undefined) setRetainedDraft(undefined);
+    else setEditingLocal(false);
+  };
+  useEffect(() => {
+    if (!isBusy) return;
+    setEditingLocal(false);
+    // AP-12 busy rule: a stream started elsewhere closes an open editor —
+    // the retained draft drops with it (a later remount never resurrects it).
+    setRetainedDraft?.(undefined);
+  }, [isBusy, setRetainedDraft]);
+  // The retained editor's draft binding (present exactly while the retained
+  // editor is open under a provider).
+  const retainedDraftBinding = row !== null && retainedDraft !== undefined
+    ? { value: retainedDraft, onChange: (value: string) => { setRetainedDraft?.(value); } }
+    : undefined;
   // CA-4g2: the lightbox's actions for PERSISTED user rows — the agent
   // builder over the CA-4f context. The pending row renders view-only (the
   // menu-less rule of every pending surface), so no actions there.
@@ -162,7 +192,7 @@ export const AgentMessageBlock = memo(function AgentMessageBlock({
       ? {
         labelKey: "edit",
         icon: Icons.Edit,
-        onSelect: () => setEditing(true),
+        onSelect: openEditor,
         testId: "copilot-assistant-edit",
       }
       : undefined;
@@ -238,7 +268,7 @@ export const AgentMessageBlock = memo(function AgentMessageBlock({
       ? {
         labelKey: "edit",
         icon: Icons.Edit,
-        onSelect: () => setEditing(true),
+        onSelect: openEditor,
         testId: "copilot-turn-edit",
       }
       : undefined;
@@ -251,9 +281,10 @@ export const AgentMessageBlock = memo(function AgentMessageBlock({
       <div className="flex min-w-0 flex-col items-end group" data-role={message.role}>
         <AgentEditMessage
           initialText={message.content}
+          retainedDraft={retainedDraftBinding}
           isBusy={isBusy}
-          onSubmit={(content) => { setEditing(false); onEditLast(content); }}
-          onCancel={() => setEditing(false)}
+          onSubmit={(content) => { closeEditor(); onEditLast(content); }}
+          onCancel={closeEditor}
         />
         {attachmentGrid}
       </div>
@@ -277,11 +308,12 @@ export const AgentMessageBlock = memo(function AgentMessageBlock({
           layout="assistant"
           submitLabelKey="save"
           initialText={message.content}
+          retainedDraft={retainedDraftBinding}
           isBusy={isBusy}
           onSubmit={(content) => {
-            void onEditAssistant(message.id, content).then((ok) => { if (ok) setEditing(false); });
+            void onEditAssistant(message.id, content).then((ok) => { if (ok) closeEditor(); });
           }}
-          onCancel={() => setEditing(false)}
+          onCancel={closeEditor}
         />
       </div>
     );

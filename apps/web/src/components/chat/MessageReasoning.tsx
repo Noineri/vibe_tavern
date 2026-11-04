@@ -97,6 +97,15 @@ interface MessageReasoningProps {
 	reasoningDurationMs?: number | null;
 	variant?: ReasoningVariant;
 	defaultOpen?: boolean;
+	/** AFP-4 (AGENT_FEED_PERFORMANCE_PLAN): controlled disclosure — present
+	 *  only when a caller keeps the open state outside this component (the
+	 *  agent feed's session-retained caption reasoning via
+	 *  `AgentHostCaption`). When `open` is provided the component renders the
+	 *  given state and reports toggles through `onOpenChange` only; when both
+	 *  are omitted (every RP/co-author caller today) the local
+	 *  `useState(defaultOpen)` path below is byte-identical to before. */
+	open?: boolean;
+	onOpenChange?: (open: boolean) => void;
 }
 
 /**
@@ -140,9 +149,20 @@ export function MessageReasoning({
 	reasoningDurationMs,
 	variant = "rich",
 	defaultOpen = false,
+	open: controlledOpen,
+	onOpenChange,
 }: MessageReasoningProps) {
 	const { t } = useT();
-	const [open, setOpen] = useState(defaultOpen);
+	const [uncontrolledOpen, setUncontrolledOpen] = useState(defaultOpen);
+	const isControlled = controlledOpen !== undefined;
+	const open = isControlled ? controlledOpen : uncontrolledOpen;
+	const toggle = () => {
+		if (isControlled) {
+			onOpenChange?.(!open);
+			return;
+		}
+		setUncontrolledOpen((v) => !v);
+	};
 	const s = VARIANT_STYLES[variant];
 
 	const hasContent = reasoning && reasoning.trim().length > 0;
@@ -154,7 +174,7 @@ export function MessageReasoning({
 
 	return (
 		<div className={s.container}>
-			<button type="button" className={s.header} onClick={() => setOpen(!open)}>
+			<button type="button" className={s.header} onClick={toggle}>
 				{s.showIcon && <Icons.brain />}
 				{s.showSeparator === true && <span aria-hidden="true">·</span>}
 				<span>{t("reasoning")}</span>

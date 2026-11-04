@@ -32,6 +32,10 @@ import { useT } from "../../../i18n/context.js";
 // - the RP draft lives in `useChatStore` (`setEditingDraft`) → NAMED
 //   deviation: LOCAL `useState` draft here (the agent shell has no chat store
 //   seam; at most one editor exists at a time — the last user row only).
+//   AFP-4 addition: when the caller passes `retainedDraft` (a feed session
+//   provider is up the tree), the same draft lives in the session-local
+//   row-state store instead — still not a chat store seam, and the local
+//   useState path stays the default for every other caller.
 // i18n: reuses the existing `edit` (the fullscreen-expander label), `send`
 // (the primary) and `cancel_edit` keys — no new keys. RU renders the shared
 // «Редактировать», not a literal «Изменить» (named wording note — the `edit`
@@ -64,11 +68,20 @@ export interface AgentEditMessageProps {
    *  chrome is identical in both (the assistant body shares the bubble's
    *  font-ui / ui-fs-1px / 1.5 type). */
   layout?: "user" | "assistant";
+  /** AFP-4: retained-draft binding — present when the caller keeps the
+   *  draft in the session feed store (`AgentMessageBlock` under a feed
+   *  provider): the textarea value is `value` and every keystroke writes
+   *  through `onChange`, so a dirty draft survives row unmount. Absent
+   *  (every other caller) the draft stays the local `useState` below —
+   *  byte-identical to before. */
+  retainedDraft?: { value: string; onChange: (value: string) => void };
 }
 
-export function AgentEditMessage({ initialText, isBusy, onSubmit, onCancel, submitLabelKey = "send", layout = "user" }: AgentEditMessageProps) {
+export function AgentEditMessage({ initialText, isBusy, onSubmit, onCancel, submitLabelKey = "send", layout = "user", retainedDraft }: AgentEditMessageProps) {
   const { t } = useT();
-  const [draft, setDraft] = useState(initialText);
+  const [localDraft, setLocalDraft] = useState(initialText);
+  const draft = retainedDraft !== undefined ? retainedDraft.value : localDraft;
+  const setDraft = retainedDraft !== undefined ? retainedDraft.onChange : setLocalDraft;
   const blank = draft.trim().length === 0;
 
   const submit = () => {

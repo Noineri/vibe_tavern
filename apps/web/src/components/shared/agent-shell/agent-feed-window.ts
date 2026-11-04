@@ -127,8 +127,19 @@ export function isNullCarrierMessage(message: ExperienceCopilotMessageWire): boo
   return message.role === "assistant" && message.content.trim().length === 0 && message.toolCallsJson !== null;
 }
 
+// ─── Stable unit-id builders (AFP-4) ────────────────────────────────────────
+// The ONE derivation of the unit-id key shapes, shared by the render model
+// below and the AFP-4 row-state consumers (separators, accordions, captions,
+// message drafts) — a second hand-written `card:accordion:…` template in a
+// consumer is a defect from copy #2.
+
+export const agentFeedEventUnitId = (eventId: string): string => `event:${eventId}`;
+export const agentFeedMessageUnitId = (messageId: string): string => `msg:${messageId}`;
+export const agentFeedCaptionUnitId = (slotId: string): string => `caption:${slotId}`;
+export const agentFeedAccordionUnitId = (toolCallId: string): string => `card:accordion:${toolCallId}`;
+
 function cardUnitId(item: CopilotTurnAnchorItem): string {
-  if (item.kind === "accordion") return `card:accordion:${item.activities[0]!.toolCallId}`;
+  if (item.kind === "accordion") return agentFeedAccordionUnitId(item.activities[0]!.toolCallId);
   return `card:${item.kind}:${item.activity.toolCallId}`;
 }
 
@@ -150,12 +161,12 @@ export function agentFeedRenderUnits(input: AgentFeedWindowInput): AgentFeedRend
       const anchoredEvents = model.eventAnchors.get(message.id);
       if (anchoredEvents !== undefined) {
         for (const event of anchoredEvents) {
-          units.push({ kind: "event", unitId: `event:${event.id}`, event });
+          units.push({ kind: "event", unitId: agentFeedEventUnitId(event.id), event });
         }
       }
       // AP-4: the turn caption sits above the slot's first rendered item.
       if (model.captions.captionBefore.has(message.id)) {
-        units.push({ kind: "caption", unitId: `caption:${message.id}`, slotId: message.id });
+        units.push({ kind: "caption", unitId: agentFeedCaptionUnitId(message.id), slotId: message.id });
       }
       // TA-1: the slot's card cluster, in accumulation order.
       const anchors = model.anchorItems.get(message.id);
@@ -167,13 +178,13 @@ export function agentFeedRenderUnits(input: AgentFeedWindowInput): AgentFeedRend
     }
     if (message.role === "digest") {
       if (!hidden) {
-        units.push({ kind: "digest", unitId: `msg:${message.id}`, message, coveredCount: entry.coveredCount });
+        units.push({ kind: "digest", unitId: agentFeedMessageUnitId(message.id), message, coveredCount: entry.coveredCount });
       }
       continue;
     }
     if (isNullCarrierMessage(message)) continue; // null carrier: no unit, semantics kept above
     if (!hidden) {
-      units.push({ kind: "message", unitId: `msg:${message.id}`, message });
+      units.push({ kind: "message", unitId: agentFeedMessageUnitId(message.id), message });
     }
   }
 

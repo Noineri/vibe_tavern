@@ -1,4 +1,3 @@
-import { useState } from "react";
 import type { ReactNode } from "react";
 import type { AgentThreadEventWire, ExperienceCopilotMessageWire } from "@vibe-tavern/api-contracts";
 import { Icons } from "../icons.js";
@@ -8,6 +7,8 @@ import { useT } from "../../../i18n/context.js";
 import { formatRelativeTime } from "../../layout/sidebar-utils.js";
 import { builtinProfileDisplayName } from "../../../lib/agent-builtin-profiles.js";
 import { SIDECHAT_AGENT_KIND } from "../../../api/agent-kind-served-modes.js";
+import { useAgentFeedDisclosure } from "./agent-feed-ui-state.js";
+import { agentFeedEventUnitId, agentFeedMessageUnitId } from "./agent-feed-window.js";
 
 /**
  * One frozen-context timeline separator (SIDECHAT_PLAN Wave 5 / SC-19b) — the
@@ -31,7 +32,11 @@ import { SIDECHAT_AGENT_KIND } from "../../../api/agent-kind-served-modes.js";
  */
 export function AgentTimelineSeparator({ event }: { event: AgentThreadEventWire }) {
   const { t } = useT();
-  const [expanded, setExpanded] = useState(false);
+  // AFP-4: the disclosure is session-retained when a feed provider wraps
+  // the tree (keyed by the window's event unit id), so an expanded frozen
+  // body survives virtual unmount; without a provider this is the plain
+  // local useState of before, byte-identical (default collapsed).
+  const disclosure = useAgentFeedDisclosure(agentFeedEventUnitId(event.id), false);
 
   // The label N is what the payload carries, nothing derived: the frozen
   // message count for `rp_sync` (the same rows the expanded body lists), the
@@ -82,8 +87,8 @@ export function AgentTimelineSeparator({ event }: { event: AgentThreadEventWire 
     <TimelineSeparatorFrame
       kind={event.kind}
       label={label}
-      expanded={expanded}
-      onToggle={() => setExpanded((v) => !v)}
+      expanded={disclosure.open}
+      onToggle={disclosure.toggle}
     >
       <SeparatorBody event={event} />
     </TimelineSeparatorFrame>
@@ -170,7 +175,10 @@ export function AgentDigestSeparator({
   coveredCount: number | null;
 }) {
   const { t } = useT();
-  const [expanded, setExpanded] = useState(false);
+  // AFP-4: session-retained disclosure keyed by the digest's message unit
+  // id (`msg:<id>` — the same key the window model gives the row); local
+  // useState fallback without a provider, default collapsed either way.
+  const disclosure = useAgentFeedDisclosure(agentFeedMessageUnitId(message.id), false);
   const count = coveredCount ?? 0;
   const caption = count > 0
     ? `: ${t("copilot_context_digest_caption", { n: count, count })}`
@@ -183,8 +191,8 @@ export function AgentDigestSeparator({
       kind="digest"
       dataRole="digest"
       label={label}
-      expanded={expanded}
-      onToggle={() => setExpanded((v) => !v)}
+      expanded={disclosure.open}
+      onToggle={disclosure.toggle}
     >
       {relative !== "" && (
         <div className="mb-1.5 font-ui text-[calc(var(--ui-fs)-3px)] text-t4 tabular-nums">
