@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import type { ChatId } from "@vibe-tavern/domain";
 import { cn } from "../../lib/cn.js";
 import { Icons } from "../shared/icons.js";
+import { ScrollArea } from "../shared/scroll-area.js";
 import { Modal } from "../shared/Modal.js";
 import { modalPanelCls } from "../shared/modal-helpers.js";
 import { Dropzone } from "../shared/dropzone.js";
@@ -271,14 +272,16 @@ export function StFolderImport({ onImported }: StFolderImportProps) {
               <summary className="cursor-pointer font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-warning">
                 {t("st_import_errors", { count: scanResult.errors.length })}
               </summary>
-              <div className="mt-1.5 max-h-48 overflow-y-auto rounded border border-border2 bg-surface p-2">
+              {/* CNR-8r: capped error list on the thin lane (cap/chrome on the
+                  root, padding rides the content). */}
+              <ScrollArea scrollbarSize="thin" className="mt-1.5 max-h-48 rounded border border-border2 bg-surface" contentClassName="p-2">
                 {scanResult.errors.map((e, i) => (
                   <div key={i} className="border-b border-border2 py-1 last:border-0">
                     <div className="font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t1">{e.file}</div>
                     <div className="font-ui text-[calc(var(--ui-fs)-3px)] text-t3">{e.message}</div>
                   </div>
                 ))}
-              </div>
+              </ScrollArea>
             </details>
           )}
         </div>
@@ -313,14 +316,16 @@ export function StFolderImport({ onImported }: StFolderImportProps) {
               <summary className="cursor-pointer font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-warning">
                 {t("st_import_errors", { count: importErrors.length })}
               </summary>
-              <div className="mt-1.5 max-h-48 overflow-y-auto rounded border border-border2 bg-surface p-2">
+              {/* CNR-8r: capped error list on the thin lane (cap/chrome on the
+                  root, padding rides the content). */}
+              <ScrollArea scrollbarSize="thin" className="mt-1.5 max-h-48 rounded border border-border2 bg-surface" contentClassName="p-2">
                 {importErrors.map((e, i) => (
                   <div key={i} className="border-b border-border2 py-1 last:border-0">
                     <div className="font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t1">{e.file}</div>
                     <div className="font-ui text-[calc(var(--ui-fs)-3px)] text-t3">{e.message}</div>
                   </div>
                 ))}
-              </div>
+              </ScrollArea>
             </details>
           )}
         </div>
@@ -374,7 +379,9 @@ export function CharacterImportModal(input: ImportModalCommonProps) {
 
   return (
     <ImportModalFrame title={t("character_import_title")} subtitle={t("character_import_sub")} onClose={input.onClose}>
-      <div className="flex-1 overflow-y-auto p-5">
+      {/* CNR-8r: body on the thin lane (8g idiom); ImportModalFooter is
+          docked outside the scroller by the frame. */}
+      <ScrollArea scrollbarSize="thin" className="flex-1" contentClassName="p-5">
         {!preview && !parsing && !stMode && (
           <>
             <Dropzone
@@ -409,7 +416,7 @@ export function CharacterImportModal(input: ImportModalCommonProps) {
             onEnableImportedRegexProfileChange={setEnableImportedRegexProfile}
           />
         )}
-      </div>
+      </ScrollArea>
       <ImportModalFooter onClose={input.onClose} confirmLabel={t("add_to_library")} disabled={!preview || input.isImporting} busy={input.isImporting} onConfirm={confirm} />
     </ImportModalFrame>
   );
@@ -444,7 +451,9 @@ export function ChatImportModal(input: ImportModalCommonProps & { activeChatId: 
 
   return (
     <ImportModalFrame title={t("chat_import_title")} subtitle={t("chat_import_sub")} onClose={input.onClose}>
-      <div className="flex-1 overflow-y-auto p-5">
+      {/* CNR-8r: body on the thin lane (8g idiom); ImportModalFooter is
+          docked outside the scroller by the frame. */}
+      <ScrollArea scrollbarSize="thin" className="flex-1" contentClassName="p-5">
         {!preview && !parsing && !stMode && (
           <>
             <Dropzone
@@ -473,7 +482,7 @@ export function ChatImportModal(input: ImportModalCommonProps & { activeChatId: 
         {preview && !parsing && (
           <ChatImportPreview preview={preview} />
         )}
-      </div>
+      </ScrollArea>
       <ImportModalFooter onClose={input.onClose} confirmLabel={t("confirm_import")} disabled={!preview || input.isImporting} busy={input.isImporting} onConfirm={confirm} />
     </ImportModalFrame>
   );

@@ -37,6 +37,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { buildCharacterDraftSchema, type BuildCharacterDraft } from "@vibe-tavern/api-contracts";
+import { ScrollArea } from "../shared/scroll-area.js";
 import { EditorState, Compartment } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { brandId } from "@vibe-tavern/domain";
@@ -51,7 +52,6 @@ import { applyBodyToDraft, draftToBody } from "../build/editors/vibe-md-sync.js"
 import { buildLineDiff } from "../shared/TextDiffPreview.js";
 import { groupHunks, mergeSelectedBody, allHunkIds } from "../../lib/coauthor-hunk-merge.js";
 
-import { lblCls } from "../../lib/field-tokens.js";
 import { characterDefaults } from "../../lib/character-draft.js";
 import { aggregateCoauthorProposal, buildPartialApplyRequest } from "../../lib/coauthor-apply-aggregate.js";
 import {
@@ -93,6 +93,7 @@ import { listPersonas } from "../../api/persona-api.js";
 import type { PersonaRecord } from "@vibe-tavern/api-contracts";
 import { setCoauthorContextLinksAction } from "../../stores/api-actions/chat-actions.js";
 import { CoauthorReviewingOverlay } from "./CoauthorReviewingOverlay.js";
+import { CoauthorEditorBody } from "./coauthor-editor-body.js";
 import { CoauthorLoreAssistantSettings } from "./CoauthorLoreAssistantSettings.js";
 import { useCharacterTrackerTemplate } from "../../hooks/use-character-tracker-template.js";
 
@@ -616,14 +617,13 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
           doesn't show through; the reviewing overlay takes its place and fills
           the panel height (diff stretches, footer sits at the bottom). */}
       <div className="relative flex min-h-0 flex-1 flex-col max-md:min-h-[100dvh]">
-        <div className={"min-h-0 flex-1 overflow-y-auto px-4 py-4 max-md:min-h-fit max-md:overflow-visible" + (showReview ? " hidden" : "")}>
-          <label className={lblCls}>{t("coauthor.editor.label")}</label>
-          <div
-            ref={editorHostRef}
-            className="vibe-md-editor min-h-[360px] max-md:min-h-[calc(100dvh-140px)] rounded-lg border border-border"
-          />
-          <p className="mt-1.5 font-ui text-[calc(var(--ui-fs)-3px)] text-t4">{t("coauthor.editor.hint")}</p>
-        </div>
+        {/* CNR-8r: editor body on the thin lane (desktop scrolls here; the
+            phone branch keeps its fit-height growth so the outer max-md
+            column keeps owning the scroll, and the scrim/review overlays stay
+            SIBLINGS anchored to the positioned parent). */}
+        <ScrollArea scrollbarSize="thin" className={"min-h-0 flex-1 max-md:min-h-fit" + (showReview ? " hidden" : "")} contentClassName="px-4 py-4">
+          <CoauthorEditorBody hostRef={editorHostRef} label={t("coauthor.editor.label")} hint={t("coauthor.editor.hint")} />
+        </ScrollArea>
 
         {/* Generating dim scrim — overlaps the editor body with
             pointer-events-auto to intercept clicks to CodeMirror widget

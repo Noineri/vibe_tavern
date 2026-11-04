@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { RegexScriptImportDraft } from "@vibe-tavern/import-export";
 import { parseStandaloneRegexJson } from "@vibe-tavern/import-export";
 import { useT } from "../../i18n/context.js";
+import { ScrollArea } from "../shared/scroll-area.js";
 import { cn } from "../../lib/cn.js";
 import { lblCls } from "../../lib/field-tokens.js";
 import type { CreateRegexProfileBundleBody, RegexProfileBundleRecord } from "../../api/regex-api.js";
@@ -158,7 +159,9 @@ export function RegexImportModal({
         ) : rules.length === 0 ? (
           <div className="px-5 py-8 font-ui text-[calc(var(--ui-fs)-2px)] text-t3">{t("regexImport.emptyFile")}</div>
         ) : (
-          <div className="min-h-0 overflow-y-auto border-y border-border px-5 py-4">
+          <ScrollArea scrollbarSize="thin" className="min-h-0 border-y border-border" contentClassName="px-5 py-4">
+            {/* CNR-8r: body on the thin lane (8g idiom — border stays on the
+                scroller root, padding rides the content, footer docked outside). */}
             <label className="block">
               <span className={lblCls}>{t("regexImport.profileName")}</span>
               <TextInput value={profileName} onChange={(event) => setProfileName(event.target.value)} />
@@ -196,7 +199,7 @@ export function RegexImportModal({
               <Toggle id="regex-import-enable" checked={enableProfile} onChange={setEnableProfile} />
             </div>
             {error && <div role="alert" className="mt-3 font-ui text-[calc(var(--ui-fs)-2px)] text-danger">{error}</div>}
-          </div>
+          </ScrollArea>
         )}
 
         <div className="flex shrink-0 items-center justify-between border-t border-border px-5 py-3.5">

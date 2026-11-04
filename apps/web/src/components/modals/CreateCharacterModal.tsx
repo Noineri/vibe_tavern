@@ -4,6 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { buildCharacterDraftSchema } from '@vibe-tavern/api-contracts';
 import type { BuildCharacterDraft } from '@vibe-tavern/api-contracts';
 import { Ic } from '../shared/icons';
+import { ScrollArea } from '../shared/scroll-area';
 import { cn } from '../../lib/cn';
 import { Modal } from "../shared/Modal.js";
 import { modalPanelCls } from "../shared/modal-helpers.js";
@@ -153,8 +154,9 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
           </div>
         </div>
 
-        {/* Body */}
-        <div className={cn("flex-1 overflow-y-auto", isMobile ? "p-4" : "p-5")}>
+        {/* Body — CNR-8r: rides the shared thin lane (the 8g modal-body
+            idiom; the docked footer stays outside the scroller). */}
+        <ScrollArea scrollbarSize="thin" className="flex-1" contentClassName={cn(isMobile ? 'p-4' : 'p-5')}>
           {/* Avatar + Name row */}
           <div className={cn("flex gap-4 mb-5", isMobile && "flex-col items-center")}>
             <CustomTooltip content={t("upload_avatar")}>
@@ -373,7 +375,7 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
           </div>
 
           {/* TODO: Phase 3 — Capabilities (built-in tools + MCP tools) */}
-        </div>
+        </ScrollArea>
 
         {/* Footer */}
         <div className="flex shrink-0 items-center gap-2.5 border-t border-border px-5 py-[14px]">

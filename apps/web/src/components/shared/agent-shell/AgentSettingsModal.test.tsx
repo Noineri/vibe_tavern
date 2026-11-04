@@ -739,3 +739,18 @@ describe("AgentSettingsModal — the model row subtitle (DR-8)", () => {
 		expect(getByTestId("agent-settings-row-model").textContent).not.toContain("agent_settings_model_own_sub");
 	});
 });
+
+// ─── CNR-8r: thin-lane chrome pin ───────────────────────────────────────────
+// The settings body rides the shared thin lane (the host's global native
+// fallback is gone); rows stay inside the lane, footer/chrome outside it.
+describe("AgentSettingsModal — body on the thin lane (CNR-8r)", () => {
+	it("the settings rows scroll inside a thin lane", async () => {
+		const utils = renderSummary();
+		await flushProfiles(utils.getByTestId);
+		const area = utils.baseElement.querySelector('[data-scroll-area="thin"]');
+		if (!area) throw new Error("thin lane root not rendered");
+		expect(area.classList.contains("flex-1")).toBe(true);
+		expect(area.querySelector("[data-scroll-viewport]")?.classList.contains("scrollbar-hide")).toBe(true);
+		expect(area.querySelector("[data-scroll-content]")?.querySelector('[data-testid="agent-settings-row-profile"]')).not.toBeNull();
+	});
+});

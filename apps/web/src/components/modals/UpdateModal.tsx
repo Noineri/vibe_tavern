@@ -4,6 +4,7 @@ import { Icons } from "../shared/icons.js";
 import { useT } from "../../i18n/context.js";
 import type Resources from "../../i18n/resources.js";
 import { Markdown } from "../../lib/markdown.js";
+import { ScrollArea } from "../shared/scroll-area.js";
 import { useUpdateFlow } from "../../hooks/use-update-flow.js";
 import { useModalStore } from "../../stores/index.js";
 import { fetchRuntimeInfo, type RuntimeInfo, type RuntimeUpdatePhase } from "../../api/runtime-api.js";
@@ -109,14 +110,18 @@ export function UpdateModal({ latestVersion, latestTag, releaseUrl, releaseNotes
 					)}
 				</div>
 
-				{/* Body */}
-				<div className="flex-1 overflow-y-auto px-5 py-4">
+				{/* Body — CNR-8r: thin lane (8g idiom; the docked Actions footer
+				    stays outside). */}
+				<ScrollArea scrollbarSize="thin" className="flex-1" contentClassName="px-5 py-4">
 					{flow.state.kind === "idle" && (
 						<>
 							{showReleaseNotes ? (
-								<div className="md-content-plain max-h-[40vh] overflow-y-auto break-words rounded-md border border-border2 p-3.5 text-[calc(var(--ui-fs)-1px)] leading-relaxed text-t2">
+								<ScrollArea scrollbarSize="thin" className="max-h-[40vh] rounded-md border border-border2" contentClassName="md-content-plain break-words p-3.5 text-[calc(var(--ui-fs)-1px)] leading-relaxed text-t2">
+									{/* CNR-8r: capped release-notes quote on its own thin lane (8i
+									    frame/body idiom: cap on the lane root, text classes
+									    ride the content). */}
 									<Markdown text={releaseNotes ?? ""} variant="plain" />
-								</div>
+								</ScrollArea>
 							) : (
 								<p className="text-[calc(var(--ui-fs)-1px)] text-t2">{t("update_modal_no_notes")}</p>
 							)}
@@ -164,7 +169,7 @@ export function UpdateModal({ latestVersion, latestTag, releaseUrl, releaseNotes
 							}}
 						/>
 					)}
-				</div>
+				</ScrollArea>
 
 				{/* Actions */}
 				<div className="flex items-center justify-end gap-2 border-t border-border2 px-5 py-3">
@@ -289,7 +294,11 @@ function ErrorView({
 			{detail && (
 				<details className="rounded-md border border-border2">
 					<summary className="cursor-pointer px-3 py-1.5 text-[calc(var(--ui-fs)-3px)] text-t3 hover:text-t1">{labels.details}</summary>
-					<pre className="max-h-[30vh] overflow-auto whitespace-pre-wrap break-all px-3 pb-3 font-mono text-[calc(var(--ui-fs)-3px)] text-t3">{detail}</pre>
+					{/* CNR-8r: capped error detail on a thin lane (cap on the root,
+					    the pre keeps its wrapping and padding). */}
+					<ScrollArea scrollbarSize="thin" className="max-h-[30vh]">
+						<pre className="whitespace-pre-wrap break-all px-3 pb-3 font-mono text-[calc(var(--ui-fs)-3px)] text-t3">{detail}</pre>
+					</ScrollArea>
 				</details>
 			)}
 			{isFatal && releaseUrl && (

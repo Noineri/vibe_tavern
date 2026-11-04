@@ -141,3 +141,24 @@ describe("RegexImportModal", () => {
     expect(view.onImported).not.toHaveBeenCalled();
   });
 });
+
+// ─── CNR-8r: thin-lane chrome pin ───────────────────────────────────────────
+// The rules body rides the shared thin lane (the global native fallback is
+// gone): border chrome on the lane root, padding on the content, footer
+// docked outside the scroller.
+describe("RegexImportModal — body on the thin lane (CNR-8r)", () => {
+  test("the rules body scrolls on a thin lane with border chrome on the root and the footer outside", async () => {
+    const view = renderModal({ contents: JSON.stringify({ scripts: [{ scriptName: "Rule one", findRegex: "/a/g", replaceString: "b", disabled: false }] }) });
+    await view.findByText("regexImport.profileSummary");
+    const area = view.baseElement.querySelector('[data-scroll-area="thin"]');
+    if (!area) throw new Error("thin lane root not rendered");
+    expect(area.classList.contains("border-y")).toBe(true);
+    expect(area.classList.contains("min-h-0")).toBe(true);
+    const content = area.querySelector("[data-scroll-content]");
+    expect(content?.classList.contains("px-5")).toBe(true);
+    expect(content?.textContent).toContain("regexImport.profileSummary");
+    const footer = [...view.baseElement.querySelectorAll("button")].find((b) => b.textContent?.includes("importButton"));
+    if (!footer) throw new Error("footer import button not rendered");
+    expect(footer.closest("[data-scroll-area]")).toBeNull();
+  });
+});

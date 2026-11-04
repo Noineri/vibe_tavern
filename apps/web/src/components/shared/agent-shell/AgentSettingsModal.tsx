@@ -4,6 +4,7 @@ import { getAgentHost, type AgentKind } from "../../../lib/agent-host-registry.j
 import { useT } from "../../../i18n/context.js";
 import { cn } from "../../../lib/cn.js";
 import { useIsMobile } from "../../../hooks/use-mobile.js";
+import { ScrollArea } from "../scroll-area.js";
 import { Modal } from "../Modal.js";
 import { modalPanelCls } from "../modal-helpers.js";
 import { Icons } from "../icons.js";
@@ -195,7 +196,8 @@ export function AgentSettingsModal({
 							</button>
 						</div>
 					</div>
-					<div className={cn("min-h-0 flex-1 overflow-y-auto", isMobile ? "px-4 py-2" : "px-6 py-2")}>
+					{/* CNR-8r: settings body on the thin lane (8g idiom). */}
+				<ScrollArea scrollbarSize="thin" className="min-h-0 flex-1" contentClassName={cn(isMobile ? "px-4 py-2" : "px-6 py-2")}>
 						<SettingsRow
 							testId="agent-settings-row-profile"
 							icon={<Icons.User className="h-[18px] w-[18px]" />}
@@ -261,7 +263,7 @@ export function AgentSettingsModal({
 								</button>
 							}
 						/>
-					</div>
+				</ScrollArea>
 				</div>
 			</Modal>
 			<AgentProfileModal

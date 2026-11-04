@@ -289,3 +289,26 @@ describe("PresetImportModal — embedded Regex profile card (RXU-21)", () => {
     expect(result.enableRegexProfile).toBe(false);
   });
 });
+
+// ─── CNR-8r: thin-lane chrome pin ───────────────────────────────────────────
+// The desktop block list rides the shared thin lane (this suite renders the
+// mobile fork, where the same lane renders unsized and the phone preview
+// wrapper keeps owning the scroll — the structural boundary is identical:
+// the lane wraps EXACTLY the block list, summary bar and warnings outside).
+describe("PresetImportModal — block list on the thin lane (CNR-8r)", () => {
+  it("the preview block list scrolls inside a thin lane; the summary bar stays outside it", async () => {
+    const file = new File([
+      JSON.stringify({ name: "Lane preset", prompts: [{ identifier: "main", name: "Main", role: "system", content: "Sys", injection_position: 0, injection_depth: 4, injection_order: 100, enabled: true }] }),
+    ], "lane-preset.json", { type: "application/json" });
+    const view = render(
+      <PresetImportModal initialFile={file} onClose={() => {}} onImport={() => {}} />,
+    );
+    await view.findByText("Lane preset.json");
+    const area = view.baseElement.querySelector('[data-scroll-area="thin"]');
+    if (!area) throw new Error("block-list lane not rendered");
+    expect(area.querySelector("[data-scroll-viewport]")).not.toBeNull();
+    // Block row inside the lane; the summary line outside it.
+    expect(area.querySelector("[data-scroll-content]")?.textContent).toContain("Main");
+    expect(area.querySelector("[data-scroll-content]")?.textContent).not.toContain("Lane preset.json");
+  });
+});

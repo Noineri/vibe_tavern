@@ -46,9 +46,10 @@ mock.module("./parse-import-file.js", () => ({
 }));
 
 let CharacterImportPreview: typeof import("./ImportPreview.js").CharacterImportPreview;
+let ChatImportPreview: typeof import("./ImportPreview.js").ChatImportPreview;
 let CharacterImportModal: typeof import("../ImportModals.js").CharacterImportModal;
 beforeAll(async () => {
-  ({ CharacterImportPreview } = await import("./ImportPreview.js"));
+  ({ CharacterImportPreview, ChatImportPreview } = await import("./ImportPreview.js"));
   ({ CharacterImportModal } = await import("../ImportModals.js"));
 });
 
@@ -179,5 +180,50 @@ describe("CharacterImportPreview — Regex Profile card (RXU-25)", () => {
       importEmbeddedBook: false,
       enableImportedRegexProfile: true,
     });
+  });
+});
+
+// ─── CNR-8r: thin-lane chrome pins ─────────────────────────────────────────
+// The host's global native fallback is gone; every desktop-visible scroller in
+// this family rides the shared thin lane. Same boundary as the CNR-8g/8p
+// per-surface structural pins: lane root + cap/content split + docked footer.
+describe("import previews — thin scroll lanes (CNR-8r)", () => {
+  it("ChatImportPreview's capped message list rides the thin lane with the cap on the root", () => {
+    const chatFile = new File(["{}"], "chat.jsonl", { type: "application/json" });
+    const view = render(
+      <ChatImportPreview
+        preview={{
+          file: chatFile,
+          fileName: "chat.jsonl",
+          title: "Chat",
+          messageCount: 2,
+          characterName: "Zack",
+          messages: [
+            { role: "user", name: "User", text: "hi" },
+            { role: "assistant", name: "Zack", text: "hello" },
+          ],
+        }}
+      />,
+    );
+    const area = view.container.querySelector('[data-scroll-area="thin"]');
+    if (!area) throw new Error("thin lane root not rendered");
+    expect(area.classList.contains("max-h-[250px]")).toBe(true);
+    expect(area.querySelector("[data-scroll-viewport]")).not.toBeNull();
+    expect(area.querySelector("[data-scroll-content]")?.textContent).toContain("hello");
+  });
+
+  it("CharacterImportModal's body rides the thin lane; the docked footer stays outside it", async () => {
+    const view = await openDesktopPreview();
+    const body = view.baseElement.querySelectorAll('[data-scroll-area="thin"]');
+    expect(body.length).toBeGreaterThan(0);
+    const modalBody = [...body].find((el) => el.querySelector("[data-scroll-content]")?.textContent?.includes("ready_to_import"));
+    if (!modalBody) throw new Error("modal body lane not rendered");
+    expect(modalBody.classList.contains("flex-1")).toBe(true);
+    // The confirm footer (add_to_library) is a SIBLING after the lane, never
+    // inside the scroller — it stays docked while the body scrolls.
+    const footerBtn = [...view.baseElement.querySelectorAll("button")].find((b) =>
+      b.textContent?.includes("add_to_library"));
+    if (!footerBtn) throw new Error("footer confirm button not rendered");
+    expect(footerBtn.closest("[data-scroll-area]")).toBeNull();
   });
 });

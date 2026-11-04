@@ -10,6 +10,7 @@
 import { cn } from "../../../lib/cn.js";
 import { useT } from "../../../i18n/context.js";
 import { Toggle } from "../../shared/Toggle.js";
+import { ScrollArea } from "../../shared/scroll-area.js";
 import { RegexImportProfileCard } from "./RegexImportProfileCard.js";
 import {
   initial,
@@ -82,14 +83,16 @@ export function ChatImportPreview({ preview }: { preview: ChatPreview }) {
         </div>
         <div className="rounded-full bg-success-dim px-2.5 py-0.5 font-ui text-[calc(var(--ui-fs)-2px)] leading-4 font-medium text-success-text">{t("ready")}</div>
       </div>
-      <div className="max-h-[250px] overflow-y-auto">
+      {/* CNR-8r: capped preview list on the thin lane (cap stays on the
+          scroller root). */}
+      <ScrollArea scrollbarSize="thin" className="max-h-[250px]">
         {preview.messages.map((message, index) => (
           <div key={index} className={cn("flex items-start gap-2 rounded-md px-2 py-1.5", message.role === "user" && "bg-s2")}>
             <div className={cn("min-w-[44px] shrink-0 pt-0.5 font-ui text-[calc(var(--ui-fs)-3px)] font-semibold", message.role === "user" ? "text-info" : "text-accent-t")}>{message.name}</div>
             <div className="font-ui text-[calc(var(--ui-fs)-2px)] text-t2">{truncate(message.text, 140)}</div>
           </div>
         ))}
-      </div>
+      </ScrollArea>
       <div className="mt-2 font-ui text-[calc(var(--ui-fs)-2px)] leading-4 text-t3">{t("showing_parsed_messages", { n: preview.messages.length })}</div>
     </div>
   );

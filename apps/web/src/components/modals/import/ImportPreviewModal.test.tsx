@@ -134,3 +134,21 @@ describe("ImportPreviewModal", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 });
+
+// ─── CNR-8r: thin-lane chrome pin ───────────────────────────────────────────
+// The modal body rides the shared thin lane (the global native fallback is
+// gone); the docked ImportModalFooter stays outside the scroller.
+describe("ImportPreviewModal — body on the thin lane (CNR-8r)", () => {
+  it("the preview body scrolls on a thin lane and the footer stays docked outside it", () => {
+    const view = renderModal();
+    const area = view.baseElement.querySelector('[data-scroll-area="thin"]');
+    if (!area) throw new Error("thin lane root not rendered");
+    expect(area.classList.contains("flex-1")).toBe(true);
+    expect(area.querySelector("[data-scroll-viewport]")?.classList.contains("scrollbar-hide")).toBe(true);
+    expect(area.querySelector("[data-scroll-content]")?.textContent).toBe("PREVIEW_BODY");
+    const footer = [...view.baseElement.querySelectorAll("button")].find((b) =>
+      b.textContent?.includes("Add to library"));
+    if (!footer) throw new Error("footer confirm button not rendered");
+    expect(footer.closest("[data-scroll-area]")).toBeNull();
+  });
+});

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useT } from "../../i18n/context.js";
 import { cn } from "../../lib/cn.js";
 import { Modal } from "../shared/Modal.js";
+import { ScrollArea } from "../shared/scroll-area.js";
 import { modalPanelCls } from "../shared/modal-helpers.js";
 import { Icons } from "../shared/icons.js";
 import { SegmentedControl } from "../shared/SegmentedControl.js";
@@ -313,8 +314,10 @@ export function PresetImportModal({ onClose, onImport, initialFile }: PresetImpo
               </div>
             )}
 
-            {/* Block list */}
-            <div className={cn(!isMobile && "flex-1 overflow-y-auto")}>
+            {/* Block list — CNR-8r: DESKTOP half on the thin lane; the phone
+                half stays unsized so the phone preview wrapper (:277) keeps
+                owning the scroll, exactly as before. */}
+            <ScrollArea scrollbarSize="thin" className={cn(!isMobile && "flex-1")}>
               {blockInfos.length === 0 ? (
                 <div className="px-5 py-8 text-center font-ui text-[calc(var(--ui-fs)-2px)] text-t4">{t("preset_import_no_match")}</div>
               ) : (
@@ -324,7 +327,7 @@ export function PresetImportModal({ onClose, onImport, initialFile }: PresetImpo
                   ))}
                 </div>
               )}
-            </div>
+            </ScrollArea>
 
             {/* RXU-21: the Regex Profile preview card — renders ONLY when the
                 file embeds Regex rules; importing creates exactly ONE Profile

@@ -21,6 +21,7 @@
 import type { ReactNode } from "react";
 import { cn } from "../../../lib/cn.js";
 import { Icons } from "../../shared/icons.js";
+import { ScrollArea } from "../../shared/scroll-area.js";
 import { Modal } from "../../shared/Modal.js";
 import { modalPanelCls } from "../../shared/modal-helpers.js";
 import { useIsMobile } from "../../../hooks/use-mobile.js";
@@ -101,7 +102,9 @@ export function ImportPreviewModal({
             </button>
           </div>
         </div>
-        <div className="flex-1 overflow-y-auto p-5">{preview}</div>
+        {/* CNR-8r: body on the thin lane (8g idiom); the docked
+            ImportModalFooter stays outside the scroller. */}
+        <ScrollArea scrollbarSize="thin" className="flex-1" contentClassName="p-5">{preview}</ScrollArea>
         <ImportModalFooter
           onClose={onClose}
           onConfirm={onConfirm}
