@@ -99,4 +99,28 @@ describe("CoauthorLoreAssistantSettings", () => {
     expect(fieldTrigger(view, "coauthor.lore_assistant.provider")).toBeTruthy();
     expect(fieldTrigger(view, "coauthor.lore_assistant.model")).toBeTruthy();
   });
+
+  it("scrolls the desktop popover body on the shared thin lane; the cap stays on the popover content (CNR-8r2)", async () => {
+    const view = render(<CoauthorLoreAssistantSettings />);
+    fireEvent.click(view.getByRole("button", { name: "coauthor.lore_assistant.title" }));
+    // The popover portals to document.body — structural pins query document.
+    const lane = await waitFor(() => {
+      const found = Array.from(document.body.querySelectorAll<HTMLElement>('[data-scroll-area="thin"]'))
+        .find((el) => el.textContent?.includes("coauthor.lore_assistant.same_as_coauthor"));
+      if (!found) throw new Error("popover body lane not rendered");
+      return found;
+    });
+    // The lane fills the popover content (the flyout idiom) and the body
+    // scrolls inside its viewport; the trigger stays outside any lane.
+    expect(lane.className).toContain("flex-1");
+    expect(lane.querySelector("[data-scroll-viewport]")).not.toBeNull();
+    expect(view.getByRole("button", { name: "coauthor.lore_assistant.title" }).closest("[data-scroll-area]")).toBeNull();
+    // The cap lives on an ancestor (the Radix popover content), which is no
+    // longer a native scroller itself.
+    let capEl: HTMLElement | null = lane;
+    while (capEl && capEl !== document.body && !capEl.className.includes("max-h-")) capEl = capEl.parentElement;
+    expect(capEl).not.toBeNull();
+    expect(capEl!.className).toContain("overflow-hidden");
+    expect(capEl!.className).not.toContain("overflow-y-auto");
+  });
 });

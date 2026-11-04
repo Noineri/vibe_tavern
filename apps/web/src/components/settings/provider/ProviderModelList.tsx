@@ -6,6 +6,7 @@ import type { ProviderModelOption } from "../../../api/types.js";
 import { Icons } from "../../shared/icons.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
 import { deriveOwner, type ToolSupport } from "../../../lib/provider-model-capabilities.js";
+import { ScrollArea } from "../../shared/scroll-area.js";
 
 export type ProviderModelListOption = ProviderModelOption & {
   toolSupport?: ToolSupport;
@@ -141,7 +142,11 @@ export function ProviderModelList({
   }
 
   return (
-    <Command.List className={cn("max-h-[200px] overflow-y-auto bg-surface p-1", listClassName)}>
+    <ScrollArea scrollbarSize="thin" className="max-h-[200px] bg-surface">
+      {/* CNR-8r2: the 8d cmdk idiom (same as DropdownSelect) — the height cap
+          moved onto the ScrollArea root; cmdk's active-item scrollIntoView is
+          element-level, so it rides the lane viewport unchanged. */}
+      <Command.List className={cn("p-1", listClassName)}>
       {groups
         ? groups.map(([owner, items]) => (
             <Command.Group
@@ -158,6 +163,7 @@ export function ProviderModelList({
         </Command.Item>
       )}
       {visible.length === 0 && !customSlug && <div className="px-2.5 py-1.5 text-center font-ui text-[calc(var(--ui-fs)-3px)] text-t4">{t("no_models_found")}</div>}
-    </Command.List>
+      </Command.List>
+    </ScrollArea>
   );
 }

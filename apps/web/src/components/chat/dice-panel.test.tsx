@@ -605,6 +605,77 @@ describe("DiceTray", () => {
   });
 });
 
+describe("DiceTray scroll chrome (CNR-8r2)", () => {
+  const baseTrayProps = {
+    chatId: "chat_1",
+    branchId: "branch_1",
+    mode: "normal" as const,
+    definitions,
+    lane: lanes().normal,
+    character: mocks.character,
+    persona: mocks.persona,
+    diceActorBindings: null as Record<string, ("persona" | "character")[]> | null,
+  };
+
+  it("rides the wide split view on thin lanes: capped checks column + padded results column", () => {
+    const roll = makeRoll();
+    const { container } = render(<DiceTray {...baseTrayProps} lane={lanes([roll]).normal} />);
+    const wide = container.querySelector('[data-dice-layout="wide"]');
+    if (wide === null) throw new Error("wide layout not rendered");
+    const scrollRoots = Array.from(wide.querySelectorAll<HTMLElement>('[data-scroll-area="thin"]'));
+    expect(scrollRoots.length).toBeGreaterThanOrEqual(2);
+    // Checks column: fixed 15rem pane; the split border sits on the lane root
+    // (a docked edge, never something the rows scroll under).
+    const checks = scrollRoots.find((el) => el.className.includes("w-[15rem]"));
+    if (!checks) throw new Error("checks column lane not rendered");
+    expect(checks.className).toContain("border-r");
+    expect(checks.querySelector("[data-scroll-content]")?.textContent).toContain("dice_check_pick");
+    // Results column: fills the remaining width; p-3 rides the content (8j —
+    // padding scrolls with the rows) and the roll card sits in the viewport.
+    const results = scrollRoots.find((el) => el.className.includes("flex-1"));
+    if (!results) throw new Error("results column lane not rendered");
+    const content = results.querySelector("[data-scroll-content]");
+    expect(content?.className).toContain("p-3");
+    expect(content?.textContent).toContain("Favorable");
+    const card = container.querySelector(`[data-roll-id="${roll.rollId}"]`);
+    expect(results.querySelector("[data-scroll-viewport]")?.contains(card)).toBe(true);
+  });
+
+  it("keeps the no-actor fallback on a thin lane (desktop popover)", () => {
+    const { container, getByText } = render(
+      <DiceTray {...baseTrayProps} character={null} persona={null} />,
+    );
+    expect(getByText("dice_no_actor_title")).toBeTruthy();
+    const lane = Array.from(container.querySelectorAll<HTMLElement>('[data-scroll-area="thin"]'))
+      .find((el) => el.textContent?.includes("dice_no_actor_title"));
+    if (!lane) throw new Error("no-actor fallback lane not rendered");
+    expect(lane.className).toContain("flex-1");
+    expect(lane.querySelector("[data-scroll-viewport]")?.textContent).toContain("dice_no_actor_title");
+  });
+
+  it("opens the attempt-detail popover body on a thin lane capped at 60vh", async () => {
+    const roll = makeRoll();
+    const { getByRole } = render(<DiceTray {...baseTrayProps} lane={lanes([roll]).normal} />);
+    fireEvent.click(getByRole("button", { name: "dice_details" }));
+    // The popover portals to document.body — structural pins query document.
+    await waitFor(() => {
+      expect(findDetailLane()).toBeTruthy();
+    });
+    const lane = findDetailLane()!;
+    // Cap on the lane root; spacing + padding ride the content (8g/8j).
+    expect(lane.className).toContain("max-h-[60vh]");
+    const content = lane.querySelector("[data-scroll-content]") as HTMLElement;
+    expect(content.className).toContain("space-y-2");
+    expect(content.className).toContain("p-3");
+    expect(content.textContent).toContain("dice_final_attempt");
+  });
+
+  function findDetailLane(): HTMLElement | undefined {
+    return Array.from(document.querySelectorAll<HTMLElement>('[data-scroll-area="thin"]'))
+      .find((el) => el.querySelector("[data-scroll-content]")?.textContent?.includes("dice_final_attempt"));
+  }
+});
+
 describe("DicePanel docked", () => {
   it("renders without the absolute-centering wrapper when docked", () => {
     const { container } = render(<DicePanel docked />);

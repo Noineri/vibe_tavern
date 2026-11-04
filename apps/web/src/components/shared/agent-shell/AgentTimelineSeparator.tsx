@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 import type { AgentThreadEventWire, ExperienceCopilotMessageWire } from "@vibe-tavern/api-contracts";
 import { Icons } from "../icons.js";
+import { ScrollArea } from "../scroll-area.js";
 import { AnimatedDisclosure } from "../AnimatedDisclosure.js";
 import { useT } from "../../../i18n/context.js";
 import { formatRelativeTime } from "../../layout/sidebar-utils.js";
@@ -132,12 +133,17 @@ function TimelineSeparatorFrame({
         <Icons.Caret direction={expanded ? "u" : "d"} className="h-3 w-3 shrink-0" />
       </button>
       <AnimatedDisclosure open={expanded}>
-        <div
+        {/* CNR-8r2: the disclosure body rides the shared thin lane — cap and
+            card chrome stay on the lane root (the element the testid marks),
+            padding rides the lane content. */}
+        <ScrollArea
+          scrollbarSize="thin"
           data-testid="timeline-separator-body"
-          className="max-h-64 overflow-y-auto rounded-md bg-s3 p-2.5 font-ui text-[calc(var(--ui-fs)-2px)] leading-[1.5] text-msg-t1"
+          className="max-h-64 rounded-md bg-s3 font-ui text-[calc(var(--ui-fs)-2px)] leading-[1.5] text-msg-t1"
+          contentClassName="p-2.5"
         >
           {children}
-        </div>
+        </ScrollArea>
       </AnimatedDisclosure>
     </div>
   );

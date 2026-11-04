@@ -8,6 +8,7 @@ import { useProviderDataStore } from "../../stores/provider-data-store.js";
 import { useBootstrapStore, patchUiSettingsAction } from "../../stores/api-actions/bootstrap-actions.js";
 import { cn } from "../../lib/cn.js";
 import { getModalPortal } from "../shared/modal-helpers.js";
+import { ScrollArea } from "../shared/scroll-area.js";
 import { BottomSheet } from "../shared/BottomSheet.js";
 import { Toggle } from "../shared/Toggle.js";
 import { AiAssistantConnectionFields } from "../shared/ai-assistant/AiAssistantConnectionFields.js";
@@ -109,9 +110,15 @@ export function CoauthorLoreAssistantSettings() {
             side="bottom"
             align="start"
             sideOffset={8}
-            className={cn("glass-blur z-[220] w-[min(460px,calc(100vw-2rem))] max-h-[min(70vh,var(--radix-popover-content-available-height))] overflow-y-auto rounded-lg border border-border2 bg-glass-bg shadow-[0_12px_28px_rgba(0,0,0,0.45)] outline-none data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95")}
+            className={cn("glass-blur z-[220] flex w-[min(460px,calc(100vw-2rem))] max-h-[min(70vh,var(--radix-popover-content-available-height))] flex-col overflow-hidden rounded-lg border border-border2 bg-glass-bg shadow-[0_12px_28px_rgba(0,0,0,0.45)] outline-none data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95")}
           >
-            {body}
+            {/* CNR-8r2: the desktop popover body rides the shared thin lane
+                (the flyout idiom) — the available-height cap stays on the
+                Radix content, the lane fills the rest. The mobile BottomSheet
+                half below is phone-only (7g) and keeps its native scroller. */}
+            <ScrollArea scrollbarSize="thin" className="min-h-0 flex-1">
+              {body}
+            </ScrollArea>
           </Popover.Content>
         </Popover.Portal>
       )}

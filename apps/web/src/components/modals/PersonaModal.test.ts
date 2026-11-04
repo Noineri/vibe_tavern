@@ -306,6 +306,43 @@ describe("PersonaModal master-detail wiring", () => {
 		expect(dock).toBeTruthy();
 		expect(viewport.contains(dock!)).toBe(false);
 	});
+
+	test("the ST import preview list rides the thin lane; the confirm row stays docked outside it (CNR-8r2)", async () => {
+		const calls: Calls = { setActive: [], saveEdit: [] };
+		renderOpen(calls);
+		await settled();
+		// Drive the single-file ST import path with a real settings.json shape
+		// (the parse → preview seam is the same one the folder pick uses).
+		const input = document.querySelector('input[accept="application/json,.json"]');
+		if (!(input instanceof HTMLInputElement)) throw new Error("ST file input missing");
+		const stJson = JSON.stringify({
+			power_user: {
+				personas: { "zed.png": "Zed", "quinn.png": "Quinn" },
+				persona_descriptions: {
+					"zed.png": { description: "Imported one", position: 0, depth: 2, role: 0 },
+					"quinn.png": { description: "Imported two", position: 0, depth: 2, role: 0 },
+				},
+				default_persona: "zed.png",
+			},
+		});
+		Object.defineProperty(input, "files", { value: [new File([stJson], "settings.json", { type: "application/json" })], configurable: true });
+		fireEvent.change(input);
+		await settled();
+		// The preview list (the old max-h-[200px] native scroller) is a thin
+		// lane now: cap on the root, row spacing on the content, rows in the
+		// viewport — and the confirm/cancel row docked after the lane.
+		const lane = Array.from(document.querySelectorAll<HTMLElement>('[data-scroll-area="thin"]'))
+			.find(el => el.querySelector("[data-scroll-content]")?.textContent?.includes("Zed"));
+		if (!lane) throw new Error("import preview lane not rendered");
+		expect(lane.className).toContain("max-h-[200px]");
+		const content = lane.querySelector("[data-scroll-content]") as HTMLElement;
+		expect(content.className).toContain("space-y-1.5");
+		const zedRow = Array.from(document.querySelectorAll("span")).find(s => s.textContent === "Zed")!;
+		expect(lane.querySelector("[data-scroll-viewport]")!.contains(zedRow)).toBe(true);
+		const confirm = Array.from(document.querySelectorAll("button")).find(b => b.textContent?.includes("st_persona_confirm_import"));
+		expect(confirm).toBeTruthy();
+		expect(confirm!.closest("[data-scroll-area]")).toBeNull();
+	});
 });
 
 describe("computePersonaIsDirty", () => {

@@ -38,9 +38,10 @@ let ProviderModelSelector: typeof import("./ProviderModelSelector.js").ProviderM
 let ProviderModalModelSelector: typeof import("./ProviderModalModelSelector.js").ProviderModalModelSelector;
 let render: typeof import("@testing-library/react").render;
 let fireEvent: typeof import("@testing-library/react").fireEvent;
+let waitFor: typeof import("@testing-library/react").waitFor;
 
 beforeAll(async () => {
-  ({ render, fireEvent } = await import("@testing-library/react"));
+  ({ render, fireEvent, waitFor } = await import("@testing-library/react"));
   ({ ProviderModelSelector } = await import("./ProviderModelSelector.js"));
   ({ ProviderModalModelSelector } = await import("./ProviderModalModelSelector.js"));
 });
@@ -250,6 +251,29 @@ describe("ProviderModelSelector optional selection callback", () => {
     fireEvent.click(view.getByText("gpt-4o").closest("button")!);
     expect(document.body.querySelector("[data-testid='family-badge']")?.textContent).toBe("gpt-4o");
     expect(document.body.querySelector("[data-testid='family-description']")?.textContent).toBe("gpt-4o");
+    view.unmount();
+  });
+});
+
+/** CNR-8r2 — the cmdk list rides the shared thin ScrollArea lane (the 8d
+ *  idiom already proven by DropdownSelect): the cap moves onto the lane root,
+ *  the listbox keeps its role/keyboard wiring, and cmdk's element-level
+ *  active-item scrollIntoView rides the lane viewport unchanged. */
+describe("ProviderModelSelector scroll chrome (CNR-8r2)", () => {
+  it("the opened model list scrolls inside the shared thin lane, not a native overflow-y-auto", async () => {
+    const view = render(<ProviderModelSelector {...baseProps()} />);
+    fireEvent.click(view.getByText("gpt-4o").closest("button")!);
+    await waitFor(() => expect(document.body.querySelector("[cmdk-list]")).not.toBeNull());
+    const list = document.body.querySelector<HTMLElement>("[cmdk-list]")!;
+    const lane = list.closest<HTMLElement>('[data-scroll-area="thin"]');
+    expect(lane).not.toBeNull();
+    expect(list.closest("[data-scroll-viewport]")).not.toBeNull();
+    // The cap lives on the lane root; the listbox itself stopped being the
+    // native scroller.
+    expect(lane!.classList.contains("max-h-[200px]")).toBe(true);
+    expect(list.classList.contains("overflow-y-auto")).toBe(false);
+    // cmdk's items stay wired inside the listbox (selection + keyboard nav).
+    expect(list.querySelector("[cmdk-item]")).not.toBeNull();
     view.unmount();
   });
 });

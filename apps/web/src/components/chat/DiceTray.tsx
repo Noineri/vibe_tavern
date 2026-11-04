@@ -16,6 +16,7 @@ import { DiceFaces } from "../shared/dice-faces.js";
 import { EmptyState } from "../shared/empty-state.js";
 import { Ic, Icons } from "../shared/icons.js";
 import { getModalPortal } from "../shared/modal-helpers.js";
+import { ScrollArea } from "../shared/scroll-area.js";
 import { CustomTooltip } from "../shared/Tooltip.js";
 
 interface DiceActorOption {
@@ -250,7 +251,9 @@ function PolicyBadge({ roll }: { roll: DiceRollSnapshot }) {
 function AttemptDetail({ roll }: { roll: DiceRollSnapshot }) {
   const { t } = useT();
   return (
-    <div className="max-h-[60vh] space-y-2 overflow-y-auto p-3">
+    // CNR-8r2: capped popover body on the shared thin lane — the cap rides
+    // the lane root, spacing + padding ride the content (8g/8j idiom).
+    <ScrollArea scrollbarSize="thin" className="max-h-[60vh]" contentClassName="space-y-2 p-3">
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-ui text-[calc(var(--ui-fs)-1px)] font-semibold text-t1">{roll.checkLabel}</span>
         <span className="font-mono text-[calc(var(--ui-fs)-3px)] text-t3">{roll.notation}</span>
@@ -280,7 +283,7 @@ function AttemptDetail({ roll }: { roll: DiceRollSnapshot }) {
           {attempt.grantReason && <div className="mt-1 text-[calc(var(--ui-fs)-3px)] text-t2">{t("dice_grant_reason")}: {attempt.grantReason}</div>}
         </div>
       ))}
-    </div>
+    </ScrollArea>
   );
 }
 
@@ -622,7 +625,7 @@ export function DiceTray({
       </div>
 
       {noActor ? (
-        <div className="min-h-0 flex-1 overflow-y-auto">
+        <ScrollArea scrollbarSize="thin" className="min-h-0 flex-1">
           <EmptyState icon={<Ic.dice />} title={t("dice_no_actor_title")} sub={t("dice_no_actor_sub")} />
           {staleRolls.length > 0 && (
             <div className="space-y-3 p-3">
@@ -631,7 +634,7 @@ export function DiceTray({
               {staleRolls.map((r) => renderRoll(r, true))}
             </div>
           )}
-        </div>
+        </ScrollArea>
       ) : isMobile ? (
         // Narrow / BottomSheet: checks sticky on top, only results scroll.
         <div className="flex min-h-0 flex-1 flex-col" data-dice-layout="narrow">
@@ -643,12 +646,16 @@ export function DiceTray({
         </div>
       ) : (
         // Wide: checks on the left, persona|character results on the right.
+        // CNR-8r2: both desktop columns ride thin lanes — the split border
+        // sits on the checks lane root (docked edge), results padding rides
+        // the lane content (8j). The narrow branch below is phone-only
+        // (7g media policy hides native chrome there) and stays native.
         <div className="flex min-h-0 flex-1" data-dice-layout="wide">
-          <div className="w-[15rem] shrink-0 overflow-y-auto border-r border-border">{checksRegion}</div>
-          <div className="min-h-0 flex-1 overflow-y-auto p-3">
+          <ScrollArea scrollbarSize="thin" className="w-[15rem] shrink-0 border-r border-border">{checksRegion}</ScrollArea>
+          <ScrollArea scrollbarSize="thin" className="min-h-0 flex-1" contentClassName="p-3">
             {lastError && <div role="alert" className="mb-3 rounded-md border border-danger/40 bg-danger-dim px-3 py-2 text-[calc(var(--ui-fs)-3px)] text-danger-text">{lastError}</div>}
             {resultsInner}
-          </div>
+          </ScrollArea>
         </div>
       )}
 

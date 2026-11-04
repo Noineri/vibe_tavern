@@ -7,6 +7,7 @@ import { fetchBootstrapAction, fetchPersonasAction } from "../stores/api-actions
 import { cn } from "../lib/cn.js";
 import { useT } from "../i18n/context.js";
 import { Icons } from "../components/shared/icons.js";
+import { ScrollArea } from "../components/shared/scroll-area.js";
 import { CustomTooltip } from "../components/shared/Tooltip.js";
 import { Checkbox } from "../components/shared/Checkbox.js";
 
@@ -205,7 +206,10 @@ export function useStPersonaImport({ isOpen }: { isOpen: boolean }): {
   const preview = stImportPreview && (
     <div className={cn("shrink-0 rounded-lg border border-border2 bg-s2 mx-5 mb-2 p-4")}>
       <div className="font-ui text-[var(--ui-fs)] leading-5 font-medium text-t1 mb-2">{t("st_persona_preview_title", { count: stImportSelected.size })}</div>
-      <div className="max-h-[200px] overflow-y-auto space-y-1.5">
+      {/* CNR-8r2: capped import list on the thin lane — the cap rides the
+          lane root, row spacing rides the content (8j). The confirm/cancel
+          row below stays docked outside the scroller. */}
+      <ScrollArea scrollbarSize="thin" className="max-h-[200px]" contentClassName="space-y-1.5">
         {stImportPreview.map((entry, idx) => (
           <div key={entry.key} className="flex items-start gap-2 rounded-md bg-surface px-3 py-2">
             <Checkbox
@@ -238,7 +242,7 @@ export function useStPersonaImport({ isOpen }: { isOpen: boolean }): {
             />
           </div>
         ))}
-      </div>
+      </ScrollArea>
       <div className="flex gap-2 mt-3">
         <button type="button"
           className="h-[34px] cursor-pointer rounded-md bg-accent px-4 font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-on-accent transition-all hover:brightness-110 disabled:opacity-45"

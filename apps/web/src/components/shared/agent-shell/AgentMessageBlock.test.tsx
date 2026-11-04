@@ -138,8 +138,11 @@ describe("ExperienceCopilotMessageBlock — digest separator (AP-34)", () => {
 
     fireEvent.click(getByTestId("timeline-separator-toggle"));
     const body = getByTestId("timeline-separator-body");
+    // CNR-8r2: the body rides the shared thin ScrollArea lane — cap on the
+    // lane root (the testid element), scrolling on its viewport.
     expect(body.className).toContain("max-h-64");
-    expect(body.className).toContain("overflow-y-auto");
+    expect(body.getAttribute("data-scroll-area")).toBe("thin");
+    expect(body.querySelector(":scope > [data-scroll-viewport]")).not.toBeNull();
   });
 
   it("renders an assistant bubble for a normal assistant message (no separator)", () => {

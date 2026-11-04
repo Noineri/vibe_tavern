@@ -269,12 +269,15 @@ describe("AgentTimelineSeparator (SC-19b)", () => {
     expect(getByText("the current reply")).toBeDefined();
 
     // The expanded body scrolls inside itself (the digest card precedent) —
-    // it never stretches the feed.
+    // it never stretches the feed. CNR-8r2: the body rides the shared thin
+    // ScrollArea lane; the cap stays on the lane root (the element the
+    // testid marks), the scrolling moved onto the lane's viewport.
     const bodies = container.querySelectorAll('[data-testid="timeline-separator-body"]');
     expect(bodies).toHaveLength(3);
     for (const body of bodies) {
-      expect(body.className).toContain("max-h-64");
-      expect(body.className).toContain("overflow-y-auto");
+      expect((body as HTMLElement).className).toContain("max-h-64");
+      expect(body.getAttribute("data-scroll-area")).toBe("thin");
+      expect(body.querySelector(":scope > [data-scroll-viewport]")).not.toBeNull();
     }
 
     // A second click collapses again — the exit animation keeps the body
@@ -435,8 +438,11 @@ describe("AgentDigestSeparator (AP-34)", () => {
     fireEvent.click(getByTestId("timeline-separator-toggle"));
     const body = getByTestId("timeline-separator-body");
     // First line: the relative time (Intl-formatted chrome, untranslated).
-    expect(body.firstElementChild!.textContent).toBe(formatRelativeTime(createdAt));
-    expect(body.firstElementChild!.getAttribute("translate")).toBeNull();
+    // CNR-8r2: the body is a thin-lane root now — the first CONTENT child is
+    // still the relative-time line (chrome first, model text after).
+    const firstLine = body.querySelector("[data-scroll-content]")!.firstElementChild!;
+    expect(firstLine.textContent).toBe(formatRelativeTime(createdAt));
+    expect(firstLine.getAttribute("translate")).toBeNull();
     // Then the summary (model text, opted into page translation).
     expect(getByText("the compacted summary").getAttribute("translate")).toBe("yes");
   });
@@ -449,7 +455,12 @@ describe("AgentDigestSeparator (AP-34)", () => {
     fireEvent.click(getByTestId("timeline-separator-toggle"));
     const body = getByTestId("timeline-separator-body");
     expect(body.className).toContain("max-h-64");
-    expect(body.className).toContain("overflow-y-auto");
+    // CNR-8r2: capped body on the shared thin lane — the cap + card chrome
+    // stay on the lane root, p-2.5 rides the lane content (padding scrolls
+    // with the rows).
+    expect(body.getAttribute("data-scroll-area")).toBe("thin");
+    const content = body.querySelector("[data-scroll-content]") as HTMLElement;
+    expect(content.className).toContain("p-2.5");
     // The feed's digest-row pins (order, regenerate keep) read these — and
     // no card chrome is left anywhere in the render.
     const frame = getByTestId("timeline-separator");

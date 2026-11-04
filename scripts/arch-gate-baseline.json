@@ -26,7 +26,7 @@
     "apps/web/src/components/chat/ImageGenFineTuningChip.tsx": 1434,
     "apps/web/src/components/chat/MessageAiEditorModal.tsx": 853,
     "apps/web/src/components/context/SummaryTab.tsx": 880,
-    "apps/web/src/components/dev/ThemeTuner.tsx": 1721,
+    "apps/web/src/components/dev/ThemeTuner.tsx": 1720,
     "apps/web/src/components/experience/ExperienceSetupModal.tsx": 1542,
     "apps/web/src/components/layout/SetupWizard.tsx": 954,
     "apps/web/src/components/modals/PromptManagerModal.tsx": 1304,
