@@ -119,6 +119,36 @@ export function isBackground(): boolean {
   return document.hidden || !document.hasFocus();
 }
 
+/**
+ * Prime the shared AudioContext on the FIRST user gesture ANYWHERE in the app
+ * (defect 2026-11-04: after a reload with toggles already persisted on, the
+ * section was never opened again, so no gesture ever primed the context and
+ * every background alert stayed silent). Browsers only allow audio after a
+ * gesture — any click/keypress counts, the section does not have to be open.
+ * The listeners remove themselves once the context is running. Returns a
+ * disposer for tests and teardown.
+ */
+export function installSoundAlertsGesturePrimer(): () => void {
+  const prime = () => {
+    primeSoundAlerts();
+    if (sharedContext?.state === "running") {
+      window.removeEventListener("pointerdown", prime, true);
+      window.removeEventListener("keydown", prime, true);
+    }
+  };
+  window.addEventListener("pointerdown", prime, true);
+  window.addEventListener("keydown", prime, true);
+  return () => {
+    window.removeEventListener("pointerdown", prime, true);
+    window.removeEventListener("keydown", prime, true);
+  };
+}
+
+/** Test seam — forget the shared context (production never calls this). */
+export function _resetSoundAlertsForTests(): void {
+  sharedContext = null;
+}
+
 export function osNotificationsSupported(): boolean {
   return typeof window !== "undefined" && "Notification" in window;
 }

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useSyncExternalStore } from "react";
 import { useT } from "../../i18n/context.js";
 import type Resources from "../../i18n/resources.js";
 import { Markdown } from "../../lib/markdown.js";
@@ -134,6 +134,35 @@ type CheckState =
   | { kind: "verdict"; value: RuntimeUpdateCheck }
   | { kind: "failed" };
 
+// Module-scoped like the flow state (defect 2026-11-04): a desktop→mobile
+// breakpoint cross remounts the whole section — the pressed check's verdict
+// must survive it instead of snapping back to the idle button.
+let checkState: CheckState = { kind: "unchecked" };
+const checkListeners = new Set<() => void>();
+
+function emitCheck(next: CheckState): void {
+  checkState = next;
+  for (const listener of checkListeners) listener();
+}
+
+function useCheckState(): [CheckState, (next: CheckState) => void] {
+  const value = useSyncExternalStore(
+    (listener) => {
+      checkListeners.add(listener);
+      return () => {
+        checkListeners.delete(listener);
+      };
+    },
+    () => checkState,
+  );
+  return [value, emitCheck];
+}
+
+/** Test seam — production never calls this. */
+export function __resetAboutCheckStateForTests(): void {
+  emitCheck({ kind: "unchecked" });
+}
+
 /** Everything the release view needs, derived once from either source. */
 interface ReleaseView {
   latestTag: string | null;
@@ -145,7 +174,7 @@ interface ReleaseView {
 
 export function AboutUpdateBlock({ runtimeInfo }: { runtimeInfo: RuntimeInfo | null }) {
   const { t } = useT();
-  const [check, setCheck] = useState<CheckState>({ kind: "unchecked" });
+  const [check, emitCheck] = useCheckState();
   // The AppShell badge check runs off the same localStorage-cached source, so
   // this second instance resolves instantly and adds no GitHub traffic; it
   // only makes an already-known update visible without a manual press.
@@ -166,20 +195,23 @@ export function AboutUpdateBlock({ runtimeInfo }: { runtimeInfo: RuntimeInfo | n
   useSettingsSectionLeaveGuard((continueLeaving) => {
     const kind = flowKindRef.current;
     if (kind === "running" || kind === "complete") return;
+    // Leaving the error state cleared the server orchestrator in the old
+    // modal (reset on close). A guard-approved leave IS that close — while a
+    // viewport-cross remount never passes through here, keeping the error
+    // view alive for the remounted section to pick back up.
+    if (kind === "error") void flowResetRef.current();
+    // Same fidelity for the pressed check: a real leave reopens fresh (the
+    // old modal was state-per-open); only the guard-less remount keeps it.
+    emitCheck({ kind: "unchecked" });
     continueLeaving();
   });
-  // Leaving in the error state cleared the server orchestrator in the old
-  // modal (reset on close); an unmount here is that close.
-  useEffect(() => () => {
-    if (flowKindRef.current === "error") void flowResetRef.current();
-  }, []);
 
   const runCheck = async () => {
-    setCheck({ kind: "checking" });
+    emitCheck({ kind: "checking" });
     try {
-      setCheck({ kind: "verdict", value: await fetchUpdateCheck() });
+      emitCheck({ kind: "verdict", value: await fetchUpdateCheck() });
     } catch {
-      setCheck({ kind: "failed" });
+      emitCheck({ kind: "failed" });
     }
   };
 

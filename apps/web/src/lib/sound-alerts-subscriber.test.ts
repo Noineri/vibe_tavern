@@ -1,4 +1,5 @@
 import { afterAll, beforeEach, describe, expect, test } from "bun:test";
+import { useDomEnv } from "../../test/dom-env.js";
 import {
   installSoundAlerts,
   notifyChatGenerationSettled,
@@ -11,11 +12,13 @@ import { useGenerationQueueStore } from "../stores/generation-queue-store.js";
 import { initI18n } from "../i18n/i18n.js";
 import { getT } from "../i18n/locale-helpers.js";
 
-// Pure store + seam tests — the browser-facing effects are swapped through the
-// module's test seam, so no DOM, no Web Audio, no Notification API here. Real
-// i18n (initI18n("en"), the chip-section-summaries precedent) so notifyOs
+// dom-env: installSoundAlerts now also owns the app-level gesture primer
+// (window listeners). The sound/alert effects themselves are still swapped
+// through the module's test seam — no real Web Audio or Notification API.
+// Real i18n (initI18n("en"), the chip-section-summaries precedent) so notifyOs
 // assertions compare against t() itself — pinning the event → key mapping
 // without hardcoding the copy.
+useDomEnv();
 
 const played: string[] = [];
 const notified: Array<{ title: string; body: string }> = [];

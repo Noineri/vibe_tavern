@@ -20,7 +20,7 @@
 import { getT } from "../i18n/locale-helpers.js";
 import { useGenerationQueueStore, type QueueJob } from "../stores/generation-queue-store.js";
 import { useSoundAlertsStore } from "../stores/sound-alerts-store.js";
-import { isBackground, notifyOs, playAlert, type SoundAlertKind } from "./sound-alerts.js";
+import { installSoundAlertsGesturePrimer, isBackground, notifyOs, playAlert, type SoundAlertKind } from "./sound-alerts.js";
 
 export type SoundAlertEvent = "replyReady" | "imageReady" | "queueFinished" | "generationError";
 
@@ -85,10 +85,14 @@ function countActive(jobs: readonly QueueJob[]): number {
  * Subscribe to the generation queue once per app (AppShell mount). Fires
  * queue-finished when a chat drains its active jobs BECAUSE a job completed:
  * some job id went pending/running → done/failed in the same transition.
- * Cancels, clears and removals never qualify.
+ * Cancels, clears and removals never qualify. Also primes the shared
+ * AudioContext on the first user gesture anywhere — after a reload with
+ * toggles already on, the sound section is never reopened, so without this
+ * the alerts would stay silent until the user happened to visit it.
  */
 export function installSoundAlerts(): () => void {
-  return useGenerationQueueStore.subscribe((state, prevState) => {
+  const disposeGesturePrimer = installSoundAlertsGesturePrimer();
+  const unsubscribe = useGenerationQueueStore.subscribe((state, prevState) => {
     for (const [chatId, jobs] of Object.entries(state.jobsByChat)) {
       const before = prevState.jobsByChat[chatId];
       if (!before || countActive(before) === 0 || countActive(jobs) > 0) continue;
@@ -100,4 +104,8 @@ export function installSoundAlerts(): () => void {
       if (completed) fire("queueFinished");
     }
   });
+  return () => {
+    unsubscribe();
+    disposeGesturePrimer();
+  };
 }

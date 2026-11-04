@@ -6,6 +6,8 @@ useDomEnv({ failOnNetwork: true });
 
 const { render, fireEvent, waitFor } = await import("@testing-library/react");
 const { AboutSettingsSection, registerAboutSettingsSection } = await import("./about-settings-section.js");
+const { __resetAboutCheckStateForTests } = await import("./about-update-block.js");
+const { __resetUpdateFlowForTests } = await import("../../hooks/use-update-flow.js");
 const { SettingsModal } = await import("../modals/SettingsModal.js");
 const { TooltipProvider } = await import("../shared/Tooltip.js");
 const { useModalStore } = await import("../../stores/modal-store.js");
@@ -77,6 +79,11 @@ beforeEach(() => {
   useBootstrapStore.setState(initialBootstrap, true);
   openSpy.mockClear();
   setWidth(1280);
+  // The update screen's state is module-scoped (survives section remounts);
+  // every test starts from the fresh-open state the old component-local
+  // state used to give for free.
+  __resetAboutCheckStateForTests();
+  __resetUpdateFlowForTests();
   requests = [];
   statusCalls = 0;
   routes = {
@@ -126,6 +133,8 @@ afterEach(() => {
 afterAll(() => {
   globalThis.fetch = originalFetch;
   openSpy.mockRestore();
+  __resetAboutCheckStateForTests();
+  __resetUpdateFlowForTests();
   localStorage.removeItem(UPDATE_CACHE_KEY);
   useModalStore.setState(initialStore, true);
   useBootstrapStore.setState(initialBootstrap, true);
@@ -186,7 +195,11 @@ describe("about section body", () => {
     expect(view.getByRole("button", { name: "update_modal_update_button" })).toBeTruthy();
     expect(view.queryByText("update_modal_self_update_unavailable")).toBeNull();
     // Views share one document; unmount so the next render's queries are its own.
+    // A real reopen goes through the leave guard, which resets the pressed
+    // check (old-modal state-per-open); a bare unmount+render models the
+    // guard-less remount, so the reopen reset is applied explicitly here.
     view.unmount();
+    __resetAboutCheckStateForTests();
     routes.check = () => verdict({ canSelfUpdate: false });
     const second = render(<AboutSettingsSection />);
     fireEvent.click(second.getByRole("button", { name: /settings_about_check_updates/ }));
@@ -204,6 +217,10 @@ describe("about section body", () => {
     expect(noAsset.queryByRole("button", { name: "update_modal_update_button" })).toBeNull();
     noAsset.unmount();
 
+    // Each verdict models a fresh open (the guard resets the pressed check on
+    // a real leave); the bare remount between renders keeps it, hence the
+    // explicit resets.
+    __resetAboutCheckStateForTests();
     routes.check = () => verdict({ available: false, reason: "up-to-date", latestVersion: null, latestTag: null, releaseNotes: "" });
     const current = render(<AboutSettingsSection />);
     fireEvent.click(current.getByRole("button", { name: /settings_about_check_updates/ }));
@@ -211,6 +228,7 @@ describe("about section body", () => {
     expect(current.queryByText("update_modal_release_header")).toBeNull();
     current.unmount();
 
+    __resetAboutCheckStateForTests();
     routes.check = () => verdict({ available: false, reason: "offline", latestVersion: null, latestTag: null, releaseNotes: "" });
     const offline = render(<AboutSettingsSection />);
     fireEvent.click(offline.getByRole("button", { name: /settings_about_check_updates/ }));
@@ -259,6 +277,30 @@ describe("about update flow in the settings modal", () => {
     fireEvent.click(view.getByRole("button", { name: "close" }));
     expect(useModalStore.getState().isSettingsOpen).toBe(true);
     expect(statusCalls).toBeGreaterThanOrEqual(2);
+  });
+
+  test("a viewport-cross remount keeps the running update screen and its guard (defect 2026-11-04)", async () => {
+    addStubSection("interface");
+    disposers.push(registerAboutSettingsSection());
+    useModalStore.getState().openSettings("about");
+    const view = render(<TooltipProvider><SettingsModal /></TooltipProvider>);
+    fireEvent.click(await view.findByRole("button", { name: /settings_about_check_updates/ }));
+    fireEvent.click(await view.findByRole("button", { name: "update_modal_update_button" }));
+    expect(await view.findByText("update_modal_phase_downloading_archive…")).toBeTruthy();
+
+    // Desktop → mobile: the modal swaps its layout tree and REMOUNTS the
+    // section. The old component-local state snapped back to idle — progress
+    // vanished and closing was allowed again while the server kept swapping.
+    view.unmount();
+    setWidth(390);
+    const remounted = render(<TooltipProvider><SettingsModal /></TooltipProvider>);
+    expect(await remounted.findByText("update_modal_phase_downloading_archive…")).toBeTruthy();
+    expect(remounted.queryByRole("button", { name: /settings_about_check_updates/ })).toBeNull();
+
+    // The non-dismissable law holds for the remounted view too.
+    fireEvent.click(remounted.getByRole("button", { name: "close" }));
+    expect(useModalStore.getState().isSettingsOpen).toBe(true);
+    remounted.unmount();
   });
 
   test("an error state resets the orchestrator on dismiss and on modal close", async () => {

@@ -45,6 +45,43 @@ function textEntry(path: string, text: string): DiagnosticsEntry {
   return { path, bytes: content.byteLength, content };
 }
 
+/** Cap for a redacted endpoint — a path long enough to carry a payload is not
+ * an address anymore (some aggregators put encoded data into the path). */
+const MAX_ENDPOINT_LENGTH = 200;
+
+/**
+ * The one place a provider endpoint is made safe for the diagnostics bundle
+ * (defect 2026-11-04: `user:password@host` and `?api_key=…` shipped verbatim).
+ * Keeps scheme://host:port/path — the address a supporter needs — and drops
+ * everything a URL can hide secrets in: userinfo, the whole query string (key
+ * params have no naming convention worth trusting a filter with) and the
+ * fragment. Unparseable/empty endpoints degrade to explicit placeholders.
+ */
+export function redactEndpointForDiagnostics(raw: string): string {
+  if (raw.trim() === "") return "";
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return "[invalid-url]";
+  }
+  const address = `${url.protocol}//${url.host}${url.pathname}`;
+  return address.length > MAX_ENDPOINT_LENGTH ? `${address.slice(0, MAX_ENDPOINT_LENGTH)}…` : address;
+}
+
+/**
+ * Ring lines are "{ISO} {LEVEL}{[tag]} {message}" — keep ONLY the header and
+ * drop the message body (defect 2026-11-04: character-description fragments
+ * reached server-log.txt through ordinary warnings; the message part of a log
+ * line can carry ANY content and no redactor can tell prose from prose). The
+ * zip keeps the technical timeline — when, at what level, in which subsystem —
+ * while the readable log stays on disk in data/logs for the user to attach
+ * manually if they choose.
+ */
+function logHeader(line: string): string {
+  return line.replace(/^(\S+ \w+(?:\[[^\]]*\])?)(?: .*)?$/, "$1");
+}
+
 /** Total bytes under `dir` (top-level breakdown), following directories and
  * regular files only — symlinks are neither read nor followed. */
 export async function measureDataSizes(dataDir: string): Promise<{ totalBytes: number; entries: Record<string, number> }> {
@@ -92,12 +129,14 @@ export async function buildDiagnosticsEntries(input: DiagnosticsInput): Promise<
     dbSchemaVersion: readSchemaVersion(input.db),
     generatedAt: new Date().toISOString(),
   };
-  const logLines = recentLogLines();
+  const logLines = recentLogLines()
+    .map(logHeader)
+    .filter((header) => header !== "");
   const sizes = await measureDataSizes(input.dataDir);
   return [
     textEntry("vt-info.json", `${JSON.stringify(info, null, 2)}\n`),
     textEntry("server-log.txt", logLines.length > 0 ? `${logLines.join("\n")}\n` : ""),
-    textEntry("provider-profiles.json", `${JSON.stringify(input.providerProfiles, null, 2)}\n`),
+    textEntry("provider-profiles.json", `${JSON.stringify(input.providerProfiles.map((profile) => ({ ...profile, endpoint: redactEndpointForDiagnostics(profile.endpoint) })), null, 2)}\n`),
     textEntry("data-sizes.json", `${JSON.stringify(sizes, null, 2)}\n`),
   ];
 }
