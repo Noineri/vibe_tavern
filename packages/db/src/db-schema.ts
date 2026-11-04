@@ -2009,6 +2009,10 @@ export const experienceCopilotThreads = sqliteTable('experience_copilot_threads'
   // the first rp sync; written wholesale by setFrontier. Malformed JSON on read
   // → null (logged, never fatal) — the store's defensive-parse contract.
   nextSeq: integer('next_seq'),
+  // AFP-8: invalidating history writes bump this transactionally via SQLite
+  // triggers (messages AND events); proven suffix appends leave it unchanged.
+  // Independent of updated_at, seq allocation and the model-context window.
+  historyEpoch: integer('history_epoch').notNull().default(0),
   rpFrontierJson: text('rp_frontier_json'),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
@@ -2073,6 +2077,9 @@ export const experienceCopilotMessages = sqliteTable('experience_copilot_message
   createdAt: text('created_at').notNull(),
 }, (table) => ({
   threadIdx: index('idx_experience_copilot_messages_thread').on(table.threadId),
+  // Canonical merged order: NULL seq first, then seq/created_at/id. Also
+  // serves both directions of keyset seeks and the insert trigger's head probe.
+  feedSeekIdx: index('idx_experience_copilot_messages_feed_seek').on(table.threadId, table.seq, table.createdAt, table.id),
 }));
 
 // ─── agentThreadContextEvents (SIDECHAT_PLAN SC-1) ──────────────────────────
@@ -2098,6 +2105,7 @@ export const agentThreadContextEvents = sqliteTable('agent_thread_context_events
   createdAt: text('created_at').notNull(),
 }, (table) => ({
   threadIdx: index('idx_agent_thread_context_events_thread').on(table.threadId),
+  feedSeekIdx: index('idx_agent_thread_context_events_feed_seek').on(table.threadId, table.seq, table.createdAt, table.id),
 }));
 
 // ─── agentReviewRounds (AGENT_BACKGROUND_RUNS_PLAN BR-2a) ────────────────────

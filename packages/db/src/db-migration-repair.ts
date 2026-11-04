@@ -36,14 +36,17 @@ export function errorMessageChain(err: unknown): string {
   return chain || String(err);
 }
 
-/** Split migration SQL without treating semicolons inside line comments or
- * quoted literals as statement boundaries. Bun's sqlite.exec rejects
- * comment-only input, so comments are removed while scanning. */
+/** Split migration SQL without treating semicolons inside line comments,
+ * quoted literals or a trigger's BEGIN/END body as statement boundaries.
+ * CASE/END expressions inside a trigger do not close its body.
+ * Bun's sqlite.exec rejects comment-only input, so comments are removed. */
 export function splitMigrationStatements(sqlContent: string): string[] {
   const statements: string[] = [];
   let current = "";
   let quote: "'" | '"' | "`" | null = null;
   let inLineComment = false;
+  let inTriggerBody = false;
+  let triggerCaseDepth = 0;
 
   for (let index = 0; index < sqlContent.length; index++) {
     const char = sqlContent[index];
@@ -78,7 +81,28 @@ export function splitMigrationStatements(sqlContent: string): string[] {
       current += char;
       continue;
     }
+    if (/[A-Za-z_]/.test(char)) {
+      const start = index;
+      while (index + 1 < sqlContent.length && /[A-Za-z_0-9]/.test(sqlContent[index + 1])) index++;
+      const word = sqlContent.slice(start, index + 1);
+      if (inTriggerBody) {
+        if (word.toUpperCase() === 'CASE') triggerCaseDepth++;
+        else if (word.toUpperCase() === 'END') {
+          if (triggerCaseDepth > 0) triggerCaseDepth--;
+          else inTriggerBody = false;
+        }
+      } else if (word.toUpperCase() === 'BEGIN'
+        && /^CREATE\s+(?:TEMP(?:ORARY)?\s+)?TRIGGER\b/i.test(current.trim())) {
+        inTriggerBody = true;
+      }
+      current += word;
+      continue;
+    }
     if (char === ";") {
+      if (inTriggerBody) {
+        current += char;
+        continue;
+      }
       const statement = current.trim();
       if (statement.length > 0) statements.push(statement);
       current = "";
