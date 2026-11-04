@@ -46,6 +46,14 @@ Both layouts derive their option sets once; the mobile shell retains its live pr
 The script-warning switch remains backed by `useScriptWarningsToggle` and the existing server-setting API, not by the device preference store.
 `settings-section-registry.ts` is the single source of registered section descriptors and canonical id order; `SettingsModal` renders only registered bodies and uses `MasterDetailModal` for desktop/mobile navigation.
 
+`NetworkSettingsSection` renders blocks from `network-settings-registry.ts`; the core registration at boot adds proxies, then desktop-only mobile access.
+`NETWORK_SETTINGS_ORDER.modelCatalog` is the extension slot between them; the catalog feature registers its own body without editing the section or shipping a placeholder here.
+Each block can specify the same desktop/mobile layout gate as the section registry; the mobile-access body is not mounted or fetched on phone layouts.
+`NetworkSettingsProvider` supplies AppShell's existing proxy collection/default id and operation callbacks, also used by provider selectors; there is no second proxy cache.
+Proxy drafts stay local to the block, survive parent refreshes, and reset when leaving the section; the shared settings lifecycle host docks editor actions and guards discard on Back, section changes and closing.
+Mobile access uses the existing API-fetch seam and only enables after an explicit action in its disabled row, not when navigating to Network.
+The former proxy/mobile-access modal bodies are now `ProxySettingsSection` and `MobileAccessSection`; their standalone shells have been removed.
+
 ### Selectors
 
 Components subscribe to **focused slices**, never the entire snapshot.

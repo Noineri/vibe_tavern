@@ -5,7 +5,6 @@ import * as buildConfig from "../../build-config.js";
 import { useT } from "../../i18n/context.js";
 import { Icons } from "../shared/icons.js";
 import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
-import { apiFetch } from "../../api/client.js";
 import { resolveAssistantPrefillSupport } from "@vibe-tavern/domain";
 import { useChatStore, useNavigationStore, useCharacterStore, useProviderStore, useModalStore } from "../../stores/index.js";
 import { saveCharacterAction } from "../../stores/api-actions/character-actions.js";
@@ -39,8 +38,7 @@ import { useUserThemesStore } from "../../stores/user-themes-store.js";
 import { ShellDestructiveConfirmModal } from "../shared/destructive-confirm-modal.js";
 import { TweaksPanel } from "../settings/popovers/TweaksPanel.js";
 import { MobileSettings } from "../settings/popovers/MobileSettings.js";
-import { MobileAccessModal } from "../modals/MobileAccessModal.js";
-import { ProxyManagerModal } from "../modals/ProxyManagerModal.js";
+import { NetworkSettingsProvider, openNetworkSettings } from "../settings/network-settings-section.js";
 import { UpdateModal } from "../modals/UpdateModal.js";
 import { StarPromptModal } from "../modals/StarPromptModal.js";
 import { SettingsModal } from "../modals/SettingsModal.js";
@@ -84,9 +82,6 @@ export function AppShell() {
   const setTweaksOpen = useModalStore((s) => s.setTweaksOpen);
   const avatarOpen = useModalStore((s) => s.avatarOpen);
   const setAvatarOpen = useModalStore((s) => s.setAvatarOpen);
-  const mobileAccessOpen = useModalStore((s) => s.mobileAccessOpen);
-  const setMobileAccessOpen = useModalStore((s) => s.setMobileAccessOpen);
-  const setIsProxyManagerOpen = useModalStore((s) => s.setIsProxyManagerOpen);
   const isContextMemoryOpen = useModalStore((s) => s.isContextMemoryOpen);
   const setContextMemoryOpen = useModalStore((s) => s.setContextMemoryOpen);
   const isProviderModalOpen = useModalStore((s) => s.isProviderModalOpen);
@@ -349,20 +344,10 @@ export function AppShell() {
         </main>
         {!isMobile && (
           <TweaksPanel
-            onOpenMobileAccess={async () => {
-              // Ensure a token exists before opening the modal
-              try {
-                const resp = await apiFetch("/api/settings/mobile-access");
-                if (resp.ok) {
-                  const data = await resp.json();
-                  if (!data.token) await apiFetch("/api/settings/mobile-access/regenerate", { method: "POST" });
-                }
-              } catch { /* ignore */ }
-              setMobileAccessOpen(true);
-            }}
+            onOpenMobileAccess={openNetworkSettings}
             proxyCount={proxies.length}
             defaultProxyName={proxies.find((proxy) => proxy.id === defaultProxyId)?.name ?? null}
-            onOpenProxyManager={() => setIsProxyManagerOpen(true)}
+            onOpenProxyManager={openNetworkSettings}
           />
         )}
       </Popover.Root>
@@ -370,18 +355,8 @@ export function AppShell() {
       {isMobile && <MobileSettings
         open={tweaksOpen}
         onClose={() => setTweaksOpen(false)}
-        onOpenProxyManager={() => setIsProxyManagerOpen(true)}
+        onOpenProxyManager={openNetworkSettings}
       />}
-      {mobileAccessOpen && !isMobile && <MobileAccessModal open={mobileAccessOpen} onClose={() => setMobileAccessOpen(false)} onDisabled={() => {}} />}
-      <ProxyManagerModal
-        proxies={proxies}
-        defaultProxyId={defaultProxyId}
-        onCreate={saveProxy}
-        onUpdate={updateProxy}
-        onDelete={async (id) => { await deleteProxy(id); }}
-        onRefresh={refreshProxies}
-        onProvidersChanged={provider.handleRefreshProfiles}
-      />
       {avatarOpen && avatarSrc && <AvatarPanel src={avatarSrc} onClose={() => setAvatarOpen(false)} />}
 
       <ContextMemoryModal
@@ -518,7 +493,11 @@ export function AppShell() {
         releaseNotes={updateCheck.releaseNotes}
       />
       <StarPromptModal />
-      <SettingsModal />
+      <NetworkSettingsProvider value={{
+        proxies, defaultProxyId, onCreate: saveProxy, onUpdate: updateProxy,
+        onDelete: async (id) => { await deleteProxy(id); },
+        onRefresh: refreshProxies, onProvidersChanged: provider.handleRefreshProfiles,
+      }}><SettingsModal /></NetworkSettingsProvider>
       <CoauthorModuleModal />
       <CoauthorSkillModal />
       <SetupWizard onVisibilityChange={setWizardVisible} />
