@@ -7,17 +7,19 @@ useDomEnv();
 
 const { fireEvent, render, waitFor } = await import("@testing-library/react");
 
-let ProxyManagerModal: typeof import("./ProxyManagerModal.js").ProxyManagerModal;
+let ProxyManagerModal: typeof import("../../../test/proxy-settings-host.js").ProxySettingsTestHost;
 let TooltipProvider: typeof import("../shared/Tooltip.js").TooltipProvider;
 let useModalStore: typeof import("../../stores/modal-store.js").useModalStore;
 
 beforeAll(async () => {
-  ({ ProxyManagerModal } = await import("./ProxyManagerModal.js"));
+  ({ ProxySettingsTestHost: ProxyManagerModal } = await import("../../../test/proxy-settings-host.js"));
   ({ TooltipProvider } = await import("../shared/Tooltip.js"));
   ({ useModalStore } = await import("../../stores/modal-store.js"));
 });
 
-afterAll(() => useModalStore.setState({ isProxyManagerOpen: false }));
+let originalModal: ReturnType<typeof import("../../stores/modal-store.js").useModalStore.getState>;
+beforeAll(() => { originalModal = useModalStore.getState(); });
+afterAll(() => useModalStore.setState(originalModal, true));
 
 const storedProxy: ProxyRecord = {
   id: "proxy_1",
@@ -31,7 +33,7 @@ const storedProxy: ProxyRecord = {
 };
 
 describe("ProxyManagerModal behavior", () => {
-  beforeEach(() => useModalStore.setState({ isProxyManagerOpen: true }));
+  beforeEach(() => { useModalStore.setState(originalModal, true); useModalStore.getState().openSettings("network"); });
 
   test("preserves, explicitly clears, and deletes a write-only password through the real modal boundary", async () => {
     const updates: Array<{ id: string; password?: string | null }> = [];
@@ -63,6 +65,7 @@ describe("ProxyManagerModal behavior", () => {
       </TooltipProvider>,
     );
 
+    fireEvent.pointerDown(await view.findByTestId("proxy-row-proxy_1"));
     await waitFor(() => expect(view.getByDisplayValue("Office")).toBeTruthy());
     const proxyInputs = Array.from(view.baseElement.querySelectorAll("input"));
     expect(proxyInputs).toHaveLength(4);

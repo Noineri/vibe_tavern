@@ -5,8 +5,8 @@ import { useDomEnv } from "../../../test/dom-env.js";
 useDomEnv();
 
 const { act, fireEvent, render, waitFor } = await import("@testing-library/react");
-const realProxyApi = await import("../../api/proxy-api.js");
-const realDndKit = await import("@dnd-kit/core");
+const realProxyApi = { ...(await import("../../api/proxy-api.js")) };
+const realDndKit = { ...(await import("@dnd-kit/core")) };
 type RealDndContextProps = ComponentProps<typeof realDndKit.DndContext>;
 type RealDragOverlayProps = ComponentProps<typeof realDndKit.DragOverlay>;
 const RealDndContext = realDndKit.DndContext;
@@ -60,12 +60,12 @@ mock.module("@dnd-kit/core", () => ({
   DragOverlay: (props: RealDragOverlayProps) => <>{props.children}</>,
 }));
 
-let ProxyManagerModal: typeof import("./ProxyManagerModal.js").ProxyManagerModal;
+let ProxyManagerModal: typeof import("../../../test/proxy-settings-host.js").ProxySettingsTestHost;
 let TooltipProvider: typeof import("../shared/Tooltip.js").TooltipProvider;
 let useModalStore: typeof import("../../stores/modal-store.js").useModalStore;
 
 beforeAll(async () => {
-  ({ ProxyManagerModal } = await import("./ProxyManagerModal.js"));
+  ({ ProxySettingsTestHost: ProxyManagerModal } = await import("../../../test/proxy-settings-host.js"));
   ({ TooltipProvider } = await import("../shared/Tooltip.js"));
   ({ useModalStore } = await import("../../stores/modal-store.js"));
 });
@@ -79,10 +79,13 @@ beforeEach(() => {
     makeProxy({ id: "p3", name: "Mobile", url: "https://mobile.example:8443", sortOrder: 2 }),
   ];
   reorderMock.mockImplementation(async (updates: Array<{ id: string; sortOrder: number }>) => applyReorder(updates));
-  useModalStore.setState({ isProxyManagerOpen: true });
+  useModalStore.setState(originalModal, true);
+  useModalStore.getState().openSettings("network");
 });
 
-afterAll(() => useModalStore.setState({ isProxyManagerOpen: false }));
+let originalModal: ReturnType<typeof import("../../stores/modal-store.js").useModalStore.getState>;
+beforeAll(() => { originalModal = useModalStore.getState(); });
+afterAll(() => useModalStore.setState(originalModal, true));
 
 function renderModal(proxies: ProxyRecord[], onRefresh: () => Promise<void>) {
   return render(
