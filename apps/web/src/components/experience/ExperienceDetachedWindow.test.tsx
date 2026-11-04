@@ -253,6 +253,24 @@ describe("ExperienceDetachedHost — trusted wrapper", () => {
     expect(queryByTestId("experience-detached-finish")).not.toBeNull();
   });
 
+  it("the visual viewport is the shared thin lane — custom chrome survives a desktop-resizable popup (CNR-8r)", () => {
+    installUrlSpy();
+    const { container } = render(<ExperienceDetachedHost descriptor={DESCRIPTOR} />);
+    // The detached popup opens at 420px (phone policy hides chrome there) but
+    // is user-resizable past 768px — the viewport must ride the shared thin
+    // lane so a widened popup never falls back to raw native scrollbars now
+    // that the host's global native fallback is gone.
+    const area = container.querySelector('[data-scroll-area="thin"]');
+    expect(area).not.toBeNull();
+    const viewport = area!.querySelector("[data-scroll-viewport]");
+    expect(viewport).not.toBeNull();
+    // The viewport is the positioned scroller, so the trusted round-finished
+    // overlay (absolute inset-0, rendered inside it) keeps its in-scroller
+    // anchoring exactly as before the migration.
+    expect(viewport!.classList.contains("relative")).toBe(true);
+    expect(container.querySelector('[data-testid="mock-frame"]')!.closest("[data-scroll-viewport]")).toBe(viewport);
+  });
+
   // ── 4a phase (e): mobile touch-target class pins (happy-dom computes no
   // layout): the header Finish/Close buttons and the report footer carry the
   // 36px mobile floor via max-md utilities; desktop sizes are unchanged.

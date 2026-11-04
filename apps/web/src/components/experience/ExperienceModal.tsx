@@ -38,6 +38,7 @@
  */
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Modal } from "../shared/Modal.js";
+import { ScrollArea } from "../shared/scroll-area.js";
 import { Icons } from "../shared/icons.js";
 import { useT } from "../../i18n/context.js";
 import {
@@ -514,8 +515,14 @@ export function ExperienceModal(props: ExperienceModalProps) {
           </button>
         </header>
 
-        {/* The sandboxed visual surface. The chrome confirmation overlays this. */}
-        <div className="relative flex-1 overflow-auto">
+        {/* The sandboxed visual surface. The chrome confirmation overlays this.
+            CNR-8r: the host viewport rides the shared thin lane (3px/5px
+            contract) instead of a native overflow-auto scroller. The
+            ScrollArea VIEWPORT is the positioned native scroller, so the
+            absolutely positioned confirm/finished overlays below resolve
+            against it and scroll with the content exactly as they did against
+            the old relative overflow-auto div — only the scrollbar changed. */}
+        <ScrollArea scrollbarSize="thin" className="flex-1" viewportProps={{ className: "relative" }}>
           <ExperienceFrame
             ref={frameRef}
             visualSource={visualSource}
@@ -611,7 +618,7 @@ export function ExperienceModal(props: ExperienceModalProps) {
               </div>
             </div>
           )}
-        </div>
+        </ScrollArea>
         {effectDiagnostics && (
           <div
             className="border-t border-neutral-800 px-4 py-2"

@@ -243,6 +243,37 @@ describe("ExperienceModal — in-session settings entry (lobby Б4)", () => {
   });
 });
 
+describe("ExperienceModal — visual viewport chrome (CNR-8r rider)", () => {
+  it("the visual viewport is the shared thin lane; its scroller still owns the confirm overlays in-content", () => {
+    const { getByTestId } = renderModal({ onFinishExperience: () => {} });
+    // The host viewport rides the shared thin ScrollArea (3px/5px contract)
+    // instead of the old relative overflow-auto native scroller. The shared
+    // Modal portals its panel to document.body, so structural queries go to
+    // the document (the chrome tests' testid queries stay RTL-bound).
+    const area = document.querySelector('[data-scroll-area="thin"]');
+    expect(area).not.toBeNull();
+    const viewport = area!.querySelector("[data-scroll-viewport]");
+    expect(viewport).not.toBeNull();
+    // The VIEWPORT is the positioned native scroller: the absolutely
+    // positioned chrome confirmations resolve against it and scroll with the
+    // content exactly as they did against the old relative overflow-auto div
+    // — the overlay relationship is preserved, only the scrollbar changed.
+    expect(viewport!.classList.contains("relative")).toBe(true);
+    expect(viewport!.classList.contains("scrollbar-hide")).toBe(true);
+    // The sandboxed visual itself lives inside the same scroller.
+    expect(document.querySelector('[data-testid="mock-frame"]')!.closest("[data-scroll-viewport]")).toBe(viewport);
+    fireEvent.click(getByTestId("experience-finish"));
+    const confirm = document.querySelector('[data-testid="experience-finish-confirm"]')!;
+    expect(confirm).not.toBeNull();
+    expect(confirm.closest("[data-scroll-viewport]")).toBe(viewport);
+    // happy-dom applies no Tailwind stylesheet — pin the overlay classes that
+    // carry the in-scroller anchoring (absolute + full-bleed inset-0 + z-10).
+    expect(confirm.classList.contains("absolute")).toBe(true);
+    expect(confirm.classList.contains("inset-0")).toBe(true);
+    expect(confirm.classList.contains("z-10")).toBe(true);
+  });
+});
+
 describe("ExperienceModal — session preservation on close", () => {
   it("closing and reopening resets the finish-confirmation step", async () => {
     const { getByTestId, queryByTestId, rerender } = renderModal();

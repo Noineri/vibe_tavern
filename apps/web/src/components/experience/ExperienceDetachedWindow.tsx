@@ -28,6 +28,7 @@
  * notice. `openExperienceDetachedWindow` does not pretend success.
  */
 import { Icons } from "../shared/icons.js";
+import { ScrollArea } from "../shared/scroll-area.js";
 import { useT } from "../../i18n/context.js";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -465,7 +466,13 @@ export function ExperienceDetachedHost(props: ExperienceDetachedHostProps) {
           <Icons.Close className="h-4 w-4" />
         </button>
       </header>
-      <div className="relative flex-1 overflow-auto">
+      {/* CNR-8r: same thin-lane migration as the modal's host viewport. The
+          popup opens at 420px (phone policy hides chrome there) but is
+          user-resizable past 768px — with the host's global native fallback
+          gone, a widened popup must not fall back to raw native scrollbars.
+          The viewport stays the positioned scroller so the trusted
+          round-finished overlay keeps its in-scroller anchoring. */}
+      <ScrollArea scrollbarSize="thin" className="flex-1" viewportProps={{ className: "relative" }}>
         <ExperienceFrame
           ref={frameRef}
           visualSource={visualSource}
@@ -491,7 +498,7 @@ export function ExperienceDetachedHost(props: ExperienceDetachedHostProps) {
             testId="experience-detached-round-finished"
           />
         )}
-      </div>
+      </ScrollArea>
       {/* Trusted report-control footer — OUTSIDE the sandboxed frame (IR-73C).
           The same surface the modal owns, with exact scope selectors. The
           component handles null/no-session props gracefully (disabled

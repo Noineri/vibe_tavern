@@ -224,6 +224,32 @@ describe("Markdown — code-block scroll chrome (CNR-8c)", () => {
     expect(pre.getAttribute("class")).toContain("md-pre--wrap");
     expect(pre.closest("[data-scroll-area]")).toBeNull();
   });
+
+  it("wide tables scroll horizontally on the thin lane (CNR-8r residual sweep)", () => {
+    // The 8a inventory's diff/code row covered code blocks (8c) but missed
+    // the markdown TABLE wrapper: .md-table-wrap renders in every markdown
+    // consumer (chat messages included) and, with the host's global native
+    // fallback gone, a bare overflow-x:auto wrapper would surface raw native
+    // scrollbars at desktop widths. It rides the same thin horizontal lane
+    // as language code blocks (the 8c idiom).
+    const source = [
+      "| alpha | beta | gamma |",
+      "| --- | --- | --- |",
+      "| 1 | 2 | 3 |",
+    ].join("\n");
+    const { container } = render(<Markdown text={source} />);
+    const table = container.querySelector("table");
+    if (!table) throw new Error("table not rendered");
+    const wrap = table.closest(".md-table-wrap") as HTMLElement | null;
+    if (!wrap) throw new Error(".md-table-wrap not rendered");
+    const area = table.closest("[data-scroll-area]") as HTMLElement | null;
+    if (!area) throw new Error("ScrollArea root not rendered");
+    expect(area.getAttribute("data-scroll-area")).toBe("thin");
+    expect(area.contains(wrap)).toBe(true);
+    const viewport = area.querySelector("[data-scroll-viewport]") as HTMLElement | null;
+    if (!viewport) throw new Error("viewport not rendered");
+    expect(viewport.style.overflowY).toBe("hidden");
+  });
 });
 
 describe("Markdown — agent-plain variant (AP-1)", () => {

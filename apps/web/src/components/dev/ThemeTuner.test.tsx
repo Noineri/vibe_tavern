@@ -131,3 +131,48 @@ describe("ThemeTuner preview geometry", () => {
     }
   });
 });
+
+describe("ThemeTuner scroll chrome (CNR-8r residual sweep)", () => {
+  it("the three tool panes ride the shared thin lanes", () => {
+    const { container } = render(<ThemeTuner />);
+    // The truly-overflowing tool panes (token list, preview stage, editor)
+    // ride the app-wide thin lane contract instead of the tuner's old baked
+    // 7px WebKit rules — the host's global native fallback is gone, so baked
+    // native chrome was the last native-looking scrollbar in the app shell.
+    for (const cls of [".tt-scroll", ".tt-stage", ".tt-editor"]) {
+      const pane = container.querySelector(cls);
+      if (!pane) throw new Error(`${cls} not rendered`);
+      expect(pane.getAttribute("data-scroll-area")).toBe("thin");
+      expect(pane.querySelector("[data-scroll-viewport]")).not.toBeNull();
+    }
+    // The demo code card mirrors production md-pre: a thin HORIZONTAL lane
+    // (the CNR-8c idiom), nested inside the stage scroller like message code
+    // blocks nest inside their scrollers.
+    const demoPre = container.querySelector(".tt-demo-card pre.md-pre");
+    if (!demoPre) throw new Error("demo code block not rendered");
+    const demoArea = demoPre.closest("[data-scroll-area]");
+    if (!demoArea) throw new Error("demo code lane not rendered");
+    expect(demoArea.getAttribute("data-scroll-area")).toBe("thin");
+    // The baked preview-window replicas (fixed sample content) stay native
+    // by design — the CNR-8a excluded-by-design row; their 7px baked chrome
+    // is the sanctioned exception recorded in components.md.
+    const win = container.querySelector(".tt-window");
+    if (!win) throw new Error("preview window not rendered");
+    expect(win.querySelectorAll("[data-scroll-area]").length).toBe(0);
+  });
+
+  it("the export modal textarea composes as the thin editor viewport", () => {
+    const { container, getByRole } = render(<ThemeTuner />);
+    fireEvent.click(getByRole("button", { name: "Экспортировать .css" }));
+    const ta = container.querySelector<HTMLTextAreaElement>(".tt-modal-text");
+    if (!ta) throw new Error("export textarea not rendered");
+    // The textarea itself IS the ScrollArea viewport (the 8n textarea seam):
+    // native chrome hidden, thin lane chrome over it, root marked as the
+    // editor composition (kept visible under the phone policy).
+    expect(ta.getAttribute("data-scroll-viewport")).not.toBeNull();
+    const area = ta.closest("[data-scroll-area]");
+    if (!area) throw new Error("export ScrollArea root not rendered");
+    expect(area.getAttribute("data-scroll-area")).toBe("thin");
+    expect(area.hasAttribute("data-scroll-editor")).toBe(true);
+  });
+});

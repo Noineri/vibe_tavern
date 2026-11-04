@@ -557,10 +557,17 @@ const components: Record<string, React.ComponentType<MarkdownComponentProps>> = 
   h6: ({ children, ...props }) => <h6 className="md-h6" {...props}>{children}</h6>,
 
   // Tables
+  // CNR-8r residual sweep: wide tables ride the same thin horizontal lane as
+  // language code blocks (the CNR-8c idiom) — the bare overflow-x:auto
+  // wrapper was missed by the 8a inventory's diff/code row and, with the
+  // host's global native fallback removed, would surface raw native
+  // scrollbars in every markdown consumer at desktop widths.
   table: ({ children, ...props }) => (
-    <div className="md-table-wrap">
-      <table className="md-table" {...props}>{children}</table>
-    </div>
+    <ScrollArea scrollbarSize="thin" orientation="horizontal">
+      <div className="md-table-wrap">
+        <table className="md-table" {...props}>{children}</table>
+      </div>
+    </ScrollArea>
   ),
   thead: ({ children, ...props }) => <thead className="md-thead" {...props}>{children}</thead>,
   tbody: ({ children, ...props }) => <tbody className="md-tbody" {...props}>{children}</tbody>,
