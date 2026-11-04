@@ -15,7 +15,6 @@ export interface ModalState {
   isCoauthorSkillModalOpen: boolean;
   tweaksOpen: boolean;
   avatarOpen: boolean;
-  isUpdateModalOpen: boolean;
   isStarPromptOpen: boolean;
   isSettingsOpen: boolean;
   settingsSection: SettingsSectionId | null;
@@ -38,7 +37,6 @@ export interface ModalActions {
   setCoauthorSkillModalOpen: (open: boolean) => void;
   setTweaksOpen: (open: boolean) => void;
   setAvatarOpen: (open: boolean) => void;
-  setUpdateModalOpen: (open: boolean) => void;
   setStarPromptOpen: (open: boolean) => void;
   setIsSettingsOpen: (open: boolean) => void;
   openSettings: (section?: SettingsSectionId) => void;
@@ -59,7 +57,6 @@ export const useModalStore = create<ModalStore>()((set, get) => ({
   isCoauthorSkillModalOpen: false,
   tweaksOpen: false,
   avatarOpen: false,
-  isUpdateModalOpen: false,
   isStarPromptOpen: false,
   isSettingsOpen: false,
   settingsSection: null,
@@ -82,7 +79,6 @@ export const useModalStore = create<ModalStore>()((set, get) => ({
   setCoauthorSkillModalOpen: (open) => set({ isCoauthorSkillModalOpen: open }),
   setTweaksOpen: (open) => set({ tweaksOpen: open }),
   setAvatarOpen: (open) => set({ avatarOpen: open }),
-  setUpdateModalOpen: (open) => set({ isUpdateModalOpen: open }),
   setStarPromptOpen: (open) => set({ isStarPromptOpen: open }),
   setIsSettingsOpen: (open) => set({ isSettingsOpen: open, ...(!open ? { settingsSection: null } : {}) }),
   openSettings: (section) => set((state) => ({

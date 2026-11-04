@@ -11,6 +11,7 @@ import { saveCharacterAction } from "../../stores/api-actions/character-actions.
 import { useActiveTrace, useLazyContextPreview } from "../../stores/chat-selectors.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useInterfaceSettingsStore } from "../../stores/interface-settings-store.js";
+import { SETTINGS_SECTION } from "../../lib/settings-section-registry.js";
 import { useBootstrapStore, fetchPersonasAction } from "../../stores/api-actions/bootstrap-actions.js";
 import { summarizeChatAction, saveChatSummaryAction, updateChatDynamicPromptAction } from "../../stores/api-actions/chat-actions.js";
 import { useChatController } from "../../hooks/use-chat-controller.js";
@@ -39,7 +40,6 @@ import { ShellDestructiveConfirmModal } from "../shared/destructive-confirm-moda
 import { TweaksPanel } from "../settings/popovers/TweaksPanel.js";
 import { MobileSettings } from "../settings/popovers/MobileSettings.js";
 import { NetworkSettingsProvider } from "../settings/network-settings-section.js";
-import { UpdateModal } from "../modals/UpdateModal.js";
 import { StarPromptModal } from "../modals/StarPromptModal.js";
 import { SettingsModal } from "../modals/SettingsModal.js";
 import { CoauthorModuleModal } from "../coauthor/CoauthorModuleModal.js";
@@ -95,7 +95,7 @@ export function AppShell() {
   const setIsPersonaModalOpen = useModalStore((s) => s.setIsPersonaModalOpen);
   const isCreateCharacterModalOpen = useModalStore((s) => s.isCreateCharacterModalOpen);
   const setCreateCharacterModalOpen = useModalStore((s) => s.setCreateCharacterModalOpen);
-  const setUpdateModalOpen = useModalStore((s) => s.setUpdateModalOpen);
+  const openSettings = useModalStore((s) => s.openSettings);
 
   // --- Sub-hooks (self-contained) ---
   const bootstrapData = useBootstrapStore((s) => s.data);
@@ -148,7 +148,7 @@ export function AppShell() {
       return; // storage disabled — suppress rather than re-fire on every render
     }
     const message = t("update_available", { version: updateCheck.latestVersion });
-    const openUpdateModal = () => setUpdateModalOpen(true);
+    const openAboutUpdates = () => openSettings(SETTINGS_SECTION.about);
     toast.custom(
       (id) => (
         <div className="flex items-center gap-3 px-3.5 py-2.5">
@@ -156,7 +156,7 @@ export function AppShell() {
           <button
             type="button"
             className="cursor-pointer rounded-md bg-accent px-2.5 py-1 text-[calc(var(--ui-fs)-3px)] font-semibold text-on-accent transition-[filter] hover:brightness-110"
-            onClick={() => { openUpdateModal(); toast.dismiss(id); }}
+            onClick={() => { openAboutUpdates(); toast.dismiss(id); }}
           >
             {t("update_button")}
           </button>
@@ -164,7 +164,7 @@ export function AppShell() {
       ),
       { duration: 5000, style: { borderRadius: "var(--r)" } },
     );
-  }, [updateCheck.hasUpdate, updateCheck.latestVersion, updateCheck.releaseUrl, t, setUpdateModalOpen]);
+  }, [updateCheck.hasUpdate, updateCheck.latestVersion, updateCheck.releaseUrl, t, openSettings]);
 
   const promptPresets = bootstrapData?.promptPresets ?? [];
   const [wizardVisible, setWizardVisible] = useState(false);
@@ -483,12 +483,6 @@ export function AppShell() {
       )}
 
       <ShellDestructiveConfirmModal />
-      <UpdateModal
-        latestVersion={updateCheck.latestVersion}
-        latestTag={updateCheck.latestTag}
-        releaseUrl={updateCheck.releaseUrl}
-        releaseNotes={updateCheck.releaseNotes}
-      />
       <StarPromptModal />
       <NetworkSettingsProvider value={{
         proxies, defaultProxyId, onCreate: saveProxy, onUpdate: updateProxy,
