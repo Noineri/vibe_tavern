@@ -656,6 +656,13 @@ Use for entity names/labels in sidebars and lists where truncation is expected b
 
 State is shared via context: `useMasterDetail()` returns `{ isMobile, isDetailOpen, openDetail, closeDetail }`. Call it inside a `MasterDetailModal` to drive the mobile transition (e.g. showing a back button when `isDetailOpen`).
 
+`beforeBack(continueBack)` is an optional navigation guard: the phone detail pane stays mounted until the consumer invokes the continuation.
+It does not replace `onBack`; that callback still runs after the approved transition, and callers that omit the guard retain the original immediate behavior.
+
+App settings sections use `settings/settings-section-lifecycle.tsx`: `SettingsSectionHost` centralizes close/section-change/mobile-back guarding and dirty state for one open modal.
+`SettingsSectionFooter` portals the section's existing `MasterDetailFooter` into the host's docked footer slot, outside the detail scroller; no footer content is rendered for sections that do not supply it.
+`useSettingsSectionLeaveGuard`, `useSettingsSectionDirty` and `useSettingsSectionClose` let editors preserve discard confirmation and save actions without nesting another modal shell or moving draft state into a global store.
+
 Consumers: `ProviderModal` (provider profiles), `PromptManagerModal` (prompt presets / regex presets / service prompt profiles / image prompt profiles — one master-detail per tab; image prompt profiles live in `ImagePromptTemplatesPane`, a fork of the service-prompt profile flow whose detail side is mode rows × family dropdowns, kept SEPARATE from service-prompt profiles and LLM presets), `PersonaModal` (personas), `ContextMemoryModal`, coauthor module/skill modals. Canonical structure: header/title/subtitle/dirty-dot/headerActions + master list (scrollable rows with `border-l-2` + active dot, dashed "+ New" docked at the list bottom — never in headerActions) + stable footer with `border-t`.
 
 `MasterDetailMobileDrillDown` accepts an optional item-specific `ariaLabel` and otherwise uses the localized generic open-detail label.

@@ -11,6 +11,7 @@ import {
 import { MasterDetailModal, MasterDetailMobileDrillDown, useMasterDetail } from "../shared/MasterDetailModal.js";
 import { MasterList } from "../shared/master-list/master-list.js";
 import { MasterListRow } from "../shared/master-list/master-list-row.js";
+import { SettingsSectionHost } from "../settings/settings-section-lifecycle.js";
 
 function SettingsSectionList({ sections, activeId, onSelect, requestedSection, didDrillDown }: {
   sections: SettingsSectionDescriptor[];
@@ -78,22 +79,27 @@ function OpenSettingsModal({ requestedSection }: { requestedSection: SettingsSec
   const didDrillDown = useRef(false);
 
   return (
-    <MasterDetailModal
+    <SettingsSectionHost onClose={() => useModalStore.getState().setIsSettingsOpen(false)}>
+    {({ footer, dirty, requestClose, requestLeave }) => <MasterDetailModal
       isOpen
-      onClose={() => useModalStore.getState().setIsSettingsOpen(false)}
+      onClose={requestClose}
+      beforeBack={requestLeave}
+      footer={footer}
+      dirty={dirty}
       title={t("settings_modal_title")}
       detailTitle={<span className="whitespace-normal break-words">{active ? t(active.labelKey) : t("settings_modal_title")}</span>}
       masterContent={(
         <SettingsSectionList
           sections={sections}
           activeId={active?.id}
-          onSelect={setSelectedId}
+          onSelect={(id) => { if (id !== active?.id) requestLeave(() => setSelectedId(id)); }}
           requestedSection={requestedSection}
           didDrillDown={didDrillDown}
         />
       )}
-      detailContent={active?.render()}
-    />
+      detailContent={<div key={active?.id}>{active?.render()}</div>}
+    />}
+    </SettingsSectionHost>
   );
 }
 

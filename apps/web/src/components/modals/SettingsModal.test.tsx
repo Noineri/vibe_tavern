@@ -6,6 +6,9 @@ useDomEnv({ failOnNetwork: true });
 
 const { render, fireEvent, act, cleanup } = await import("@testing-library/react");
 const { SettingsModal } = await import("./SettingsModal.js");
+const { TooltipProvider } = await import("../shared/Tooltip.js");
+const { SettingsSectionFooter, useSettingsSectionLeaveGuard, useSettingsSectionDirty } = await import("../settings/settings-section-lifecycle.js");
+const { useState } = await import("react");
 const { useModalStore } = await import("../../stores/modal-store.js");
 const { getSettingsSections, registerSettingsSection, subscribeSettingsSections } = await import("../../lib/settings-section-registry.js");
 type Descriptor = import("../../lib/settings-section-registry.js").SettingsSectionDescriptor;
@@ -94,6 +97,56 @@ describe("settings section registry", () => {
 });
 
 describe("settings modal", () => {
+  function GuardedBody() {
+    const [pending, setPending] = useState<(() => void) | null>(null);
+    useSettingsSectionDirty(true);
+    useSettingsSectionLeaveGuard((leave) => setPending(() => leave));
+    return <>
+      <div>guarded body</div>
+      <SettingsSectionFooter><button type="button">section action</button></SettingsSectionFooter>
+      {pending && <div role="alertdialog"><button type="button" onClick={() => pending()}>discard</button><button type="button" onClick={() => setPending(null)}>keep editing</button></div>}
+    </>;
+  }
+  function addGuarded() {
+    disposers.push(registerSettingsSection({ id: "network", icon: null, labelKey: "settings_section_network", render: () => <GuardedBody /> }));
+  }
+
+  test("section actions dock outside the detail scroller and leave guards cover close and section changes", () => {
+    addSection("about"); addGuarded();
+    useModalStore.getState().openSettings("network");
+    const view = render(<TooltipProvider><SettingsModal /></TooltipProvider>);
+    expect(view.getByRole("button", { name: "section action" }).closest("[data-scroll-area]")).toBeNull();
+    fireEvent.click(view.getByRole("button", { name: "close" }));
+    expect(view.getByRole("alertdialog")).toBeTruthy();
+    expect(useModalStore.getState().isSettingsOpen).toBe(true);
+    fireEvent.click(view.getByRole("button", { name: "keep editing" }));
+    expect(view.queryByRole("alertdialog")).toBeNull();
+    fireEvent.click(view.getByRole("button", { name: "settings_section_about" }));
+    expect(view.queryByText("about body")).toBeNull();
+    fireEvent.click(view.getByRole("button", { name: "discard" }));
+    expect(view.getByText("about body")).toBeTruthy();
+    expect(view.queryByRole("button", { name: "section action" })).toBeNull();
+    fireEvent.click(view.getByRole("button", { name: "close" }));
+    expect(useModalStore.getState().isSettingsOpen).toBe(false);
+  });
+
+  test("a mobile Back guard can cancel without unmounting the section, then continue to the list", () => {
+    setWidth(390); addGuarded();
+    useModalStore.getState().openSettings("network");
+    const view = render(<TooltipProvider><SettingsModal /></TooltipProvider>);
+    const back = () => view.getAllByRole("button").find((button) => !button.getAttribute("aria-label"))!;
+    fireEvent.click(back());
+    expect(view.getByText("guarded body")).toBeTruthy();
+    expect(view.getByRole("alertdialog")).toBeTruthy();
+    fireEvent.click(view.getByRole("button", { name: "keep editing" }));
+    expect(view.queryByRole("button", { name: "settings_section_network" })).toBeNull();
+    fireEvent.click(back());
+    fireEvent.click(view.getByRole("button", { name: "discard" }));
+    expect(view.getByRole("button", { name: "settings_section_network" })).toBeTruthy();
+    expect(view.queryByText("guarded body")).toBeNull();
+    expect(view.queryByRole("button", { name: "section action" })).toBeNull();
+  });
+
   test("is absent while closed and renders no unregistered placeholders", () => {
     const view = render(<SettingsModal />);
     expect(view.queryByRole("dialog")).toBeNull();
