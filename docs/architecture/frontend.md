@@ -53,6 +53,7 @@ Each block can specify the same desktop/mobile layout gate as the section regist
 Proxy drafts stay local to the block, survive parent refreshes, and reset when leaving the section; the shared settings lifecycle host docks editor actions and guards discard on Back, section changes and closing.
 Mobile access uses the existing API-fetch seam and only enables after an explicit action in its disabled row, not when navigating to Network.
 The former proxy/mobile-access modal bodies are now `ProxySettingsSection` and `MobileAccessSection`; their standalone shells have been removed.
+Quick-access rows use `openNetworkSettings()` → `openSettings("network")`, which closes quick access in the same store update; no proxy/mobile-access modal flags or opener callback props remain.
 
 ### Selectors
 

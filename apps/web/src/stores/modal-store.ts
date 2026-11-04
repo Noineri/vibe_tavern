@@ -15,8 +15,6 @@ export interface ModalState {
   isCoauthorSkillModalOpen: boolean;
   tweaksOpen: boolean;
   avatarOpen: boolean;
-  mobileAccessOpen: boolean;
-  isProxyManagerOpen: boolean;
   isUpdateModalOpen: boolean;
   isStarPromptOpen: boolean;
   isSettingsOpen: boolean;
@@ -40,8 +38,6 @@ export interface ModalActions {
   setCoauthorSkillModalOpen: (open: boolean) => void;
   setTweaksOpen: (open: boolean) => void;
   setAvatarOpen: (open: boolean) => void;
-  setMobileAccessOpen: (open: boolean) => void;
-  setIsProxyManagerOpen: (open: boolean) => void;
   setUpdateModalOpen: (open: boolean) => void;
   setStarPromptOpen: (open: boolean) => void;
   setIsSettingsOpen: (open: boolean) => void;
@@ -63,8 +59,6 @@ export const useModalStore = create<ModalStore>()((set, get) => ({
   isCoauthorSkillModalOpen: false,
   tweaksOpen: false,
   avatarOpen: false,
-  mobileAccessOpen: false,
-  isProxyManagerOpen: false,
   isUpdateModalOpen: false,
   isStarPromptOpen: false,
   isSettingsOpen: false,
@@ -88,8 +82,6 @@ export const useModalStore = create<ModalStore>()((set, get) => ({
   setCoauthorSkillModalOpen: (open) => set({ isCoauthorSkillModalOpen: open }),
   setTweaksOpen: (open) => set({ tweaksOpen: open }),
   setAvatarOpen: (open) => set({ avatarOpen: open }),
-  setMobileAccessOpen: (open) => set({ mobileAccessOpen: open }),
-  setIsProxyManagerOpen: (open) => set({ isProxyManagerOpen: open }),
   setUpdateModalOpen: (open) => set({ isUpdateModalOpen: open }),
   setStarPromptOpen: (open) => set({ isStarPromptOpen: open }),
   setIsSettingsOpen: (open) => set({ isSettingsOpen: open, ...(!open ? { settingsSection: null } : {}) }),
