@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useT } from "../../i18n/context.js";
 import type Resources from "../../i18n/resources.js";
 import { Markdown } from "../../lib/markdown.js";
+import { formatBytes } from "../../lib/format-bytes.js";
 import { cleanReleaseNotes } from "../../lib/version-check.js";
 import { useUpdateCheck } from "../../hooks/use-update-check.js";
 import { useUpdateFlow } from "../../hooks/use-update-flow.js";
@@ -27,12 +28,6 @@ const PHASE_I18N_KEYS: Record<RuntimeUpdatePhase, keyof Resources["en"]> = {
   done: "update_modal_phase_done",
   error: "update_modal_phase_error",
 };
-
-function formatBytes(n: number): string {
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
-}
 
 function GitHubFallbackButton({ releaseUrl }: { releaseUrl: string }) {
   const { t } = useT();

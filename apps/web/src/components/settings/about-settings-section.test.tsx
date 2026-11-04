@@ -4,7 +4,7 @@ import type { Window as HappyWindow } from "happy-dom";
 
 useDomEnv({ failOnNetwork: true });
 
-const { render, fireEvent } = await import("@testing-library/react");
+const { render, fireEvent, waitFor } = await import("@testing-library/react");
 const { AboutSettingsSection, registerAboutSettingsSection } = await import("./about-settings-section.js");
 const { SettingsModal } = await import("../modals/SettingsModal.js");
 const { TooltipProvider } = await import("../shared/Tooltip.js");
@@ -57,8 +57,18 @@ let routes: {
   status: () => unknown;
   github: () => unknown;
   openDataDir: () => unknown;
+  diagManifest: () => unknown;
 };
 let statusCalls: number;
+
+const DIAG_MANIFEST = {
+  entries: [
+    { path: "vt-info.json", bytes: 512 },
+    { path: "server-log.txt", bytes: 2048 },
+    { path: "provider-profiles.json", bytes: 128 },
+    { path: "data-sizes.json", bytes: 96 },
+  ],
+};
 
 beforeEach(() => {
   globalThis.fetch = originalFetch;
@@ -76,6 +86,7 @@ beforeEach(() => {
     status: () => ({ phase: "downloading-archive", startedAt: 0, currentVersion: "1.5.1", targetVersion: "2.0.0", downloadProgress: { receivedBytes: 5, totalBytes: 10 }, error: null }),
     github: () => new Response("{}", { status: 404 }),
     openDataDir: () => ({ opened: true }),
+    diagManifest: () => DIAG_MANIFEST,
   };
   globalThis.fetch = Object.assign(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
@@ -90,6 +101,10 @@ beforeEach(() => {
     if (url.includes("/api/runtime/update/status")) { statusCalls++; return reply(routes.status()); }
     if (method === "POST" && url.includes("/api/runtime/update")) return reply(routes.trigger());
     if (method === "POST" && url.includes("/api/fs/open-data-dir")) return reply(routes.openDataDir());
+    if (url.includes("/api/diagnostics")) {
+      if (method === "POST") return new Response(new Uint8Array([0x50, 0x4b, 0x03, 0x04]), { headers: { "Content-Type": "application/zip" } });
+      return reply(routes.diagManifest());
+    }
     if (method === "PATCH" && url.includes("/api/settings/ui")) {
       // Echo the patch like the server's merged record would come back.
       const body = init?.body ? JSON.parse(String(init.body)) as Record<string, unknown> : {};
@@ -304,5 +319,44 @@ describe("about project block", () => {
     expect(phone.queryByRole("button", { name: "settings_about_open_data_dir" })).toBeNull();
     expect(phone.getByRole("button", { name: "settings_about_star" })).toBeTruthy();
     expect(phone.getByRole("button", { name: "settings_about_issue" })).toBeTruthy();
+  });
+
+  test("diagnostics shows the item list before downloading, then returns to idle", async () => {
+    const createdUrls: string[] = [];
+    const revokedUrls: string[] = [];
+    const originalCreate = URL.createObjectURL;
+    const originalRevoke = URL.revokeObjectURL;
+    URL.createObjectURL = () => { const url = `blob:diag-${createdUrls.length}`; createdUrls.push(url); return url; };
+    URL.revokeObjectURL = (url: string) => { revokedUrls.push(url); };
+    try {
+      const view = render(<AboutSettingsSection />);
+      fireEvent.click(view.getByRole("button", { name: "settings_about_diagnostics" }));
+      // The list comes from the manifest and names every entry BEFORE the download.
+      expect(await view.findByText("settings_about_diag_info")).toBeTruthy();
+      expect(view.getByText("settings_about_diag_log")).toBeTruthy();
+      expect(view.getByText("settings_about_diag_providers")).toBeTruthy();
+      expect(view.getByText("settings_about_diag_sizes")).toBeTruthy();
+      expect(view.getByText("512 Bytes")).toBeTruthy();
+      expect(view.getByText("2 KB")).toBeTruthy();
+      expect(requests.some((entry) => entry.startsWith("GET") && entry.endsWith("/api/diagnostics"))).toBe(true);
+      expect(requests.some((entry) => entry.startsWith("POST") && entry.endsWith("/api/diagnostics"))).toBe(false);
+
+      fireEvent.click(view.getByRole("button", { name: "settings_about_diag_download" }));
+      await waitFor(() => {
+        expect(createdUrls.length).toBe(1);
+        expect(revokedUrls).toEqual(createdUrls);
+      });
+      expect(requests.some((entry) => entry.startsWith("POST") && entry.endsWith("/api/diagnostics"))).toBe(true);
+      expect(view.queryByText("settings_about_diag_download")).toBeNull();
+
+      // Cancel returns to idle without a download request.
+      fireEvent.click(view.getByRole("button", { name: "settings_about_diagnostics" }));
+      await view.findByText("settings_about_diag_info");
+      fireEvent.click(view.getByRole("button", { name: "settings_about_diag_cancel" }));
+      expect(view.queryByText("settings_about_diag_info")).toBeNull();
+    } finally {
+      URL.createObjectURL = originalCreate;
+      URL.revokeObjectURL = originalRevoke;
+    }
   });
 });

@@ -1,12 +1,15 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { useT } from "../../i18n/context.js";
+import type Resources from "../../i18n/resources.js";
 import { registerSettingsSection, SETTINGS_SECTION } from "../../lib/settings-section-registry.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { Icons } from "../shared/icons.js";
 import { Logo } from "../shared/Logo.js";
 import { fetchRuntimeInfo, type RuntimeInfo } from "../../api/runtime-api.js";
 import { openDataDir } from "../../api/system-api.js";
+import { fetchDiagnosticsManifest, downloadDiagnosticsZip, type DiagnosticsManifestEntry } from "../../api/diagnostics-api.js";
+import { formatBytes } from "../../lib/format-bytes.js";
 import { repoWebUrl } from "../../lib/star-prompt.js";
 import { useBootstrapStore, patchUiSettingsAction } from "../../stores/api-actions/bootstrap-actions.js";
 import * as buildConfig from "../../build-config.js";
@@ -38,11 +41,51 @@ const INSTALL_KIND_KEYS = {
 /** Compact canon action button (frontend skill): icon by meaning, one shape. */
 const compactActionCls = "flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[calc(var(--ui-fs)-3px)] text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-60";
 
+/** Zip path → its i18n description; the list shows the list before any download. */
+const DIAGNOSTICS_DESCRIPTION: Record<string, keyof Resources["en"]> = {
+  "vt-info.json": "settings_about_diag_info",
+  "server-log.txt": "settings_about_diag_log",
+  "provider-profiles.json": "settings_about_diag_providers",
+  "data-sizes.json": "settings_about_diag_sizes",
+};
+
+type DiagnosticsState =
+  | { kind: "idle" }
+  | { kind: "loading" }
+  | { kind: "listed"; entries: DiagnosticsManifestEntry[] };
+
 function AboutProjectBlock() {
   const { t } = useT();
   const isMobile = useIsMobile();
   const starred = useBootstrapStore((s) => s.data?.uiSettings.githubStarred ?? false);
   const [opening, setOpening] = useState(false);
+  const [diag, setDiag] = useState<DiagnosticsState>({ kind: "idle" });
+
+  const collectDiagnostics = async () => {
+    setDiag({ kind: "loading" });
+    try {
+      const manifest = await fetchDiagnosticsManifest();
+      setDiag({ kind: "listed", entries: manifest.entries });
+    } catch {
+      setDiag({ kind: "idle" });
+      toast.error(t("settings_about_diag_failed"));
+    }
+  };
+
+  const downloadDiagnostics = async () => {
+    try {
+      const blob = await downloadDiagnosticsZip();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `vibe-tavern-diagnostics-${new Date().toISOString().slice(0, 10)}.zip`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+      setDiag({ kind: "idle" });
+    } catch {
+      toast.error(t("settings_about_diag_failed"));
+    }
+  };
 
   // Same action StarPromptModal performs: open the repo, mark starred. The
   // failed-write cost is only being asked again later, so fire-and-forget.
@@ -91,7 +134,37 @@ function AboutProjectBlock() {
             {t("settings_about_open_data_dir")}
           </button>
         )}
+        <button type="button" disabled={diag.kind === "loading"} className={compactActionCls} onClick={() => void collectDiagnostics()}>
+          <Icons.clipboard />
+          {t("settings_about_diagnostics")}
+        </button>
       </div>
+      {diag.kind === "listed" && (
+        <div className="mt-3 space-y-3">
+          {/* The user sees exactly what the zip will hold before saving it. */}
+          <ul className="space-y-1.5">
+            {diag.entries.map((entry) => (
+              <li key={entry.path} className="flex items-baseline justify-between gap-3 font-ui text-[calc(var(--ui-fs)-3px)]">
+                <span className="min-w-0 break-words text-t2">{t(DIAGNOSTICS_DESCRIPTION[entry.path] ?? "settings_about_diagnostics")}</span>
+                <span className="shrink-0 text-t3">{formatBytes(entry.bytes)}</span>
+              </li>
+            ))}
+          </ul>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md bg-accent px-2.5 font-ui text-[calc(var(--ui-fs)-3px)] font-medium text-on-accent transition-[filter] hover:brightness-110"
+              onClick={() => void downloadDiagnostics()}
+            >
+              <Icons.download />
+              {t("settings_about_diag_download")}
+            </button>
+            <button type="button" className={compactActionCls} onClick={() => setDiag({ kind: "idle" })}>
+              {t("settings_about_diag_cancel")}
+            </button>
+          </div>
+        </div>
+      )}
     </>
   );
 }
