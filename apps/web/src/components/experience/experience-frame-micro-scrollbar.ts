@@ -88,8 +88,11 @@ export const FRAME_MICRO_SCROLLBAR_SCRIPT = String.raw`(function () {
     // Drag latch: 5px holds through the drag even if the pointer leaves the lane.
     '.vt-sb-lane[data-axis="v"][data-dragging]>.vt-sb-thumb{width:5px}',
     '.vt-sb-lane[data-axis="h"][data-dragging]>.vt-sb-thumb{height:5px}',
-    // Reduced motion: every state stays reachable, just not animated.
-    '@media (prefers-reduced-motion:reduce){.vt-sb-lane>.vt-sb-thumb{transition:none}}'
+    // Reduced motion: every state stays reachable, just not animated (the
+    // [data-axis] qualifier matches the axis rules' specificity — a bare
+    // .vt-sb-lane>.vt-sb-thumb selector lost the cascade and the 120ms
+    // transition survived reduce; found in the CNR-8q/8r browser batch).
+    '@media (prefers-reduced-motion:reduce){.vt-sb-lane[data-axis]>.vt-sb-thumb{transition:none}}'
   ].join('\n');
 
   var styleEl = doc.createElement('style');

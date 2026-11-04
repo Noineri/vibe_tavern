@@ -158,9 +158,15 @@ const FRAME_SCROLLBAR_POLICY_SCRIPT = String.raw`
   });
 })();`;
 
+// scrollbar-width is INHERITED: the :not(textarea) exemption keeps the rule
+// from matching the textarea itself, but without an explicit reset the
+// textarea still inherits `none` from its parent and Firefox phones lose
+// the native scrollbar the exemption promises (found in the CNR-8q/8r
+// browser batch). A declared value always beats inheritance.
 const FRAME_MOBILE_SCROLLBAR_STYLE = [
   "html[data-vt-hide-content-scrollbars],html[data-vt-hide-content-scrollbars] :not(textarea){scrollbar-width:none!important}",
   "html[data-vt-hide-content-scrollbars]::-webkit-scrollbar,html[data-vt-hide-content-scrollbars] :not(textarea)::-webkit-scrollbar{display:none!important}",
+  "html[data-vt-hide-content-scrollbars] textarea{scrollbar-width:auto}",
 ].join("\n");
 
 function hostHidesContentScrollbars(): boolean {

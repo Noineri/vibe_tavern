@@ -56,6 +56,13 @@ describe("ScrollArea", () => {
     expect(css).toContain('[data-orientation="vertical"]:hover > [data-scroll-thumb] { width: var(--vt-scrollbar-thumb-hover); }');
     expect(css).toContain('[data-orientation="horizontal"]:hover > [data-scroll-thumb] { height: var(--vt-scrollbar-thumb-hover); }');
     expect(css).toContain('@media (prefers-reduced-motion: reduce)');
+    // The override must MATCH the base transition rules' specificity
+    // ([data-scroll-track][data-orientation=…] > thumb): a lower-specificity
+    // selector never wins and the 120ms transition survives reduce (found in
+    // the CNR-8q/8r browser batch — same bug in the frame script CSS).
+    expect(css).toContain(
+      '[data-scroll-track][data-orientation] > [data-scroll-thumb] { transition: none; }',
+    );
   });
 
   it.each(["thin", "regular"] as const)("overrides intrinsic Content sizing with the vertical viewport width (%s)", async (scrollbarSize) => {

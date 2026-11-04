@@ -656,7 +656,10 @@ select option{padding:2px 6px}
 [data-scroll-track][data-orientation="vertical"][data-dragging] > [data-scroll-thumb] { width: var(--vt-scrollbar-thumb-hover); }
 [data-scroll-track][data-orientation="horizontal"][data-dragging] > [data-scroll-thumb] { height: var(--vt-scrollbar-thumb-hover); }
 @media (prefers-reduced-motion: reduce) {
-  [data-scroll-track] > [data-scroll-thumb] { transition: none; }
+  /* [data-orientation] matches the base transition rules' specificity — the
+     earlier bare [data-scroll-track] > thumb override lost the cascade and the
+     120ms transition survived reduce (found in the CNR-8q/8r browser batch). */
+  [data-scroll-track][data-orientation] > [data-scroll-thumb] { transition: none; }
 }
 
 /* Phone-sized viewports and touch-first tablets: hide chrome, not scrolling.

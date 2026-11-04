@@ -440,6 +440,13 @@ describe("ExperienceFrame — host scrollbar visibility", () => {
       expect(build(false)).toContain('<html>');
       expect(mobile).toContain(':not(textarea)');
       expect(mobile).toContain('scrollbar-width:none');
+      // scrollbar-width is INHERITED: the :not(textarea) exemption stops the
+      // rule from matching the textarea but does not reset the value it
+      // inherits from its parent — without this explicit reset Firefox phones
+      // lose the textarea's native scrollbar (CNR-8q/8r browser batch).
+      expect(mobile).toContain(
+        'html[data-vt-hide-content-scrollbars] textarea{scrollbar-width:auto}',
+      );
       expect(mobile).not.toContain('max-width: 768px');
       const tag = '<script id="__vt_scrollbar_policy">';
       const start = mobile.indexOf(tag);
@@ -567,6 +574,13 @@ describe("ExperienceFrame — in-frame micro-scrollbar chrome (CNR-8q)", () => {
     expect(css).toContain("height:3px");
     expect(css).toContain("width:5px");
     expect(css).toContain("height:5px");
+    // Reduced-motion override must match the axis rules' specificity
+    // (.vt-sb-lane[data-axis] > thumb) — a bare .vt-sb-lane>.vt-sb-thumb
+    // selector loses to the 120ms transition rules and reduce never applies
+    // (found in the CNR-8q/8r browser batch — same bug as the host lane CSS).
+    expect(css).toContain(
+      '@media (prefers-reduced-motion:reduce){.vt-sb-lane[data-axis]>.vt-sb-thumb{transition:none}}',
+    );
     // Hover expansion gated to real pointers; no sticky 5px thumb after a tap.
     expect(css).toContain("@media (hover:hover)");
     // The drag latch holds the expanded thumb through the drag.
