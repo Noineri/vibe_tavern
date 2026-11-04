@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { useDomEnv } from "../../../test/dom-env.js";
 import type { Window as HappyWindow } from "happy-dom";
 
@@ -9,9 +9,12 @@ const { AboutSettingsSection, registerAboutSettingsSection } = await import("./a
 const { SettingsModal } = await import("../modals/SettingsModal.js");
 const { TooltipProvider } = await import("../shared/Tooltip.js");
 const { useModalStore } = await import("../../stores/modal-store.js");
+const { useBootstrapStore } = await import("../../stores/api-actions/bootstrap-actions.js");
+const { wireUiSettings } = await import("../../../test/wire-fixtures.js");
 const { getSettingsSections, registerSettingsSection } = await import("../../lib/settings-section-registry.js");
 type Descriptor = import("../../lib/settings-section-registry.js").SettingsSectionDescriptor;
 type RuntimeUpdateCheck = import("../../api/runtime-api.js").RuntimeUpdateCheck;
+type BootstrapData = import("../../stores/api-actions/bootstrap-actions.js").BootstrapData;
 
 // L1: no paths/DBs or module doubles; real section/shell/store/registry and
 // the real update-flow hook. Fetch is the only external boundary (restored
@@ -21,6 +24,8 @@ type RuntimeUpdateCheck = import("../../api/runtime-api.js").RuntimeUpdateCheck;
 
 const originalFetch = globalThis.fetch;
 const initialStore = useModalStore.getState();
+const initialBootstrap = useBootstrapStore.getState();
+const openSpy = spyOn(window, "open").mockImplementation(() => null);
 const initialSections = getSettingsSections();
 const initialWidth = window.innerWidth;
 const browser = window as unknown as HappyWindow;
@@ -51,6 +56,7 @@ let routes: {
   trigger: () => unknown;
   status: () => unknown;
   github: () => unknown;
+  openDataDir: () => unknown;
 };
 let statusCalls: number;
 
@@ -58,6 +64,8 @@ beforeEach(() => {
   globalThis.fetch = originalFetch;
   localStorage.removeItem(UPDATE_CACHE_KEY);
   useModalStore.setState(initialStore, true);
+  useBootstrapStore.setState(initialBootstrap, true);
+  openSpy.mockClear();
   setWidth(1280);
   requests = [];
   statusCalls = 0;
@@ -67,6 +75,7 @@ beforeEach(() => {
     trigger: () => ({ accepted: true }),
     status: () => ({ phase: "downloading-archive", startedAt: 0, currentVersion: "1.5.1", targetVersion: "2.0.0", downloadProgress: { receivedBytes: 5, totalBytes: 10 }, error: null }),
     github: () => new Response("{}", { status: 404 }),
+    openDataDir: () => ({ opened: true }),
   };
   globalThis.fetch = Object.assign(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
@@ -80,6 +89,12 @@ beforeEach(() => {
     if (url.includes("/api/runtime/update/check")) return reply(routes.check());
     if (url.includes("/api/runtime/update/status")) { statusCalls++; return reply(routes.status()); }
     if (method === "POST" && url.includes("/api/runtime/update")) return reply(routes.trigger());
+    if (method === "POST" && url.includes("/api/fs/open-data-dir")) return reply(routes.openDataDir());
+    if (method === "PATCH" && url.includes("/api/settings/ui")) {
+      // Echo the patch like the server's merged record would come back.
+      const body = init?.body ? JSON.parse(String(init.body)) as Record<string, unknown> : {};
+      return reply({ ...wireUiSettings(), ...body });
+    }
     if (url.includes("/api/runtime/info")) return reply(routes.info());
     throw new Error(`Unexpected request: ${method} ${url}`);
   }, { preconnect: () => {} });
@@ -89,13 +104,16 @@ afterEach(() => {
   cleanupSections();
   localStorage.removeItem(UPDATE_CACHE_KEY);
   useModalStore.setState(initialStore, true);
+  useBootstrapStore.setState(initialBootstrap, true);
   setWidth(initialWidth);
 });
 
 afterAll(() => {
   globalThis.fetch = originalFetch;
+  openSpy.mockRestore();
   localStorage.removeItem(UPDATE_CACHE_KEY);
   useModalStore.setState(initialStore, true);
+  useBootstrapStore.setState(initialBootstrap, true);
   setWidth(initialWidth);
   cleanupSections();
 });
@@ -116,6 +134,20 @@ function addStubSection(id: Descriptor["id"]) {
     labelKey: `settings_section_${id}`,
     render: () => <div>{`${id} body`}</div>,
   }));
+}
+
+function seedBootstrap(githubStarred: boolean): void {
+  const data: BootstrapData = {
+    initialChatId: null,
+    snapshot: null,
+    isFirstRun: false,
+    allCharacters: [],
+    promptPresets: [],
+    uiSettings: { ...wireUiSettings(), githubStarred },
+    agentKindSettings: {},
+    isArmServer: false,
+  };
+  useBootstrapStore.setState({ data });
 }
 
 describe("about section body", () => {
@@ -237,5 +269,40 @@ describe("about update flow in the settings modal", () => {
     fireEvent.click(view.getByRole("button", { name: "close" }));
     expect(useModalStore.getState().isSettingsOpen).toBe(false);
     expect(resetPosts()).toBe(2);
+  });
+});
+
+describe("about project block", () => {
+  test("starring opens the repo, persists githubStarred and flips to the starred state", async () => {
+    seedBootstrap(false);
+    const view = render(<AboutSettingsSection />);
+    expect(view.getByRole("button", { name: "settings_about_star" })).toBeTruthy();
+    fireEvent.click(view.getByRole("button", { name: "settings_about_star" }));
+    expect(openSpy).toHaveBeenCalledWith("https://github.com/Noineri/vibe_tavern", "_blank", "noopener,noreferrer");
+    expect(await view.findByText("settings_about_starred")).toBeTruthy();
+    expect(requests.some((entry) => entry.startsWith("PATCH") && entry.endsWith("/api/settings/ui"))).toBe(true);
+    // The starred state keeps the button usable (re-open the repo) without a second write.
+    openSpy.mockClear();
+    fireEvent.click(view.getByRole("button", { name: "settings_about_starred" }));
+    expect(openSpy).toHaveBeenCalledTimes(1);
+    expect(requests.filter((entry) => entry.startsWith("PATCH")).length).toBe(1);
+  });
+
+  test("the issue button opens the new-issue page in a new tab", () => {
+    const view = render(<AboutSettingsSection />);
+    fireEvent.click(view.getByRole("button", { name: "settings_about_issue" }));
+    expect(openSpy).toHaveBeenCalledWith("https://github.com/Noineri/vibe_tavern/issues/new", "_blank", "noopener,noreferrer");
+  });
+
+  test("open data folder posts the route on desktop and hides on mobile", () => {
+    const view = render(<AboutSettingsSection />);
+    fireEvent.click(view.getByRole("button", { name: "settings_about_open_data_dir" }));
+    expect(requests.some((entry) => entry.startsWith("POST") && entry.endsWith("/api/fs/open-data-dir"))).toBe(true);
+    view.unmount();
+    setWidth(390);
+    const phone = render(<AboutSettingsSection />);
+    expect(phone.queryByRole("button", { name: "settings_about_open_data_dir" })).toBeNull();
+    expect(phone.getByRole("button", { name: "settings_about_star" })).toBeTruthy();
+    expect(phone.getByRole("button", { name: "settings_about_issue" })).toBeTruthy();
   });
 });

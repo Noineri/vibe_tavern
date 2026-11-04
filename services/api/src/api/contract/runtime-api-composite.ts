@@ -11,10 +11,12 @@ import type {
 } from "./runtime-api.js";
 import type { TrackerTemplateApi } from "./tracker-template-api.js";
 import type { UserThemeRuntimeApi } from "./user-theme-api.js";
+import type { SystemRuntimeApi } from "./system-api.js";
 
 /** Composition only; feature contracts remain independently importable. */
 export interface RuntimeApi extends TrackerTemplateApi {
   userThemes: UserThemeRuntimeApi;
+  system: SystemRuntimeApi;
   bootstrap: BootstrapRuntimeApi["bootstrap"];
   servicePrompts: ServicePromptRuntimeApi;
   imagePromptProfiles: ImagePromptProfileRuntimeApi;

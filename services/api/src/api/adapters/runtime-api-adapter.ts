@@ -1,6 +1,7 @@
 import type { RuntimeApi } from "../contract/runtime-api.js";
 import { UserThemeAdapter } from "./user-theme-adapter.js";
 import { UserThemeLibrary } from "../../domain/themes/user-theme-library.js";
+import { SystemAdapter } from "./system-adapter.js";
 import type { StoreContainer } from "@vibe-tavern/db";
 import type { SessionRuntime } from "../../runtime/session/session-runtime.js";
 import type { ProviderProfileService } from "../../domain/providers/provider-profile-service.js";
@@ -70,6 +71,7 @@ import type { ExperienceContextService } from "../../domain/interactive/experien
  */
 export class RuntimeApiAdapter implements RuntimeApi {
   readonly userThemes: UserThemeAdapter;
+  readonly system: SystemAdapter;
 	readonly bootstrap: RuntimeApi["bootstrap"];
 	readonly servicePrompts: ServicePromptAdapter;
 	readonly imagePromptProfiles: ImagePromptProfileAdapter;
@@ -143,10 +145,15 @@ export class RuntimeApiAdapter implements RuntimeApi {
 		 * plain store save / the unavailability 404; production
 		 * (server-runtime) always injects the real sync. */
 		storyPlanSync?: Pick<StoryPlanSync, "applyPlan" | "insertNextEvent">,
+		/** SM-6: the server's data directory for the system adapter's
+		 * open-in-file-manager action. Optional so harnesses can omit it — the
+		 * adapter then answers `{ available: false }`. */
+		dataDir?: string,
 	) {
 		const bootstrapAdapter = new BootstrapAdapter(sessionRuntime);
 		this.bootstrap = bootstrapAdapter.bootstrap;
     this.userThemes = new UserThemeAdapter(new UserThemeLibrary(stores.content.fileStore));
+		this.system = new SystemAdapter({ dataDir: dataDir ?? "" });
 		// STT first (ST-6): ChatAdapter receives the SttAdapter's bound
 		// transcription path for voice-message attachments — the adapter graph
 		// stays acyclic (no cross-imports, constructor injection only).

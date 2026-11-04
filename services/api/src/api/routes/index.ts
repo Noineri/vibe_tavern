@@ -76,7 +76,7 @@ export function createApiRouter(runtime: RuntimeApi) {
     .route("/", createAgentThreadEventsRoutes(runtime.experienceCopilot))
     .route("/", createAgentBranchSidechatRoutes(runtime.experienceCopilot))
     .route("/", createRuntimeRoutes())
-    .route("/", createFsRoutes())
+    .route("/", createFsRoutes(runtime.system))
     .route("/", createCoauthorSkillRoutes(runtime.coauthorSkills))
     .route("/", createCopilotSkillRoutes(runtime.copilotSkills))
     .route("/", createCopilotProfileRoutes(runtime.copilotProfiles))
