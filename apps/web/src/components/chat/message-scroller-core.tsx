@@ -85,6 +85,9 @@ export interface MessageScrollerCoreProps {
    *  Feeds that own their scrollbar chrome (a thin overlay lane) override
    *  here instead of wrapping the virtualizer in a second scroll container. */
   scrollerClassName?: string;
+  /** Hoisted viewport adapter. Forward its ref/props to the ONE real native
+   * scroller; the context's onScrollIntent bridges sibling overlay tracks. */
+  scrollerComponent?: Components<string, MessageScrollerCoreContext>["Scroller"];
   /** Height of the hoisted structural header spacer (default 28 — the RP
    *  feed's top breathing room). */
   topSpacerHeight?: number;
@@ -100,7 +103,7 @@ export interface MessageScrollerCoreProps {
   wrap?: (scroller: ReactNode, api: MessageScrollerCoreApi) => ReactNode;
 }
 
-interface MessageScrollerCoreContext {
+export interface MessageScrollerCoreContext {
   renderItem: (index: number, messageId: string) => ReactNode;
   stableTailIds: string[];
   stableTailStartIndex: number;
@@ -110,6 +113,7 @@ interface MessageScrollerCoreContext {
   stableTailRef: (node: HTMLElement | null) => void;
   bottomInset: number;
   topSpacerHeight: number;
+  onScrollIntent: () => void;
 }
 
 // Hoisted to module scope: fresh component identities make Virtuoso remount its
@@ -177,6 +181,7 @@ export function MessageScrollerCore({
   onStartReached,
   className,
   scrollerClassName = "flex-1 scrollbar-hide",
+  scrollerComponent,
   topSpacerHeight = 28,
   overlay,
   renderJumpToBottom,
@@ -188,6 +193,7 @@ export function MessageScrollerCore({
   );
   const {
     scrollerRef,
+    onScrollIntent,
     stableTailRef,
     onVirtualizedHeightChanged,
     pinned,
@@ -225,7 +231,8 @@ export function MessageScrollerCore({
     stableTailRef,
     bottomInset,
     topSpacerHeight,
-  }), [renderItem, stableTailIds, stableTailStartIndex, firstItemIndex, stableTailRef, bottomInset, topSpacerHeight]);
+    onScrollIntent,
+  }), [renderItem, stableTailIds, stableTailStartIndex, firstItemIndex, stableTailRef, bottomInset, topSpacerHeight, onScrollIntent]);
 
   const api = useMemo<MessageScrollerCoreApi>(() => ({
     pinned,
@@ -241,8 +248,12 @@ export function MessageScrollerCore({
   const headerHeightStyle = useMemo(() => ({ height: topSpacerHeight }) as React.CSSProperties, [topSpacerHeight]);
   const headerComponent = useMemo(() => () => <div style={headerHeightStyle} />, [headerHeightStyle]);
   const structuralComponents = useMemo<Components<string, MessageScrollerCoreContext>>(
-    () => (topSpacerHeight === 28 ? components : { ...components, Header: headerComponent }),
-    [topSpacerHeight, headerComponent],
+    () => ({
+      ...components,
+      ...(topSpacerHeight === 28 ? {} : { Header: headerComponent }),
+      ...(scrollerComponent ? { Scroller: scrollerComponent } : {}),
+    }),
+    [topSpacerHeight, headerComponent, scrollerComponent],
   );
 
   const virtuoso = (

@@ -13,6 +13,9 @@ const SCROLLER_ROW_SELECTOR = "[data-scroller-message-id]";
 export interface StickToBottom {
   /** Attach to the overflow container. */
   scrollerRef: (node: HTMLElement | Window | null) => void;
+  /** Overlay scrollbars live outside the viewport; forward their user intent
+   * here before they write the same viewport's native scroll position. */
+  onScrollIntent: () => void;
   /** Attach to the recent message tail whose mounted rows remain stable. */
   stableTailRef: (node: HTMLElement | null) => void;
   /** Reconcile delayed height estimates reported by the virtualized history. */
@@ -327,6 +330,7 @@ export function useStickToBottom(resetKey: string, suppressFollow: boolean = fal
 
   return {
     scrollerRef,
+    onScrollIntent: markUserScrollIntent,
     stableTailRef,
     onVirtualizedHeightChanged: reconcileAfterLayoutChange,
     pinned,

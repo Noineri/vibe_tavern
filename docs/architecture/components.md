@@ -55,6 +55,7 @@
 | `<DiceFaces>` | per-feature dice markup | `dice-faces.tsx` | Shared 2D SVG dice renderer + pure helpers |
 | `<ResizableSidePane>` | per-panel drag/resize code | `resizable-side-pane.tsx` | Resizable side column: persisted width, drag line, width glide open/close |
 | `<ScrollArea>` | Custom-chrome scroll regions | `scroll-area.tsx` | Base UI native viewport with themed overlay chrome: 3px-at-rest thumbs (thin) expanding to 5px over an invisible wider grab lane, static 8px (regular), vertical/horizontal/biaxial via `orientation` |
+| `<AgentFeedScroller>` | Agent virtual-feed scroll chrome | `agent-shell/agent-feed-scroller.tsx` | Store-free core adapter: Virtuoso and the shared thin lane use one viewport, without the RP story rail |
 | `<ChatScrollRail>` / `<ScrollRail>` | Transcript native scrollbar | `chat/scroll-rail.tsx` | Shared RP/Co-Author story map: quiet thread, hover previews, desktop jumps/drag and mobile edge scrub |
 
 ---
@@ -91,6 +92,16 @@ Inside those documents the scrollbar chrome itself is the vanilla micro-scrollba
 Coverage is automatic: the root/body scroller, every `overflow:auto/scroll/overlay` region the authored visual or the realtime runtime creates (MutationObserver), resizes (ResizeObserver) and every scroll (one capture-phase listener, coalesced into a single rAF pass) — textareas included on desktop (the CNR-8n default-thin precedent), with their native chrome returning under the phone policy when the whole layer hides.
 The thumb color comes from the `--vt-sb-thumb` token the builders bake from the host's computed `--border2` (neutral fallback baked alongside); there is no per-surface configuration — one system per document.
 Native gallery grids, the mobile media picker and the gallery lightbox ride the shared thin lanes directly (CNR-8k); caption/description textareas compose as editor viewports, and image zoom/pan remains separate from scrollbar handling.
+
+## Agent Feed Scroller
+
+**File:** `agent-shell/agent-feed-scroller.tsx`.
+`AgentFeedScroller` composes `MessageScrollerCore` with a module-scope custom Virtuoso Scroller backed by the existing `ScrollArea scrollbarSize="thin"`.
+The virtualizer's ref, id, styles, classes and events reach the actual ScrollArea viewport; the lane root only sizes the region and never scrolls independently.
+The sibling overlay track forwards primary-pointer intent through the core context to `useStickToBottom`, which remains the only bottom-follow/navigation owner; Base UI owns thumb geometry and dragging.
+The adapter inherits the core's explicit identity, render partition, paging/navigation and chrome slots, and adds no RP-store subscriptions, story rail, jump UI or recovery boundary of its own.
+Its hoisted Scroller preserves viewport/row identity through live updates and resize; the existing stylesheet controls desktop thin-lane geometry and hides content lanes on phones without changing native touch scrolling.
+AFP-5 lands this adapter independently; AFP-6 switches `AgentMessageList` from its existing `AgentFeedScroll` surface and supplies the retained UI provider, agent partition and existing jump affordance.
 
 ## Chat Navigation Rail
 
