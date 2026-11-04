@@ -2,9 +2,9 @@ import { Icons } from "../icons.js";
 
 /**
  * The agent feed's jump-to-bottom affordance — the floating accent circle
- * revealed by `useAgentListScroll` while the view sits away from the bottom
- * (the co-author surface's bottom-pinning intent; the hook and its pinned
- * flag live in `agent-list-scroll.ts`).
+ * revealed by MessageScrollerCore's renderJumpToBottom slot while detached.
+ * useStickToBottom owns the pin, reader intent and jump position; the agent
+ * adapter preserves the feed's existing near-bottom policy and thin lane.
  *
  * Extracted from `AgentMessageList.tsx` under the file-size ratchet at
  * CNR-8h: the list sat exactly at the 800-line cap when its scroll surface
@@ -12,7 +12,7 @@ import { Icons } from "../icons.js";
  * the same scroll mechanism the unit touches — moved out, byte-identical
  * chrome. The caller mounts it inside the feed's `relative` wrapper (the
  * `absolute bottom-4 right-4` pin needs that positioning context) and only
- * while `showJumpToBottom` holds; `onClick` is the hook's `jump`.
+ * while the core is detached; `onClick` is its scrollToBottom callback.
  */
 export function AgentJumpToBottom({ onClick }: { onClick: () => void }) {
   return (

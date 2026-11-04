@@ -1,11 +1,9 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
-import { createRef } from "react";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import type { MessageScrollerCoreApi } from "../../chat/message-scroller-core.js";
 
 useDomEnv({ failOnNetwork: true });
 const { act, fireEvent, render, waitFor } = await import("@testing-library/react");
-const { AgentFeedScroll } = await import("./AgentFeedScroll.js");
 const { AgentFeedScroller } = await import("./agent-feed-scroller.js");
 const { ScrollArea } = await import("../scroll-area.js");
 const { MessageScrollerCore } = await import("../../chat/message-scroller-core.js");
@@ -40,17 +38,19 @@ function feed(resetKey = "thread-a", text = "History") {
 }
 
 describe("agent feed scroll surface", () => {
-  it("characterizes the existing thin lane: one viewport owns the ref and scroll events", async () => {
-    const ref = createRef<HTMLDivElement>();
-    const onScroll = mock();
-    const view = render(<AgentFeedScroll scrollRef={ref} onScroll={onScroll}><p>Existing history</p></AgentFeedScroll>);
+  it("keeps the characterized thin-lane boundary: the core's ref and scroll intent use the same viewport", async () => {
+    let api: MessageScrollerCoreApi | undefined;
+    const view = render(<AgentFeedScroller resetKey="thread" displayIds={["msg:one"]}
+      renderItem={() => <p>Existing history</p>} overlay={(value) => { api = value; return null; }} />);
     await act(async () => {});
-    const viewport = view.container.querySelector<HTMLDivElement>("[data-scroll-viewport]")!;
-    expect(ref.current).toBe(viewport);
+    const viewport = tallGeometry(view);
+    expect(api?.scrollerElement).toBe(viewport);
     expect(view.container.querySelectorAll("[data-scroll-viewport]")).toHaveLength(1);
     expect(viewport.closest("[data-scroll-area]")!.getAttribute("data-scroll-area")).toBe("thin");
+    fireEvent.wheel(viewport, { deltaY: -100 });
+    viewport.scrollTop = 200;
     fireEvent.scroll(viewport);
-    expect(onScroll).toHaveBeenCalled();
+    expect(api?.pinned).toBe(false);
     expect(viewport.textContent).toBe("Existing history");
   });
 

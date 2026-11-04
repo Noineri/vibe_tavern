@@ -31,8 +31,9 @@
  *     start m100 → m110 after a 50-row prepend; this math pins it).
  *
  * This module models ALL loaded render items — it is NOT a history slice.
- * Landing unused-by-design (AFP-5/AFP-6 thread it into the real list);
- * tested in isolation here.
+ * AgentMessageList consumes it through the independent scroller (AFP-6).
+ * Its renderer groups tight text-only captions into the corresponding message
+ * unit and omits host captions when the host has no caption descriptor.
  *
  * Pure — no React, no store reads.
  */

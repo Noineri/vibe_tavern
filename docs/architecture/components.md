@@ -101,7 +101,14 @@ The virtualizer's ref, id, styles, classes and events reach the actual ScrollAre
 The sibling overlay track forwards primary-pointer intent through the core context to `useStickToBottom`, which remains the only bottom-follow/navigation owner; Base UI owns thumb geometry and dragging.
 The adapter inherits the core's explicit identity, render partition, paging/navigation and chrome slots, and adds no RP-store subscriptions, story rail, jump UI or recovery boundary of its own.
 Its hoisted Scroller preserves viewport/row identity through live updates and resize; the existing stylesheet controls desktop thin-lane geometry and hides content lanes on phones without changing native touch scrolling.
-AFP-5 lands this adapter independently; AFP-6 switches `AgentMessageList` from its existing `AgentFeedScroll` surface and supplies the retained UI provider, agent partition and existing jump affordance.
+`AgentMessageList` uses this adapter with the existing `AgentJumpToBottom` chrome; the old AgentFeedScroll/useAgentListScroll modules have been retired.
+The agent adapter preserves its strict 40px near-bottom policy through an explicit core predicate; the RP/co-author default remains 2px.
+Virtuoso's absolutely positioned inner content does not resize Base UI's normal-flow Content wrapper, so measured tail/prefix layout notifications refresh the lane through a native scroll notification, after the core reconciles position and suppression.
+`agent-feed-model.ts` owns historical ordering, card/event anchors, captions, flow boundaries and the last historical tool identity; live-text flushes reuse its snapshot and the historical React elements instead of rebuilding or re-rendering old bodies.
+The render-unit model covers all loaded history without slicing it; the mounted suffix uses stable append coordinates, omits null bodies and groups tight text-only captions with their messages to preserve spacing.
+`AgentChatPane` owns the session-local row UI provider outside the one TranslateErrorBoundary around the feed, retaining disclosures, inner event/digest reading offsets and dirty edit drafts across virtual unmount or feed recovery.
+Real session changes clear that store; explicit discard, source deletion and the existing busy rules clear affected drafts even when their rows are offscreen.
+This rendering port does not page network reads or lazily fetch frozen bodies yet; those are subsequent units, and browser find still cannot search unmounted rows.
 
 ## Chat Navigation Rail
 
