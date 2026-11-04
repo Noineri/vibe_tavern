@@ -64,7 +64,7 @@ afterAll(restore);
 function Host() {
   useInterfaceTheme();
   return <TooltipProvider>
-    <section aria-label="desktop"><TweaksPanelBody onOpenMobileAccess={() => {}} /></section>
+    <section aria-label="desktop"><TweaksPanelBody /></section>
     <section aria-label="phone"><MobileSettings open onClose={() => {}} /></section>
     <InterfaceSettingsSection />
   </TooltipProvider>;

@@ -58,9 +58,7 @@ describe("theme settings", () => {
   it("offers Mystic Dawn with the outlined sparkle in desktop Tweaks", () => {
 		const setSetting = spyOn(useInterfaceSettingsStore.getState(), "setSetting");
     const { container } = render(
-      <TweaksPanelBody
-			onOpenMobileAccess={mock()}
-      />,
+      <TweaksPanelBody />,
     );
 
     const radios = themeRadios(container);

@@ -5,12 +5,11 @@ import { useIsMobile } from '../../../hooks/use-mobile.js';
 import { InterfaceSettingsBody } from '../interface-settings-body.js';
 import { useModalStore } from '../../../stores/modal-store.js';
 import { SETTINGS_SECTION } from '../../../lib/settings-section-registry.js';
+import { openNetworkSettings } from '../network-settings-section.js';
 
 interface TweaksPanelProps {
-  onOpenMobileAccess: () => void;
   proxyCount?: number;
   defaultProxyName?: string | null;
-  onOpenProxyManager?: () => void;
 }
 
 // ── Presentational body ────────────────────────────────────────────────
@@ -21,7 +20,7 @@ interface TweaksPanelProps {
 // NOTE in LinkBindingPopover.test.tsx). `<TweaksPanel>` below wraps this body
 // in `<Popover.Content>`; the body is what the rows-coverage test renders.
 
-export function TweaksPanelBody({ onOpenMobileAccess, proxyCount = 0, defaultProxyName = null, onOpenProxyManager = () => {} }: TweaksPanelProps) {
+export function TweaksPanelBody({ proxyCount = 0, defaultProxyName = null }: TweaksPanelProps) {
   const { t } = useT();
   const isMobile = useIsMobile();
 
@@ -34,14 +33,15 @@ export function TweaksPanelBody({ onOpenMobileAccess, proxyCount = 0, defaultPro
       <div className="mt-2 border-t border-border2 pt-2">
         {!isMobile && (
           <div className="flex items-center justify-between gap-3 py-2">
-            <span className="flex items-center gap-1.5 text-[calc(var(--ui-fs)-2px)] text-t2">
+            <span className="flex min-w-0 items-center gap-1.5 text-[calc(var(--ui-fs)-2px)] text-t2">
               <Icons.phone />
               {t("mobile_access")}
             </span>
             <button type="button"
-              className="rounded bg-accent px-2.5 py-1 text-[calc(var(--ui-fs)-3px)] text-on-accent hover:opacity-90"
-              onClick={onOpenMobileAccess}
-            >{t("mobile_access_enable")}</button>
+              aria-label={t("mobile_access")}
+              className="shrink-0 rounded bg-accent px-2.5 py-1 text-[calc(var(--ui-fs)-3px)] text-on-accent hover:opacity-90"
+              onClick={openNetworkSettings}
+            >{t("manage")}</button>
           </div>
         )}
         <div className="flex items-center justify-between gap-3 py-2">
@@ -49,7 +49,7 @@ export function TweaksPanelBody({ onOpenMobileAccess, proxyCount = 0, defaultPro
             <span className="flex items-center gap-1.5 text-[calc(var(--ui-fs)-2px)] text-t2"><Icons.Globe />{t("proxies")}</span>
             <span className="block truncate pl-[19px] font-ui text-[calc(var(--ui-fs)-3px)] text-t4">{defaultProxyName ? t("proxy_status_default", { name: defaultProxyName }) : t("proxy_status_configured", { count: proxyCount })}</span>
           </div>
-          <button type="button" className="rounded bg-accent px-2.5 py-1 text-[calc(var(--ui-fs)-3px)] text-on-accent hover:opacity-90" onClick={onOpenProxyManager}>{t("manage")}</button>
+          <button type="button" className="rounded bg-accent px-2.5 py-1 text-[calc(var(--ui-fs)-3px)] text-on-accent hover:opacity-90" onClick={openNetworkSettings}>{t("manage")}</button>
         </div>
       </div>
       <button

@@ -4,14 +4,14 @@ import { ScrollArea } from "../../shared/scroll-area.js";
 import { InterfaceSettingsBody } from "../interface-settings-body.js";
 import { useModalStore } from "../../../stores/modal-store.js";
 import { SETTINGS_SECTION } from "../../../lib/settings-section-registry.js";
+import { openNetworkSettings } from "../network-settings-section.js";
 
 interface MobileSettingsProps {
 	open: boolean;
 	onClose: () => void;
-	onOpenProxyManager?: () => void;
 }
 
-export function MobileSettings({ open, onClose, onOpenProxyManager = () => {} }: MobileSettingsProps) {
+export function MobileSettings({ open, onClose }: MobileSettingsProps) {
 	const { t } = useT();
 	if (!open) return null;
 
@@ -84,7 +84,7 @@ export function MobileSettings({ open, onClose, onOpenProxyManager = () => {} }:
 				<InterfaceSettingsBody mobile />
 
 				<div className="px-5 py-2.5">
-					<button type="button" className="flex min-h-[48px] w-full items-center justify-between rounded-lg border border-border bg-s2 px-3 text-left text-t2 transition-colors active:bg-s3" onClick={onOpenProxyManager}>
+					<button type="button" className="flex min-h-[48px] w-full items-center justify-between rounded-lg border border-border bg-s2 px-3 text-left text-t2 transition-colors active:bg-s3" onClick={openNetworkSettings}>
 						<span className="flex items-center gap-3"><Icons.Globe />{t("proxies")}</span>
 						<Icons.Caret direction="r" />
 					</button>

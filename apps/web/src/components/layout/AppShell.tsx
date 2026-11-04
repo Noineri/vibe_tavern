@@ -38,7 +38,7 @@ import { useUserThemesStore } from "../../stores/user-themes-store.js";
 import { ShellDestructiveConfirmModal } from "../shared/destructive-confirm-modal.js";
 import { TweaksPanel } from "../settings/popovers/TweaksPanel.js";
 import { MobileSettings } from "../settings/popovers/MobileSettings.js";
-import { NetworkSettingsProvider, openNetworkSettings } from "../settings/network-settings-section.js";
+import { NetworkSettingsProvider } from "../settings/network-settings-section.js";
 import { UpdateModal } from "../modals/UpdateModal.js";
 import { StarPromptModal } from "../modals/StarPromptModal.js";
 import { SettingsModal } from "../modals/SettingsModal.js";
@@ -344,10 +344,8 @@ export function AppShell() {
         </main>
         {!isMobile && (
           <TweaksPanel
-            onOpenMobileAccess={openNetworkSettings}
             proxyCount={proxies.length}
             defaultProxyName={proxies.find((proxy) => proxy.id === defaultProxyId)?.name ?? null}
-            onOpenProxyManager={openNetworkSettings}
           />
         )}
       </Popover.Root>
@@ -355,7 +353,6 @@ export function AppShell() {
       {isMobile && <MobileSettings
         open={tweaksOpen}
         onClose={() => setTweaksOpen(false)}
-        onOpenProxyManager={openNetworkSettings}
       />}
       {avatarOpen && avatarSrc && <AvatarPanel src={avatarSrc} onClose={() => setAvatarOpen(false)} />}
 

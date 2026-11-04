@@ -34,7 +34,7 @@ afterAll(() => useScriptSafetySettingsStore.setState(originalWarnings, true));
 const SHELLS = [
   {
     name: "desktop TweaksPanel",
-    render: () => render(<TweaksPanelBody onOpenMobileAccess={mock()} />),
+    render: () => render(<TweaksPanelBody />),
   },
   {
     name: "MobileSettings",

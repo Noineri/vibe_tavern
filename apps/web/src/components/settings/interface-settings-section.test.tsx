@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterAll, afterEach, beforeEach, describe, expect, test } from "bun:test";
 import type { Window as HappyWindow } from "happy-dom";
 import { useDomEnv } from "../../../test/dom-env.js";
 
@@ -14,8 +14,8 @@ const { useInterfaceSettingsStore, INTERFACE_SETTINGS_STORAGE_KEY } = await impo
 const { useScriptSafetySettingsStore } = await import("../../stores/script-safety-settings-store.js");
 const { getSettingsSections, registerSettingsSection } = await import("../../lib/settings-section-registry.js");
 
-// L1: real registry, stores, shells and modal; only supplied navigation callbacks
-// are spies. No paths, waits, DBs, i18n initialization or module mocks.
+// L1: real registry, stores, shells and modal; no navigation doubles.
+// No paths, waits, DBs, i18n initialization or module mocks.
 // Registry, viewport, state and the one mutated storage key are restored.
 const originalModal = useModalStore.getState();
 const originalPreferences = useInterfaceSettingsStore.getState();
@@ -25,6 +25,7 @@ const originalSections = getSettingsSections();
 const originalWidth = window.innerWidth;
 const browser = window as unknown as HappyWindow;
 const disposeSection = registerInterfaceSettingsSection();
+const temporarySections: Array<() => void> = [];
 
 function restore() {
   useModalStore.setState(originalModal, true);
@@ -42,7 +43,7 @@ beforeEach(() => {
   useInterfaceSettingsStore.getState().updateSettings({ theme: "coffee", fontSize: 17, uiFontSize: 17, messageWidth: "medium", lang: "en" });
   useModalStore.getState().setTweaksOpen(true);
 });
-afterEach(() => { cleanup(); restore(); });
+afterEach(() => { cleanup(); for (const dispose of temporarySections.splice(0)) dispose(); restore(); });
 afterAll(() => {
   disposeSection();
   for (const section of originalSections) registerSettingsSection(section);
@@ -52,7 +53,7 @@ afterAll(() => {
 function Host({ mobile = false }: { mobile?: boolean }) {
   const quickOpen = useModalStore((state) => state.tweaksOpen);
   return <>
-    {mobile ? <MobileSettings open={quickOpen} onClose={() => useModalStore.getState().setTweaksOpen(false)} /> : quickOpen && <TweaksPanelBody onOpenMobileAccess={() => {}} />}
+    {mobile ? <MobileSettings open={quickOpen} onClose={() => useModalStore.getState().setTweaksOpen(false)} /> : quickOpen && <TweaksPanelBody />}
     <SettingsModal />
   </>;
 }
@@ -88,14 +89,16 @@ describe("interface section entry", () => {
     });
   }
 
-  test("keeps existing proxy and desktop mobile-access callbacks working until Network is registered", () => {
-    const proxy = mock();
-    const mobileAccess = mock();
-    const view = render(<TweaksPanelBody onOpenMobileAccess={mobileAccess} onOpenProxyManager={proxy} />);
-    fireEvent.click(view.getByRole("button", { name: "manage" }));
-    fireEvent.click(view.getByRole("button", { name: "mobile_access_enable" }));
-    expect(proxy).toHaveBeenCalledTimes(1);
-    expect(mobileAccess).toHaveBeenCalledTimes(1);
-    expect(useModalStore.getState().isSettingsOpen).toBe(false);
-  });
+  for (const entry of ["desktop-proxy", "desktop-mobile-access", "phone-proxy"] as const) {
+    test(`${entry} navigates atomically to Network without obsolete opener props`, () => {
+      const mobile = entry === "phone-proxy";
+      if (mobile) browser.happyDOM.setWindowSize({ width: 390 });
+      temporarySections.push(registerSettingsSection({ id: "network", icon: null, labelKey: "settings_section_network", render: () => <div>network body</div> }));
+      const view = render(<Host mobile={mobile} />);
+      fireEvent.click(view.getByRole("button", { name: mobile ? "proxies" : entry === "desktop-mobile-access" ? "mobile_access" : "manage" }));
+      expect(useModalStore.getState()).toMatchObject({ tweaksOpen: false, isSettingsOpen: true, settingsSection: "network" });
+      expect(view.getByText("network body")).toBeTruthy();
+      expect(view.queryByText("tweaks_title")).toBeNull();
+    });
+  }
 });
