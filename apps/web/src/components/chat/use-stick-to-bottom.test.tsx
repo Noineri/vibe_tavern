@@ -64,13 +64,16 @@ interface HarnessProps {
   targetId?: string;
   jumpIndex?: number;
   virtualizer?: MessageJumpOptions["virtualizer"];
+  /** AFP-2: the inverse-scroll index offset threaded into jumpToMessage. */
+  virtualIndexBase?: number;
 }
 
-function Harness({ metrics, resetKey, suppressFollow = false, targetOffset = 200, targetId = "row-150", jumpIndex = 150, virtualizer = null }: HarnessProps) {
-  const { scrollerRef, stableTailRef, pinned, scrollToBottom, revealStart, beginExplicitNavigation } = useStickToBottom(resetKey, suppressFollow);
+function Harness({ metrics, resetKey, suppressFollow = false, targetOffset = 200, targetId = "row-150", jumpIndex = 150, virtualizer = null, virtualIndexBase }: HarnessProps) {
+  const { scrollerRef, stableTailRef, pinned, scrollToBottom, revealStart, beginExplicitNavigation, beginPrependAnchor } = useStickToBottom(resetKey, suppressFollow);
   const targetRef = useRef<HTMLDivElement>(null);
   const scrollerElement = useRef<HTMLDivElement | null>(null);
   const finishRef = useRef<(() => void) | undefined>(undefined);
+  const anchorFinishRef = useRef<(() => void) | undefined>(undefined);
   const attachScroller = useCallback((node: HTMLDivElement | null) => {
     scrollerElement.current = node;
     if (node) {
@@ -108,9 +111,12 @@ function Harness({ metrics, resetKey, suppressFollow = false, targetOffset = 200
       <button type="button" onClick={() => { if (targetRef.current) finishRef.current = revealStart(targetRef.current); }}>reveal</button>
       <button type="button" onClick={() => finishRef.current?.()}>finish</button>
       <button type="button" onClick={() => { finishRef.current = beginExplicitNavigation(); }}>jump</button>
+      <button type="button" onClick={() => { anchorFinishRef.current = beginPrependAnchor(); }}>anchor</button>
+      <button type="button" onClick={() => anchorFinishRef.current?.()}>anchor-restore</button>
       <button type="button" onClick={() => jumpToMessage({
         index: jumpIndex, displayIds: Array.from({ length: 200 }, (_, i) => `row-${i}`),
         stableTailStartIndex: 100, scroller: scrollerElement.current, virtualizer, beginExplicitNavigation,
+        ...(virtualIndexBase !== undefined ? { virtualIndexBase } : {}),
       })}>jump-row</button>
     </>
   );
@@ -130,6 +136,27 @@ describe("useStickToBottom", () => {
     const view = render(<Harness metrics={metrics} resetKey="chat-1" />);
     fireEvent.click(view.getByText("jump-row"));
     expect(metrics.scrollTop).toBe(200);
+    expect(view.getByTestId("pinned").textContent).toBe("false");
+  });
+
+  it("AFP-2: a virtualIndexBase shifts the index handed to the virtualizer (inverse-scroll jumps)", () => {
+    // A paged feed addressing virtualized history through the shifted
+    // firstItemIndex space: the stub virtualizer must receive base + array
+    // index (1012), never the raw array position — the core's `scrollToItem`
+    // passes exactly this translation.
+    const metrics = { scrollTop: 0, scrollHeight: 1000, clientHeight: 400 };
+    let requestedIndex: number | undefined;
+    const virtualizer: NonNullable<MessageJumpOptions["virtualizer"]> = {
+      scrollIntoView(location) {
+        if (typeof location === "number" || !("index" in location)) throw new Error("Expected indexed location");
+        requestedIndex = location.index;
+      },
+    };
+    const view = render(
+      <Harness metrics={metrics} resetKey="chat-1" jumpIndex={12} targetId="row-12" virtualizer={virtualizer} virtualIndexBase={1000} />,
+    );
+    fireEvent.click(view.getByText("jump-row"));
+    expect(requestedIndex).toBe(1012);
     expect(view.getByTestId("pinned").textContent).toBe("false");
   });
 
@@ -360,5 +387,86 @@ describe("useStickToBottom", () => {
     metrics.scrollHeight = 1400;
     act(() => { observerFor("stable-tail").notify(); });
     expect(metrics.scrollTop).toBe(1000);
+  });
+
+  // ─── AFP-2: the prepend anchor (paged history loading above a reader) ───
+
+  it("a prepend anchor restores the first visible row's offset without claiming the pin", () => {
+    const metrics = { scrollTop: 300, scrollHeight: 1000, clientHeight: 400 };
+    const view = render(<Harness metrics={metrics} resetKey="chat-1:branch-1" targetOffset={200} />);
+
+    // A detached reader: their visual anchor row sits partially above the fold
+    // (viewport top 20, row top -80 — the first row whose bottom is visible).
+    fireEvent.wheel(view.getByTestId("scroller"), { deltaY: -100 });
+    metrics.scrollTop = 300;
+    fireEvent.scroll(view.getByTestId("scroller"));
+    expect(view.getByTestId("pinned").textContent).toBe("false");
+
+    // The paged feed captures the anchor, then older history lands ABOVE:
+    // the row moves 500px down visually and the content grows by 500.
+    fireEvent.click(view.getByText("anchor"));
+    metrics.scrollHeight = 1500;
+    view.rerender(<Harness metrics={metrics} resetKey="chat-1:branch-1" targetOffset={700} />);
+    expect(metrics.scrollTop).toBe(300);
+
+    // The restore realigns the captured row to its captured viewport offset
+    // (+500) — without following the new bottom (1100) or flipping the pin.
+    fireEvent.click(view.getByText("anchor-restore"));
+    expect(metrics.scrollTop).toBe(800);
+    expect(view.getByTestId("pinned").textContent).toBe("false");
+  });
+
+  it("user scroll intent after the capture cancels the pending anchor", () => {
+    const metrics = { scrollTop: 300, scrollHeight: 1000, clientHeight: 400 };
+    const view = render(<Harness metrics={metrics} resetKey="chat-1:branch-1" targetOffset={200} />);
+    fireEvent.wheel(view.getByTestId("scroller"), { deltaY: -100 });
+    metrics.scrollTop = 350;
+    fireEvent.scroll(view.getByTestId("scroller"));
+    expect(view.getByTestId("pinned").textContent).toBe("false");
+
+    fireEvent.click(view.getByText("anchor"));
+    // The reader scrolls again after the capture — their newer intent wins.
+    metrics.scrollHeight = 1500;
+    metrics.scrollTop = 350;
+    view.rerender(<Harness metrics={metrics} resetKey="chat-1:branch-1" targetOffset={700} />);
+    fireEvent.wheel(view.getByTestId("scroller"), { deltaY: -100 });
+    fireEvent.scroll(view.getByTestId("scroller"));
+    fireEvent.click(view.getByText("anchor-restore"));
+    expect(metrics.scrollTop).toBe(350);
+  });
+
+  it("an anchor whose row left the loaded range leaves the position alone", () => {
+    const metrics = { scrollTop: 300, scrollHeight: 1000, clientHeight: 400 };
+    const view = render(<Harness metrics={metrics} resetKey="chat-1:branch-1" targetOffset={200} targetId="row-150" />);
+    fireEvent.wheel(view.getByTestId("scroller"), { deltaY: -100 });
+    metrics.scrollTop = 300;
+    fireEvent.scroll(view.getByTestId("scroller"));
+    expect(view.getByTestId("pinned").textContent).toBe("false");
+
+    fireEvent.click(view.getByText("anchor"));
+    // The captured row unmounted (history window moved on); a different row
+    // now carries the slot's id attribute.
+    metrics.scrollHeight = 1500;
+    view.rerender(<Harness metrics={metrics} resetKey="chat-1:branch-1" targetOffset={700} targetId="row-40" />);
+    fireEvent.click(view.getByText("anchor-restore"));
+    expect(metrics.scrollTop).toBe(300);
+  });
+
+  it("a reset key change drops a pending anchor along with the rest of the navigation state", () => {
+    const metrics = { scrollTop: 300, scrollHeight: 1000, clientHeight: 400 };
+    const view = render(<Harness metrics={metrics} resetKey="chat-1:branch-1" targetOffset={200} />);
+    fireEvent.wheel(view.getByTestId("scroller"), { deltaY: -100 });
+    metrics.scrollTop = 300;
+    fireEvent.scroll(view.getByTestId("scroller"));
+    expect(view.getByTestId("pinned").textContent).toBe("false");
+
+    fireEvent.click(view.getByText("anchor"));
+    metrics.scrollHeight = 1500;
+    view.rerender(<Harness metrics={metrics} resetKey="chat-2:branch-1" targetOffset={700} />);
+    // The reset re-pins to the new bottom; the stale anchor restore no-ops.
+    expect(metrics.scrollTop).toBe(1100);
+    fireEvent.click(view.getByText("anchor-restore"));
+    expect(metrics.scrollTop).toBe(1100);
+    expect(view.getByTestId("pinned").textContent).toBe("true");
   });
 });

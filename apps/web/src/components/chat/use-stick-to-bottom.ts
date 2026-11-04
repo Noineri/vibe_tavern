@@ -5,6 +5,11 @@ import type { RevealMessageStart } from "./message-scroll-context.js";
 /** A stale completion must not align a row or change the pin. */
 export type CompleteExplicitNavigation = (target?: HTMLElement | null) => boolean;
 
+/** The stable row-identity attribute every scroller row carries (virtualized
+ *  and stable-tail alike) — the prepend anchor and the jump math address rows
+ *  through it. */
+const SCROLLER_ROW_SELECTOR = "[data-scroller-message-id]";
+
 export interface StickToBottom {
   /** Attach to the overflow container. */
   scrollerRef: (node: HTMLElement | Window | null) => void;
@@ -20,6 +25,15 @@ export interface StickToBottom {
   revealStart: RevealMessageStart;
   /** Detach until the virtualizer completes; optionally align a mounted row. */
   beginExplicitNavigation: () => CompleteExplicitNavigation;
+  /** AFP-2 (AGENT_FEED_PERFORMANCE_PLAN Wave 1 step 3): anchor the first
+   *  visible stable row for a pending prepend. Call BEFORE the prepend
+   *  commits (older pages landing above the reading position); the returned
+   *  restore realigns the captured row to its captured viewport offset AFTER
+   *  the new content has laid out — never as bottom-follow, and never moving
+   *  the pin. Superseded or cancelled anchors (user scroll intent, explicit
+   *  navigation, reveal, bottom jump, reset) restore nothing; a captured row
+   *  that left the DOM (unloaded/repartitioned) leaves the position alone. */
+  beginPrependAnchor: () => () => void;
 }
 
 function readMetrics(element: HTMLElement): ScrollMetrics {
@@ -40,6 +54,12 @@ function readMetrics(element: HTMLElement): ScrollMetrics {
  * streaming text, disclosure animations, image loads, font changes, and future
  * row content without component-specific coordination.
  *
+ * AFP-2 adds the PREPEND ANCHOR (beginPrependAnchor): a paged feed loading
+ * older history above a detached reader captures the first visible stable row
+ * and restores its viewport offset after the prepend commits — the load never
+ * yanks the reader to the bottom and never claims the pin. Any newer user
+ * intent (scroll, jump, reveal, reset) cancels the pending anchor.
+ *
  *  IF-4b follow-up (owner 2026-09-22): `suppressFollow` — while an image-gen
  *  run is in flight for this chat, content growth must NOT drag the pinned
  *  view to the bottom (the user swipes variants on earlier slots while a
@@ -58,6 +78,7 @@ export function useStickToBottom(resetKey: string, suppressFollow: boolean = fal
   const userScrollIntentRef = useRef(false);
   const readingNavigationRef = useRef<{ target: HTMLElement } | null>(null);
   const explicitNavigationRef = useRef<object | null>(null);
+  const prependAnchorRef = useRef<{ rowId: string; rowViewportTop: number } | null>(null);
   const [pinned, setPinnedState] = useState(true);
   // Latest-flag mirror: the observers close over reconcileAfterLayoutChange,
   // so a changing suppressFollow must not churn them (the ref is read at
@@ -87,10 +108,56 @@ export function useStickToBottom(resetKey: string, suppressFollow: boolean = fal
     if (delta < 0) element.scrollTop = Math.max(0, element.scrollTop + delta);
   }, []);
 
+  /** Clear any pending prepend anchor: a newer interaction owns the
+   *  position now (the stale restore checks identity and no-ops, but clearing
+   *  at the source keeps the state honest). */
+  const cancelPrependAnchor = useCallback(() => {
+    prependAnchorRef.current = null;
+  }, []);
+
+  const beginPrependAnchor = useCallback(() => {
+    const element = scrollerElementRef.current;
+    if (!element) return () => {};
+    // The first row whose bottom edge is below the viewport top — the reader's
+    // current visual anchor. Rows without the stable-id attribute are skipped
+    // (they are chrome, not content).
+    const viewportTop = element.getBoundingClientRect().top + element.clientTop;
+    let firstVisible: HTMLElement | null = null;
+    for (const row of element.querySelectorAll<HTMLElement>(SCROLLER_ROW_SELECTOR)) {
+      const rect = row.getBoundingClientRect();
+      if (rect.bottom > viewportTop + 1) { firstVisible = row; break; }
+    }
+    if (firstVisible === null) return () => {};
+    const anchor = {
+      rowId: firstVisible.getAttribute("data-scroller-message-id")!,
+      rowViewportTop: firstVisible.getBoundingClientRect().top - viewportTop,
+    };
+    prependAnchorRef.current = anchor;
+    return () => {
+      if (prependAnchorRef.current !== anchor) return; // superseded / cancelled
+      prependAnchorRef.current = null;
+      const scroller = scrollerElementRef.current;
+      if (!scroller) return;
+      const row = Array.from(scroller.querySelectorAll<HTMLElement>(SCROLLER_ROW_SELECTOR))
+        .find((candidate) => candidate.getAttribute("data-scroller-message-id") === anchor.rowId);
+      // The row left the DOM (unloaded history / repartition): keep the
+      // current position — a guess would be worse than the reader's place.
+      if (!row) return;
+      const viewportTopNow = scroller.getBoundingClientRect().top + scroller.clientTop;
+      const delta = row.getBoundingClientRect().top - viewportTopNow - anchor.rowViewportTop;
+      if (delta === 0) return;
+      scroller.scrollTop = Math.max(
+        0,
+        Math.min(scroller.scrollHeight - scroller.clientHeight, scroller.scrollTop + delta),
+      );
+    };
+  }, []);
+
   const revealStart = useCallback<RevealMessageStart>((target) => {
     const element = scrollerElementRef.current;
     if (!element?.contains(target)) return () => {};
     explicitNavigationRef.current = null;
+    cancelPrependAnchor();
     const navigation = { target };
     readingNavigationRef.current = navigation;
     userScrollIntentRef.current = false;
@@ -111,6 +178,7 @@ export function useStickToBottom(resetKey: string, suppressFollow: boolean = fal
     const navigation = {};
     explicitNavigationRef.current = navigation;
     readingNavigationRef.current = null;
+    cancelPrependAnchor();
     userScrollIntentRef.current = false;
     setPinned(false);
     return (target) => {
@@ -165,8 +233,9 @@ export function useStickToBottom(resetKey: string, suppressFollow: boolean = fal
   const markUserScrollIntent = useCallback(() => {
     explicitNavigationRef.current = null;
     readingNavigationRef.current = null;
+    cancelPrependAnchor();
     userScrollIntentRef.current = true;
-  }, []);
+  }, [cancelPrependAnchor]);
 
   const markWheelScrollIntent = useCallback((event: WheelEvent) => {
     // At the bottom, a downward wheel has nowhere to go and must not leave a
@@ -228,17 +297,19 @@ export function useStickToBottom(resetKey: string, suppressFollow: boolean = fal
   const scrollToBottom = useCallback(() => {
     explicitNavigationRef.current = null;
     readingNavigationRef.current = null;
+    cancelPrependAnchor();
     setPinned(true);
     followBottom();
-  }, [followBottom, setPinned]);
+  }, [followBottom, setPinned, cancelPrependAnchor]);
 
   useLayoutEffect(() => {
     explicitNavigationRef.current = null;
     readingNavigationRef.current = null;
+    cancelPrependAnchor();
     userScrollIntentRef.current = false;
     setPinned(true);
     followBottom();
-  }, [followBottom, resetKey, setPinned]);
+  }, [followBottom, resetKey, setPinned, cancelPrependAnchor]);
 
   useEffect(() => {
     return () => {
@@ -262,5 +333,6 @@ export function useStickToBottom(resetKey: string, suppressFollow: boolean = fal
     scrollToBottom,
     revealStart,
     beginExplicitNavigation,
+    beginPrependAnchor,
   };
 }

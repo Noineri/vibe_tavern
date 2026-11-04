@@ -1,7 +1,5 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
-import { Virtuoso } from "react-virtuoso";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import type { ReactNode } from "react";
-import type { Components, ContextProp, VirtuosoHandle } from "react-virtuoso";
 import { useHasFreshGeneration, useIsGenerationVisible, usePendingUserContent } from "../../stores/chat-store.js";
 import { useActiveStreamingMessageId } from "../../stores/chat-selectors.js";
 import { useMessageOrder } from "../../stores/index.js";
@@ -13,10 +11,8 @@ import { Icons } from "../shared/icons.js";
 import { CustomTooltip } from "../shared/Tooltip.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { cn } from "../../lib/cn.js";
-import { useStickToBottom } from "./use-stick-to-bottom.js";
-import { partitionMessageRenderWindow } from "./message-render-window.js";
+import { MessageScrollerCore, type MessageScrollerCoreApi } from "./message-scroller-core.js";
 import { MessageScrollContext } from "./message-scroll-context.js";
-import { jumpToMessage } from "./message-jump.js";
 import { ChatScrollRail } from "./scroll-rail.js";
 
 /**
@@ -94,80 +90,24 @@ export interface MessageScrollerProps {
   bottomInset?: number;
 }
 
-interface MessageScrollerContext {
-  renderItem: (index: number, messageId: string) => ReactNode;
-  stableTailIds: string[];
-  stableTailStartIndex: number;
-  stableTailRef: (node: HTMLElement | null) => void;
-  bottomInset: number;
-}
-
-// Hoisted to module scope: fresh component identities make Virtuoso remount its
-// structural elements and restart height measurement.
-const Header = () => <div style={{ height: 28 }} />;
-
-function StableTail({ context }: ContextProp<MessageScrollerContext>) {
-  const { renderItem, stableTailIds, stableTailStartIndex, stableTailRef, bottomInset } = context;
-
-  return (
-    <div ref={stableTailRef} data-message-stable-tail style={{ display: "flow-root" }}>
-      {stableTailIds.map((messageId, offset) => (
-        <div key={messageId} data-scroller-message-id={messageId} style={{ display: "flow-root" }}>
-          {renderItem(stableTailStartIndex + offset, messageId)}
-        </div>
-      ))}
-      {/* Base 12px breathing room + the caller's bottomInset (MUI step 14:
-          scroll clearance for the floating add-on launcher bar above the
-          input dock). The spacer sits inside the observed stable tail, so an
-          inset change while pinned is followed before paint (same settle path
-          as streaming growth). */}
-      <div style={{ height: 12 + bottomInset }} />
-    </div>
-  );
-}
-
 /**
- * Item wrapper. Identical to the default one except for `display: flow-root`,
- * and that one property is load-bearing.
- *
- * Message blocks space themselves with vertical margins. A plain block wrapper
- * lets a child's margin escape its box, so the wrapper's measured height — which
- * is what Virtuoso records — comes out ~8px short per item, while the DOM
- * carries the full gap. The virtualizer's model of the content then sits below
- * the real scrollHeight (measured in Firefox: 323px across 18 items), it places
- * "the bottom" that much too high, and it drags the position back there every
- * time we drive to the real bottom. That tug-of-war is what made a reload land
- * anywhere between "fine" and "half a message hidden behind the composer",
- * depending on which side moved last.
- *
- * `flow-root` gives the wrapper its own block formatting context, so the margins
- * stay inside and the measured height matches what the DOM lays out. Measured
- * after the change: item gaps 0, distance-to-bottom 0 in both engines.
- */
-const Item: NonNullable<Components<string, MessageScrollerContext>["Item"]> = ({ children, style, item, context, ...rest }) => (
-  <div {...rest} data-scroller-message-id={item} style={{ ...style, display: "flow-root" }}>
-    {children}
-  </div>
-);
-
-const components: Components<string, MessageScrollerContext> = {
-  Header,
-  Footer: StableTail,
-  Item,
-};
-
-/**
- * Reusable hybrid message scroller.
+ * Reusable hybrid message scroller — the RP/co-author ADAPTER (AFP-2).
  *
  * Shared by RP (`MessageList`) and Co-Author (`CoauthorMessageList`); they
  * differ only in how `displayIds` is derived and how an item renders, and the
- * scroll behaviour has to be identical.
+ * scroll behaviour has to be identical. The virtualization, the scroll
+ * invariant and the navigation live in the store-free
+ * `message-scroller-core.tsx`; this adapter contributes exactly the
+ * environment: the snapshot-derived reset identity (`chat:branch`), the
+ * image-gen suppression flag (IF-4b follow-up), the story-map rail, the
+ * reveal-start context for message rows, the translate recovery boundary and
+ * the desktop/mobile "to the end" button pair.
  *
  * Older messages remain virtualized for long conversations. Several complete
  * recent pages render in Virtuoso's footer and therefore retain their DOM while
  * the view is pinned. A ResizeObserver watches only that stable tail. Changing
- * `scrollTop` cannot resize it, so disclosure and streaming growth settle at the
- * bottom before paint without the ResizeObserver feedback loop caused by
+ * `scrollTop` cannot resize it, so disclosure and streaming growth settle at
+ * the bottom before paint without the ResizeObserver feedback loop caused by
  * synchronously measuring virtualized rows.
  *
  * The stable tail is bounded: a 1,000-message branch still mounts only the last
@@ -190,84 +130,56 @@ export function MessageScroller({ displayIds, renderItem, bottomInset = 0 }: Mes
   const imageGenRunInFlight = useImageGenChatStore(
     (state) => activeChatId !== null && state.runningByChat[activeChatId] !== undefined,
   );
-  const { virtualizedIds, stableTailIds, stableTailStartIndex } = useMemo(
-    () => partitionMessageRenderWindow(displayIds),
-    [displayIds],
-  );
-  const {
-    scrollerRef,
-    stableTailRef,
-    onVirtualizedHeightChanged,
-    pinned,
-    scrollToBottom,
-    revealStart,
-    beginExplicitNavigation,
-  } = useStickToBottom(resetKey, imageGenRunInFlight);
-  const virtuosoRef = useRef<VirtuosoHandle>(null);
-  const scrollId = useId();
+
+  // The jump-landing highlight is adapter chrome (the core stays animation-free).
   const highlightRef = useRef<Animation | null>(null);
-  const [scrollerElement, setScrollerElement] = useState<HTMLElement | null>(null);
-  const attachScroller = useCallback((node: HTMLElement | Window | null) => {
-    scrollerRef(node);
-    setScrollerElement(node instanceof HTMLElement ? node : null);
-  }, [scrollerRef]);
-  const jumpToDisplayIndex = useCallback((index: number) => {
-    jumpToMessage({ index, displayIds, stableTailStartIndex, scroller: scrollerElement, virtualizer: virtuosoRef.current, beginExplicitNavigation,
-      onLand: (target) => {
-        highlightRef.current?.cancel();
-        highlightRef.current = target.animate([{ backgroundColor: "var(--accent-dim)" }, { backgroundColor: "transparent" }], { duration: 900 });
-      },
-    });
-  }, [displayIds, stableTailStartIndex, scrollerElement, beginExplicitNavigation]);
   useEffect(() => () => { highlightRef.current?.cancel(); }, [resetKey]);
-  const context = useMemo<MessageScrollerContext>(() => ({
-    renderItem,
-    stableTailIds,
-    stableTailStartIndex,
-    stableTailRef,
-    bottomInset,
-  }), [renderItem, stableTailIds, stableTailStartIndex, stableTailRef, bottomInset]);
+  const onJump = useCallback((api: MessageScrollerCoreApi) => (index: number) => {
+    api.scrollToItem(index, (target) => {
+      highlightRef.current?.cancel();
+      highlightRef.current = target.animate([{ backgroundColor: "var(--accent-dim)" }, { backgroundColor: "transparent" }], { duration: 900 });
+    });
+  }, []);
 
   return (
-    <MessageScrollContext.Provider value={revealStart}>
     <TranslateErrorBoundary>
-      <div className={cn("chat-rail-layout relative flex-1 flex flex-col min-h-0", isMobile && "overscroll-y-none")}>
-        <Virtuoso<string, MessageScrollerContext>
-          id={scrollId}
-          ref={virtuosoRef}
-          scrollerRef={attachScroller}
-          data={virtualizedIds}
-          context={context}
-          computeItemKey={(_index, messageId) => messageId}
-          totalListHeightChanged={onVirtualizedHeightChanged}
-          overscan={{ main: 4000, reverse: 4000 }}
-          itemContent={(index, messageId) => renderItem(index, messageId)}
-          components={components}
-          className="flex-1 scrollbar-hide"
-          style={{ overflowY: "auto", WebkitOverflowScrolling: "touch" } as React.CSSProperties}
-        />
-        <ChatScrollRail key={resetKey} displayIds={displayIds} scroller={scrollerElement} onJump={jumpToDisplayIndex} isMobile={isMobile} />
-        {!pinned && displayIds.length > 0 && (
-          isMobile ? (
+      <MessageScrollerCore
+        resetKey={resetKey}
+        suppressFollow={imageGenRunInFlight}
+        displayIds={displayIds}
+        renderItem={renderItem}
+        bottomInset={bottomInset}
+        className={cn("chat-rail-layout", isMobile && "overscroll-y-none")}
+        wrap={(scroller, api) => (
+          <MessageScrollContext.Provider value={api.revealStart}>{scroller}</MessageScrollContext.Provider>
+        )}
+        overlay={(api) => (
+          <ChatScrollRail
+            key={resetKey}
+            displayIds={displayIds}
+            scroller={api.scrollerElement}
+            onJump={onJump(api)}
+            isMobile={isMobile}
+          />
+        )}
+        renderJumpToBottom={(scrollToBottom) => isMobile ? (
+          <button type="button"
+            className="absolute bottom-4 right-4 z-10 flex h-11 w-11 items-center justify-center rounded-full bg-surface/80 backdrop-blur-sm border border-border shadow-lg transition-all duration-300 active:scale-95"
+            onClick={scrollToBottom}
+          >
+            <Icons.Caret direction="d" />
+          </button>
+        ) : (
+          <CustomTooltip content={t("scroll_to_bottom")} side="left">
             <button type="button"
-              className="absolute bottom-4 right-4 z-10 flex h-11 w-11 items-center justify-center rounded-full bg-surface/80 backdrop-blur-sm border border-border shadow-lg transition-all duration-300 active:scale-95"
+              className="chat-rail-bottom-button absolute bottom-6 z-10 flex h-10 w-10 items-center justify-center rounded-full bg-accent text-on-accent shadow-lg transition-transform hover:scale-110 active:scale-95"
               onClick={scrollToBottom}
             >
               <Icons.Caret direction="d" />
             </button>
-          ) : (
-            <CustomTooltip content={t("scroll_to_bottom")} side="left">
-              <button type="button"
-                className="chat-rail-bottom-button absolute bottom-6 z-10 flex h-10 w-10 items-center justify-center rounded-full bg-accent text-on-accent shadow-lg transition-transform hover:scale-110 active:scale-95"
-                onClick={scrollToBottom}
-              >
-                <Icons.Caret direction="d" />
-              </button>
-            </CustomTooltip>
-          )
+          </CustomTooltip>
         )}
-      </div>
+      />
     </TranslateErrorBoundary>
-    </MessageScrollContext.Provider>
   );
 }
