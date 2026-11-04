@@ -198,6 +198,11 @@ export type {
 } from './experience-resource-store.js';
 
 export { ExperienceCopilotStore } from './experience-copilot-store.js';
+export { readAgentFeedPage, readAgentEventDetail } from './agent-feed-store.js';
+export type { AgentFeedPageResult, AgentFeedRecord, AgentFeedBoundaryFacts, AgentFeedMessageFact, AgentEventDetailRequest, AgentEventDetailResult } from './agent-feed-store.js';
+export { compareAgentFeedPositions } from './agent-feed-order.js';
+export type { AgentFeedPosition, AgentFeedCursor, AgentFeedPageRequest } from './agent-feed-order.js';
+export type { AgentFeedEventRecord, AgentFeedEventFacts, AgentEventDetailSlice } from './agent-feed-event-reads.js';
 export type {
   ExperienceCopilotThread,
   ExperienceCopilotMessage,

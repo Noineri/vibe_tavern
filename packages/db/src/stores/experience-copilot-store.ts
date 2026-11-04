@@ -8,6 +8,8 @@ import { mapThread, mapMessage, mapEvent } from './experience-copilot-row-mapper
 import { compareTimelineEntries, parseFrontier, type AgentThreadContextEvent, type AgentThreadContextEventKind, type AgentThreadRpFrontier, type AgentThreadTimelineEntry, type RpSyncWritePlan } from './agent-thread-context-events.js';
 import { forkChatThreadToBranch, type ForkThreadRemap } from './experience-copilot-fork-copy.js';
 import { updateAssistantMessageContent, type CopilotMessageEditResult } from './experience-copilot-message-edit.js';
+import { readAgentFeedPage, readAgentEventDetail, type AgentEventDetailRequest } from './agent-feed-store.js';
+import type { AgentFeedPageRequest } from './agent-feed-order.js';
 import { applyFirstMessageAutoTitle } from './experience-copilot-auto-title.js';
 import { startNewSession, startNewChatSession } from './experience-copilot-session-start.js';
 import {
@@ -136,6 +138,15 @@ export class ExperienceCopilotStore {
     const runtime = resolveStoreRuntime(options);
     this.clock = runtime.clock;
     this.idGen = runtime.idGenerator;
+  }
+
+  /** Additive UI-only reads; full-history prompt/compaction paths stay below. */
+  async readFeedPage(threadId: string, request: AgentFeedPageRequest) {
+    return readAgentFeedPage(this.db, threadId, request);
+  }
+
+  async readEventDetail(threadId: string, eventId: string, request: AgentEventDetailRequest) {
+    return readAgentEventDetail(this.db, threadId, eventId, request);
   }
 
   /** The single active thread (archived_at IS NULL) for a script, or null. */

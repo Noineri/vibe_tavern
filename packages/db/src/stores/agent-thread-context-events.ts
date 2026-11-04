@@ -74,7 +74,10 @@ export type AgentThreadTimelineEntry =
  *  (pre-SC-1 legacy rows are the oldest), then createdAt, then id. For an
  *  all-NULL-seq thread (script/draft) this degenerates to exactly
  *  listMessages' (createdAt, id) order — the unit's must-stay-true. */
-export function compareTimelineEntries(a: AgentThreadTimelineEntry, b: AgentThreadTimelineEntry): number {
+export function compareTimelineEntries(
+  a: Pick<AgentThreadTimelineEntry, 'seq' | 'createdAt'> & { id: string },
+  b: Pick<AgentThreadTimelineEntry, 'seq' | 'createdAt'> & { id: string },
+): number {
   if (a.seq !== b.seq) {
     if (a.seq === null) return -1;
     if (b.seq === null) return 1;
