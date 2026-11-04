@@ -184,14 +184,6 @@ html,body{height:100%;background:var(--page-bg, var(--bg));color:var(--t1);overf
    stacking context above the canvas so app content shines over the lamp, while
    portaled modals/toasts (body children, z>=40) still stack above both. */
 #root{position:relative;z-index:1}
-::-webkit-scrollbar{width:8px;height:8px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--border2);border-radius:4px}
-/* Standard properties override WebKit geometry in Chromium. Gate the Firefox
-   rule on its engine property: newer Firefox also accepts WebKit selectors.
-   Width is not inherited; the base layer preserves utility-based hiding. */
-@layer base {
-  @supports (-moz-appearance:none){*{scrollbar-width:thin;scrollbar-color:var(--border2) transparent}}
-}
-
 /* ── Sidebar icon button ── */
 .iBtn{width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:5px;cursor:pointer;color:var(--t3);transition:background .1s,color .1s;flex-shrink:0}
 .iBtn:hover{background:var(--s2);color:var(--t1)}
@@ -600,7 +592,11 @@ select option{padding:2px 6px}
   transform: translateZ(0);
 }
 
-/* Explicit native-chrome hiding on any viewport (including the transcript). */
+/* Explicit native-chrome hiding on any viewport (including the transcript).
+   Both engines' rules are always paired: Firefox 153+ also accepts WebKit
+   selectors, so selector support no longer identifies the engine — never
+   drop one half of the pair (the CNR-8r residual audit keeps this the only
+   sanctioned native-chrome styling left in the host stylesheet). */
 .scrollbar-hide {
   -ms-overflow-style: none;
   scrollbar-width: none;
@@ -671,6 +667,14 @@ select option{padding:2px 6px}
    lane). Hiding only native chrome cannot hide a DOM track.
    CSS responds to open-surface resizes without remounting editors or lists. */
 @media (max-width: 768px), (hover: none) and (pointer: coarse) {
+  /* Stylesheet-owned phone-policy signal (CNR-8r): ExperienceFrame reads this
+     root custom property as the host scrollbar-visibility verdict for the
+     opaque-origin frame documents (unset/empty at desktop widths). It lives
+     in THIS block so the signal and the hiding below stay in lockstep by
+     construction — computed `scrollbar-width` stopped being a reliable verdict
+     once the host went custom-chrome-only (the global native fallback is
+     gone, so custom-only native suppression reads `none` on desktop too). */
+  :root { --vt-hide-content-scrollbars: 1; }
   :where(:not(textarea)) { scrollbar-width: none; }
   :not(textarea)::-webkit-scrollbar { display: none; }
   [data-scroll-area]:not([data-scroll-composer]) > [data-scroll-track],

@@ -48,7 +48,11 @@ const realCreate = URL.createObjectURL;
 const realRevoke = URL.revokeObjectURL;
 const browserSettings = (window as unknown as HappyWindow).happyDOM.settings;
 const originalIframeLoading = browserSettings.enableIframePageLoading;
-const originalScrollbarWidth = document.documentElement.style.scrollbarWidth;
+// CNR-8r: the phone-policy signal is the stylesheet-owned
+// --vt-hide-content-scrollbars root custom property (set only inside the
+// phone-policy media block in styles.css), driven in these tests through the
+// same inline-style seam the old computed scrollbar-width pins used.
+const HIDE_SIGNAL = "--vt-hide-content-scrollbars";
 
 // These spies navigate ONLY to about:blank, never to the generated visual.
 // Enable that supported local navigation instead of emitting a disabled-load
@@ -56,7 +60,7 @@ const originalScrollbarWidth = document.documentElement.style.scrollbarWidth;
 beforeAll(() => { browserSettings.enableIframePageLoading = true; });
 afterAll(() => {
   browserSettings.enableIframePageLoading = originalIframeLoading;
-  document.documentElement.style.scrollbarWidth = originalScrollbarWidth;
+  document.documentElement.style.removeProperty(HIDE_SIGNAL);
   restoreUrl();
 });
 
@@ -84,7 +88,7 @@ afterEach(() => {
   createdBlobs.length = 0;
   revokedUrls.length = 0;
   restoreUrl();
-  document.documentElement.style.scrollbarWidth = originalScrollbarWidth;
+  document.documentElement.style.removeProperty(HIDE_SIGNAL);
 });
 
 // ─── buildExperienceFrameDocument (pure) ────────────────────────────────────
@@ -125,25 +129,56 @@ describe("buildExperienceFrameDocument", () => {
     expect(doc).toContain(`:root{--vt-sb-thumb:${FRAME_SCROLLBAR_NEUTRAL_THUMB}}`);
   });
 
-  it("frames drop the baked native fallback; the HOST keeps its global 8px/thin rules", async () => {
+  it("frames drop the baked native fallback; the HOST is custom-chrome-only and its stylesheet owns the phone-policy signal", async () => {
     const host = await Bun.file(`${import.meta.dir}/../../styles.css`).text();
     const turn = buildExperienceFrameDocument(VISUAL, "var(--test-thumb)");
     const realtime = buildRealtimeExperienceFrameDocument(VISUAL, "", {
       rulesSource: "", seed: 1, tickMs: 33, initialState: {}, initialSettings: {},
       participants: [], scriptSeats: [], viewer: { kind: "human", participantId: "p1" },
     }, "var(--test-thumb)");
-    // CNR-8r scope, pinned here on purpose: the host's global native rules and
-    // the computed-scrollbar-width mobile signal stay exactly as they were —
-    // CNR-8q removes ONLY the in-frame baked copies.
-    expect(host).toContain("::-webkit-scrollbar{width:8px;height:8px}");
-    expect(host).toContain("border-radius:4px");
-    expect(host).toContain("@supports (-moz-appearance:none)");
-    expect(host).toContain("*{scrollbar-width:thin;scrollbar-color:");
-    expect(host).toContain("scrollbar-width: none;");
-    expect(host).toContain(".scrollbar-hide::-webkit-scrollbar");
-    expect(/@layer base\s*\{\s*@supports \(-moz-appearance:none\)/.test(host)).toBe(true);
-    // CNR-8q scope: the custom overlay script replaces the baked native
-    // chrome inside BOTH frame documents (its own CSS hides native chrome).
+    // CNR-8r end state: the host's global native fallback (8px WebKit geometry
+    // + the Firefox-thin @supports rule) is REMOVED — every desktop-visible
+    // scrollbar is the shared custom lane system. The only surviving
+    // ::-webkit-scrollbar rules are sanctioned DISPLAY-NONE hiding (the
+    // .scrollbar-hide utility and the phone-policy block), and no standard
+    // scrollbar-width:thin / scrollbar-color remains anywhere in the host.
+    expect(host).not.toContain("::-webkit-scrollbar{width:8px");
+    expect(host).not.toContain("@supports (-moz-appearance:none)");
+    expect(host).not.toContain("scrollbar-width:thin");
+    expect(host).not.toContain("scrollbar-color:");
+    expect(host).toContain(".scrollbar-hide");
+    for (const rule of host.match(/[^{}]*::-webkit-scrollbar[^{}]*\{[^}]*\}/g) ?? []) {
+      expect(rule).toContain("display: none");
+    }
+    // The phone-policy block (7g hiding itself is NOT this unit's scope) now
+    // owns the signal state: --vt-hide-content-scrollbars is set ONLY inside
+    // that exact media policy, so the property and the hiding rule stay in
+    // lockstep by construction (exactly one occurrence, none outside).
+    const phonePolicy = "@media (max-width: 768px), (hover: none) and (pointer: coarse)";
+    const blockStart = host.indexOf(phonePolicy);
+    expect(blockStart).toBeGreaterThan(-1);
+    let depth = 0;
+    let blockEnd = -1;
+    for (let i = host.indexOf("{", blockStart); i < host.length; i++) {
+      if (host[i] === "{") depth++;
+      else if (host[i] === "}") {
+        depth--;
+        if (depth === 0) {
+          blockEnd = i + 1;
+          break;
+        }
+      }
+    }
+    expect(blockEnd).toBeGreaterThan(blockStart);
+    const phoneBlock = host.slice(blockStart, blockEnd);
+    expect(phoneBlock).toContain("--vt-hide-content-scrollbars: 1;");
+    expect(phoneBlock).toContain(":where(:not(textarea)) { scrollbar-width: none; }");
+    const outsideBlock = host.slice(0, blockStart) + host.slice(blockEnd);
+    expect(outsideBlock).not.toContain("--vt-hide-content-scrollbars");
+    expect(host.split("--vt-hide-content-scrollbars").length - 1).toBe(1);
+    // CNR-8q scope keeps holding: the custom overlay script replaces the
+    // baked native chrome inside BOTH frame documents (its own CSS hides
+    // native chrome).
     for (const doc of [turn, realtime]) {
       expect(doc).not.toContain("::-webkit-scrollbar{width:8px");
       expect(doc).not.toContain("border-radius:4px");
@@ -435,9 +470,9 @@ describe("ExperienceFrame — host scrollbar visibility", () => {
       expect(root.hasAttribute('data-vt-hide-content-scrollbars')).toBe(false);
     });
 
-    it(`${mode}: sends current CSS state on load/resize without replacing the document or session`, async () => {
+    it(`${mode}: sends current stylesheet signal state on load/resize without replacing the document or session`, async () => {
       installUrlSpies();
-      document.documentElement.style.scrollbarWidth = 'none';
+      document.documentElement.style.setProperty(HIDE_SIGNAL, "1");
       const ref = createRef<ExperienceFrameHandle>();
       const { container, unmount } = render(<ExperienceFrame
         ref={ref} visualSource={VISUAL} sessionId="visibility-session" initialRevision={4}
@@ -453,13 +488,13 @@ describe("ExperienceFrame — host scrollbar visibility", () => {
       Object.defineProperty(iframe, 'contentWindow', { configurable: true, value: {
         postMessage: (data: unknown) => messages.push(data),
       } });
-      document.documentElement.style.scrollbarWidth = 'auto';
+      document.documentElement.style.removeProperty(HIDE_SIGNAL);
       fireEvent.load(iframe);
       expect(messages).toContainEqual({ type: 'vt:scrollbar-visibility', hidden: false });
-      document.documentElement.style.scrollbarWidth = 'none';
+      document.documentElement.style.setProperty(HIDE_SIGNAL, "1");
       fireEvent(window, new Event('resize'));
       expect(messages.at(-1)).toEqual({ type: 'vt:scrollbar-visibility', hidden: true });
-      document.documentElement.style.scrollbarWidth = 'auto';
+      document.documentElement.style.removeProperty(HIDE_SIGNAL);
       fireEvent(window, new Event('resize'));
       expect(messages.at(-1)).toEqual({ type: 'vt:scrollbar-visibility', hidden: false });
       expect(iframe.src).toBe(url);

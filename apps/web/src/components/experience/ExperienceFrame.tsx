@@ -164,9 +164,16 @@ const FRAME_MOBILE_SCROLLBAR_STYLE = [
 ].join("\n");
 
 function hostHidesContentScrollbars(): boolean {
-  // Read the host stylesheet's actual result, not the frame's narrower width
-  // or a second JS copy of the mobile breakpoint. This also works detached.
-  return getComputedStyle(document.documentElement).getPropertyValue("scrollbar-width").trim() === "none";
+  // Read the stylesheet-owned policy state, not a computed scrollbar value:
+  // styles.css sets --vt-hide-content-scrollbars ONLY inside the phone-policy
+  // media block (max-width: 768px OR touch-first), the same block that hides
+  // native chrome, so signal and policy stay in lockstep by construction.
+  // Computed `scrollbar-width` was the CNR-7h verdict but stopped being one
+  // once the host went custom-chrome-only (CNR-8r removed the global native
+  // fallback — a custom-only future would read `none` on desktop too). This
+  // also works detached: the detached window loads the same stylesheet.
+  return getComputedStyle(document.documentElement)
+    .getPropertyValue("--vt-hide-content-scrollbars").trim() !== "";
 }
 
 /**

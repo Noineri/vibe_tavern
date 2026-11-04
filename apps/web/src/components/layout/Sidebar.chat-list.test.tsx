@@ -197,7 +197,11 @@ describe("Sidebar — chats section without an active chat", () => {
 			expectVerticalContentSizing(section);
 		}
 		const css = await Bun.file(`${import.meta.dir}/../../styles.css`).text();
-		expect(css).toContain("::-webkit-scrollbar{width:8px;height:8px}");
+		// CNR-8r: the host's global native fallback is gone — the sidebar's own
+		// chrome is the shared thin lane system, and no global native scrollbar
+		// rule remains to fall back on (the app is custom-chrome-only).
+		expect(css).not.toContain("::-webkit-scrollbar{width:8px");
+		expect(css).not.toContain("scrollbar-width:thin");
 		expect(css).not.toContain(".sidebar-scrollbars");
 	});
 
