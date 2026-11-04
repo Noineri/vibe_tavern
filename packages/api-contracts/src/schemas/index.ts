@@ -593,3 +593,5 @@ export {
 } from "./provider-quota-schema.js";
 export { MAX_USER_THEME_BYTES, USER_THEME_SLUG_PATTERN, userThemeSlugSchema, uploadUserThemeSchema, userThemeSummarySchema, userThemeSchema } from "./user-theme-schema.js";
 export type { UploadUserTheme, UserThemeSummary, UserTheme } from "./user-theme-schema.js";
+export { diagnosticsSelectionSchema, diagnosticsPreviewRequestSchema, diagnosticsZipRequestSchema } from "./diagnostics-schema.js";
+export type { DiagnosticsSelectionInput, DiagnosticsPreviewRequest, DiagnosticsZipRequest } from "./diagnostics-schema.js";

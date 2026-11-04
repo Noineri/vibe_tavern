@@ -3,6 +3,7 @@ import type { Dirent } from "node:fs";
 import { join } from "node:path";
 import { readSchemaVersion, type AppDb } from "@vibe-tavern/db";
 import { recentLogLines } from "@vibe-tavern/domain";
+import type { GenerationDiagnosticsFile } from "./generation-diagnostics.js";
 
 /**
  * SM-7 diagnostics — the technical-only bundle «Собрать диагностику» builds.
@@ -13,6 +14,11 @@ import { recentLogLines } from "@vibe-tavern/domain";
  * chats, characters, prompts, or `data/logs/send-debug.log` (send events may
  * carry message content). The entry list below is the contract the route test
  * pins exactly; adding an entry is an owner conversation, not a refactor.
+ *
+ * SM-9a (owner 2026-11-04): the same builder optionally appends the already
+ * redacted `generation/` files of ONE explicitly consented selected
+ * generation (see generation-diagnostics.ts). Without that input the archive
+ * is exactly the four technical entries below.
  */
 
 /** The ONLY provider-profile fields diagnostics may touch — no names, no keys. */
@@ -32,6 +38,10 @@ export interface DiagnosticsInput {
   arch: string;
   osRelease: string;
   providerProfiles: readonly DiagnosticsProviderProfile[];
+  /** SM-9a content mode: the redacted entries of ONE consented selected
+   * generation, appended after the four technical entries. Absent/empty =
+   * the default technical-only archive. */
+  generationFiles?: readonly GenerationDiagnosticsFile[];
 }
 
 export interface DiagnosticsEntry {
@@ -70,16 +80,27 @@ export function redactEndpointForDiagnostics(raw: string): string {
 }
 
 /**
- * Ring lines are "{ISO} {LEVEL}{[tag]} {message}" — keep ONLY the header and
- * drop the message body (defect 2026-11-04: character-description fragments
- * reached server-log.txt through ordinary warnings; the message part of a log
- * line can carry ANY content and no redactor can tell prose from prose). The
- * zip keeps the technical timeline — when, at what level, in which subsystem —
- * while the readable log stays on disk in data/logs for the user to attach
- * manually if they choose.
+ * Ring entries are "{ISO} {LEVEL}{[tag]} {message}" — keep ONLY the header
+ * and drop the message body (defect 2026-11-04: character-description
+ * fragments reached server-log.txt through ordinary warnings; the message
+ * part of a log line can carry ANY content and no redactor can tell prose
+ * from prose). The zip keeps the technical timeline — when, at what level, in
+ * which subsystem — while the readable log stays on disk in data/logs for the
+ * user to attach manually if they choose.
+ *
+ * SM-9a hardening — fail closed on every parse outcome: the header is kept
+ * only when the entry STARTS with the validated header shape, checked against
+ * the FIRST line (an Error argument embeds its whole multiline stack, and CRLF
+ * can split a message, so a whole-entry regex match would fail and — before
+ * this fix — ship the original message verbatim). Any other shape degrades to
+ * an explicit placeholder; the original message never ships, period.
  */
+const LOG_HEADER_PATTERN = /^\d{4}-\d{2}-\d{2}T[0-9:.]+Z (?:DEBUG|INFO|WARN|ERROR)(?:\[[^\]\n]*\])?/;
+
 function logHeader(line: string): string {
-  return line.replace(/^(\S+ \w+(?:\[[^\]]*\])?)(?: .*)?$/, "$1");
+  const firstLine = line.split("\n", 1)[0] ?? "";
+  const match = LOG_HEADER_PATTERN.exec(firstLine);
+  return match ? match[0] : "[unparsed]";
 }
 
 /** Total bytes under `dir` (top-level breakdown), following directories and
@@ -129,14 +150,13 @@ export async function buildDiagnosticsEntries(input: DiagnosticsInput): Promise<
     dbSchemaVersion: readSchemaVersion(input.db),
     generatedAt: new Date().toISOString(),
   };
-  const logLines = recentLogLines()
-    .map(logHeader)
-    .filter((header) => header !== "");
+  const logLines = recentLogLines().map(logHeader);
   const sizes = await measureDataSizes(input.dataDir);
   return [
     textEntry("vt-info.json", `${JSON.stringify(info, null, 2)}\n`),
     textEntry("server-log.txt", logLines.length > 0 ? `${logLines.join("\n")}\n` : ""),
     textEntry("provider-profiles.json", `${JSON.stringify(input.providerProfiles.map((profile) => ({ ...profile, endpoint: redactEndpointForDiagnostics(profile.endpoint) })), null, 2)}\n`),
     textEntry("data-sizes.json", `${JSON.stringify(sizes, null, 2)}\n`),
+    ...(input.generationFiles ?? []).map((file) => textEntry(file.path, file.text)),
   ];
 }
