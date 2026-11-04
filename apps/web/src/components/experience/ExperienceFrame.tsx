@@ -12,9 +12,12 @@
  * The host injects the following into the frame document:
  *   1. a restrictive CSP `<meta>` (no network, inline scripts/styles only,
  *      images via data:/blob: only);
- *   2. the immutable `VibeExperience` SDK (`experience-sdk.ts`).
- *   3. base scrollbar styling and a layout-only host visibility listener;
- *      realtime documents additionally carry their fixed runtime/config.
+ *   2. the immutable `VibeExperience` SDK (`experience-sdk.ts`);
+ *   3. the vanilla micro-scrollbar chrome (CNR-8q) — a self-contained
+ *      CSS+JS system shipping the app-wide 3px/5px lane contract inside the
+ *      opaque-origin document — plus a layout-only host visibility listener
+ *      (CNR-7h); realtime documents additionally carry their fixed
+ *      runtime/config.
  * The rest is the caller-supplied `visualSource` (the editable HTML/CSS/JS). The
  * SDK is host-provided and version-pinned; the visual source is user-owned and
  * never silently rewritten by Vibe Tavern (design: "Only the versioned SDK
@@ -53,6 +56,10 @@ import {
   type LoopDiagSample,
 } from "../../lib/experience-bridge.js";
 import { VIBE_EXPERIENCE_SDK_SOURCE } from "../../lib/experience-sdk.js";
+import {
+  FRAME_MICRO_SCROLLBAR_SCRIPT,
+  FRAME_SCROLLBAR_NEUTRAL_THUMB,
+} from "./experience-frame-micro-scrollbar.js";
 import type { BridgeErrorCode } from "../../lib/experience-bridge-schema.js";
 import type { ExperienceLoopConfig } from "../../lib/experience-loop-host.js";
 
@@ -175,16 +182,18 @@ export function buildExperienceFrameDocument(
   hideContentScrollbars = false,
 ): string {
   // The frame is a separate opaque-origin document (sandbox="allow-scripts",
-  // no allow-same-origin): it inherits neither the host's ::-webkit-scrollbar
-  // rule nor its theme CSS variables. Bake the scrollbar chrome into the base
-  // style so any inner scrollbar (frame body, or a visual's own scroll region)
-  // matches the host instead of falling back to the browser default. The thumb
-  // is the host's --border2 theme token (read from :root at build time); a
-  // neutral fallback covers the rare case it is absent.
+  // no allow-same-origin): it inherits neither the host's scrollbar CSS nor
+  // its theme variables, so the vanilla micro-scrollbar script (see
+  // experience-frame-micro-scrollbar.ts) ships the app-wide 3px-rest/5px-hover
+  // lane contract as DOM overlay chrome for every scroller in the document —
+  // body, authored-visual regions and textareas alike. Its thumb color comes
+  // from the --vt-sb-thumb token baked here from the host's --border2 theme
+  // token (read from :root at build time); a neutral fallback covers the rare
+  // case it is absent.
   const thumb =
     scrollbarColor && scrollbarColor.trim() !== ""
       ? scrollbarColor.trim()
-      : "rgba(140,140,140,0.5)";
+      : FRAME_SCROLLBAR_NEUTRAL_THUMB;
   return [
     "<!DOCTYPE html>",
     hideContentScrollbars ? "<html data-vt-hide-content-scrollbars>" : "<html>",
@@ -193,12 +202,14 @@ export function buildExperienceFrameDocument(
     `<meta http-equiv="Content-Security-Policy" content="${EXPERIENCE_FRAME_CSP}">`,
     "<style>",
     "html,body{margin:0;padding:0;background:transparent;color:inherit;font:inherit;}",
-    `::-webkit-scrollbar{width:8px;height:8px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:${thumb};border-radius:4px}`,
-    `@supports (-moz-appearance:none){*{scrollbar-width:thin;scrollbar-color:${thumb} transparent}}`,
+    `:root{--vt-sb-thumb:${thumb}}`,
     FRAME_MOBILE_SCROLLBAR_STYLE,
     "</style>",
     '<script id="__vt_scrollbar_policy">',
     FRAME_SCROLLBAR_POLICY_SCRIPT,
+    "</script>",
+    '<script id="__vt_micro_scrollbar">',
+    FRAME_MICRO_SCROLLBAR_SCRIPT,
     "</script>",
     "</head>",
     "<body>",
@@ -228,10 +239,13 @@ export function buildRealtimeExperienceFrameDocument(
   scrollbarColor?: string,
   hideContentScrollbars = false,
 ): string {
+  // Scrollbar chrome head block — a byte-mirrored FORK PAIR with
+  // buildExperienceFrameDocument (token bake + mobile style + policy and
+  // micro-scrollbar scripts): change both together.
   const thumb =
     scrollbarColor && scrollbarColor.trim() !== ""
       ? scrollbarColor.trim()
-      : "rgba(140,140,140,0.5)";
+      : FRAME_SCROLLBAR_NEUTRAL_THUMB;
   const configJson = JSON.stringify(config).replace(/</g, "\\u003c");
   return [
     "<!DOCTYPE html>",
@@ -241,12 +255,14 @@ export function buildRealtimeExperienceFrameDocument(
     `<meta http-equiv="Content-Security-Policy" content="${EXPERIENCE_FRAME_REALTIME_CSP}">`,
     "<style>",
     "html,body{margin:0;padding:0;background:transparent;color:inherit;font:inherit;}",
-    `::-webkit-scrollbar{width:8px;height:8px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:${thumb};border-radius:4px}`,
-    `@supports (-moz-appearance:none){*{scrollbar-width:thin;scrollbar-color:${thumb} transparent}}`,
+    `:root{--vt-sb-thumb:${thumb}}`,
     FRAME_MOBILE_SCROLLBAR_STYLE,
     "</style>",
     '<script id="__vt_scrollbar_policy">',
     FRAME_SCROLLBAR_POLICY_SCRIPT,
+    "</script>",
+    '<script id="__vt_micro_scrollbar">',
+    FRAME_MICRO_SCROLLBAR_SCRIPT,
     "</script>",
     "</head>",
     "<body>",

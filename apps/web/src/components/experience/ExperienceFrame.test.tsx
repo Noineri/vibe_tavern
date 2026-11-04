@@ -25,6 +25,10 @@ import {
   type ExperienceFrameHandle,
 } from "./ExperienceFrame.js";
 import { VIBE_EXPERIENCE_SDK_SOURCE } from "../../lib/experience-sdk.js";
+import {
+  FRAME_MICRO_SCROLLBAR_SCRIPT,
+  FRAME_SCROLLBAR_NEUTRAL_THUMB,
+} from "./experience-frame-micro-scrollbar.js";
 
 useDomEnv();
 
@@ -108,39 +112,46 @@ describe("buildExperienceFrameDocument", () => {
     expect(EXPERIENCE_FRAME_CSP).not.toContain("allow-same-origin");
   });
 
-  it("bakes the host scrollbar color into the base style (theme-aware)", () => {
-    // The frame is opaque-origin, so it cannot inherit the host's ::-webkit-scrollbar
-    // rule or --border2 token; the color must be baked into the srcdoc.
+  it("bakes the host scrollbar color into the thumb token (theme-aware)", () => {
+    // The frame is opaque-origin, so it cannot inherit the host's scrollbar
+    // CSS or --border2 token; the in-frame micro-scrollbar reads its thumb
+    // color from the token baked into the base style.
     const doc = buildExperienceFrameDocument(VISUAL, "oklch(0.4 0.02 290)");
-    expect(doc).toContain("::-webkit-scrollbar");
-    expect(doc).toContain("scrollbar-width:thin");
-    expect(doc).toContain("oklch(0.4 0.02 290)");
+    expect(doc).toContain(":root{--vt-sb-thumb:oklch(0.4 0.02 290)}");
   });
 
   it("falls back to a neutral scrollbar when no theme color is provided", () => {
     const doc = buildExperienceFrameDocument(VISUAL);
-    expect(doc).toContain("::-webkit-scrollbar");
-    expect(doc).toContain("rgba(140,140,140,0.5)");
+    expect(doc).toContain(`:root{--vt-sb-thumb:${FRAME_SCROLLBAR_NEUTRAL_THUMB}}`);
   });
 
-  it("host and both iframe documents use 8px scrollbars and a nested Firefox fallback", async () => {
+  it("frames drop the baked native fallback; the HOST keeps its global 8px/thin rules", async () => {
     const host = await Bun.file(`${import.meta.dir}/../../styles.css`).text();
     const turn = buildExperienceFrameDocument(VISUAL, "var(--test-thumb)");
     const realtime = buildRealtimeExperienceFrameDocument(VISUAL, "", {
       rulesSource: "", seed: 1, tickMs: 33, initialState: {}, initialSettings: {},
       participants: [], scriptSeats: [], viewer: { kind: "human", participantId: "p1" },
     }, "var(--test-thumb)");
-    for (const source of [host, turn, realtime]) {
-      expect(source).toContain("::-webkit-scrollbar{width:8px;height:8px}");
-      expect(source).toContain("border-radius:4px");
-      expect(source).toContain("@supports (-moz-appearance:none)");
-      expect(source).toContain("*{scrollbar-width:thin;scrollbar-color:");
-    }
-    const baseStyle = (doc: string) => doc.slice(doc.indexOf("<style>"), doc.indexOf("</style>"));
-    expect(baseStyle(turn)).toBe(baseStyle(realtime));
+    // CNR-8r scope, pinned here on purpose: the host's global native rules and
+    // the computed-scrollbar-width mobile signal stay exactly as they were —
+    // CNR-8q removes ONLY the in-frame baked copies.
+    expect(host).toContain("::-webkit-scrollbar{width:8px;height:8px}");
+    expect(host).toContain("border-radius:4px");
+    expect(host).toContain("@supports (-moz-appearance:none)");
+    expect(host).toContain("*{scrollbar-width:thin;scrollbar-color:");
     expect(host).toContain("scrollbar-width: none;");
     expect(host).toContain(".scrollbar-hide::-webkit-scrollbar");
     expect(/@layer base\s*\{\s*@supports \(-moz-appearance:none\)/.test(host)).toBe(true);
+    // CNR-8q scope: the custom overlay script replaces the baked native
+    // chrome inside BOTH frame documents (its own CSS hides native chrome).
+    for (const doc of [turn, realtime]) {
+      expect(doc).not.toContain("::-webkit-scrollbar{width:8px");
+      expect(doc).not.toContain("border-radius:4px");
+      expect(doc).not.toContain("@supports (-moz-appearance:none)");
+      expect(doc).not.toContain("scrollbar-width:thin");
+    }
+    const baseStyle = (doc: string) => doc.slice(doc.indexOf("<style>"), doc.indexOf("</style>"));
+    expect(baseStyle(turn)).toBe(baseStyle(realtime));
   });
 });
 
@@ -463,6 +474,96 @@ describe("ExperienceFrame — host scrollbar visibility", () => {
       expect(revokedUrls.length).toBe(1);
     });
   }
+});
+
+// ─── in-frame micro-scrollbar chrome (CNR-8q) ───────────────────────────────
+// Probe D (CNR-8a): host CSS cannot cross the opaque-origin boundary, so the
+// only DOM-custom mechanism for the frames is a vanilla script shipped through
+// the document builders. These pins hold the BAKED DOCUMENT boundary — script
+// presence, the removed native fallback, the CNR-7h interplay and the
+// untouched gameplay surface. Rendered geometry is the browser harness's job;
+// happy-dom cannot prove it and must not fake it.
+describe("ExperienceFrame — in-frame micro-scrollbar chrome (CNR-8q)", () => {
+  const buildBoth = () => ({
+    turn: buildExperienceFrameDocument(VISUAL, "oklch(0.4 0.02 290)"),
+    realtime: buildRealtimeExperienceFrameDocument(VISUAL, RUNTIME_STUB, REALTIME_CONFIG, "oklch(0.4 0.02 290)"),
+  });
+
+  it("ships the vanilla micro-scrollbar script in BOTH documents, after the CNR-7h policy script", () => {
+    const { turn, realtime } = buildBoth();
+    for (const doc of [turn, realtime]) {
+      const tag = '<script id="__vt_micro_scrollbar">';
+      expect(doc).toContain(tag);
+      expect(doc).toContain(FRAME_MICRO_SCROLLBAR_SCRIPT);
+      // The layout policy stays FIRST: the micro-scrollbar CSS is keyed on
+      // the very attribute that receiver toggles.
+      expect(doc.indexOf(tag)).toBeGreaterThan(doc.indexOf('<script id="__vt_scrollbar_policy">'));
+    }
+    // The static script must never terminate its own host tag.
+    expect(FRAME_MICRO_SCROLLBAR_SCRIPT).not.toContain("</script");
+  });
+
+  it("the script self-installs its own CSS and defers DOM wiring to DOMContentLoaded", () => {
+    // Element-local double (the CNR-7h receiver-test pattern): no real DOM,
+    // no globals — only the synchronous install path runs.
+    const styleEl = { id: "", textContent: "" };
+    const appended: unknown[] = [];
+    const listenerTypes: string[] = [];
+    const documentDouble = {
+      readyState: "loading",
+      createElement: () => styleEl,
+      head: { appendChild: (el: unknown) => { appended.push(el); } },
+      addEventListener: (type: string) => { listenerTypes.push(type); },
+    };
+    expect(() =>
+      new Function("window", "document", FRAME_MICRO_SCROLLBAR_SCRIPT)({}, documentDouble),
+    ).not.toThrow();
+    expect(appended).toEqual([styleEl]);
+    expect(styleEl.id).toBe("__vt_micro_scrollbar_style");
+    expect(listenerTypes).toEqual(["DOMContentLoaded"]);
+    const css = styleEl.textContent;
+    // Native chrome hidden on desktop only (scoped to the phone attribute) —
+    // so textareas fall back to native chrome exactly when lanes hide.
+    expect(css).toContain("html:not([data-vt-hide-content-scrollbars])");
+    // Phone policy: every custom track hides with the layer.
+    expect(css).toContain("html[data-vt-hide-content-scrollbars] .vt-sb-layer{display:none}");
+    // 3px resting thumb on both axes, 5px expansion over the lane.
+    expect(css).toContain("width:3px");
+    expect(css).toContain("height:3px");
+    expect(css).toContain("width:5px");
+    expect(css).toContain("height:5px");
+    // Hover expansion gated to real pointers; no sticky 5px thumb after a tap.
+    expect(css).toContain("@media (hover:hover)");
+    // The drag latch holds the expanded thumb through the drag.
+    expect(css).toContain("[data-dragging]");
+    // Correct states reachable without animation.
+    expect(css).toContain("@media (prefers-reduced-motion:reduce)");
+    // Themed via the baked token with the neutral fallback.
+    expect(css).toContain(`var(--vt-sb-thumb,${FRAME_SCROLLBAR_NEUTRAL_THUMB})`);
+  });
+
+  it("keeps the CNR-7h phone exemption verbatim (native textareas keep their chrome)", () => {
+    const { turn } = buildBoth();
+    expect(turn).toContain(
+      "html[data-vt-hide-content-scrollbars],html[data-vt-hide-content-scrollbars] :not(textarea){scrollbar-width:none!important}",
+    );
+    expect(turn).toContain(
+      "html[data-vt-hide-content-scrollbars]::-webkit-scrollbar,html[data-vt-hide-content-scrollbars] :not(textarea)::-webkit-scrollbar{display:none!important}",
+    );
+  });
+
+  it("leaves the gameplay boundary untouched: same CSP, pure vanilla script", () => {
+    const { turn, realtime } = buildBoth();
+    expect(turn).toContain(`<meta http-equiv="Content-Security-Policy" content="${EXPERIENCE_FRAME_CSP}">`);
+    expect(realtime).toContain(`<meta http-equiv="Content-Security-Policy" content="${EXPERIENCE_FRAME_REALTIME_CSP}">`);
+    expect(EXPERIENCE_FRAME_CSP).toContain("connect-src 'none'");
+    // Opaque-origin constraints: no network, no module system, no host refs.
+    // (Word-boundary: CSS !important is not a module system.)
+    expect(FRAME_MICRO_SCROLLBAR_SCRIPT).not.toMatch(/\bimport\b/);
+    expect(FRAME_MICRO_SCROLLBAR_SCRIPT).not.toMatch(/\bfetch\b/);
+    expect(FRAME_MICRO_SCROLLBAR_SCRIPT).not.toContain("http://");
+    expect(FRAME_MICRO_SCROLLBAR_SCRIPT).not.toContain("https://");
+  });
 });
 
 function roundtripDocConfig(doc: string): unknown {
