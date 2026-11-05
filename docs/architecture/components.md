@@ -111,7 +111,11 @@ These explicitly tagged native scroll notifications still reach ScrollArea's mea
 The render-unit model covers all loaded history without slicing it; the mounted suffix uses stable append coordinates, omits null bodies and groups tight text-only captions with their messages to preserve spacing.
 `AgentChatPane` owns the session-local row UI provider outside the one TranslateErrorBoundary around the feed, retaining disclosures, inner event/digest reading offsets and dirty edit drafts across virtual unmount or feed recovery.
 Real session changes clear that store; explicit discard, source deletion and the existing busy rules clear affected drafts even when their rows are offscreen.
-This rendering port does not page network reads or lazily fetch frozen bodies yet; those are subsequent units, and browser find still cannot search unmounted rows.
+
+Since AFP-14 the same list also renders the PAGED feed: hosts whose transport carries `feed` mount `agent-shell/use-agent-feed.ts`, which owns covered-range windows (`agent-feed-reconcile.ts`), the per-thread history epoch, bounded bridge walks and the typed-stale reconnect, feeding the list through `pageWindows` and the inverse prepend coordinate (`firstItemIndex`), with explicit older/around reads replacing any measurement-driven fetch loop.
+`AgentFeedFeedback` (mounted by the list inside `AgentFeedFeedbackProvider`) renders initial loading/error/retry, older-page states, refresh/neighborhood errors, stale-edge revalidation, missing-range continuation and the true loaded-history start as explicit compact actions — a failed read never clears mounted rows and a hidden/zero-height tab never requests history.
+Frozen context events arrive as text-free summaries; `AgentEventDetail` (inside an OPEN disclosure only) pages immutable detail slices through the one shared bounded cache `agent-event-detail-cache.ts` (32 entries / 2 MiB, coalesced, unobserved eviction), retaining only continuation cursors plus their epoch in row UI state.
+Browser find still cannot search unmounted rows — whole-thread search and quoting stay in `SIDECHAT_SEARCH_QUOTES_PLAN`.
 
 ## Chat Navigation Rail
 

@@ -796,3 +796,22 @@ Returning fetches the intended chat; reattachment paints only its starting branc
 Architecture entry points and endpoint details are in [Backend](./backend.md#server-owned-generations), [Agent Shell](./agent-shell.md#server-owned-turns-replay-and-review) and [API Reference](./api-reference.md).
 
 **Revisit trigger:** Multi-process execution, durable automatic run retries, cross-client review CAS, or a persistent notification inbox would require a new ownership/persistence decision; none is implied by background execution in one Bun process.
+
+## AD-031: Windowed Agent-Feed Reads with an Invalidating History Epoch
+
+**Context:** Sidechat threads became long-lived in long RPs, and the feed loaded the ENTIRE thread (messages + frozen `rp_sync` event payloads that grow with RP length) on open, switch and every settle, then rendered it as a flat unmounted list — typing, streaming and scrolling degraded over a session until a page reload relieved it (`AGENT_FEED_PERFORMANCE_PLAN`, release 1.5.1).
+The fix had to keep every stored byte and the model context intact: no truncation of history, prompt assembly, compaction or replay, and no user-visible change beyond speed.
+
+**Decision:** Four coordinated layers, each additive:
+- a store-independent `MessageScrollerCore` extracted from the RP `MessageScroller` (one virtualizer, one position owner; the RP/co-author adapter keeps its rail and store reads; the agent adapter brings only thin-lane chrome);
+- cursor-keyset feed reads (`GET /api/agent/threads/:threadId/feed` + event detail) over composite seek indexes — policy-bounded pages (initial 100 / older 40 / server max 200) in the canonical merged-timeline order, never OFFSET and never a full `listTimeline()` sliced in JS;
+- a durable per-thread history epoch maintained by transactional SQLite triggers on every invalidating message/event write, so a sibling writer cannot forget invalidation; pure suffix appends keep the epoch and old cursors alive, while edits/deletes/non-tail inserts bump it and surface as a typed 409 the client answers by staling windows and revalidating the reading neighborhood — deleted rows never resurrect, failed reads never clear mounted history;
+- client-side covered-range windows (`agent-feed-reconcile.ts` + `use-agent-feed.ts`) that bridge settle gaps with bounded pages, carry local edit/delete outcomes into the same invalidation path, and keep the mounted render set at the stable suffix + overscan regardless of thread length.
+Frozen event bodies are immutable and lazily paged (50-item slices through one bounded shared cache, 32 entries / 2 MiB): a separator with thousands of RP messages crosses the wire only when opened, and only one slice at a time.
+Legacy full-list APIs, custom transports without `feed`, and every model-context read stay untouched; older pages a user explicitly requests accumulate for the active session (no silent eviction); whole-thread search and quoting are deliberately NOT here — `SIDECHAT_SEARCH_QUOTES_PLAN` consumes the around-message seam this plan adds.
+
+**Alternatives rejected:** Render-time slicing (`messages.slice(-100)`) hides history the user can still scroll to; OFFSET paging is unstable under inserts and cannot prove continuity; truncating storage or context was forbidden by the plan's constraints; eagerly loading frozen bodies recreates the payload-growth defect; evicting user-requested older pages is silent data loss (a conditional residual unit owns any proven growth instead).
+
+**Evidence:** `agent-feed-performance.test.tsx` (10k-record threads served/mounted in bounded pages, no per-token history rebuilds, reference-retaining refreshes, 50-item detail slices under the cache budget), plus the reconcile/lifecycle/feedback/boundary/lazy-detail/epoch/store/route suites named in the plan's Execution log.
+
+**Revisit trigger:** The owner's long-RP session check (release acceptance) — surviving degradation triggers the AFP-19 targeted profile and an owner-approved bounded fix, never an unprofiled rewrite; page eviction or multi-client feed sync would be a new memory/ownership decision.

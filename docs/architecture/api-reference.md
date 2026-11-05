@@ -1515,6 +1515,21 @@ The chat-branch twin of [`GET`/`PUT /api/scripts/:scriptId/agent-plan`](#get-api
 `GET /api/agent/threads/:threadId/events` — for a chat-owned thread, its frozen context events in merged-timeline order, each `{ id, kind, payload, beforeMessageId }`.
 `kind` is one of `rp_sync` / `variants_attached` / `selection_changed` / `branch_forked` / `profile_changed`; `payload` is the event mapped through the same parser the sidechat context loader uses (a corrupt stored payload surfaces as an error, never a silent skip); since SC-23a the `rp_sync` / `variants_attached` / `selection_changed` payloads additionally carry the frozen generation provenance — nullable `model` / `preset` (and `number` on variants) — where `null` means unknown, because the provenance is what was frozen at the time and is never inferred (events frozen before SC-23a parse and render exactly as before); `beforeMessageId` anchors each event to the first message row after it on the merged timeline, `null` when the event is the newest row — the web interleaves separators without a `seq` on the message wire (the shared messages route above is unchanged). `profile_changed` (DR-12) carries `{ from: { id, name }, to: { id, name } }` — the profile ids plus display names frozen at write time — and is user-feed provenance only: the context loader and the compaction service skip it, and only this route serves it (it survives reloads here). A script-owned or draft thread answers `[]`; a missing thread is a 404.
 
+### Feed paging (windowed history)
+
+The additive paged reads the virtualized agent feed rides (AFP, release 1.5.1); the legacy full-list routes above are unchanged and remain what prompt assembly, compaction and replay consume.
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/agent/threads/:threadId/feed` | ONE coherent windowed page of the merged message+event timeline |
+| `GET /api/agent/threads/:threadId/events/:eventId` | One bounded slice of an immutable frozen event detail |
+
+**Feed query** — mutually exclusive modes, one per request: none (newest window, default limit 100 primary records), `before` (older page below an opaque cursor, default 40), `after` (bridge page above a cursor, default 40), `aroundMessageId` (a bounded neighborhood of one message — the search plan's seam, never a walk from the beginning). `limit` is an explicit 1..200 override (rejected, never clamped). Positions and cursors follow the canonical merged-timeline order (chat-owned `seq` with the legacy NULL-seq prefix first, then `createdAt`, then `id`, message-before-event as the final tie); cursors are versioned opaque keysets carrying thread/epoch ownership.
+
+**Feed response** — `{ threadId, historyEpoch, head, range{oldest,newest}, messages[], events[], hasOlder, hasNewer, cursors{before,after}, boundary }`: legacy per-message wire rows, TEXT-FREE event summaries (kind, ordering/placement, counts, frozen labels, `detailAvailable`) in the same logical range as the messages (event-only intervals and trailing events included), coverage flags equivalent to the adjacent cursors, and a boundary block with partial-turn flags, turn opener, split tool pairs, thread-scoped last user and digest coverage facts (the loaded/unloaded/dangling anchor tri-state) so a cut page never corrupts turn state. A typed 409 `AGENT_FEED_STALE_WINDOW` (current `historyEpoch` in the body) answers a cursor whose epoch died under an invalidating write — the client revalidates instead of restarting silently; a malformed/foreign cursor is a 400; a missing thread is a 404.
+
+**Detail query** — the immutable frozen body of ONE event, scoped to its owning thread, paged: first request (no cursor) returns the first `50` items plus `nextCursor`; each continuation echoes that cursor for the next slice. Responses carry the event's epoch/version; a 409 `AGENT_EVENT_CURSOR_STALE` names the current epoch, 404/422 cover missing/wrong-thread and corrupt sources. Frozen snapshots are exact history — editing, swiping or deleting the RP source never rewrites them.
+
 ### Record proposals (apply / reject)
 
 | Endpoint | Purpose |

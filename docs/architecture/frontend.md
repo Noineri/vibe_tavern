@@ -327,6 +327,24 @@ Manual-summary recovery in the memory modal follows the summary status/Stop API 
 
 ---
 
+## Agent Feed (sidechat / assistant shells)
+
+Every in-product assistant feed (sidechat, experience copilot, script agent, mini-app hosts) renders through ONE `AgentShell` → `AgentChatPane` → `AgentMessageList` stack, virtualized on the store-free `MessageScrollerCore` exactly like the RP feed's hybrid model (virtualized older prefix + stable mounted tail, `chat/message-render-window.ts`'s 20/100 partition) — with no RP-store dependency and no story rail (component contract: [components doc](./components.md#agent-feed-scroller)).
+
+**Paged history, not full-thread downloads.** Hosts whose transport carries `feed` (all three built-in kinds since AFP-12) never call the legacy full-list reads on open, switch or settle: `agent-shell/use-agent-feed.ts` loads one bounded newest page (policy 100 records; older pages 40) and reconciles it into covered-range windows (`agent-feed-reconcile.ts` — per-thread history epoch, cursor-keyset positions, typed-stale 409 adoption).
+A settle/compaction/edit refresh walks the gap back to the retained head with bounded bridge pages (an overlapping newest page costs exactly one read); old-page edits re-read the edited row's neighborhood, deletions vanish through the server's `deletedMessageIds`.
+Hosts without `transport.feed` keep the legacy full-list path byte-identically.
+Nothing here touches stored history or model context — prompt assembly, compaction and replay read exactly what they read before.
+
+**Lazy frozen details.** Context events (`rp_sync` etc.) arrive as text-free summaries; opening one separator fetches only its first detail slice (50 items) through ONE shared bounded cache (`agent-event-detail-cache.ts`, 32 entries / 2 MiB, request coalescing, unobserved eviction; observed oversized pages are released on their last observer's unmount). The frozen snapshot is immutable — source edits/deletions never rewrite it.
+
+**Retained memory, stated honestly.** The mounted render set is bounded by the stable suffix + viewport overscan regardless of thread length; the initial and settle reads are bounded pages; older pages a user explicitly requests accumulate for the active session and are released on a real session/owner change (no silent eviction — AFP-19 owns any residual-growth fix after the owner's long-session check). Browser find cannot search unmounted/unloaded rows; whole-thread search and quoting stay in `SIDECHAT_SEARCH_QUOTES_PLAN`, which consumes this plan's around-message navigation seam.
+
+**Feedback chrome.** Initial loading/error/retry, older-page load/error, refresh and neighborhood errors, stale-edge revalidation, missing-range continuation and the true loaded-history start are explicit compact actions (`AgentFeedFeedback`) — never a viewport-measurement fetch loop, so hidden mobile tabs and panel resizes cannot chase all history.
+
+
+---
+
 ## Build Mode & Panel Registry
 
 ### Dynamic Tab Registration
