@@ -10,6 +10,7 @@ import type {
   AgentPlanRuntimeApi, SamplerSetRuntimeApi, FormatTemplateRuntimeApi, AiInstructionTemplateRuntimeApi,
 } from "./runtime-api.js";
 import type { TrackerTemplateApi } from "./tracker-template-api.js";
+import type { AgentFeedRuntimeApi } from "./agent-feed-api.js";
 import type { UserThemeRuntimeApi } from "./user-theme-api.js";
 import type { SystemRuntimeApi } from "./system-api.js";
 import type { DiagnosticsRuntimeApi } from "./diagnostics-api.js";
@@ -50,6 +51,9 @@ export interface RuntimeApi extends TrackerTemplateApi {
   /** Thread proposal resolution (SC-11) — the sidechat objective proposals'
    * apply/reject slice (its own adapter, like every sub-interface). */
   agentThreadProposals: AgentThreadProposalsRuntimeApi;
+  /** Agent-feed paged reads (AFP-11) — the additive feed/detail pair over the
+   * AFP-10 domain projection; the legacy full-list reads stay untouched. */
+  agentFeed: AgentFeedRuntimeApi;
   copilotProfiles: CopilotProfileRuntimeApi;
   agentPlan: AgentPlanRuntimeApi;
   samplerSets: SamplerSetRuntimeApi;

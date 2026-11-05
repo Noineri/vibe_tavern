@@ -40,6 +40,7 @@ import { createAgentKindSettingsRoutes } from "./agent-kind-settings.js";
 import { createAgentChatSettingsRoutes } from "./agent-chat-settings.js";
 import { createAgentThreadProposalRoutes } from "./agent-thread-proposals.js";
 import { createAgentThreadEventsRoutes } from "./agent-thread-events.js";
+import { createAgentFeedRoutes } from "./agent-feed.js";
 import { createAgentBranchSidechatRoutes } from "./agent-branch-sidechat.js";
 
 export type { RuntimeApi } from "../contract/runtime-api.js";
@@ -75,6 +76,7 @@ export function createApiRouter(runtime: RuntimeApi) {
     .route("/", createAgentChatSettingsRoutes(runtime.experienceCopilot))
     .route("/", createAgentThreadProposalRoutes(runtime.agentThreadProposals))
     .route("/", createAgentThreadEventsRoutes(runtime.experienceCopilot))
+    .route("/", createAgentFeedRoutes(runtime.agentFeed))
     .route("/", createAgentBranchSidechatRoutes(runtime.experienceCopilot))
     .route("/", createRuntimeRoutes())
     .route("/", createFsRoutes(runtime.system))

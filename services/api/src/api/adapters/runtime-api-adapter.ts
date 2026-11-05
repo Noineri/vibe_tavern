@@ -51,6 +51,7 @@ import { DiceAdapter } from "./dice-adapter.js";
 import { ExperienceAdapter } from "./experience-adapter.js";
 import { ExperienceCopilotAdapter } from "./experience-copilot-adapter.js";
 import { AgentThreadProposalAdapter } from "./agent-thread-proposal-adapter.js";
+import { AgentFeedAdapter } from "./agent-feed-adapter.js";
 import { brandId, type ChatBranchId, type ChatId } from "@vibe-tavern/domain";
 import { notFound } from "../../shared/errors.js";
 import type { SkillLibraryService } from "../../domain/coauthor/skills/skill-library.js";
@@ -106,6 +107,7 @@ export class RuntimeApiAdapter implements RuntimeApi {
 	readonly experience: ExperienceAdapter;
 	readonly experienceCopilot: ExperienceCopilotAdapter;
 	readonly agentThreadProposals: AgentThreadProposalAdapter;
+	readonly agentFeed: AgentFeedAdapter;
 
 	constructor(
 		stores: StoreContainer,
@@ -225,6 +227,9 @@ export class RuntimeApiAdapter implements RuntimeApi {
 			attachmentAssetLoader,
 			(assetId) => assetService.cleanup(assetId),
 		);
+		// AFP-11: the additive feed/detail reads over the AFP-10 domain
+		// projection (store-only — no services, no orchestrators).
+		this.agentFeed = new AgentFeedAdapter(stores);
 		// One registry for every app-visible agent/chat generation and lifecycle.
 		this.chat = new ChatAdapter(
 			stores, sessionRuntime, liveChatOrchestrator,
