@@ -44,6 +44,7 @@ import type {
   setExperienceCopilotContextLinks,
   streamExperienceCopilot,
 } from "../api/experience-copilot-api.js";
+import type { getAgentEventDetail, getAgentFeedPage } from "../api/agent-feed-api.js";
 
 /** A host tried to register under a kind that is already taken. */
 export class AgentHostAlreadyRegisteredError extends Error {
@@ -298,6 +299,18 @@ export interface AgentHostTransport {
    *  separator around the feed. OPTIONAL: only the sidechat host wires it;
    *  hosts without the member render exactly as today (no separators). */
   listEvents?: (threadId: string) => Promise<AgentThreadEventWire[]>;
+  /** AFP-12: the ADDITIVE paged feed/detail read family
+   *  (`api/agent-feed-api.ts` — thread-scoped, one client for every kind).
+   *  OPTIONAL and ATOMIC (both members or neither): a transport without it
+   *  keeps the legacy full-list fallback (`listMessages` + `listEvents`)
+   *  until explicitly migrated, and a host can never serve summaries whose
+   *  details it cannot open. The built-in hosts wire the client fns by
+   *  IDENTITY — no wrapper — so the paged path never falls back to a
+   *  full-thread fetch (AFP-13/14 build the windowed consumer on top). */
+  feed?: {
+    page: typeof getAgentFeedPage;
+    detail: typeof getAgentEventDetail;
+  };
   /** Archive the current active thread (if any) and start a fresh one. */
   startSession: (owner: AgentThreadOwner, title?: string) => Promise<ExperienceCopilotThreadWire>;
   /** All sessions (active + archived) for an owner, newest first. */

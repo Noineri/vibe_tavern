@@ -46,6 +46,7 @@ import {
   listAgentThreadEvents,
   startAgentChatSession,
 } from "../../../api/agent-chat-api.js";
+import { getAgentEventDetail, getAgentFeedPage } from "../../../api/agent-feed-api.js";
 import { SIDECHAT_AGENT_KIND } from "../../../api/agent-kind-served-modes.js";
 import { useChatStore } from "../../../stores/chat-store.js";
 import { useSidechatMobileStore } from "../../../stores/sidechat-mobile-store.js";
@@ -217,6 +218,10 @@ registerAgentHost({
     // SC-19b: only the sidechat host wires the events read — the two
     // built-in hosts omit it and render exactly as today (no separators).
     listEvents: listAgentThreadEvents,
+    // AFP-12: the additive paged feed/detail reads — the shared
+    // thread-scoped client fns by IDENTITY (no wrapper), so the windowed
+    // consumer (AFP-13) never falls back to a full-thread fetch.
+    feed: { page: getAgentFeedPage, detail: getAgentEventDetail },
     startSession: (owner, title?) => {
       const triple = chatOwnerTriple(owner);
       return startAgentChatSession(triple.chatId, triple.branchId, triple.agentKind, title);

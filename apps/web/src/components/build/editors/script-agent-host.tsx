@@ -34,6 +34,7 @@ import {
   setScriptAgentContextLinks,
   startScriptAgentSession,
 } from "../../../api/script-agent-api.js";
+import { getAgentEventDetail, getAgentFeedPage } from "../../../api/agent-feed-api.js";
 import {
   rehydrateScriptAgentDraft, syncPersistedScriptAgentRound, prepareScriptAgentReviewTurn,
   streamPersistedScriptAgent, answerPersistedScriptAgentAsk, scriptAgentRuns,
@@ -667,6 +668,10 @@ registerAgentHost({
     // owner-agnostic (the same per-thread routes serve both owners).
     getActiveThread: (owner) => getScriptAgentActive(scriptOwnerId(owner)),
     listMessages: listScriptAgentMessages,
+    // AFP-12: the additive paged feed/detail reads — the shared
+    // thread-scoped client fns by IDENTITY (no wrapper), so the windowed
+    // consumer (AFP-13) never falls back to a full-thread fetch.
+    feed: { page: getAgentFeedPage, detail: getAgentEventDetail },
     startSession: (owner, title?) => startScriptAgentSession(scriptOwnerId(owner), title),
     listSessions: (owner) => listScriptAgentSessions(scriptOwnerId(owner)),
     activateSession: activateScriptAgentSession,

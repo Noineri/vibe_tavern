@@ -26,6 +26,7 @@ import {
   setExperienceCopilotContextLinks,
   startExperienceCopilotSession,
 } from "../../../../api/experience-copilot-api.js";
+import { getAgentEventDetail, getAgentFeedPage } from "../../../../api/agent-feed-api.js";
 import { AgentBufferReviewEditor } from "../../../shared/agent-shell/AgentBufferReviewEditor.js";
 import { ScrollArea } from "../../../shared/scroll-area.js";
 import {
@@ -493,6 +494,10 @@ registerAgentHost({
     // owner-agnostic (the same per-thread routes serve both owners).
     getActiveThread: (owner) => getExperienceCopilotActive(scriptOwnerId(owner)),
     listMessages: listExperienceCopilotMessages,
+    // AFP-12: the additive paged feed/detail reads — the shared
+    // thread-scoped client fns by IDENTITY (no wrapper), so the windowed
+    // consumer (AFP-13) never falls back to a full-thread fetch.
+    feed: { page: getAgentFeedPage, detail: getAgentEventDetail },
     startSession: (owner, title?) => startExperienceCopilotSession(scriptOwnerId(owner), title),
     listSessions: (owner) => listExperienceCopilotSessions(scriptOwnerId(owner)),
     activateSession: activateExperienceCopilotSession,
