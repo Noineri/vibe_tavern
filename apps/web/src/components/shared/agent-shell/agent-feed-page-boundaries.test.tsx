@@ -5,8 +5,9 @@ import { buildAgentFeedModel, EMPTY_AGENT_FEED_LIVE_TOOL_CALL_IDS } from "./agen
 import { applyAgentFeedPage, initAgentFeedState, type AgentFeedWindow } from "./agent-feed-reconcile.js";
 
 useDomEnv({ failOnNetwork: true });
-const { render, act } = await import("@testing-library/react");
+const { render, act, fireEvent } = await import("@testing-library/react");
 const { AgentMessageList } = await import("./AgentMessageList.js");
+const { AgentFeedUiStateProvider } = await import("./agent-feed-ui-state.js");
 // L1: relative paths only; no process-global patches/registries/i18n; no waits
 // or sleeps in pure pins, DOM pins use resolved state; no platform assumptions;
 // no module mocks/shared mutable fixtures; stable model/DOM state; no DB setup.
@@ -24,6 +25,19 @@ function window(messages: ExperienceCopilotMessageWire[], sequences: number[], b
 const modelOf = (windows: AgentFeedWindow[]) => buildAgentFeedModel({ messages: [], events: [], liveToolCallIds: EMPTY_AGENT_FEED_LIVE_TOOL_CALL_IDS, windows });
 
 describe("AFP-15 partial feed boundaries", () => {
+  it("keeps an open partial-turn accordion open when prepend changes its first loaded tool", async () => {
+    const call = (id: string, seq: number) => msg(`call-${id}`, seq, "assistant", { content: "", toolCallsJson: JSON.stringify([{ type: "tool-call", toolCallId: id, toolName: "read_skill_file", input: {} }]) });
+    const result = (id: string, seq: number) => msg(`result-${id}`, seq, "tool", { toolCallId: id, content: JSON.stringify({ path: "skill.md", content: `frozen-${id}` }) });
+    const partial = window([call("two", 5), result("two", 6), msg("answer", 7)], [5, 6, 7], { startsMidTurn: true, turnOpenerMessageId: "u" });
+    const draw = (w: AgentFeedWindow) => <AgentFeedUiStateProvider sessionKey="T"><AgentMessageList kind="experience" threadId="T" pendingUserContent=""
+      pageWindows={[w]} renderEventSummary={e => <span>{e.id}</span>} /></AgentFeedUiStateProvider>;
+    const view = render(draw(partial));
+    fireEvent.click(view.getByTestId("copilot-tool-accordion-toggle"));
+    expect(view.getByTestId("copilot-tool-accordion-toggle").getAttribute("aria-expanded")).toBe("true");
+    view.rerender(draw(window([msg("u", 1, "user"), call("one", 2), result("one", 3), ...partial.messages], [1, 2, 3, 5, 6, 7])));
+    expect(view.getByTestId("copilot-tool-accordion-toggle").getAttribute("aria-expanded")).toBe("true");
+    await act(async () => {});
+  });
   it("the real list interleaves an event-only window before newer history without mounting a second scroller", async () => {
     const gap = window([msg("placeholder", 5)], [5]);
     gap.messages = [];

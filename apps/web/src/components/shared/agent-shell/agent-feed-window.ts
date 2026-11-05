@@ -142,7 +142,7 @@ export const agentFeedCaptionUnitId = (slotId: string): string => `caption:${slo
 export const agentFeedAccordionUnitId = (toolCallId: string): string => `card:accordion:${toolCallId}`;
 
 function cardUnitId(item: CopilotTurnAnchorItem): string {
-  if (item.kind === "accordion") return agentFeedAccordionUnitId(item.activities[0]!.toolCallId);
+  if (item.kind === "accordion") return item.stateKey ?? agentFeedAccordionUnitId(item.activities[0]!.toolCallId);
   return `card:${item.kind}:${item.activity.toolCallId}`;
 }
 

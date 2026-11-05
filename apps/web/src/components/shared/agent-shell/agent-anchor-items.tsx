@@ -35,7 +35,7 @@ import { RecordProposalFallbackCard } from "./RecordProposalFallbackCard.js";
  * their chronological slot order.
  */
 export type CopilotTurnAnchorItem =
-  | { kind: "accordion"; activities: AgentToolActivity[] }
+  | { kind: "accordion"; activities: AgentToolActivity[]; stateKey?: string }
   | { kind: "ask"; activity: AgentToolActivity }
   | { kind: "permission"; activity: AgentToolActivity }
   | { kind: "proposal"; activity: AgentToolActivity; proposal: RecordProposal };
@@ -197,7 +197,8 @@ export function AgentAnchorItems({
   return items.map((item) =>
     item.kind === "accordion" ? (
       <AgentToolAccordion
-        key={item.activities[0]!.toolCallId}
+        key={item.stateKey ?? item.activities[0]!.toolCallId}
+        stateKey={item.stateKey}
         activities={item.activities}
         kind={ctx.kind}
         isSending={false}

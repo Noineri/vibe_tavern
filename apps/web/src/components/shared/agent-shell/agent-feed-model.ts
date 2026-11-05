@@ -23,6 +23,7 @@
  */
 import type { AgentFeedEventSummary, AgentThreadEventWire, ExperienceCopilotMessageWire } from "@vibe-tavern/api-contracts";
 import type { AgentFeedWindow } from "./agent-feed-reconcile.js";
+import { agentFeedAccordionUnitId } from "./agent-feed-window.js";
 import type { OrderedCopilotMessage } from "../../../lib/copilot-context.js";
 import { orderMessagesWithDigests } from "../../../lib/copilot-context.js";
 import type { AgentToolActivity } from "../../../stores/agent-turn-store.js";
@@ -138,6 +139,7 @@ function buildWindowModel(input: AgentFeedModelInput, window?: AgentFeedWindow):
   const anchor = new Map<string, CopilotTurnAnchorItem[]>();
   let pending: CopilotTurnAnchorItem[] = [];
   let turnTools: AgentToolActivity[] | null = null;
+  let turnIdentity = window?.boundary.turnOpenerMessageId ?? window?.boundary.pageFacts?.firstAssistantMessageId ?? window?.oldest.id;
   let lastHistoryActivityId: string | null = null;
   for (const m of messages) {
     if (m.role === "tool") {
@@ -159,7 +161,9 @@ function buildWindowModel(input: AgentFeedModelInput, window?: AgentFeedWindow):
       }
       if (!turnTools) {
         turnTools = [];
-        pending.push({ kind: "accordion", activities: turnTools });
+        pending.push({ kind: "accordion", activities: turnTools,
+          ...(window ? { stateKey: agentFeedAccordionUnitId(`turn:${turnIdentity}`) } : {}),
+        });
       }
       turnTools.push(activity);
       continue;
@@ -169,7 +173,7 @@ function buildWindowModel(input: AgentFeedModelInput, window?: AgentFeedWindow):
         anchor.set(m.id, pending);
         pending = [];
       }
-      if (m.role === "user") turnTools = null;
+      if (m.role === "user") { turnTools = null; turnIdentity = m.id; }
     }
   }
 

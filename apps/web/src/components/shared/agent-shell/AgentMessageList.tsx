@@ -54,7 +54,7 @@ export interface AgentMessageListProps {
   messages?: ExperienceCopilotMessageWire[];
   /** AFP-15: authoritative covered intervals, never treated as full history. */
   pageWindows?: readonly AgentFeedWindow[];
-  /** AFP-16 supplies the summary/lazy-detail renderer before AFP-14 activation. */
+  /** Optional host override; the shared separator otherwise renders summaries. */
   renderEventSummary?: (event: AgentFeedEventSummary) => ReactNode;
   pendingUserContent: string;
   pendingUserAttachments?: readonly Attachment[];
@@ -167,8 +167,7 @@ export function AgentMessageList({
       let node: ReactNode;
       if (unit.kind === "event") node = <AgentTimelineSeparator event={unit.event} />;
       else if (unit.kind === "event-summary") {
-        if (!renderEventSummary) throw new Error("Paged agent feed requires its event-summary renderer");
-        node = renderEventSummary(unit.event);
+        node = renderEventSummary ? renderEventSummary(unit.event) : <AgentTimelineSeparator event={unit.event} />;
       }
       else if (unit.kind === "caption") node = captionNode(unit.slotId);
       else if ("item" in unit) node = <AgentAnchorItems items={[unit.item]} ctx={anchorCtx} />;
@@ -255,7 +254,7 @@ export function AgentMessageList({
     ...messages.map((m) => agentFeedMessageUnitId(m.id)), ...events.map((e) => agentFeedEventUnitId(e.id)),
     ...[...captions.captionBefore.keys()].map((id) => agentFeedCaptionUnitId(pageWindows ? captions.stateKeys.get(id) ?? id : id)), agentFeedCaptionUnitId(pageWindows ? captions.stateKeys.get("trailing") ?? "trailing" : "trailing"),
     "live-caption", "live-reasoning",
-    ...[...model.anchorItems.values(), model.trailingItems].flat().flatMap((item) => item.kind === "accordion" ? [agentFeedAccordionUnitId(item.activities[0]!.toolCallId)] : []),
+    ...[...model.anchorItems.values(), model.trailingItems].flat().flatMap((item) => item.kind === "accordion" ? [item.stateKey ?? agentFeedAccordionUnitId(item.activities[0]!.toolCallId)] : []),
     ...(liveAccordionId ? [agentFeedAccordionUnitId(liveAccordionId)] : []),
   ]), [messages, events, captions, model, liveAccordionId, pageWindows]);
   const previousKeys = useRef({ store: uiStore, keys: retainedKeys });

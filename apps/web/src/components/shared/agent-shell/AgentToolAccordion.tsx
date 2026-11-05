@@ -15,6 +15,8 @@ export interface AgentToolAccordionProps {
   kind: AgentKind;
   /** True only for the controller's active streamed turn. */
   isSending: boolean;
+  /** Paged history uses the logical turn, not its first currently loaded tool. */
+  stateKey?: string;
 }
 
 /**
@@ -22,7 +24,7 @@ export interface AgentToolAccordionProps {
  * stay open as cards arrive; settled and historical groups collapse to their
  * count header until the user opens them locally.
  */
-export function AgentToolAccordion({ activities, kind, isSending }: AgentToolAccordionProps) {
+export function AgentToolAccordion({ activities, kind, isSending, stateKey }: AgentToolAccordionProps) {
   const { t } = useT();
   // AFP-4: the disclosure is session-retained when a feed provider wraps
   // the tree (keyed by the window's accordion unit id — the first tool
@@ -30,7 +32,7 @@ export function AgentToolAccordion({ activities, kind, isSending }: AgentToolAcc
   // without a provider the local fallback below is byte-identical to the
   // pre-AFP-4 useState path.
   const row = useOptionalAgentFeedRowUiState(
-    activities.length > 0 ? agentFeedAccordionUnitId(activities[0]!.toolCallId) : "card:accordion:empty",
+    stateKey ?? (activities.length > 0 ? agentFeedAccordionUnitId(activities[0]!.toolCallId) : "card:accordion:empty"),
   );
   const [localExpanded, setLocalExpanded] = useState(isSending);
 
