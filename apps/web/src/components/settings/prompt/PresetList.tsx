@@ -116,6 +116,7 @@ export function PresetList({ presets, activePresetId, onSelect, onAdd, onRename,
         onBlur={onCommit}
       />
       <button type="button"
+        aria-label={t("save")}
         onMouseDown={(e) => { e.preventDefault(); onCommit(); }}
         className="absolute right-2 text-success transition-colors hover:text-green-400"
       >
@@ -191,11 +192,13 @@ export function PresetList({ presets, activePresetId, onSelect, onAdd, onRename,
             trailing={
               <>
                 <button type="button"
+                  aria-label={t("preset_rename_for", { name: p.name })}
                   onClick={(e) => startEditing(p, e)}
                   className={cn("ml-1 shrink-0 transition-colors md:hidden", isActive ? "text-accent" : "text-t4 hover:text-t1")}
                 ><Icons.Edit /></button>
                 <div className="ml-auto flex items-center gap-1">
                   <button type="button"
+                    aria-label={t("preset_rename_for", { name: p.name })}
                     onClick={(e) => startEditing(p, e)}
                     className={cn("shrink-0 opacity-0 transition-opacity group-hover:opacity-100 hidden md:flex", isActive ? "text-accent" : "text-t4 hover:text-t1")}
                   ><Icons.Edit /></button>
