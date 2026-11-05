@@ -11,7 +11,7 @@ import type { AgentPendingAskAnswer, AgentPendingPermissionAnswer, AgentTurnFail
 import { buildAgentTurnRow, type AgentTurnRowCallbacks } from "./use-agent-turn-actions.js";
 import { agentThreadKey, getAgentHost, type AgentI18nKey, type AgentKind } from "../../../lib/agent-host-registry.js";
 import type { AgentBuiltinProfileHandoff } from "../../../lib/agent-builtin-profiles.js";
-import { AgentFeedScroller } from "./agent-feed-scroller.js";
+import { AgentFeedFeedback, AgentFeedScroller, useAgentFeedFeedback } from "./agent-feed-scroller.js";
 import { AgentJumpToBottom } from "./AgentJumpToBottom.js";
 import { AgentMessageBlock } from "./AgentMessageBlock.js";
 import { AgentTimelineSeparator } from "./AgentTimelineSeparator.js";
@@ -90,6 +90,7 @@ export function AgentMessageList({
   events: legacyEvents = EMPTY_AGENT_FEED_EVENTS,
 }: AgentMessageListProps) {
   const { t } = useT();
+  const paging = useAgentFeedFeedback();
   const messages = useMemo(() => pageWindows?.flatMap(w => w.messages) ?? legacyMessages, [pageWindows, legacyMessages]);
   const events = useMemo(() => pageWindows?.flatMap(w => w.events) ?? legacyEvents, [pageWindows, legacyEvents]);
   const sessionKey = agentThreadKey(kind, threadId);
@@ -305,8 +306,9 @@ export function AgentMessageList({
 
   const isEmpty = historyUnits.length === 0 && !hasPendingUserContent
     && !hasPendingText && !liveReasoning && feed.length === 0;
-  if (isEmpty) return <AgentEmptyState kind={kind} title={emptyTitle ?? t("agent_title")} sub={emptySub ?? t("agent_subtitle")}
-    icon={emptyIcon} starterKeys={starterKeysOverride} handoffRow={handoffRow} onStarterPick={onStarterPick} />;
+  if (paging?.feed === null) return <AgentFeedFeedback />;
+  if (isEmpty) return <><AgentFeedFeedback /><AgentEmptyState kind={kind} title={emptyTitle ?? t("agent_title")} sub={emptySub ?? t("agent_subtitle")}
+    icon={emptyIcon} starterKeys={starterKeysOverride} handoffRow={handoffRow} onStarterPick={onStarterPick} /></>;
   return (
     <div data-testid="copilot-message-list" className="relative flex min-h-0 min-w-0 flex-1 flex-col">
       <AgentFeedScroller resetKey={sessionKey} displayIds={displayIds} partition={partition} renderItem={renderItem}

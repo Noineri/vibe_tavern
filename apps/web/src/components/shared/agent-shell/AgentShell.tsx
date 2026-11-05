@@ -17,6 +17,7 @@ import { useAgentController, type AgentSendOptions } from "./use-agent-controlle
 import { useAgentThreadRefresh } from "./use-agent-thread-refresh.js";
 import { useAgentShellFeed } from "./use-agent-shell-feed.js";
 import { AgentEventDetailProvider } from "./agent-event-detail.js";
+import { AgentFeedFeedbackProvider } from "./agent-feed-scroller.js";
 import { useVisibleAgentThread } from "../../../lib/agent-run-visibility.js";
 import { useAgentPlan } from "../../../hooks/use-agent-plan.js";
 import { useAgentModelBinding } from "./use-agent-model-binding.js";
@@ -665,9 +666,9 @@ function AgentShellSession({
       refreshMessages={refreshMessages}
     />
   );
-  const chatPane = detailSource !== null
-    ? <AgentEventDetailProvider source={detailSource}>{chatPaneContent}</AgentEventDetailProvider>
-    : chatPaneContent;
+  const chatPane = <AgentFeedFeedbackProvider feed={isPagedFeed ? shellFeed.feed : null}>
+    {detailSource !== null ? <AgentEventDetailProvider source={detailSource}>{chatPaneContent}</AgentEventDetailProvider> : chatPaneContent}
+  </AgentFeedFeedbackProvider>;
 
   // The host's editor pane (absent descriptor = chat-only host: no pane, no
   // mobile tab row — see the layout branches below). Captured in a local so

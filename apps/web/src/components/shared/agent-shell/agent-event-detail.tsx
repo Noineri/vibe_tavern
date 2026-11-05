@@ -72,13 +72,19 @@ function DetailPage({ source, eventId, cursor, last, onMore, renderPage }: {
     const unavailable = snapshot.error instanceof RpcError && [404, 422].includes(snapshot.error.status);
     return <div className="flex flex-col items-start gap-2">
       <p role="alert">{t(stale ? "agent_event_detail_stale" : unavailable ? "agent_event_detail_unavailable" : "agent_event_detail_error")}</p>
-      {!unavailable && <button type="button" className={ACTION} onClick={() => cache.retry(key, source.loadDetail)}>{t("agent_event_detail_retry")}</button>}
+      {!unavailable && (!stale || source.onStale) && <button type="button" className={`${ACTION} !h-auto min-h-7 max-w-full py-1 text-left`}
+        onClick={() => snapshot.error instanceof AgentFeedStaleError
+          ? source.onStale?.(snapshot.error.historyEpoch) : cache.retry(key, source.loadDetail)}>
+        {t(stale ? "agent_event_detail_refresh" : "agent_event_detail_retry")}
+      </button>}
     </div>;
   }
   const page = snapshot.page;
   if (!page) return null;
   return <>
     {renderPage(page)}
-    {last && page.nextCursor !== null && <button type="button" className={ACTION} onClick={() => onMore(page.nextCursor!)}>{t("agent_event_detail_more")}</button>}
+    {last && (page.nextCursor !== null
+      ? <button type="button" className={`${ACTION} !h-auto min-h-7 max-w-full py-1 text-left`} onClick={() => onMore(page.nextCursor!)}>{t("agent_event_detail_more")}</button>
+      : <p role="status">{t("agent_event_detail_end")}</p>)}
   </>;
 }
