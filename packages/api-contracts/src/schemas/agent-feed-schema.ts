@@ -267,6 +267,15 @@ export const agentFeedBoundarySchema = z
     // twin ("last user at-or-before the page start") is
     // `turnOpenerMessageId` — the two facts coincide only on head pages.
     lastUserMessageId: z.string().nullable(),
+    // AFP-15: coordinates and complete counts, not guesses from a partial
+    // array. Optional only for legacy/custom fixtures; built-in pages carry it.
+    pageFacts: z.object({
+      lastUserPosition: agentFeedOrderPositionSchema.nullable(),
+      lastDigestAnchorPosition: agentFeedOrderPositionSchema.nullable(),
+      firstAssistantMessageId: z.string().nullable(),
+      messagePositions: z.array(agentFeedOrderPositionSchema),
+      digestCounts: z.array(z.object({ id: z.string(), coveredCount: z.number().int().nonnegative() }).strict()),
+    }).strict().optional(),
     // Digest coverage FACTS independent of loaded anchors — the contract
     // fix for the conservative missing-anchor fallback that today treats
     // an unloaded anchor as dangling (`agent-flow-boundaries.ts`, the

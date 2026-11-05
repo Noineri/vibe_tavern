@@ -63,6 +63,18 @@ describe('agent feed existing read boundary', () => {
 });
 
 describe('AFP-9 paged DB read seam', () => {
+  test('AFP-15 digest count facts include unloaded flow rows and equal-anchor zero increments', async () => {
+    const { db, store } = await setup();
+    db.insert(schema.experienceCopilotMessages).values([
+      { id: 'u', threadId: 't1', role: 'user', seq: null, createdAt: NOW },
+      { id: 'a', threadId: 't1', role: 'assistant', seq: 1, createdAt: NOW },
+      { id: 'd1', threadId: 't1', role: 'digest', toolCallId: 'a', seq: 2, createdAt: NOW },
+      { id: 'd2', threadId: 't1', role: 'digest', toolCallId: 'a', seq: 3, createdAt: NOW },
+    ]).run();
+    const page = ready(await store.readFeedPage('t1', { mode: 'newest', limit: 2 }));
+    expect(page.boundary.digests.loadedCounts).toEqual([{ id: 'd1', coveredCount: 1 }, { id: 'd2', coveredCount: 0 }]);
+    expect(page.boundary.digests.last?.anchorPosition?.id).toBe('a');
+  });
   test('newest/before/after pages preserve the full timeline order, including exact cross-table ties', async () => {
     const { db, store } = await setup();
     for (let i = 0; i < 12; i++) {

@@ -85,6 +85,24 @@ function seedToolsTurn(db: Db) {
 }
 
 describe("AFP-10 boundary decisions", () => {
+  test("AFP-15 page facts carry unloaded anchor coordinates and complete digest counts", async () => {
+    const { db, deps } = await setup();
+    db.insert(experienceCopilotMessages).values([
+      msg("u", 0, "user"), msg("a", 1, "assistant"), msg("b", 2, "assistant"),
+      msg("d1", 3, "digest", { toolCallId: "a" }),
+      msg("c", 4, "assistant"), msg("d2", 5, "digest", { toolCallId: "c" }),
+    ]).run();
+    const page = await loadAgentFeedPage(deps, "t1", q({ limit: "1" }));
+    expect(page.boundary.pageFacts).toMatchObject({
+      lastUserPosition: { id: "u", seq: 0 }, lastDigestAnchorPosition: { id: "c", seq: 4 },
+      messagePositions: [{ id: "d2", seq: 5 }], digestCounts: [{ id: "d2", coveredCount: 2 }],
+    });
+    const older = await loadAgentFeedPage(deps, "t1", q({ aroundMessageId: "u", limit: "1" }));
+    expect(older.boundary.pageFacts?.lastDigestAnchorPosition?.id).toBe("c");
+    expect(older.boundary.pageFacts?.digestCounts).toEqual([]);
+    const first = await loadAgentFeedPage(deps, "t1", q({ aroundMessageId: "d1", limit: "1" }));
+    expect(first.boundary.pageFacts?.digestCounts).toEqual([{ id: "d1", coveredCount: 1 }]);
+  });
   test("a page cut inside a long tools-only turn: mid-turn flags, split tool pair, thread-wide last user", async () => {
     const { db, deps } = await setup();
     seedToolsTurn(db);
@@ -148,6 +166,7 @@ describe("AFP-10 boundary decisions", () => {
     expect(page.hasNewer).toBe(false);
     expect(page.cursors).toEqual({ before: null, after: null });
     expect(page.boundary).toEqual({
+      pageFacts: { lastUserPosition: null, lastDigestAnchorPosition: null, firstAssistantMessageId: null, messagePositions: [], digestCounts: [] },
       startsMidTurn: false,
       endsMidTurn: false,
       turnOpenerMessageId: null,

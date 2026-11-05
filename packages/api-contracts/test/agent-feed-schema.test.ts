@@ -90,6 +90,13 @@ const feedResponse = {
   boundary,
 };
 
+test("AFP-15 additive page facts retain coordinates and reject negative covered counts", () => {
+  const pageFacts = { lastUserPosition: position, lastDigestAnchorPosition: position,
+    firstAssistantMessageId: "m12", messagePositions: [position], digestCounts: [{ id: "d", coveredCount: 7 }] };
+  expect(agentFeedResponseSchema.parse({ ...feedResponse, boundary: { ...boundary, pageFacts } }).boundary.pageFacts).toEqual(pageFacts);
+  expect(agentFeedBoundarySchema.safeParse({ ...boundary, pageFacts: { ...pageFacts, digestCounts: [{ id: "d", coveredCount: -1 }] } }).success).toBe(false);
+});
+
 // ─── policy numbers (the plan's fixed values) ─────────────────────────────────
 
 describe("agent-feed policy (AFP-7)", () => {

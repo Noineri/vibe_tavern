@@ -29,6 +29,7 @@ export interface AgentFeedBoundaryFacts {
   lastUser: AgentFeedPosition | null;
   continuedToolCalls: { toolCallId: string; toolName: string | null; callPosition: AgentFeedPosition }[];
   digests: {
+    loadedCounts?: { id: string; coveredCount: number }[];
     total: number;
     older: number;
     last: { position: AgentFeedPosition; anchorId: string | null; anchorPosition: AgentFeedPosition | null } | null;
@@ -115,10 +116,36 @@ function readBoundaryFacts(
     nextMessage: newest ? messageFact(client, threadId, seekAgentFeedPositions(client, threadId, 'after', 1, newest, 'message')[0]) : null,
     turnOpener, firstAssistant, lastUser, continuedToolCalls,
     digests: {
+      loadedCounts: readDigestCounts(client, threadId, records),
       total: digestCount(client, threadId), older: oldest ? digestCount(client, threadId, oldest) : 0,
       last: digest ? { position: digest, anchorId, anchorPosition: anchorId ? getAgentFeedPosition(client, threadId, 'message', anchorId) : null } : null,
     },
   };
+}
+
+/** Count full-thread flow boundaries in SQL, hydrating only selected digest
+ * facts. Equal anchors follow chronological digest order, just like the legacy
+ * stable anchor sort; dangling anchors resolve to the full flow's end. */
+function readDigestCounts(client: Database, threadId: string, records: AgentFeedRecord[]): { id: string; coveredCount: number }[] {
+  const ids = records.flatMap((r) => r.record === 'message' && r.message.role === 'digest' ? [r.position.id] : []);
+  if (ids.length === 0) return [];
+  return client.query<{ id: string; coveredCount: number }, SQLQueryBindings[]>(`
+    WITH counts AS (
+      SELECT d.id, d.seq, d.created_at,
+        (SELECT count(*) FROM experience_copilot_messages m
+         WHERE m.thread_id = d.thread_id AND m.role IN ('user', 'assistant') AND (
+           a.id IS NULL OR (m.seq IS NULL AND a.seq IS NOT NULL)
+           OR (m.seq IS a.seq AND (m.created_at, m.id) < (a.created_at, a.id))
+           OR (m.seq IS NOT NULL AND a.seq IS NOT NULL AND m.seq < a.seq)
+         )) AS n
+      FROM experience_copilot_messages d
+      LEFT JOIN experience_copilot_messages a ON a.thread_id = d.thread_id AND a.id = d.tool_call_id
+      WHERE d.thread_id = ? AND d.role = 'digest'
+    ), covered AS (
+      SELECT id, seq, created_at, n - lag(n, 1, 0) OVER (ORDER BY n, seq, created_at, id) AS coveredCount FROM counts
+    )
+    SELECT id, coveredCount FROM covered WHERE id IN (${ids.map(() => '?').join(',')}) ORDER BY seq, created_at, id
+  `).all(threadId, ...ids);
 }
 
 /** Caller supplies a decoded/validated cursor and policy-bounded limit.

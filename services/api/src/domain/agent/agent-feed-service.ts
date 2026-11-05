@@ -29,10 +29,8 @@
  * - `startsMidTurn` = the turn opener sits strictly before the page start
  *   (an event-only gap below the cut counts — the opener row itself is an
  *   older record of that turn).
- * - The digest anchor tri-state does NOT disambiguate WHICH SIDE an
- *   `unloaded` anchor sits on; `unloadedOlderCount`/`hasNewer` cover the
- *   common cases and AFP-15 owns the web-side fallback — widen the contract
- *   there if a gate proves it needs the side.
+ * - AFP-15 pageFacts supplement the digest tri-state with exact coordinates
+ *   and full covered counts; partial UI windows never guess an anchor's side.
  */
 
 import {
@@ -216,7 +214,7 @@ function projectFeedPage(result: Extract<AgentFeedPageResult, { status: "ready" 
         ? encodeCursorToken(cursorPayload(result.thread.id, result.historyEpoch, newest ?? result.resumePosition, "after"))
         : null,
     },
-    boundary: projectBoundary(result.boundary, oldest, newest),
+    boundary: projectBoundary(result.boundary, oldest, newest, result.records.filter((r) => r.record === "message").map((r) => r.position)),
   };
 }
 
@@ -308,6 +306,7 @@ function projectBoundary(
   facts: AgentFeedBoundaryFacts,
   oldest: AgentFeedOrderPosition | null,
   newest: AgentFeedOrderPosition | null,
+  messagePositions: AgentFeedOrderPosition[],
 ): AgentFeedBoundary {
   const startsMidTurn = oldest !== null
     && facts.turnOpener !== null
@@ -333,6 +332,13 @@ function projectBoundary(
     turnOpenerMessageId: facts.turnOpener?.id ?? null,
     continuedToolCalls: facts.continuedToolCalls.map(({ toolCallId, toolName }) => ({ toolCallId, toolName })),
     lastUserMessageId: facts.lastUser?.id ?? null,
+    pageFacts: {
+      lastUserPosition: facts.lastUser,
+      lastDigestAnchorPosition: lastDigest?.anchorPosition ?? null,
+      firstAssistantMessageId: facts.firstAssistant?.id ?? null,
+      messagePositions,
+      digestCounts: facts.digests.loadedCounts ?? [],
+    },
     digest: {
       totalInThread: facts.digests.total,
       unloadedOlderCount: facts.digests.older,
