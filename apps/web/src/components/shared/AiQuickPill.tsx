@@ -122,6 +122,7 @@ export function AiQuickPill({
         <CustomTooltip content={gearTooltip}>
           <button
             type="button"
+            aria-label={gearTooltip}
             className={cn(
               "flex h-full items-center justify-center transition-all",
               pxClass,

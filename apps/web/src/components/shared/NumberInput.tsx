@@ -1,5 +1,6 @@
 import { useRef, useState, useEffect } from "react";
 import { cn } from "../../lib/cn.js";
+import { useT } from "../../i18n/context.js";
 
 const MinusIcon = () => (
   <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8">
@@ -49,6 +50,7 @@ export function NumberInput({
   onEscape,
   inputTestId,
 }: NumberInputProps) {
+  const { t } = useT();
   const [internalVal, setInternalVal] = useState<string>(String(value));
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -132,6 +134,7 @@ export function NumberInput({
       {!hideControls && (
         <button
           type="button"
+          aria-label={t("number_decrease")}
           tabIndex={-1}
           disabled={disabled || value <= min}
           onClick={() => adjustValue(-step)}
@@ -161,6 +164,7 @@ export function NumberInput({
       {!hideControls && (
         <button
           type="button"
+          aria-label={t("number_increase")}
           tabIndex={-1}
           disabled={disabled || value >= max}
           onClick={() => adjustValue(step)}

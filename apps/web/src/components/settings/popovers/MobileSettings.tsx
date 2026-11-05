@@ -20,6 +20,7 @@ export function MobileSettings({ open, onClose }: MobileSettingsProps) {
 			{/* Header */}
 			<div className="flex h-[52px] shrink-0 items-center gap-3 border-b border-border px-4">
 				<button type="button"
+					aria-label={t("close")}
 					className="flex h-9 w-9 cursor-pointer items-center justify-center rounded text-t3 active:bg-s2"
 					onClick={onClose}
 				>

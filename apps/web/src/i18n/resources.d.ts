@@ -2198,6 +2198,8 @@ export default interface Resources {
     "no_starred_models": "No favorite models yet. Star models in Provider Settings.",
     "nsfw_prompt": "NSFW",
     "nsfw_prompt_placeholder": "NSFW / adult content prompt block...",
+    "number_decrease": "Decrease",
+    "number_increase": "Increase",
     "obj_action_failed": "Objective action failed.",
     "obj_add_short_button": "Add short-term goal",
     "obj_add_short_placeholder": "Add a short-term goal...",

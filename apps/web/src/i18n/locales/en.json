@@ -2071,6 +2071,8 @@
 	"wizard_edit_provider": "Edit settings",
 	"provider_active": "Active",
 	"save": "Save",
+	"number_increase": "Increase",
+	"number_decrease": "Decrease",
 	"placeholder_setup_provider": "Connect Provider",
 	"placeholder_setup_wizard": "Setup Wizard",
 	"placeholder_welcome": "Welcome to Vibe Tavern",

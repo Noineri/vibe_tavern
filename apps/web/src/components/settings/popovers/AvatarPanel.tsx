@@ -205,6 +205,7 @@ function DesktopAvatarPanel({ src, onClose }: AvatarPanelProps) {
       />
       <CustomTooltip content={t('close')}>
       <button type="button"
+        aria-label={t('close')}
         className="absolute right-2 top-2 flex h-9 w-9 cursor-pointer items-center justify-center rounded-full bg-black/55 text-white opacity-0 shadow transition-opacity duration-150 hover:bg-black/75 group-hover:opacity-100 [&_svg]:h-4 [&_svg]:w-4"
         style={{ transform: `scale(${1 / zoom})`, transformOrigin: 'top right' }}
         onMouseDown={(event) => event.stopPropagation()}
@@ -243,6 +244,7 @@ function MobileLightbox({ src, onClose }: AvatarPanelProps) {
     >
       {/* Close button */}
       <button type="button"
+        aria-label={t('close')}
         className="absolute right-3 top-3 z-10 flex h-11 w-11 cursor-pointer items-center justify-center rounded-full bg-black/55 text-white active:bg-black/75"
         onClick={(e) => { e.stopPropagation(); onClose(); }}
       >

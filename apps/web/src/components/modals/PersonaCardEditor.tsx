@@ -126,6 +126,7 @@ export function PersonaCardEditor({
                 <div className="absolute inset-0 flex items-center justify-center bg-black/50 text-white opacity-0 transition-opacity group-hover:opacity-100"><Ic.edit /></div>
                 <CustomTooltip content={t("edit_thumbnail")}>
                   <button type="button"
+                    aria-label={t("edit_thumbnail")}
                     className="absolute bottom-1.5 right-1.5 flex h-7 w-7 items-center justify-center rounded-md border border-border bg-surface/90 text-t2 shadow-sm backdrop-blur transition-colors hover:text-accent-t"
                     onClick={(e) => { e.stopPropagation(); onOpenThumbnailCrop(); }}
                   ><Ic.crop /></button>
