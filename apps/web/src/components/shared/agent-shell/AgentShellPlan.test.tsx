@@ -32,6 +32,8 @@ import { useProviderDataStore } from "../../../stores/provider-data-store.js";
 import { useBootstrapStore } from "../../../stores/api-actions/bootstrap-actions.js";
 import { useCopilotProfileStore } from "../../../stores/copilot-profile-store.js";
 
+import { agentFeedPageFromMessages } from "../../../../test/agent-feed-page.js";
+
 useDomEnv();
 
 // The shell reads `useIsMobile` (matchMedia) — fixed desktop here.
@@ -215,6 +217,8 @@ const SIDECHAT_PROFILES = {
 const fetchRouter = mock(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
 	const path = new URL(String(input), "http://gateway.test").pathname;
 	const method = (init?.method ?? "GET").toUpperCase();
+	const feedThreadId = /\/api\/agent\/threads\/([^/]+)\/feed$/.exec(path)?.[1];
+	if (method === "GET" && feedThreadId) return jsonResponse(agentFeedPageFromMessages(feedThreadId, []));
 	if (method === "GET" && path.includes("/api/scripts/") && path.endsWith("/agent-plan")) {
 		planUrls.push(path);
 		return jsonResponse({ plan: PLAN });
@@ -428,8 +432,9 @@ describe("AgentShell sidechat empty state (DR-7)", () => {
 		const { getByTestId } = renderSidechat("handoff");
 		await waitFor(() => expect(getByTestId("copilot-chat-input")).toBeDefined());
 
+		// The independent initial feed read must commit before the empty state.
 		// «Вне роли»'s own state is byte-identical plus the accent row.
-		expect(getByTestId("agent-starter-0").textContent).toBe("agent_starter_sidechat_recap");
+		await waitFor(() => expect(getByTestId("agent-starter-0").textContent).toBe("agent_starter_sidechat_recap"));
 		const row = getByTestId("agent-handoff-row");
 		expect(row.textContent).toBe("sidechat_director_row");
 
@@ -457,6 +462,7 @@ describe("AgentShell sidechat empty state (DR-7)", () => {
 		// task lands — only then is the row's absence stable (before it, the
 		// still-empty cache would render the row).
 		await waitFor(() => expect(getByTestId("agent-plan-panel")).toBeDefined());
+		await waitFor(() => expect(getByTestId("agent-starter-0").textContent).toBe("agent_starter_sidechat_recap"));
 		expect(queryByTestId("agent-handoff-row")).toBeNull();
 		expect(getByTestId("agent-starter-0").textContent).toBe("agent_starter_sidechat_recap");
 	});
@@ -470,7 +476,7 @@ describe("AgentShell sidechat empty state (DR-7)", () => {
 		// localize); the starter fallback alone cannot (it is also the
 		// pre-read state).
 		await waitFor(() => expect(getByTestId("agent-profile-chip").textContent).toContain("My grim director"));
-		expect(getByTestId("agent-starter-0").textContent).toBe("agent_starter_sidechat_recap");
+		await waitFor(() => expect(getByTestId("agent-starter-0").textContent).toBe("agent_starter_sidechat_recap"));
 		// Behavior change: a user profile HID the row under DR-7 → SHOWS it now
 		// (owner ruling 2026-11-01: discovery of the director outranks
 		// profile-choice non-nagging). The chip anchor above proves the
@@ -487,7 +493,7 @@ describe("AgentShell sidechat empty state (DR-7)", () => {
 		// wire name — a user profile never localizes, even with a source).
 		await waitFor(() => expect(getByTestId("agent-profile-chip").textContent).toContain("My director copy"));
 		// STARTERS are the one thing a duplicate inherits: the director's four.
-		expect(getByTestId("agent-starter-0").textContent).toBe("agent_starter_director_plan");
+		await waitFor(() => expect(getByTestId("agent-starter-0").textContent).toBe("agent_starter_director_plan"));
 		expect(getByTestId("agent-starter-3").textContent).toBe("agent_starter_director_recap");
 		expect(queryByTestId("agent-starter-4")).toBeNull();
 		// The PRESENTATION stays built-in-only: the host's own title renders

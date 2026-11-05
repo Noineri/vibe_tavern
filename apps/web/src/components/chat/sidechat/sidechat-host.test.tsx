@@ -31,6 +31,7 @@
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import type { ReactNode } from "react";
+import { agentFeedPageFromMessages } from "../../../../test/agent-feed-page.js";
 import { createInstance } from "i18next";
 import { I18nextProvider } from "react-i18next";
 import { CHAT_MODE, type AgentThreadOwner, type PromptPresetDto } from "@vibe-tavern/domain";
@@ -86,6 +87,8 @@ const jsonResponse = (payload: unknown) =>
 const fetchRouter = mock(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
   const path = new URL(String(input), "http://gateway.test").pathname;
   const method = (init?.method ?? "GET").toUpperCase();
+  const feedThreadId = /\/api\/agent\/threads\/([^/]+)\/feed$/.exec(path)?.[1];
+  if (method === "GET" && feedThreadId) return jsonResponse(agentFeedPageFromMessages(feedThreadId, router.messages));
   // SC-0b chat-owner lifecycle (the sidechat transport's owner-keyed members).
   if (method === "GET" && /\/api\/agent\/chats\/[^/]+\/branches\/[^/]+\/[^/]+\/active$/.test(path)) {
     return jsonResponse(router.activeThread);

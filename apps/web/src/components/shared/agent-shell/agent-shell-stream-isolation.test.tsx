@@ -47,6 +47,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock 
 import { memo, type ReactNode } from "react";
 import type { ExperienceCopilotThreadWire } from "@vibe-tavern/api-contracts";
 import { useDomEnv } from "../../../../test/dom-env.js";
+import { agentFeedPageFromMessages } from "../../../../test/agent-feed-page.js";
 import { wireUiSettings } from "../../../../test/wire-fixtures.js";
 import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 import { useSnapshotStore } from "../../../stores/snapshot-store.js";
@@ -173,6 +174,8 @@ let releaseStream: (() => void) | null = null;
 const fetchRouter = mock(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
   const path = new URL(String(input), "http://gateway.test").pathname;
   const method = (init?.method ?? "GET").toUpperCase();
+  const feedThreadId = /\/api\/agent\/threads\/([^/]+)\/feed$/.exec(path)?.[1];
+  if (method === "GET" && feedThreadId) return jsonResponse(agentFeedPageFromMessages(feedThreadId, []));
   // BR-3a / BR-2c: run discovery (nothing running) and the durable review
   // round (none stored; writes are acknowledged) — the shell reads both on mount.
   if (method === "GET" && path.endsWith("/api/agent-runs")) return jsonResponse([]);
