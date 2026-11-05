@@ -8,18 +8,23 @@ import type { AgentThreadEventWire } from "@vibe-tavern/api-contracts";
  * (before the live pending rows, which only exist mid-turn and are cleared
  * on the settle+refetch that refreshes these events).
  */
-export function agentEventAnchors(
-	events: readonly AgentThreadEventWire[],
+export function agentEventAnchors<T extends Pick<AgentThreadEventWire, "id" | "beforeMessageId">>(
+	events: readonly T[],
 	visibleMessageIds: ReadonlySet<string>,
+	rawMessageIds?: readonly string[],
 ): {
-	eventAnchors: Map<string, AgentThreadEventWire[]>;
-	trailingEvents: AgentThreadEventWire[];
+	eventAnchors: Map<string, T[]>;
+	trailingEvents: T[];
 } {
-	const anchors = new Map<string, AgentThreadEventWire[]>();
-	const trailing: AgentThreadEventWire[] = [];
+	const anchors = new Map<string, T[]>();
+	const trailing: T[] = [];
 	if (events.length === 0) return { eventAnchors: anchors, trailingEvents: trailing };
 	for (const event of events) {
-		const anchor = event.beforeMessageId;
+		let anchor = event.beforeMessageId;
+		if (anchor !== null && !visibleMessageIds.has(anchor) && rawMessageIds) {
+			const index = rawMessageIds.indexOf(anchor);
+			if (index >= 0) anchor = rawMessageIds.slice(index + 1).find(id => visibleMessageIds.has(id)) ?? null;
+		}
 		if (anchor !== null && visibleMessageIds.has(anchor)) {
 			const list = anchors.get(anchor);
 			if (list) list.push(event);

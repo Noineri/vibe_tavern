@@ -244,6 +244,12 @@ function mixBoundaries(older: AgentFeedBoundary, newer: AgentFeedBoundary): Agen
     endsMidTurn: newer.endsMidTurn,
     lastUserMessageId: newer.lastUserMessageId,
     digest: newer.digest,
+    ...((older.pageFacts || newer.pageFacts) ? { pageFacts: {
+      ...(newer.pageFacts ?? older.pageFacts!),
+      firstAssistantMessageId: older.pageFacts?.firstAssistantMessageId ?? newer.pageFacts?.firstAssistantMessageId ?? null,
+      messagePositions: [...new Map([...(older.pageFacts?.messagePositions ?? []), ...(newer.pageFacts?.messagePositions ?? [])].map(p => [p.id, p])).values()],
+      digestCounts: [...new Map([...(older.pageFacts?.digestCounts ?? []), ...(newer.pageFacts?.digestCounts ?? [])].map(p => [p.id, p])).values()],
+    } } : {}),
   };
 }
 

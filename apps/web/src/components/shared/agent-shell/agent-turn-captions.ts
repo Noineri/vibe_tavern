@@ -49,6 +49,8 @@ export function joinTurnReasoning(parts: readonly TurnReasoningPart[]): TurnCapt
 }
 
 export interface TurnCaptionLayout {
+  /** Logical turn identity survives prepending the unloaded opener. */
+  stateKeys: Map<string, string>;
   /** Caption rendered immediately BEFORE the anchored items + bubble of the
    *  keyed flow message (the turn's first rendered item lives at that key —
    *  its tool accordion, an ask / permission / proposal card, or its first
@@ -75,15 +77,17 @@ export function buildTurnCaptions(args: {
   visibleMessages: readonly OrderedCopilotMessage[];
   anchoredIds: ReadonlySet<string>;
   hasTrailingAnchors: boolean;
+  continuedTurnOpener?: string | null;
 }): TurnCaptionLayout {
   const { visibleMessages, anchoredIds, hasTrailingAnchors } = args;
   const captionBefore = new Map<string, TurnCaption>();
+  const stateKeys = new Map<string, string>();
   let trailingCaption: TurnCaption | null = null;
   // Split the ordered flow at user rows — the user row OPENS the next turn,
   // so anchors keyed at it belong to the PREVIOUS turn's trailing tools.
   const openers: (string | null)[] = [];
   const members: OrderedCopilotMessage[][] = [];
-  let opener: string | null = null;
+  let opener: string | null = args.continuedTurnOpener ?? null;
   let current: OrderedCopilotMessage[] = [];
   let started = false;
   for (const entry of visibleMessages) {
@@ -149,11 +153,12 @@ export function buildTurnCaptions(args: {
       }
     }
     if (slot === null) continue;
+    stateKeys.set(slot, openers[i] ?? slot);
     if (slot === "trailing") trailingCaption = caption;
     else captionBefore.set(slot, caption);
     if (isLast) lastTurnSlotId = slot;
   }
-  return { captionBefore, trailingCaption, lastTurnSlotId, lastTurnEarnsCaption };
+  return { captionBefore, trailingCaption, lastTurnSlotId, lastTurnEarnsCaption, stateKeys };
 }
 
 /**

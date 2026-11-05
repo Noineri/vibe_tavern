@@ -103,6 +103,7 @@ export interface OrderedCopilotMessage {
  */
 export function orderMessagesWithDigests(
   messages: readonly ExperienceCopilotMessageWire[],
+  completeCounts?: ReadonlyMap<string, number>,
 ): OrderedCopilotMessage[] {
   const flow = messages.filter((m) => m.role === "user" || m.role === "assistant");
   const digests = messages.filter((m) => m.role === "digest");
@@ -137,6 +138,6 @@ export function orderMessagesWithDigests(
     .filter((m) => m.role === "user" || m.role === "assistant" || m.role === "digest")
     .map((message) => ({
       message,
-      coveredCount: message.role === "digest" ? (coveredByDigestId.get(message.id) ?? null) : null,
+      coveredCount: message.role === "digest" ? (completeCounts?.get(message.id) ?? coveredByDigestId.get(message.id) ?? null) : null,
     }));
 }

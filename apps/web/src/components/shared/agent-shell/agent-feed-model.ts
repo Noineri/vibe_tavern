@@ -21,7 +21,8 @@
  * The anchor pass also owns lastHistoryActivityId for permission interactivity;
  * it follows raw message order and excludes activities owned by the live feed.
  */
-import type { AgentThreadEventWire, ExperienceCopilotMessageWire } from "@vibe-tavern/api-contracts";
+import type { AgentFeedEventSummary, AgentThreadEventWire, ExperienceCopilotMessageWire } from "@vibe-tavern/api-contracts";
+import type { AgentFeedWindow } from "./agent-feed-reconcile.js";
 import type { OrderedCopilotMessage } from "../../../lib/copilot-context.js";
 import { orderMessagesWithDigests } from "../../../lib/copilot-context.js";
 import type { AgentToolActivity } from "../../../stores/agent-turn-store.js";
@@ -43,6 +44,8 @@ export const EMPTY_AGENT_FEED_LIVE_TOOL_CALL_IDS: ReadonlySet<string> = new Set<
  *  `memoizedAgentFeedModel` — callers must reuse array/set identities
  *  between renders (a `useMemo` or module constant per source). */
 export interface AgentFeedModelInput {
+  /** Covered windows; each disjoint interval retains its own event/turn end. */
+  windows?: readonly AgentFeedWindow[];
   /** ALL loaded persisted messages (the full wire list — no slicing here;
    *  windowing is `agent-feed-window.ts`'s job, never a data cut). */
   messages: readonly ExperienceCopilotMessageWire[];
@@ -56,6 +59,10 @@ export interface AgentFeedModelInput {
 
 /** One memoized snapshot of every historical fold the feed renders from. */
 export interface AgentFeedModel {
+  segments?: AgentFeedModel[];
+  summaryEventAnchors: Map<string, AgentFeedEventSummary[]>;
+  trailingSummaryEvents: AgentFeedEventSummary[];
+  atThreadHead: boolean;
   lastHistoryActivityId: string | null;
   /** Digest-ordered visible flow (CM-9 / AP-33): user/assistant/digest rows
    *  in list order, tool rows excluded, each digest at its own chronological
@@ -82,12 +89,40 @@ export interface AgentFeedModel {
 /** Build the full historical model. Pure and synchronous; O(n) over the
  *  loaded list. Prefer `memoizedAgentFeedModel` at render sites. */
 export function buildAgentFeedModel(input: AgentFeedModelInput): AgentFeedModel {
+  if (input.windows) {
+    const segments = input.windows.map(window => buildWindowModel({ ...input, messages: window.messages, events: EMPTY_AGENT_FEED_EVENTS }, window));
+    const base = segments.at(-1) ?? buildWindowModel(input);
+    const visibleMessages = segments.flatMap(s => s.visibleMessages);
+    const lastBoundary = input.windows.at(-1)?.boundary;
+    const combinedBoundary = lastBoundary?.pageFacts ? { ...lastBoundary, pageFacts: { ...lastBoundary.pageFacts,
+      messagePositions: input.windows.flatMap(w => w.boundary.pageFacts?.messagePositions ?? []),
+    } } : lastBoundary;
+    return { ...base, segments, visibleMessages,
+      boundaries: agentFlowBoundaries(visibleMessages, combinedBoundary),
+      anchorItems: new Map(segments.flatMap(s => [...s.anchorItems])),
+      anchoredIds: new Set(segments.flatMap(s => [...s.anchoredIds])),
+      captions: { ...base.captions, captionBefore: new Map(segments.flatMap(s => [...s.captions.captionBefore])),
+        stateKeys: new Map(segments.flatMap(s => [...s.captions.stateKeys])) },
+      summaryEventAnchors: new Map(), trailingSummaryEvents: [],
+    };
+  }
+  return buildWindowModel(input);
+}
+
+function buildWindowModel(input: AgentFeedModelInput, window?: AgentFeedWindow): AgentFeedModel {
   const { messages, events, liveToolCallIds } = input;
 
   // History tool activities (the CD-1 persisted audit cards), deduped by
   // toolCallId — verbatim from the list's `historyActivities` fold.
   const historyActivities = new Map<string, AgentToolActivity>();
-  for (const turn of extractHistoricalTurnActivities(messages)) {
+  // Feed the SAME persisted parser compact call carriers for split pairs;
+  // these context-only rows never enter the visible/history arrays.
+  const carriers = window?.boundary.continuedToolCalls.flatMap(call => {
+    const first = messages[0];
+    return first && call.toolName ? [{ ...first, id: `context:${call.toolCallId}`, role: "assistant" as const, content: "",
+      toolCallsJson: JSON.stringify([{ type: "tool-call", toolCallId: call.toolCallId, toolName: call.toolName, input: {} }]) }] : [];
+  }) ?? [];
+  for (const turn of extractHistoricalTurnActivities([...carriers, ...messages])) {
     for (const activity of turn.activities) historyActivities.set(activity.toolCallId, activity);
   }
 
@@ -135,8 +170,9 @@ export function buildAgentFeedModel(input: AgentFeedModelInput): AgentFeedModel 
     }
   }
 
-  const visibleMessages = orderMessagesWithDigests(messages);
-  const boundaries = agentFlowBoundaries(visibleMessages);
+  const visibleMessages = orderMessagesWithDigests(messages, window?.boundary.pageFacts
+    ? new Map(window.boundary.pageFacts.digestCounts.map(d => [d.id, d.coveredCount])) : undefined);
+  const boundaries = agentFlowBoundaries(visibleMessages, window?.boundary);
 
   // AP-4 caption fold — needs the anchored ids and the trailing flag.
   const anchoredIds = new Set<string>();
@@ -145,6 +181,7 @@ export function buildAgentFeedModel(input: AgentFeedModelInput): AgentFeedModel 
     visibleMessages,
     anchoredIds,
     hasTrailingAnchors: pending.length > 0,
+    continuedTurnOpener: window?.boundary.startsMidTurn ? window.boundary.turnOpenerMessageId : undefined,
   });
 
   // SC-19b event anchoring — anchored before the anchor row; null/unknown
@@ -153,8 +190,12 @@ export function buildAgentFeedModel(input: AgentFeedModelInput): AgentFeedModel 
     events,
     new Set(visibleMessages.map((entry) => entry.message.id)),
   );
+  const summaries = agentEventAnchors(window?.events ?? [], new Set(visibleMessages.map(e => e.message.id)), messages.map(m => m.id));
 
   return {
+    atThreadHead: !(window?.hasNewer ?? false),
+    summaryEventAnchors: summaries.eventAnchors,
+    trailingSummaryEvents: summaries.trailingEvents,
     lastHistoryActivityId,
     visibleMessages,
     boundaries,
@@ -178,6 +219,7 @@ export function buildAgentFeedModel(input: AgentFeedModelInput): AgentFeedModel 
 const MEMO_CAPACITY = 3;
 
 interface AgentFeedModelMemoSlot {
+  windows?: readonly AgentFeedWindow[];
   messages: readonly ExperienceCopilotMessageWire[];
   events: readonly AgentThreadEventWire[];
   liveToolCallIds: ReadonlySet<string>;
@@ -198,6 +240,7 @@ export function memoizedAgentFeedModel(input: AgentFeedModelInput): AgentFeedMod
     const slot = memoSlots[i]!;
     if (
       slot.messages === input.messages &&
+      slot.windows === input.windows &&
       slot.events === input.events &&
       slot.liveToolCallIds === input.liveToolCallIds
     ) {
@@ -209,6 +252,7 @@ export function memoizedAgentFeedModel(input: AgentFeedModelInput): AgentFeedMod
   }
   const model = buildAgentFeedModel(input);
   memoSlots.unshift({
+    windows: input.windows,
     messages: input.messages,
     events: input.events,
     liveToolCallIds: input.liveToolCallIds,

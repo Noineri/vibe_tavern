@@ -1,4 +1,6 @@
 import type { OrderedCopilotMessage } from "../../../lib/copilot-context.js";
+import type { AgentFeedBoundary, AgentFeedOrderPosition } from "@vibe-tavern/api-contracts";
+import { compareAgentFeedOrderPositions } from "./agent-feed-reconcile.js";
 
 /**
  * The visible-flow boundaries the agent feed's turn rows derive from
@@ -33,6 +35,7 @@ export interface AgentFlowBoundaries {
 /** Derive the turn-row boundaries from the digest-ordered visible flow. */
 export function agentFlowBoundaries(
   visibleMessages: readonly OrderedCopilotMessage[],
+  boundary?: AgentFeedBoundary,
 ): AgentFlowBoundaries {
   let userIdx = -1;
   let digestIdx = -1;
@@ -47,6 +50,28 @@ export function agentFlowBoundaries(
       ? visibleMessages.findIndex((entry) => entry.message.id === anchorId)
       : -1;
     anchorIdx = found >= 0 ? found : visibleMessages.length;
+  }
+  const facts = boundary?.pageFacts;
+  if (facts) {
+    const positions = new Map(facts.messagePositions.map(p => [p.id, p]));
+    const insertionIndex = (position: AgentFeedOrderPosition) => {
+      const exact = visibleMessages.findIndex(e => e.message.id === position.id);
+      if (exact >= 0) return exact;
+      const after = visibleMessages.findIndex(e => {
+        const p = positions.get(e.message.id);
+        return p !== undefined && compareAgentFeedOrderPositions(p, position) > 0;
+      });
+      return after >= 0 ? after : visibleMessages.length;
+    };
+    userIdx = facts.lastUserPosition === null ? -1 : visibleMessages.findIndex(e => e.message.id === facts.lastUserPosition!.id);
+    if (userIdx < 0 && facts.lastUserPosition !== null) {
+      // A virtual boundary slot, not a fabricated user row: preceding rows
+      // cannot regenerate/edit the thread's later last turn.
+      userIdx = insertionIndex(facts.lastUserPosition);
+      if (userIdx === 0) userIdx = -1;
+    }
+    anchorIdx = boundary!.digest.lastAnchor === null ? null
+      : facts.lastDigestAnchorPosition === null ? visibleMessages.length : insertionIndex(facts.lastDigestAnchorPosition);
   }
   return { lastUserVisibleIndex: userIdx, lastDigestAnchorVisibleIndex: anchorIdx };
 }
