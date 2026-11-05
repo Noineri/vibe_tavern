@@ -37,7 +37,7 @@
  *
  * Pure — no React, no store reads.
  */
-import type { AgentThreadEventWire, ExperienceCopilotMessageWire } from "@vibe-tavern/api-contracts";
+import type { AgentFeedEventSummary, AgentThreadEventWire, ExperienceCopilotMessageWire } from "@vibe-tavern/api-contracts";
 import type { AgentToolActivity } from "../../../stores/agent-turn-store.js";
 import { MESSAGE_PAGE_SIZE, STABLE_TAIL_PAGES } from "../../chat/message-render-window.js";
 import type { CopilotTurnAnchorItem } from "./agent-anchor-items.js";
@@ -50,6 +50,7 @@ export type AgentFeedCardKind = "accordion" | "ask" | "permission" | "proposal";
 /** One virtual render item. `unitId` is the Virtuoso/React key — namespaced
  *  per kind so ids from different sources never collide. */
 export type AgentFeedRenderUnit =
+  | { kind: "event-summary"; unitId: string; event: AgentFeedEventSummary }
   | { kind: "event"; unitId: string; event: AgentThreadEventWire }
   | { kind: "caption"; unitId: string; slotId: string }
   | { kind: AgentFeedCardKind; unitId: string; anchorId: string; item: CopilotTurnAnchorItem }
@@ -151,6 +152,12 @@ function cardUnitId(item: CopilotTurnAnchorItem): string {
  */
 export function agentFeedRenderUnits(input: AgentFeedWindowInput): AgentFeedRenderUnit[] {
   const { model, tail, hiddenMessageIds, hideTrailingAnchors } = input;
+  if (model.segments?.length) {
+    return model.segments.flatMap((segment, index) => agentFeedRenderUnits({ ...input, model: segment,
+      tail: index === model.segments!.length - 1 ? tail : undefined,
+      hideTrailingAnchors: hideTrailingAnchors && index === model.segments!.length - 1,
+    }));
+  }
   const units: AgentFeedRenderUnit[] = [];
 
   for (const entry of model.visibleMessages) {
@@ -160,6 +167,9 @@ export function agentFeedRenderUnits(input: AgentFeedWindowInput): AgentFeedRend
       // SC-19b: anchored events render immediately BEFORE their anchor —
       // before its caption, cards and bubble alike (the list renders them
       // first inside the anchor's fragment).
+      for (const event of model.summaryEventAnchors.get(message.id) ?? []) {
+        units.push({ kind: "event-summary", unitId: agentFeedEventUnitId(event.id), event });
+      }
       const anchoredEvents = model.eventAnchors.get(message.id);
       if (anchoredEvents !== undefined) {
         for (const event of anchoredEvents) {
@@ -196,7 +206,8 @@ export function agentFeedRenderUnits(input: AgentFeedWindowInput): AgentFeedRend
   // turn when `hideTrailingAnchors`; trailing EVENTS never hide.
   if (!hideTrailingAnchors) {
     if (model.captions.trailingCaption !== null) {
-      units.push({ kind: "caption", unitId: "caption:trailing", slotId: "trailing" });
+      const slotId = model.trailingSlotId ?? "trailing";
+      units.push({ kind: "caption", unitId: agentFeedCaptionUnitId(slotId), slotId });
     }
     for (const item of model.trailingItems) {
       units.push({ kind: item.kind, unitId: cardUnitId(item), anchorId: "trailing", item });
@@ -204,6 +215,9 @@ export function agentFeedRenderUnits(input: AgentFeedWindowInput): AgentFeedRend
   }
   for (const event of model.trailingEvents) {
     units.push({ kind: "event", unitId: `event:${event.id}`, event });
+  }
+  for (const event of model.trailingSummaryEvents) {
+    units.push({ kind: "event-summary", unitId: agentFeedEventUnitId(event.id), event });
   }
 
   // The mid-turn tail, in the flat list's fixed order: optimistic user row,

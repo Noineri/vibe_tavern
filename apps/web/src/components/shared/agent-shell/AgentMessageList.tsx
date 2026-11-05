@@ -1,6 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, type ReactNode } from "react";
 import { useShallow } from "zustand/react/shallow";
-import type { AgentThreadEventWire, ExperienceCopilotMessageWire } from "@vibe-tavern/api-contracts";
+import type { AgentFeedEventSummary, AgentThreadEventWire, ExperienceCopilotMessageWire } from "@vibe-tavern/api-contracts";
+import type { AgentFeedWindow } from "./agent-feed-reconcile.js";
 import type { Attachment } from "@vibe-tavern/domain";
 import { useAgentTurnStore, type AgentFeedEntry, type AgentToolActivity } from "../../../stores/agent-turn-store.js";
 import { agentLiveReasoningOf, agentLiveTextOf, useAgentLiveStreamStore } from "../../../stores/agent-live-stream-store.js";
@@ -30,6 +31,7 @@ import { useOptionalAgentFeedUiStateStore, useAgentFeedDisclosure } from "./agen
 const EMPTY: AgentToolActivity[] = [];
 const EMPTY_FEED: AgentFeedEntry[] = [];
 const EMPTY_ATTACHMENTS: readonly Attachment[] = [];
+const EMPTY_MESSAGES: ExperienceCopilotMessageWire[] = [];
 const EMPTY_HIDDEN_IDS: ReadonlySet<string> = new Set();
 const EMPTY_MODEL = buildAgentFeedModel({ messages: [], events: EMPTY_AGENT_FEED_EVENTS, liveToolCallIds: EMPTY_AGENT_FEED_LIVE_TOOL_CALL_IDS });
 
@@ -49,7 +51,11 @@ const HistoryCaption = memo(function HistoryCaption({ kind, threadId, title, cap
 export interface AgentMessageListProps {
   kind: AgentKind;
   threadId: string;
-  messages: ExperienceCopilotMessageWire[];
+  messages?: ExperienceCopilotMessageWire[];
+  /** AFP-15: authoritative covered intervals, never treated as full history. */
+  pageWindows?: readonly AgentFeedWindow[];
+  /** AFP-16 supplies the summary/lazy-detail renderer before AFP-14 activation. */
+  renderEventSummary?: (event: AgentFeedEventSummary) => ReactNode;
   pendingUserContent: string;
   pendingUserAttachments?: readonly Attachment[];
   isSending?: boolean;
@@ -73,21 +79,24 @@ export interface AgentMessageListProps {
 }
 
 export function AgentMessageList({
-  kind, threadId, messages, pendingUserContent, pendingUserAttachments = EMPTY_ATTACHMENTS,
+  kind, threadId, messages: legacyMessages = EMPTY_MESSAGES, pageWindows, renderEventSummary,
+  pendingUserContent, pendingUserAttachments = EMPTY_ATTACHMENTS,
   isSending = false, isRegenerating = false, hiddenRegeneratedIds = null,
   onAnswer, pendingAskAnswer = null, pendingPermissionAnswer = null,
   turnRow, onEditLast, onEditAssistant, turnFailure = null, onRetryTurn,
   onStarterPick, emptyTitle, emptySub, emptyIcon, starterKeysOverride, handoffRow,
-  events = EMPTY_AGENT_FEED_EVENTS,
+  events: legacyEvents = EMPTY_AGENT_FEED_EVENTS,
 }: AgentMessageListProps) {
   const { t } = useT();
+  const messages = useMemo(() => pageWindows?.flatMap(w => w.messages) ?? legacyMessages, [pageWindows, legacyMessages]);
+  const events = useMemo(() => pageWindows?.flatMap(w => w.events) ?? legacyEvents, [pageWindows, legacyEvents]);
   const sessionKey = agentThreadKey(kind, threadId);
   const activities = useAgentTurnStore(useShallow((s) => s.turnsByThread[sessionKey] ?? EMPTY));
   const feed = useAgentTurnStore(useShallow((s) => s.feedByThread[sessionKey] ?? EMPTY_FEED));
   const liveText = useAgentLiveStreamStore((s) => agentLiveTextOf(s, kind, threadId));
   const liveReasoning = useAgentLiveStreamStore((s) => agentLiveReasoningOf(s, kind, threadId));
   const liveToolCallIds = useMemo(() => new Set(activities.map((a) => a.toolCallId)), [activities]);
-  const model = useMemo(() => memoizedAgentFeedModel({ messages, events, liveToolCallIds }), [messages, events, liveToolCallIds]);
+  const model = useMemo(() => memoizedAgentFeedModel({ messages, events: legacyEvents, liveToolCallIds, windows: pageWindows }), [messages, legacyEvents, liveToolCallIds, pageWindows]);
   const { visibleMessages, boundaries, captions } = model;
   const { lastUserVisibleIndex, lastDigestAnchorVisibleIndex } = boundaries;
   const activityById = useMemo(() => new Map(activities.map((a) => [a.toolCallId, a])), [activities]);
@@ -98,9 +107,11 @@ export function AgentMessageList({
     }
     return model.lastHistoryActivityId;
   }, [feed, model]);
-  const liveAsk = useMemo(() => selectAgentLiveAsk({ feed, activities, messages, pendingAskAnswer, isSending }), [feed, activities, messages, pendingAskAnswer, isSending]);
-  const anchorCtx = useMemo(() => buildAgentAnchorContext({ kind, threadId, liveAsk, lastActivityId, isSending, onAnswer, pendingAskAnswer, pendingPermissionAnswer }),
-    [kind, threadId, liveAsk, lastActivityId, isSending, onAnswer, pendingAskAnswer, pendingPermissionAnswer]);
+  const liveAsk = useMemo(() => model.atThreadHead ? selectAgentLiveAsk({ feed, activities,
+    messages: pageWindows?.at(-1)?.messages ?? messages, pendingAskAnswer, isSending }) : null,
+    [feed, activities, messages, pendingAskAnswer, isSending, model.atThreadHead, pageWindows]);
+  const anchorCtx = useMemo(() => buildAgentAnchorContext({ kind, threadId, liveAsk, lastActivityId, isSending: isSending || !model.atThreadHead, onAnswer, pendingAskAnswer, pendingPermissionAnswer }),
+    [kind, threadId, liveAsk, lastActivityId, isSending, onAnswer, pendingAskAnswer, pendingPermissionAnswer, model.atThreadHead]);
   const host = useMemo(() => {
     try { return getAgentHost(kind); } catch { return undefined; }
   }, [kind]);
@@ -150,16 +161,20 @@ export function AgentMessageList({
     const captionNode = (slotId: string) => {
       const caption = slotId === "trailing" ? captions.trailingCaption : captions.captionBefore.get(slotId);
       return caption && hostTitle !== null ? <HistoryCaption kind={kind} threadId={threadId} title={hostTitle}
-        caption={caption} stateKey={agentFeedCaptionUnitId(slotId)} joinLive={liveJoinsLastTurn && captions.lastTurnSlotId === slotId} /> : null;
+        caption={caption} stateKey={agentFeedCaptionUnitId(pageWindows ? captions.stateKeys.get(slotId) ?? slotId : slotId)} joinLive={liveJoinsLastTurn && captions.lastTurnSlotId === slotId} /> : null;
     };
     for (const unit of historyUnits) {
       let node: ReactNode;
       if (unit.kind === "event") node = <AgentTimelineSeparator event={unit.event} />;
+      else if (unit.kind === "event-summary") {
+        if (!renderEventSummary) throw new Error("Paged agent feed requires its event-summary renderer");
+        node = renderEventSummary(unit.event);
+      }
       else if (unit.kind === "caption") node = captionNode(unit.slotId);
       else if ("item" in unit) node = <AgentAnchorItems items={[unit.item]} ctx={anchorCtx} />;
       else if (unit.kind === "message" || unit.kind === "digest") {
         const row = turnRow ? buildAgentTurnRow({ message: unit.message, visibleIndex: visibleIndexes.get(unit.message.id)!,
-          lastUserVisibleIndex, lastDigestAnchorVisibleIndex, isSending, hostActions: messageActions, callbacks: turnRow })
+          lastUserVisibleIndex, lastDigestAnchorVisibleIndex, isSending: isSending || !model.atThreadHead, hostActions: messageActions, callbacks: turnRow })
           : { hostActions: messageActions, turnActions: undefined };
         const block = <AgentMessageBlock message={unit.message} messageMarkup={messageMarkup}
           coveredCount={unit.kind === "digest" ? unit.coveredCount : null} messageActions={row.hostActions} turnActions={row.turnActions}
@@ -172,7 +187,7 @@ export function AgentMessageList({
     }
     return nodes;
   }, [historyUnits, visibleMessages, model, captions, hostTitle, kind, threadId, liveJoinsLastTurn, anchorCtx,
-    turnRow, lastUserVisibleIndex, lastDigestAnchorVisibleIndex, isSending, messageActions, messageMarkup, onEditLast, onEditAssistant]);
+    turnRow, lastUserVisibleIndex, lastDigestAnchorVisibleIndex, isSending, messageActions, messageMarkup, onEditLast, onEditAssistant, renderEventSummary, pageWindows]);
 
   const liveToolActivities = useMemo(() => feed.flatMap((entry) => {
     const a = entry.kind === "activity" ? activityById.get(entry.id) : undefined;
@@ -238,11 +253,11 @@ export function AgentMessageList({
   const liveAccordionId = liveToolActivities[0]?.toolCallId;
   const retainedKeys = useMemo(() => new Set([
     ...messages.map((m) => agentFeedMessageUnitId(m.id)), ...events.map((e) => agentFeedEventUnitId(e.id)),
-    ...[...captions.captionBefore.keys()].map((id) => agentFeedCaptionUnitId(id)), agentFeedCaptionUnitId("trailing"),
+    ...[...captions.captionBefore.keys()].map((id) => agentFeedCaptionUnitId(pageWindows ? captions.stateKeys.get(id) ?? id : id)), agentFeedCaptionUnitId(pageWindows ? captions.stateKeys.get("trailing") ?? "trailing" : "trailing"),
     "live-caption", "live-reasoning",
     ...[...model.anchorItems.values(), model.trailingItems].flat().flatMap((item) => item.kind === "accordion" ? [agentFeedAccordionUnitId(item.activities[0]!.toolCallId)] : []),
     ...(liveAccordionId ? [agentFeedAccordionUnitId(liveAccordionId)] : []),
-  ]), [messages, events, captions, model, liveAccordionId]);
+  ]), [messages, events, captions, model, liveAccordionId, pageWindows]);
   const previousKeys = useRef({ store: uiStore, keys: retainedKeys });
   useEffect(() => {
     if (uiStore) {

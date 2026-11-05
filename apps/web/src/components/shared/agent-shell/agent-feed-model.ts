@@ -59,6 +59,7 @@ export interface AgentFeedModelInput {
 
 /** One memoized snapshot of every historical fold the feed renders from. */
 export interface AgentFeedModel {
+  trailingSlotId?: string;
   segments?: AgentFeedModel[];
   summaryEventAnchors: Map<string, AgentFeedEventSummary[]>;
   trailingSummaryEvents: AgentFeedEventSummary[];
@@ -101,8 +102,10 @@ export function buildAgentFeedModel(input: AgentFeedModelInput): AgentFeedModel 
       boundaries: agentFlowBoundaries(visibleMessages, combinedBoundary),
       anchorItems: new Map(segments.flatMap(s => [...s.anchorItems])),
       anchoredIds: new Set(segments.flatMap(s => [...s.anchoredIds])),
-      captions: { ...base.captions, captionBefore: new Map(segments.flatMap(s => [...s.captions.captionBefore])),
-        stateKeys: new Map(segments.flatMap(s => [...s.captions.stateKeys])) },
+      captions: { ...base.captions, captionBefore: new Map(segments.flatMap(s => [
+        ...s.captions.captionBefore,
+        ...(s.trailingSlotId && s.captions.trailingCaption ? [[s.trailingSlotId, s.captions.trailingCaption] as const] : []),
+      ])), stateKeys: new Map(segments.flatMap(s => [...s.captions.stateKeys])) },
       summaryEventAnchors: new Map(), trailingSummaryEvents: [],
     };
   }
@@ -191,8 +194,12 @@ function buildWindowModel(input: AgentFeedModelInput, window?: AgentFeedWindow):
     new Set(visibleMessages.map((entry) => entry.message.id)),
   );
   const summaries = agentEventAnchors(window?.events ?? [], new Set(visibleMessages.map(e => e.message.id)), messages.map(m => m.id));
+  const trailingSlotId = window ? `trailing:${captions.stateKeys.get("trailing") ?? window.oldest.id}` : undefined;
+  if (trailingSlotId) captions.stateKeys.set(trailingSlotId, captions.stateKeys.get("trailing") ?? trailingSlotId);
+  if (trailingSlotId && captions.lastTurnSlotId === "trailing") captions.lastTurnSlotId = trailingSlotId;
 
   return {
+    trailingSlotId,
     atThreadHead: !(window?.hasNewer ?? false),
     summaryEventAnchors: summaries.eventAnchors,
     trailingSummaryEvents: summaries.trailingEvents,

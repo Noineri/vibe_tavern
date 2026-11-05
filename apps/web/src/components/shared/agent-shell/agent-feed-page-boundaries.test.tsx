@@ -5,6 +5,8 @@ import { buildAgentFeedModel, EMPTY_AGENT_FEED_LIVE_TOOL_CALL_IDS } from "./agen
 import { applyAgentFeedPage, initAgentFeedState, type AgentFeedWindow } from "./agent-feed-reconcile.js";
 
 useDomEnv({ failOnNetwork: true });
+const { render, act } = await import("@testing-library/react");
+const { AgentMessageList } = await import("./AgentMessageList.js");
 // L1: relative paths only; no process-global patches/registries/i18n; no waits
 // or sleeps in pure pins, DOM pins use resolved state; no platform assumptions;
 // no module mocks/shared mutable fixtures; stable model/DOM state; no DB setup.
@@ -22,6 +24,28 @@ function window(messages: ExperienceCopilotMessageWire[], sequences: number[], b
 const modelOf = (windows: AgentFeedWindow[]) => buildAgentFeedModel({ messages: [], events: [], liveToolCallIds: EMPTY_AGENT_FEED_LIVE_TOOL_CALL_IDS, windows });
 
 describe("AFP-15 partial feed boundaries", () => {
+  it("the real list interleaves an event-only window before newer history without mounting a second scroller", async () => {
+    const gap = window([msg("placeholder", 5)], [5]);
+    gap.messages = [];
+    gap.events = [{ id: "snapshot", kind: "branch_forked", at: 0, seq: 5, createdAt: NOW, beforeMessageId: "outside", detailAvailable: true }];
+    const view = render(<AgentMessageList kind="experience" threadId="T" pendingUserContent=""
+      pageWindows={[gap, window([msg("new", 20)], [20])]} renderEventSummary={e => <span>{e.id}</span>} />);
+    await act(async () => {});
+    expect([...view.container.querySelectorAll("[data-scroller-message-id]")].map(e => e.getAttribute("data-scroller-message-id"))).toEqual(["event:snapshot", "msg:new"]);
+    expect(view.container.querySelectorAll("[data-virtuoso-scroller]")).toHaveLength(1);
+  });
+
+  it("the real list keeps older turn actions away from the last-turn regenerate gate", async () => {
+    const w = window([msg("old", 2)], [2], { lastUserMessageId: "new-user", pageFacts: {
+      lastUserPosition: pos("new-user", 9), lastDigestAnchorPosition: null, firstAssistantMessageId: "old", messagePositions: [pos("old", 2)], digestCounts: [],
+    } });
+    w.hasNewer = true;
+    const view = render(<AgentMessageList kind="experience" threadId="T" pendingUserContent="" pageWindows={[w]}
+      renderEventSummary={e => <span>{e.id}</span>} turnRow={{ onCopy: () => {}, onRegenerate: () => {}, onRequestDelete: () => {} }} />);
+    await act(async () => {});
+    expect(view.queryByTestId("copilot-turn-regenerate")).toBeNull();
+    expect(view.getByText("old")).toBeDefined();
+  });
   it("keeps legacy full-history digest order and counts", () => {
     const messages = [msg("u", 0, "user"), msg("a", 1), msg("d", 2, "digest", { toolCallId: "a" })];
     const model = buildAgentFeedModel({ messages, events: [], liveToolCallIds: EMPTY_AGENT_FEED_LIVE_TOOL_CALL_IDS });

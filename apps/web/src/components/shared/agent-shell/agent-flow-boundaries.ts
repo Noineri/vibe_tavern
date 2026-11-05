@@ -68,7 +68,7 @@ export function agentFlowBoundaries(
       // A virtual boundary slot, not a fabricated user row: preceding rows
       // cannot regenerate/edit the thread's later last turn.
       userIdx = insertionIndex(facts.lastUserPosition);
-      if (userIdx === 0) userIdx = -1;
+      if (userIdx < visibleMessages.length) userIdx -= 1;
     }
     anchorIdx = boundary!.digest.lastAnchor === null ? null
       : facts.lastDigestAnchorPosition === null ? visibleMessages.length : insertionIndex(facts.lastDigestAnchorPosition);
