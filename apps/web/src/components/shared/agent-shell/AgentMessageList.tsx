@@ -301,7 +301,7 @@ export function AgentMessageList({
     hasLiveReasoning, liveReasoning, fallbackReasoning.open, fallbackReasoning.toggle, liveText, turnFailure,
     visibleMessages, isSending, onRetryTurn, activityById, liveToolActivities, kind, anchorCtx, feedById]);
 
-  const isEmpty = visibleMessages.length === 0 && events.length === 0 && !hasPendingUserContent
+  const isEmpty = historyUnits.length === 0 && !hasPendingUserContent
     && !hasPendingText && !liveReasoning && feed.length === 0;
   if (isEmpty) return <AgentEmptyState kind={kind} title={emptyTitle ?? t("agent_title")} sub={emptySub ?? t("agent_subtitle")}
     icon={emptyIcon} starterKeys={starterKeysOverride} handoffRow={handoffRow} onStarterPick={onStarterPick} />;

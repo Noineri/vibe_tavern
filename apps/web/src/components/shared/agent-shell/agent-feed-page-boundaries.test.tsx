@@ -25,6 +25,14 @@ function window(messages: ExperienceCopilotMessageWire[], sequences: number[], b
 const modelOf = (windows: AgentFeedWindow[]) => buildAgentFeedModel({ messages: [], events: [], liveToolCallIds: EMPTY_AGENT_FEED_LIVE_TOOL_CALL_IDS, windows });
 
 describe("AFP-15 partial feed boundaries", () => {
+  it("the real list does not mistake a tools-only page cut for an empty session", async () => {
+    const w = window([msg("result-only", 4, "tool", { toolCallId: "call", content: JSON.stringify({ path: "skill.md", content: "Frozen skill" }) })], [4], {
+      startsMidTurn: true, turnOpenerMessageId: "u", continuedToolCalls: [{ toolCallId: "call", toolName: "read_skill_file" }],
+    });
+    const view = render(<AgentMessageList kind="experience" threadId="T" pendingUserContent="" pageWindows={[w]} />);
+    expect(view.getByTestId("copilot-tool-accordion")).toBeDefined();
+    await act(async () => {});
+  });
   it("keeps an open partial-turn accordion open when prepend changes its first loaded tool", async () => {
     const call = (id: string, seq: number) => msg(`call-${id}`, seq, "assistant", { content: "", toolCallsJson: JSON.stringify([{ type: "tool-call", toolCallId: id, toolName: "read_skill_file", input: {} }]) });
     const result = (id: string, seq: number) => msg(`result-${id}`, seq, "tool", { toolCallId: id, content: JSON.stringify({ path: "skill.md", content: `frozen-${id}` }) });
