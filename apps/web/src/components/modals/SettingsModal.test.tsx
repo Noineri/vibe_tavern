@@ -134,7 +134,7 @@ describe("settings modal", () => {
     setWidth(390); addGuarded();
     useModalStore.getState().openSettings("network");
     const view = render(<TooltipProvider><SettingsModal /></TooltipProvider>);
-    const back = () => view.getAllByRole("button").find((button) => !button.getAttribute("aria-label"))!;
+    const back = () => view.getByRole("button", { name: "back" });
     fireEvent.click(back());
     expect(view.getByText("guarded body")).toBeTruthy();
     expect(view.getByRole("alertdialog")).toBeTruthy();
@@ -192,9 +192,8 @@ describe("settings modal", () => {
     fireEvent.click(view.getByRole("button", { name: "settings_section_sound" }));
     expect(view.getByText("sound body")).toBeTruthy();
     expect(view.queryByRole("button", { name: "settings_section_interface" })).toBeNull();
-    const back = view.getAllByRole("button").find((el) => !el.getAttribute("aria-label"));
-    expect(back).toBeTruthy();
-    fireEvent.click(back!);
+    const back = view.getByRole("button", { name: "back" });
+    fireEvent.click(back);
     expect(view.getByRole("button", { name: "settings_section_interface" })).toBeTruthy();
     expect(view.queryByText("sound body")).toBeNull();
   });
@@ -205,8 +204,8 @@ describe("settings modal", () => {
     useModalStore.getState().openSettings("about");
     const view = render(<SettingsModal />);
     expect(view.getByText("about body")).toBeTruthy();
-    const back = view.getAllByRole("button").find((el) => !el.getAttribute("aria-label"));
-    fireEvent.click(back!);
+    const back = view.getByRole("button", { name: "back" });
+    fireEvent.click(back);
     expect(view.queryByText("about body")).toBeNull();
     act(() => useModalStore.getState().openSettings("about"));
     expect(view.getByText("about body")).toBeTruthy();

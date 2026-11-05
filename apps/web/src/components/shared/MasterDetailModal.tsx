@@ -337,6 +337,7 @@ export function MasterDetailModal<T extends string = string>({
       <div className="flex items-center gap-2">
         <button
           type="button"
+          aria-label={t("back")}
           className="flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-lg text-t3 active:bg-s2 transition-colors hover:bg-s2 hover:text-t1"
           onClick={handleBack}
         >

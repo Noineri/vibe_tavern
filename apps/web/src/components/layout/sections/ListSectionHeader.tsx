@@ -70,17 +70,17 @@ export function ListSectionHeader({
         <div className="flex-1 px-[13px] pt-1 pb-[5px] text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.08em] text-t3">{t(titleKey)}</div>
         <ListSortToggle mode={sortMode} onChange={onSortChange} />
         <CustomTooltip content={t("search_name_placeholder")}>
-          <button type="button" className={cn("iBtn size-5", searchOpen && "text-accent-t")} aria-pressed={searchOpen} onClick={onToggleSearch}>
+          <button type="button" aria-label={t("search_name_placeholder")} className={cn("iBtn size-5", searchOpen && "text-accent-t")} aria-pressed={searchOpen} onClick={onToggleSearch}>
             <Icons.Search />
           </button>
         </CustomTooltip>
         <CustomTooltip content={t(importTooltipKey)}>
-          <button type="button" className="iBtn size-5" onClick={onImport}>
+          <button type="button" aria-label={t(importTooltipKey)} className="iBtn size-5" onClick={onImport}>
             <Icons.Import />
           </button>
         </CustomTooltip>
         <CustomTooltip content={t(createTooltipKey)}>
-          <button type="button" className="iBtn size-5" onClick={onCreate}>
+          <button type="button" aria-label={t(createTooltipKey)} className="iBtn size-5" onClick={onCreate}>
             <Icons.Plus />
           </button>
         </CustomTooltip>

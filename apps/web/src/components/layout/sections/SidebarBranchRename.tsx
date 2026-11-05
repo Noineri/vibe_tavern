@@ -50,6 +50,7 @@ export function SidebarBranchRename({ branchId, initialLabel, onRename }: { bran
   return (
     <button
       type="button"
+      aria-label={t("sidebar_rename_branch_for", { name: initialLabel })}
       className="shrink-0 cursor-pointer rounded p-0.5 text-t3 opacity-0 transition-all hover:bg-s3 hover:text-t1 group-hover/branch:opacity-100"
       onClick={(e) => { e.stopPropagation(); setValue(initialLabel); setEditing(true); }}
     >

@@ -115,6 +115,7 @@ export function ChatBranchesBlock({
 							</div>
 							<button
 								type="button"
+								aria-label={t("sidebar_branch_actions_for", { name: displayLabel(b) })}
 								className={cn(
 									"flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full text-t3 transition-colors hover:text-t1 active:bg-s3",
 									menuBranchId === b.id && "bg-s3 text-t1",

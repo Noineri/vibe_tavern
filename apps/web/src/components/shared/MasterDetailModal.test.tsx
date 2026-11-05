@@ -486,11 +486,10 @@ describe("MasterDetailModal — parentBack", () => {
     expect(getByTestId("detail")).toBeTruthy();
     expect(queryByRole("button", { name: "Parent" })).toBeNull();
 
-    // The visible back is the drill-down one (no aria-label): it closes the
-    // detail and fires the drill-down hook, NOT the parent hook.
-    const drillBack = getAllByRole("button").find((b) => !b.getAttribute("aria-label"));
-    expect(drillBack).toBeTruthy();
-    fireEvent.click(drillBack!);
+    // The visible back is the drill-down one (aria-label "back"): it closes
+    // the detail and fires the drill-down hook, NOT the parent hook.
+    const drillBack = getByRole("button", { name: "back" });
+    fireEvent.click(drillBack);
     expect(drillCalls).toBe(1);
     expect(parentCalls).toBe(1);
     expect(queryByTestId("detail")).toBeNull();

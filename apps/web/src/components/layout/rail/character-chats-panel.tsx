@@ -263,6 +263,7 @@ export function CharacterChatsPanel({
 
 									{/* Chat three-dot menu — enlarged touch target */}
 									<button type="button"
+										aria-label={t("sidebar_chat_actions_for", { name: ch.title })}
 										className={cn(
 											"flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-t3 transition-colors hover:text-t1 active:bg-s3",
 											chatMenuId === ch.id && "text-t1 bg-s3",
