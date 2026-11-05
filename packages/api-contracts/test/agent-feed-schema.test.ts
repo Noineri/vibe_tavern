@@ -97,6 +97,14 @@ test("AFP-15 additive page facts retain coordinates and reject negative covered 
   expect(agentFeedBoundarySchema.safeParse({ ...boundary, pageFacts: { ...pageFacts, digestCounts: [{ id: "d", coveredCount: -1 }] } }).success).toBe(false);
 });
 
+test("AFP-15 profile summaries carry optional frozen IDs without allowing body text", () => {
+  const profile = { ...summary, kind: "profile_changed", fromLabel: "Old", toLabel: "New" };
+  expect(agentFeedEventSummarySchema.parse({ ...profile, fromId: "builtin", toId: "builtin-director" }))
+    .toMatchObject({ fromId: "builtin", toId: "builtin-director" });
+  expect(agentFeedEventSummarySchema.safeParse(profile).success).toBe(true);
+  expect(agentFeedEventSummarySchema.safeParse({ ...profile, payload: { text: "Frozen body" } }).success).toBe(false);
+});
+
 // ─── policy numbers (the plan's fixed values) ─────────────────────────────────
 
 describe("agent-feed policy (AFP-7)", () => {

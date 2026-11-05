@@ -1,5 +1,7 @@
 // AFP-9: coordinate-only indexed seeks. No payload columns, OFFSET paging or
 // all-history read. The wire layer owns cursor encoding/version and limits.
+// agentFeedRangeSql forks: 1 — readDigestCounts (agent-feed-store.ts), its
+// column-to-column SQL prefix predicate; ordering changes update both.
 // forks: 1 — compareAgentFeedOrderPositions
 //   (apps/web/src/components/shared/agent-shell/agent-feed-reconcile.ts):
 //   the SPA re-implements compareAgentFeedPositions (bun:sqlite is not

@@ -1,5 +1,8 @@
 // AFP-9: additive, coherent UI reads. Legacy listMessages/listTimeline and
 // model-context reads are deliberately untouched. No wire parsers/HTTP here.
+// fork #1 of agentFeedRangeSql (agent-feed-order.ts): readDigestCounts needs
+// the same NULL-prefix/seq/time/id predicate against SQL columns, not bound
+// coordinates. Ordering changes update BOTH predicates and their tests.
 import { eq, and } from 'drizzle-orm';
 import type { Database, SQLQueryBindings } from 'bun:sqlite';
 import type { AppDb } from '../db-connection.js';

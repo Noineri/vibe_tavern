@@ -45,7 +45,10 @@ function SummaryTimelineSeparator({ event }: { event: AgentFeedEventSummary }) {
     case "variants_attached": label = t("sidechat_event_variants_attached", { n: event.variantCount ?? "?" }); break;
     case "selection_changed": label = t("sidechat_event_selection_changed"); break;
     case "branch_forked": label = t("sidechat_event_branch_forked"); break;
-    case "profile_changed": label = t("sidechat_event_profile_changed", { from: event.fromLabel ?? "?", to: event.toLabel ?? "?" }); break;
+    case "profile_changed": label = t("sidechat_event_profile_changed", {
+      from: builtinProfileDisplayName(event.fromId ?? "", SIDECHAT_AGENT_KIND, event.fromLabel ?? "?", t),
+      to: builtinProfileDisplayName(event.toId ?? "", SIDECHAT_AGENT_KIND, event.toLabel ?? "?", t),
+    }); break;
   }
   if (event.kind === "branch_forked" || event.kind === "profile_changed") return <ProvenanceLine kind={event.kind} label={label} />;
   const renderPage = (page: AgentEventDetailResponse) => {

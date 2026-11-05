@@ -287,6 +287,8 @@ function projectEventSummary(record: AgentFeedEventRecord): AgentFeedEventSummar
       return {
         ...base,
         kind,
+        fromId: facts.fromId,
+        toId: facts.toId,
         fromLabel: facts.fromName,
         toLabel: facts.toName,
         detailAvailable: facts.payloadValid

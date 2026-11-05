@@ -217,6 +217,8 @@ export const agentFeedEventSummarySchema = z.discriminatedUnion("kind", [
   }),
   agentFeedEventSummaryBase.extend({
     kind: z.literal("profile_changed"),
+    fromId: z.string().nullable().optional(),
+    toId: z.string().nullable().optional(),
     fromLabel: z.string().nullable(),
     toLabel: z.string().nullable(),
   }),

@@ -85,6 +85,14 @@ function seedToolsTurn(db: Db) {
 }
 
 describe("AFP-10 boundary decisions", () => {
+  test("AFP-15 profile summaries preserve IDs for the shared builtin-name formatter", async () => {
+    const { db, deps } = await setup();
+    db.insert(agentThreadContextEvents).values(evt("profile", 1, "profile_changed", JSON.stringify({
+      from: { id: "builtin", name: "Frozen OOC" }, to: { id: "builtin-director", name: "Frozen Director" },
+    }))).run();
+    const page = await loadAgentFeedPage(deps, "t1", q());
+    expect(page.events[0]).toMatchObject({ fromId: "builtin", toId: "builtin-director", fromLabel: "Frozen OOC", toLabel: "Frozen Director" });
+  });
   test("AFP-15 page facts carry unloaded anchor coordinates and complete digest counts", async () => {
     const { db, deps } = await setup();
     db.insert(experienceCopilotMessages).values([
