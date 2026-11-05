@@ -36,8 +36,10 @@ export interface StickToBottom {
    *  the new content has laid out — never as bottom-follow, and never moving
    *  the pin. Superseded or cancelled anchors (user scroll intent, explicit
    *  navigation, reveal, bottom jump, reset) restore nothing; a captured row
-   *  that left the DOM (unloaded/repartitioned) leaves the position alone. */
-  beginPrependAnchor: () => () => void;
+   *  that left the DOM (unloaded/repartitioned) leaves the position alone.
+   *  Opt-in retention rechecks this anchor on delayed layout/native estimate
+   *  corrections until the same cancellation signals; default is one-shot. */
+  beginPrependAnchor: (retainThroughLayout?: boolean) => () => void;
 }
 
 function readMetrics(element: HTMLElement): ScrollMetrics {
@@ -106,7 +108,7 @@ export function useStickToBottom(resetKey: string, suppressFollow: boolean = fal
   const lastScrollTopRef = useRef(0);
   const readingNavigationRef = useRef<{ target: HTMLElement } | null>(null);
   const explicitNavigationRef = useRef<object | null>(null);
-  const prependAnchorRef = useRef<{ rowId: string; rowViewportTop: number } | null>(null);
+  const prependAnchorRef = useRef<{ rowId: string; rowViewportTop: number; retainThroughLayout: boolean } | null>(null);
   const [pinned, setPinnedState] = useState(true);
   // Latest-flag mirror: the observers close over reconcileAfterLayoutChange,
   // so a changing suppressFollow must not churn them (the ref is read at
@@ -150,7 +152,22 @@ export function useStickToBottom(resetKey: string, suppressFollow: boolean = fal
     prependAnchorRef.current = null;
   }, []);
 
-  const beginPrependAnchor = useCallback(() => {
+  const restorePrependAnchor = useCallback((anchor = prependAnchorRef.current) => {
+    if (anchor === null || prependAnchorRef.current !== anchor) return;
+    if (!anchor.retainThroughLayout) prependAnchorRef.current = null;
+    const scroller = scrollerElementRef.current;
+    if (!scroller) return;
+    const row = Array.from(scroller.querySelectorAll<HTMLElement>(SCROLLER_ROW_SELECTOR))
+      .find((candidate) => candidate.getAttribute("data-scroller-message-id") === anchor.rowId);
+    if (!row) return;
+    const viewportTop = scroller.getBoundingClientRect().top + scroller.clientTop;
+    const delta = row.getBoundingClientRect().top - viewportTop - anchor.rowViewportTop;
+    if (delta === 0) return;
+    scroller.scrollTop = Math.max(0, Math.min(scroller.scrollHeight - scroller.clientHeight, scroller.scrollTop + delta));
+    lastScrollTopRef.current = scroller.scrollTop;
+  }, []);
+
+  const beginPrependAnchor = useCallback((retainThroughLayout = false) => {
     const element = scrollerElementRef.current;
     if (!element) return () => {};
     // The first row whose bottom edge is below the viewport top — the reader's
@@ -166,28 +183,11 @@ export function useStickToBottom(resetKey: string, suppressFollow: boolean = fal
     const anchor = {
       rowId: firstVisible.getAttribute("data-scroller-message-id")!,
       rowViewportTop: firstVisible.getBoundingClientRect().top - viewportTop,
+      retainThroughLayout,
     };
     prependAnchorRef.current = anchor;
-    return () => {
-      if (prependAnchorRef.current !== anchor) return; // superseded / cancelled
-      prependAnchorRef.current = null;
-      const scroller = scrollerElementRef.current;
-      if (!scroller) return;
-      const row = Array.from(scroller.querySelectorAll<HTMLElement>(SCROLLER_ROW_SELECTOR))
-        .find((candidate) => candidate.getAttribute("data-scroller-message-id") === anchor.rowId);
-      // The row left the DOM (unloaded history / repartition): keep the
-      // current position — a guess would be worse than the reader's place.
-      if (!row) return;
-      const viewportTopNow = scroller.getBoundingClientRect().top + scroller.clientTop;
-      const delta = row.getBoundingClientRect().top - viewportTopNow - anchor.rowViewportTop;
-      if (delta === 0) return;
-      scroller.scrollTop = Math.max(
-        0,
-        Math.min(scroller.scrollHeight - scroller.clientHeight, scroller.scrollTop + delta),
-      );
-      lastScrollTopRef.current = scroller.scrollTop;
-    };
-  }, []);
+    return () => restorePrependAnchor(anchor);
+  }, [restorePrependAnchor]);
 
   const revealStart = useCallback<RevealMessageStart>((target) => {
     const element = scrollerElementRef.current;
@@ -229,7 +229,7 @@ export function useStickToBottom(resetKey: string, suppressFollow: boolean = fal
       }
       explicitNavigationRef.current = null;
       if (element) lastScrollTopRef.current = element.scrollTop;
-      if (element) setPinned(atBottomRef.current(readMetrics(element)));
+      if (element) setPinned(prependAnchorRef.current?.retainThroughLayout ? false : atBottomRef.current(readMetrics(element)));
       return true;
     };
   }, [setPinned]);
@@ -239,6 +239,13 @@ export function useStickToBottom(resetKey: string, suppressFollow: boolean = fal
     if (!element) return;
     try {
       if (explicitNavigationRef.current) return;
+      // Agent paging opts in while Virtuoso replaces estimates with measured
+      // variable heights. Existing one-shot callers keep their old behavior;
+      // input, jump, reveal and reset already cancel this same anchor.
+      if (prependAnchorRef.current?.retainThroughLayout) {
+        restorePrependAnchor();
+        return;
+      }
       if (readingNavigationRef.current) {
         revealReadingStart();
         return;
@@ -260,13 +267,17 @@ export function useStickToBottom(resetKey: string, suppressFollow: boolean = fal
       // must not re-pin a suppressed view before its pin has been dropped.
       notifyLayoutRef.current?.(element);
     }
-  }, [followBottom, revealReadingStart, setPinned]);
+  }, [followBottom, revealReadingStart, setPinned, restorePrependAnchor]);
 
   const handleScroll = useCallback((event: Event) => {
     if (isScrollLayoutNotification(event)) return;
     const element = scrollerElementRef.current;
     if (!element) return;
     if (readingNavigationRef.current || explicitNavigationRef.current) return;
+    if (prependAnchorRef.current?.retainThroughLayout) {
+      restorePrependAnchor();
+      return;
+    }
     if (pinnedRef.current && !userScrollIntentRef.current && !manualReadingRef.current) {
       // Firefox can restore a nested scroll container after React's layout
       // effects have already aligned a freshly loaded chat. That browser-owned
@@ -289,7 +300,7 @@ export function useStickToBottom(resetKey: string, suppressFollow: boolean = fal
       return;
     }
     setPinned(atBottomRef.current(readMetrics(element)));
-  }, [followBottom, setPinned]);
+  }, [followBottom, setPinned, restorePrependAnchor]);
 
   const markUserScrollIntent = useCallback(() => {
     explicitNavigationRef.current = null;

@@ -67,9 +67,10 @@ interface HarnessProps {
   virtualizer?: MessageJumpOptions["virtualizer"];
   /** AFP-2: the inverse-scroll index offset threaded into jumpToMessage. */
   virtualIndexBase?: number;
+  retainPrependThroughLayout?: boolean;
 }
 
-function Harness({ metrics, resetKey, suppressFollow = false, targetOffset = 200, targetId = "row-150", jumpIndex = 150, virtualizer = null, virtualIndexBase }: HarnessProps) {
+function Harness({ metrics, resetKey, suppressFollow = false, targetOffset = 200, targetId = "row-150", jumpIndex = 150, virtualizer = null, virtualIndexBase, retainPrependThroughLayout = false }: HarnessProps) {
   const { scrollerRef, stableTailRef, pinned, scrollToBottom, revealStart, beginExplicitNavigation, beginPrependAnchor } = useStickToBottom(resetKey, suppressFollow);
   const targetRef = useRef<HTMLDivElement>(null);
   const scrollerElement = useRef<HTMLDivElement | null>(null);
@@ -112,7 +113,7 @@ function Harness({ metrics, resetKey, suppressFollow = false, targetOffset = 200
       <button type="button" onClick={() => { if (targetRef.current) finishRef.current = revealStart(targetRef.current); }}>reveal</button>
       <button type="button" onClick={() => finishRef.current?.()}>finish</button>
       <button type="button" onClick={() => { finishRef.current = beginExplicitNavigation(); }}>jump</button>
-      <button type="button" onClick={() => { anchorFinishRef.current = beginPrependAnchor(); }}>anchor</button>
+      <button type="button" onClick={() => { anchorFinishRef.current = beginPrependAnchor(retainPrependThroughLayout); }}>anchor</button>
       <button type="button" onClick={() => anchorFinishRef.current?.()}>anchor-restore</button>
       <button type="button" onClick={() => jumpToMessage({
         index: jumpIndex, displayIds: Array.from({ length: 200 }, (_, i) => `row-${i}`),
@@ -132,6 +133,33 @@ function observerFor(testId: string): ControlledResizeObserver {
 }
 
 describe("useStickToBottom", () => {
+  it("retains an opted-in prepend anchor through delayed virtual measurements until reader intent", () => {
+    const metrics = { scrollTop: 0, scrollHeight: 2000, clientHeight: 400 };
+    const view = render(<Harness metrics={metrics} resetKey="delayed-prepend" retainPrependThroughLayout />);
+    const viewport = view.getByTestId("scroller");
+    fireEvent.wheel(viewport, { deltaY: -100 });
+    metrics.scrollTop = 100;
+    fireEvent.scroll(viewport);
+    fireEvent.click(view.getByRole("button", { name: "anchor" }));
+    fireEvent.click(view.getByRole("button", { name: "anchor-restore" }));
+    view.rerender(<Harness metrics={metrics} resetKey="delayed-prepend" targetOffset={300} retainPrependThroughLayout />);
+    act(() => observerFor("stable-tail").notify());
+    expect(metrics.scrollTop).toBe(200);
+    view.rerender(<Harness metrics={metrics} resetKey="delayed-prepend" targetOffset={450} retainPrependThroughLayout />);
+    act(() => observerFor("stable-tail").notify());
+    expect(metrics.scrollTop).toBe(350);
+    // A later virtualizer-owned native correction is not reader intent.
+    metrics.scrollTop = 500;
+    fireEvent.scroll(viewport);
+    expect(metrics.scrollTop).toBe(350);
+    fireEvent.wheel(viewport, { deltaY: -12 });
+    metrics.scrollTop = 338;
+    fireEvent.scroll(viewport);
+    view.rerender(<Harness metrics={metrics} resetKey="delayed-prepend" targetOffset={500} retainPrependThroughLayout />);
+    act(() => observerFor("stable-tail").notify());
+    expect(metrics.scrollTop).toBe(338);
+    expect(view.getByTestId("pinned").textContent).toBe("false");
+  });
   it.each(["wheel", "touch", "keyboard", "pointer"] as const)("releases on the first 1px %s frame and retains continuous reading through layout and growth", (input) => {
     const metrics = { scrollTop: 0, scrollHeight: 1000, clientHeight: 400 };
     const view = render(<Harness metrics={metrics} resetKey="release" />);

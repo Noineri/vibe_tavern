@@ -38,8 +38,9 @@ export interface MessageScrollerCoreApi {
   /** Detach until the virtualizer completes; optionally align a mounted row. */
   beginExplicitNavigation: () => CompleteExplicitNavigation;
   /** Anchor the first visible row for a pending prepend; the returned
-   *  restore realigns it after the prepend commits. */
-  beginPrependAnchor: () => () => void;
+   *  restore realigns it after the prepend commits. Optional retention keeps
+   *  that core-owned anchor through delayed measurements until reader input. */
+  beginPrependAnchor: (retainThroughLayout?: boolean) => () => void;
   /** Jump to a display index (stable-tail shortcut or virtualizer seek). */
   scrollToItem: (index: number, onLand?: (target: HTMLElement) => void) => void;
   /** The live scroller element (rail/thumb chrome needs it). Null pre-attach. */

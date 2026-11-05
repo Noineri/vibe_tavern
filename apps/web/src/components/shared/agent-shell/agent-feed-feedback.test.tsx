@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, spyOn } from "bun:test";
 import type { AgentEventDetailResponse, AgentFeedResponse, ExperienceCopilotMessageWire } from "@vibe-tavern/api-contracts";
 import type { getAgentFeedPage } from "../../../api/agent-feed-api.js";
 import { AgentFeedStaleError } from "../../../api/agent-feed-api.js";
@@ -12,10 +12,12 @@ import { createAgentEventDetailCache } from "./agent-event-detail-cache.js";
 useDomEnv({ failOnNetwork: true });
 const { act, render, fireEvent, waitFor } = await import("@testing-library/react");
 const { AgentMessageList } = await import("./AgentMessageList.js");
+const scrollerCore = await import("../../chat/message-scroller-core.js");
 // L1: (1) relative imports; (2) no global/env/registry/i18n mutations;
 // (3) parked promises/resolved DOM assertions, no sleeps; (4) no OS/order
 // assumptions, geometry is element-local; (5) real hook/list/core/cache with
-// transport DI, no module mocks; (6) stable committed states and DOM identity;
+// transport DI, no module mocks; one transparent core spy restored in finally;
+// (6) stable committed states and DOM identity;
 // (7) no DB/build/heavy setup. dom-env owns registration and cleanup.
 function parked<T>() {
   let resolve!: (value: T) => void;
@@ -25,7 +27,7 @@ function parked<T>() {
 }
 function page(from = 2, hasOlder = true): AgentFeedResponse {
   const message: ExperienceCopilotMessageWire = { id: `m${from}`, threadId: "T", role: "assistant", content: `history ${from}`,
-    toolCallsJson: null, toolCallId: null, reasoning: null, reasoningDurationMs: null, createdAt: `2026-11-05T12:00:0${from}Z` };
+    toolCallsJson: null, toolCallId: null, reasoning: null, reasoningDurationMs: null, createdAt: new Date(Date.UTC(2026, 10, 5, 12, 0, from)).toISOString() };
   return agentFeedPageFromMessages("T", [message], { hasOlder, cursors: { before: hasOlder ? `before-${from}` : null, after: null } }, from);
 }
 function mount(load: typeof getAgentFeedPage) {
@@ -43,6 +45,24 @@ function mount(load: typeof getAgentFeedPage) {
 const olderButton = (view: ReturnType<typeof render>) => view.getByRole("button", { name: "agent_feed_load_older" });
 
 describe("AFP-17 feed feedback", () => {
+  it("forwards a positive decreasing inverse index through the real core when virtual rows prepend", async () => {
+    const observer = spyOn(scrollerCore, "MessageScrollerCore");
+    try {
+      const initial = agentFeedPageFromMessages("T", Array.from({ length: 120 }, (_, i) => page(141 + i).messages[0]!),
+        { hasOlder: true, cursors: { before: "older", after: null } }, 141);
+      const earlier = agentFeedPageFromMessages("T", Array.from({ length: 40 }, (_, i) => page(101 + i).messages[0]!), { head: initial.head }, 101);
+      let calls = 0;
+      const { view } = mount(async () => ++calls === 1 ? initial : earlier);
+      await waitFor(() => expect((olderButton(view) as HTMLButtonElement).disabled).toBe(false));
+      const before = observer.mock.calls.at(-1)![0].firstItemIndex;
+      expect(typeof before).toBe("number");
+      expect(before!).toBeGreaterThan(40);
+      fireEvent.click(olderButton(view));
+      await waitFor(() => expect(view.getByText("agent_feed_start")).toBeDefined());
+      expect(observer.mock.calls.at(-1)![0].firstItemIndex).toBe(before! - 40);
+      view.unmount();
+    } finally { observer.mockRestore(); }
+  });
   it("distinguishes initial loading/error/retry from a truly empty session", async () => {
     const pending = parked<AgentFeedResponse>();
     let calls = 0;

@@ -33,6 +33,9 @@ const EMPTY_FEED: AgentFeedEntry[] = [];
 const EMPTY_ATTACHMENTS: readonly Attachment[] = [];
 const EMPTY_MESSAGES: ExperienceCopilotMessageWire[] = [];
 const EMPTY_HIDDEN_IDS: ReadonlySet<string> = new Set();
+// Virtuoso requires a positive inverse index. This is coordinate headroom,
+// not a fetched-history limit; the existing prepend coordinate owns deltas.
+const INVERSE_INDEX_ORIGIN = 1_000_000_000;
 const EMPTY_MODEL = buildAgentFeedModel({ messages: [], events: EMPTY_AGENT_FEED_EVENTS, liveToolCallIds: EMPTY_AGENT_FEED_LIVE_TOOL_CALL_IDS });
 
 /** The live join subscribes in this caption, not in the historical row map.
@@ -312,6 +315,7 @@ export function AgentMessageList({
   return (
     <div data-testid="copilot-message-list" className="relative flex min-h-0 min-w-0 flex-1 flex-col">
       <AgentFeedScroller resetKey={sessionKey} displayIds={displayIds} partition={partition} renderItem={renderItem}
+        firstItemIndex={pageWindows ? INVERSE_INDEX_ORIGIN + firstCoordinate : undefined}
         topSpacerHeight={0} renderJumpToBottom={(jump) => <AgentJumpToBottom onClick={jump} />} />
     </div>
   );

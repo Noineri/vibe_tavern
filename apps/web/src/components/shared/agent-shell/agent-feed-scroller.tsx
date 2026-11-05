@@ -68,7 +68,9 @@ function FeedFeedback({ feed, api }: { feed: UseAgentFeedResult; api?: MessageSc
     rememberReadingAnchor();
     if (api) {
       const complete = api.beginExplicitNavigation();
-      pending.current = { start: feed.feed, restore: api.beginPrependAnchor(), complete };
+      // Keep the core's one anchor through delayed virtual measurements;
+      // explicit reader input/navigation still cancels it in the core.
+      pending.current = { start: feed.feed, restore: api.beginPrependAnchor(true), complete };
     }
     action();
   };
