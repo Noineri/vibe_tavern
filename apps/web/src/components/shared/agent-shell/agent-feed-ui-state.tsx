@@ -38,6 +38,8 @@ export interface AgentFeedRowUiEntry {
   /** The row's inner scroll position to restore when it remounts expanded
    *  (lazy detail bodies — AFP-16). */
   scrollTop?: number;
+  /** Requested detail pages only: metadata, never captured text arrays. */
+  detailPages?: { epoch: number; cursors: readonly string[] };
 }
 
 /** The per-session store. Plain and dependency-free on purpose. */
@@ -68,7 +70,7 @@ export function createAgentFeedUiStateStore(): AgentFeedUiStateStore {
     setRowState(key, patch) {
       const prev = rows.get(key);
       const next: AgentFeedRowUiEntry = { ...(prev ?? {}) };
-      const fields = ["disclosed", "draft", "scrollTop"] as const;
+      const fields = ["disclosed", "draft", "scrollTop", "detailPages"] as const;
       for (const field of fields) {
         if (!(field in patch)) continue;
         if (field === "disclosed") {
@@ -77,15 +79,19 @@ export function createAgentFeedUiStateStore(): AgentFeedUiStateStore {
         } else if (field === "draft") {
           if (patch.draft === undefined) delete next.draft;
           else next.draft = patch.draft;
-        } else {
+        } else if (field === "scrollTop") {
           if (patch.scrollTop === undefined) delete next.scrollTop;
           else next.scrollTop = patch.scrollTop;
+        } else {
+          if (patch.detailPages === undefined) delete next.detailPages;
+          else next.detailPages = patch.detailPages;
         }
       }
       const unchanged =
         next.disclosed === (prev?.disclosed as boolean | undefined) &&
         next.draft === (prev?.draft as string | undefined) &&
-        next.scrollTop === (prev?.scrollTop as number | undefined);
+        next.scrollTop === (prev?.scrollTop as number | undefined) &&
+        next.detailPages === prev?.detailPages;
       if (unchanged) return;
       const hasAny = fields.some((field) => field in next);
       if (hasAny) rows.set(key, next);
