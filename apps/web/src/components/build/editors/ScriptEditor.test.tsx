@@ -682,6 +682,14 @@ describe("useScriptPanel link-binding scope filter", () => {
       { targetType: "character", targetId: "c1" },
       { targetType: "persona", targetId: "persona-2" },
     ]));
+    // Flake protocol / R10: the mock call above is recorded SYNCHRONOUSLY at
+    // click time, so this waitFor resolves before React commits the echoed
+    // links into the chip row — under full-suite load the second click then
+    // fired the stale pre-add chip closure (props.links=[c1]) and submitted
+    // [] instead of [persona-2] (2 red full runs 2026-11-04). Wait for the
+    // COMMITTED state: the persona-2 chip exists only after the map update
+    // has rendered, which is the moment the c1 chip's closure is current.
+    expect(await findByText("persona-2")).toBeTruthy();
     fireEvent.click(getByText("c1"));
     await waitFor(() => expect(setScriptLinks).toHaveBeenLastCalledWith("s1", [
       { targetType: "persona", targetId: "persona-2" },
