@@ -15,6 +15,8 @@ import { useT } from "../../../i18n/context.js";
 import { agentOwnerKey, agentThreadKey, getAgentHost, scriptOwnerId, type AgentHostBridge, type AgentHostContext, type AgentKind } from "../../../lib/agent-host-registry.js";
 import { useAgentController, type AgentSendOptions } from "./use-agent-controller.js";
 import { useAgentThreadRefresh } from "./use-agent-thread-refresh.js";
+import { useAgentShellFeed } from "./use-agent-shell-feed.js";
+import { AgentEventDetailProvider } from "./agent-event-detail.js";
 import { useVisibleAgentThread } from "../../../lib/agent-run-visibility.js";
 import { useAgentPlan } from "../../../hooks/use-agent-plan.js";
 import { useAgentModelBinding } from "./use-agent-model-binding.js";
@@ -96,6 +98,11 @@ export interface AgentShellProps {
   hostProps?: unknown;
 }
 
+/** AFP-14: stable empty array for the paged path's unused legacy events prop
+ *  — a fresh `[]` per render would re-run the list's model memo every shell
+ *  render (LAG-3's contract). */
+const EMPTY_PAGED_EVENTS: readonly AgentThreadEventWire[] = [];
+
 export function AgentShell(props: AgentShellProps) {
   return <AgentShellSession key={`${props.kind}:${agentOwnerKey(props.owner)}`} {...props} />;
 }
@@ -167,6 +174,16 @@ function AgentShellSession({
   // changed key still refetches with the current owner.
   const ownerRef = useRef(owner);
   ownerRef.current = owner;
+
+  // ── AFP-14: paged feed lifecycle (the whole wiring lives in
+  //  `use-agent-shell-feed.ts`, extracted by the file-size ratchet) ─────────
+  const shellFeed = useAgentShellFeed({ kind, ownerKey, threadId, transport });
+  const isPagedFeed = shellFeed.isPaged;
+  const pageWindows = shellFeed.pageWindows;
+  const feedMessages = shellFeed.messages;
+  const feedRefresh = shellFeed.refresh;
+  const feedOutcome = shellFeed.outcome;
+  const detailSource = shellFeed.detailSource;
   const planOwner = host.planOwner?.({ owner });
   const agentPlan = useAgentPlan(planOwner);
   // DR-9 (P1): the DESKTOP sidechat panel drops its plan section — the story
@@ -383,9 +400,13 @@ function AgentShellSession({
         setThreadId(active.id);
         setContextLinks(active.contextLinks ?? []); // CX-6: seed the pinned pills
         setThreadTodo(active.todo); // TAG-8 (restored PM-7): seed the checklist panel
-        const msgs = await transport.listMessages(active.id);
-        setMessages(msgs);
-        setEvents(await fetchEvents(active.id));
+        if (!isPagedFeed) {
+          const msgs = await transport.listMessages(active.id);
+          setMessages(msgs);
+          setEvents(await fetchEvents(active.id));
+        }
+        // AFP-14 (paged host): the feed hook commits this thread's initial
+        // page atomically on the `threadId` change above — no full-list read.
       } else {
         const thread = await transport.startSession(ownerRef.current);
         setThreadId(thread.id);
@@ -399,7 +420,7 @@ function AgentShellSession({
     } finally {
       setSessionLoading(false);
     }
-  }, [ownerKey, transport, fetchEvents]);
+  }, [ownerKey, transport, fetchEvents, isPagedFeed]);
 
   // Session list (active + archived) for the switcher. Fetched in parallel with
   // `loadSession` on mount, then refetched after every switch/new so the active
@@ -431,6 +452,7 @@ function AgentShellSession({
     fetchEvents,
     setMessages,
     setEvents,
+    feedRefresh, // AFP-14: present ⇒ every refresh above routes through the paged feed
     host,
     ownerRef,
     scriptId,
@@ -464,7 +486,12 @@ function AgentShellSession({
     onMetrics: copilotContext.applyMetrics,
     applyPlanToolResult: agentPlan.applyToolResult, // PM-6: `plan` tool results → the plan cache
     threadTodo, // TAG-7 (restored PM-7): seeds the session-scoped todo panel state (mount/switch)
-    threadMessages: messages, // AP-10: the edit-last delete target resolves from the live list
+    // AP-10: the edit-last delete target resolves from the live list; AFP-14:
+    // a paged host feeds the feed hook's covered-window rows instead (the
+    // last user row and every regenerate-replaced row live in the newest
+    // window) — legacy hosts keep the full-list state.
+    threadMessages: isPagedFeed ? feedMessages : messages,
+    feedOutcome, // AFP-14: turn-originated edits/deletes carry their rows into the invalidation path
     streamingMirrorKey: ownerKey, // DR-11: publish isSending for outside readers (the story strip)
   });
 
@@ -520,16 +547,20 @@ function AgentShellSession({
         setThreadId(targetThreadId);
         setContextLinks(activated.contextLinks ?? []); // CX-6: switch → that thread's pins
         setThreadTodo(activated.todo); // TAG-8 (restored PM-7): switch → that thread's checklist
-        const msgs = await transport.listMessages(targetThreadId);
-        setMessages(msgs);
-        setEvents(await fetchEvents(targetThreadId));
+        if (!isPagedFeed) {
+          const msgs = await transport.listMessages(targetThreadId);
+          setMessages(msgs);
+          setEvents(await fetchEvents(targetThreadId));
+        }
+        // AFP-14 (paged host): the feed hook's session switch resets
+        // synchronously and commits the new thread's first page atomically.
         await fetchSessions();
       } catch {
         // Best-effort — leave threadId/messages unchanged and surface the error.
         toast.error(t("agent_switch_error"));
       }
     },
-    [ctrl.isSending, fetchSessions, fetchEvents, transport, t],
+    [ctrl.isSending, fetchSessions, fetchEvents, transport, t, isPagedFeed],
   );
 
   const handleNewSession = useCallback(async () => {
@@ -539,14 +570,18 @@ function AgentShellSession({
       setThreadId(thread.id);
       setContextLinks(thread.contextLinks ?? []); // CX-6: new session → no pins
       setThreadTodo(thread.todo); // TAG-8 (restored PM-7): new session → no checklist
-      setMessages([]);
-      setEvents([]); // a brand-new session has no frozen events yet
+      if (!isPagedFeed) {
+        setMessages([]);
+        setEvents([]); // a brand-new session has no frozen events yet
+      }
+      // AFP-14 (paged host): the fresh thread id swaps the feed state
+      // atomically (empty until its own first page commits).
       await fetchSessions();
     } catch {
       // Best-effort — leave threadId/messages unchanged and surface the error.
       toast.error(t("agent_new_session_error"));
     }
-  }, [ctrl.isSending, ownerKey, transport, fetchSessions, t]);
+  }, [ctrl.isSending, ownerKey, transport, fetchSessions, t, isPagedFeed]);
 
   // ── Session rename (2026-08-17) ──────────────────────────────────────────
   // Fire-and-refresh: the switcher exits rename mode immediately and the shell
@@ -574,7 +609,11 @@ function AgentShellSession({
   // arch-gate line cap); the element below is built ONCE here and rendered
   // by every layout branch — mobile tabbed / mobile chat-only / desktop
   // chat-only / desktop two-pane — exactly the pre-split `chatPane` shape.
-  const chatPane = (
+  // AFP-14: a paged host renders the pane inside the lazy-detail provider
+  // (summaries ride in `pageWindows`; bodies open through `transport.feed
+  // .detail` under the feed's history epoch), and the legacy `messages`/
+  // `events` pair arrives EMPTY — the list takes its rows from the windows.
+  const chatPaneContent = (
     <AgentChatPane
       kind={kind}
       isMobile={isMobile}
@@ -585,8 +624,9 @@ function AgentShellSession({
       threadId={threadId}
       loadSession={loadSession}
       sessions={sessions}
-      messages={messages}
-      events={events}
+      messages={isPagedFeed ? feedMessages : messages}
+      events={isPagedFeed ? EMPTY_PAGED_EVENTS : events}
+      pageWindows={pageWindows}
       handleActivate={handleActivate}
       handleNewSession={handleNewSession}
       handleRenameSession={handleRenameSession}
@@ -625,6 +665,9 @@ function AgentShellSession({
       refreshMessages={refreshMessages}
     />
   );
+  const chatPane = detailSource !== null
+    ? <AgentEventDetailProvider source={detailSource}>{chatPaneContent}</AgentEventDetailProvider>
+    : chatPaneContent;
 
   // The host's editor pane (absent descriptor = chat-only host: no pane, no
   // mobile tab row — see the layout branches below). Captured in a local so

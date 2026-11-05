@@ -51,7 +51,9 @@ const HistoryCaption = memo(function HistoryCaption({ kind, threadId, title, cap
 export interface AgentMessageListProps {
   kind: AgentKind;
   threadId: string;
-  messages?: ExperienceCopilotMessageWire[];
+  /** AFP-14: readonly — the legacy path feeds the shell's full-list state,
+   *  the paged path the feed hook's reconciled covered-window rows. */
+  messages?: readonly ExperienceCopilotMessageWire[];
   /** AFP-15: authoritative covered intervals, never treated as full history. */
   pageWindows?: readonly AgentFeedWindow[];
   /** Optional host override; the shared separator otherwise renders summaries. */

@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { createInstance } from "i18next";
 import { I18nextProvider } from "react-i18next";
 import { useDomEnv } from "../../../../../test/dom-env.js";
+import { agentFeedPageFromMessages } from "../../../../../test/agent-feed-page.js";
 import { installRadixPopoverSeam } from "../../../../../test/radix-popover-seam.js";
 import { installToggleSeam } from "../../../../../test/toggle-seam.js";
 import { expectReviewOutcomeFixture, type ReviewOutcomeFixture } from "../../../../../test/review-outcome-fixtures.js";
@@ -121,6 +122,12 @@ const fetchRouter = mock(async (input: RequestInfo | URL, init?: RequestInit): P
   }
   if (method === "GET" && /\/api\/experience-copilot\/script\/[^/]+\/active$/.test(path)) {
     return jsonResponse(router.activeThread);
+  }
+  if (method === "GET" && /\/api\/agent\/threads\/([^/]+)\/feed$/.test(path)) {
+    // AFP-14: the built-in hosts' paged feed read — one coherent newest
+    // page over the SAME rows the legacy `/messages` fixture serves.
+    const feedThreadId = path.match(/\/api\/agent\/threads\/([^/]+)\/feed$/)?.[1] ?? "";
+    return jsonResponse(agentFeedPageFromMessages(feedThreadId, router.messagesFor ? router.messagesFor(feedThreadId) : router.messages));
   }
   if (method === "GET" && /\/api\/experience-copilot\/([^/]+)\/messages$/.test(path)) {
     const threadId = path.match(/\/api\/experience-copilot\/([^/]+)\/messages$/)?.[1] ?? "";
@@ -547,7 +554,8 @@ describe("ExperienceCopilotShell — session lifecycle", () => {
     expect(getByText("Make it scarier")).toBeDefined();
     expect(getByText("Here are the rules")).toBeDefined();
     expect(apiCalls("GET", /\/script\/script-1\/active$/)).toHaveLength(1);
-    expect(apiCalls("GET", /\/experience-copilot\/thread-1\/messages$/)).toHaveLength(1);
+    expect(apiCalls("GET", /\/api\/agent\/threads\/thread-1\/feed$/)).toHaveLength(1);
+    expect(apiCalls("GET", /\/experience-copilot\/thread-1\/messages$/)).toHaveLength(0);
     // threadId is set → the chat input area is mounted (only rendered past the
     // loading/error/threadId branch).
     expect(getByTestId("copilot-send-btn")).toBeDefined();
@@ -583,7 +591,7 @@ describe("ExperienceCopilotShell — context meter + compact flow (CM-7/CM-8)", 
 
     expect(getByTestId("copilot-context-ring")).toBeDefined();
     expect(getByTestId("copilot-context-meter")).toBeDefined();
-    const callsBefore = apiCalls("GET", /\/experience-copilot\/thread-1\/messages$/).length;
+    const callsBefore = apiCalls("GET", /\/api\/agent\/threads\/thread-1\/feed$/).length;
 
     fireEvent.click(getByTestId("copilot-context-compact-btn"));
     await flushSessionLoad();
@@ -592,7 +600,7 @@ describe("ExperienceCopilotShell — context meter + compact flow (CM-7/CM-8)", 
     // (restored binding p1/m1 from the persisted uiSettings in this test).
     expect(apiCalls("POST", /\/experience-copilot\/thread-1\/compact$/)[0]?.body).toMatchObject({ providerProfileId: "p1", model: "m1" });
     // onCompacted → handleTurnSettled → refetch messages so the digest card appears.
-    expect(apiCalls("GET", /\/experience-copilot\/thread-1\/messages$/).length).toBeGreaterThan(callsBefore);
+    expect(apiCalls("GET", /\/api\/agent\/threads\/thread-1\/feed$/).length).toBeGreaterThan(callsBefore);
   });
 });
 
@@ -843,7 +851,7 @@ describe("ExperienceCopilotShell — session switcher (ER-12b)", () => {
     await flushSessionLoad();
 
     expect(apiCalls("POST", /\/experience-copilot\/thread-2\/activate$/)).toHaveLength(1);
-    expect(apiCalls("GET", /\/experience-copilot\/thread-2\/messages$/)).toHaveLength(1);
+    expect(apiCalls("GET", /\/api\/agent\/threads\/thread-2\/feed$/)).toHaveLength(1);
     expect(getByText("archived message")).toBeDefined();
     // Fetched once on mount, refetched once after the switch.
     expect(apiCalls("GET", /\/script\/script-1\/sessions$/)).toHaveLength(2);
@@ -863,7 +871,7 @@ describe("ExperienceCopilotShell — session switcher (ER-12b)", () => {
 
     expect(apiCalls("POST", /\/script\/script-1\/session$/)).toHaveLength(1);
     // Messages are cleared (no thread rehydration for a brand-new thread).
-    expect(apiCalls("GET", /messages$/)).toHaveLength(1); // only the initial mount fetch
+    expect(apiCalls("GET", /\/api\/agent\/threads\/thread-1\/feed$/)).toHaveLength(1); // only the initial mount fetch
     expect(apiCalls("GET", /\/script\/script-1\/sessions$/)).toHaveLength(2); // mount + refetch
   });
 });
@@ -1442,14 +1450,23 @@ describe("ExperienceCopilotShell — CD-3: freeze/unfreeze + revert", () => {
     await flushSessionLoad();
     // No turn yet → no revert affordance.
     expect(queryByTestId("copilot-toolbar-revert")).toBeNull();
+    // AFP-14 pin baseline: the feed reads on this thread so far (the settle →
+    // refetch chain must add one — captured BEFORE the send, because the
+    // immediately-resolving stream can drain the whole settle chain inside
+    // the `streamCalls()` waitFor below).
+    const feedCallsBefore = apiCalls("GET", /\/api\/agent\/threads\/[^/]+\/feed$/).length;
 
     // A full turn against the v1 buffers (the stream mock resolves immediately).
     const textarea = document.querySelector("textarea") as HTMLTextAreaElement;
     fireEvent.change(textarea, { target: { value: "edit the rules" } });
     fireEvent.click(document.querySelector('[data-testid="copilot-send-btn"]') as HTMLElement);
     await waitFor(() => expect(streamCalls()).toHaveLength(1));
-    // Drain the settle → refetch chain.
-    await waitFor(() => expect(apiCalls("GET", /messages$/).length).toBeGreaterThan(0));
+    // Drain the settle → refetch chain. AFP-14: the settle routes through the
+    // paged feed (this test starts with NO active thread — `startSession`
+    // created `thread-new` — so the pin is ANY thread's feed read beyond the
+    // baseline captured before the send, exactly the settle→refresh chain the
+    // pre-AFP-14 `/messages$/` pin covered without a thread id).
+    await waitFor(() => expect(apiCalls("GET", /\/api\/agent\/threads\/[^/]+\/feed$/).length).toBeGreaterThan(feedCallsBefore));
 
     // Buffers still equal the snapshot → revert stays hidden.
     expect(queryByTestId("copilot-toolbar-revert")).toBeNull();
@@ -2189,13 +2206,19 @@ describe("ExperienceCopilotShell — CD-6: inline review flow", () => {
     const onRulesChange = mock();
     const { getByTestId, queryByTestId } = renderShell({ onRulesChange, rulesSaved: false, visualSaved: true });
     await flushSessionLoad();
+    // AFP-14 pin baseline, captured before the send for the same reason as
+    // CD-3 (the immediately-resolving stream drains the settle chain inside
+    // the `streamCalls()` waitFor).
+    const feedCallsBefore = apiCalls("GET", /\/api\/agent\/threads\/[^/]+\/feed$/).length;
 
     // A real turn (snapshot) against the v1 buffers.
     const textarea = document.querySelector("textarea") as HTMLTextAreaElement;
     fireEvent.change(textarea, { target: { value: "edit the rules" } });
     fireEvent.click(document.querySelector('[data-testid="copilot-send-btn"]') as HTMLElement);
     await waitFor(() => expect(streamCalls()).toHaveLength(1));
-    await waitFor(() => expect(apiCalls("GET", /messages$/).length).toBeGreaterThan(0));
+    // AFP-14: same settle → feed-refresh drain as CD-3 (any thread — this
+    // test's session is also the freshly created `thread-new`).
+    await waitFor(() => expect(apiCalls("GET", /\/api\/agent\/threads\/[^/]+\/feed$/).length).toBeGreaterThan(feedCallsBefore));
 
     // The turn's write_buffer proposal lands in the live store (as the SSE
     // tool-result path would fill it).

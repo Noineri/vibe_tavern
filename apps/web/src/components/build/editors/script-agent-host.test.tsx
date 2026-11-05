@@ -28,6 +28,7 @@ import type { ReactNode } from "react";
 import { createInstance } from "i18next";
 import { I18nextProvider } from "react-i18next";
 import { useDomEnv } from "../../../../test/dom-env.js";
+import { agentFeedPageFromMessages } from "../../../../test/agent-feed-page.js";
 import type { ExperienceCopilotMessageWire, ExperienceCopilotThreadWire } from "@vibe-tavern/api-contracts";
 import { agentReviewEnvelopeSchema, buildScriptAgentReviewEnvelope, type AgentReviewEnvelope } from "@vibe-tavern/api-contracts";
 import { syncPersistedScriptAgentRound } from "../../../lib/script-agent-draft.js";
@@ -129,6 +130,12 @@ const fetchRouter = mock(async (input: RequestInfo | URL, init?: RequestInit): P
   }
   if (method === "GET" && /\/api\/experience-copilot\/script\/[^/]+\/sessions$/.test(path)) {
     return jsonResponse(router.sessions);
+  }
+  if (method === "GET" && /\/api\/agent\/threads\/([^/]+)\/feed$/.test(path)) {
+    // AFP-14: the shell's paged feed read — one coherent newest page over
+    // the SAME rows the legacy `/messages` fixture serves.
+    const feedThreadId = path.match(/\/api\/agent\/threads\/([^/]+)\/feed$/)?.[1] ?? "";
+    return jsonResponse(agentFeedPageFromMessages(feedThreadId, router.messages));
   }
   if (method === "GET" && /\/api\/experience-copilot\/[^/]+\/messages$/.test(path)) {
     return jsonResponse(router.messages);
@@ -471,7 +478,7 @@ describe("script-agent-host — write_buffer hunk review (AS-9)", () => {
       expect(detachedReaders).toBe(0);
 
       onActiveRead = () => nextSession;
-      const beforeSwitch = apiCalls("GET", /\/messages$/).length;
+      const beforeSwitch = apiCalls("GET", /\/api\/agent\/threads\/[^/]+\/feed$/).length;
       first.rerender(withIsolatedI18n(
         <AgentShell kind="script" owner={{ kind: "script", scriptId: other.id }} isMobile={false}
           hostProps={{ ...first.hostProps, activeScript: other }} />,
@@ -480,11 +487,17 @@ describe("script-agent-host — write_buffer hunk review (AS-9)", () => {
       expect(runningThread).toBe(oldId);
       expect(first.queryByText("Old run caption")).toBeNull();
       await act(async () => { emitRun("finish", { finishReason: "stop" }); });
-      expect(apiCalls("GET", /\/messages$/)).toHaveLength(beforeSwitch);
+      // AFP-14: the feed read count too — the detached run's settle never
+      // refreshes (the switched-away shell is gone; the new owner's session
+      // has not loaded yet).
+      expect(apiCalls("GET", /\/api\/agent\/threads\/[^/]+\/feed$/)).toHaveLength(beforeSwitch);
       expect(apiCalls("POST", /\/stop$/)).toHaveLength(0);
       await act(async () => { release(thread(newId, other.id)); });
       await flushSessionLoad();
-      expect(apiCalls("GET", /\/messages$/).slice(beforeSwitch).map(({ path }) => path.split("/").at(-2))).toEqual([newId]);
+      // The replacement session loads ITS OWN thread through the ONE refresh
+      // path (the feed route; the thread id is the path segment before
+      // "feed").
+      expect(apiCalls("GET", /\/api\/agent\/threads\/[^/]+\/feed$/).slice(beforeSwitch).map(({ path }) => path.split("/").at(-2))).toEqual([newId]);
       const editor = first.container.querySelector<HTMLElement>(".cm-editor")!;
       expect(EditorView.findFromDOM(editor)?.state.doc.toString()).toBe("New draft");
     } finally {

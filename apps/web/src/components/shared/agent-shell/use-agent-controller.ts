@@ -20,6 +20,7 @@ import { createAgentStreamCallbacks } from "./agent-stream-callbacks.js";
 import { guardAgentStreamCallbacks } from "./agent-stream-guard.js";
 import { useAgentRunAttachment } from "./use-agent-run-attachment.js";
 import type { Attachment } from "@vibe-tavern/domain";
+import type { AgentFeedLocalMutation } from "./agent-feed-reconcile.js";
 import {
   experienceCopilotContextMetricsSchema,
   type ExperienceCopilotContextMetrics,
@@ -95,8 +96,20 @@ export interface UseAgentControllerArgs {
    *  message list, fresh every render). `handleEditLast` resolves the last
    *  user row's id from THIS list — controller state (the `threadTodo`
    *  pattern above), never a fetch. Omitted (undefined) leaves edit-last
-   *  without a resolvable target — the shell wires this to `messages`. */
-  threadMessages?: ExperienceCopilotMessageWire[];
+   *  without a resolvable target — the shell wires this to `messages`.
+   *  AFP-14: readonly — a paged host feeds the feed hook's covered-window
+   *  rows (the last user row lives in the newest window); forwarded into
+   *  the turn actions unchanged. */
+  threadMessages?: readonly ExperienceCopilotMessageWire[];
+  /** AFP-14: the paged feed's local-outcome seam (`useAgentFeed`'s
+   *  `applyLocalOutcome` + `loadAround`), wired by the shell when the host
+   *  transport carries `feed` and forwarded into the turn actions — a
+   *  turn-originated delete/edit carries its row ids into the invalidation
+   *  path (see use-agent-turn-actions.ts). Absent = a legacy host. */
+  feedOutcome?: {
+    applyLocalOutcome: (mutation: AgentFeedLocalMutation) => void;
+    loadAround: (messageId: string) => void;
+  };
   /** DR-11 (DIRECTOR_MODE_PLAN): when set, the controller publishes its
    *  `isSending` into `useAgentStreamingStore` under this key (the shell's
    *  `agentOwnerKey`) — a ONE-WAY mirror so readers OUTSIDE the shell (the
@@ -170,7 +183,7 @@ export interface AgentController extends AgentTurnActions {
 export function useAgentController(
   args: UseAgentControllerArgs,
 ): AgentController {
-  const { kind, transport, threadId, providerProfileId, model, onTurnSettled, onMetrics, applyPlanToolResult, threadTodo, threadMessages, streamingMirrorKey, scheduler } = args;
+  const { kind, transport, threadId, providerProfileId, model, onTurnSettled, onMetrics, applyPlanToolResult, threadTodo, threadMessages, feedOutcome, streamingMirrorKey, scheduler } = args;
 
   const [isSending, setIsSending] = useState(false);
   // Optimistic user message: shown immediately on send so the user sees their
@@ -611,6 +624,7 @@ export function useAgentController(
     onMetrics,
     applyPlanToolResult,
     threadMessages,
+    feedOutcome,
     sendTurn: handleSend,
     buildStreamCallbacks,
     turnState: {

@@ -21,6 +21,7 @@ import {
 import { ProviderStreamError } from "../../../api/provider-stream-error.js";
 import type { Attachment } from "@vibe-tavern/domain";
 import { isAgentRunActiveError } from "./agent-stream-guard.js";
+import type { AgentFeedLocalMutation } from "./agent-feed-reconcile.js";
 
 /**
  * Agent turn actions (AGENT_SHELL_POLISH, Wave 3 / AP-10) — the turn-action
@@ -204,8 +205,21 @@ export interface UseAgentTurnActionsArgs {
   applyPlanToolResult?: (args: unknown, output: unknown) => void;
   /** The shell's CURRENT persisted messages for the thread (fresh every
    *  render) — `handleEditLast` resolves the last user row's id from THIS
-   *  list, never a fetch. */
-  threadMessages?: ExperienceCopilotMessageWire[];
+   *  list, never a fetch. AFP-14: readonly — a paged host feeds the feed
+   *  hook's covered-window rows here (the last user row and every
+   *  regenerate-replaced row live in the newest window). */
+  threadMessages?: readonly ExperienceCopilotMessageWire[];
+  /** AFP-14: the paged feed's local-outcome seam, wired by the shell through
+   *  the controller when the host transport carries `feed`. A delete carries
+   *  the server's `deletedMessageIds` (the rows leave their windows NOW — an
+   *  old-page delete must not wait for the head re-read); an edit carries
+   *  the row id and follows with `loadAround` so the fresh text lands in the
+   *  edited row's own neighborhood, below the head window included. Absent =
+   *  a legacy host (the settle refresh alone reconciles). */
+  feedOutcome?: {
+    applyLocalOutcome: (mutation: AgentFeedLocalMutation) => void;
+    loadAround: (messageId: string) => void;
+  };
   /** The controller's send — edit-last falls through to it after the delete. */
   sendTurn: (content: string, opts?: AgentSendOptions) => Promise<void>;
   /** The controller's SSE→store callback builder (the shared live-tool
@@ -419,7 +433,7 @@ export interface AgentTurnActions {
 export function useAgentTurnActions(
   args: UseAgentTurnActionsArgs,
 ): AgentTurnActions {
-  const { kind, transport, threadId, providerProfileId, model, onTurnSettled, onMetrics, applyPlanToolResult, threadMessages, sendTurn, buildStreamCallbacks, turnState } = args;
+  const { kind, transport, threadId, providerProfileId, model, onTurnSettled, onMetrics, applyPlanToolResult, threadMessages, sendTurn, buildStreamCallbacks, feedOutcome, turnState } = args;
   const { isSendingRef, abortRef, setIsSending, clearLiveStreamText, setPendingAskAnswer, setPendingPermissionAnswer, setTurnFailure, flushDeltaBuffer } = turnState;
 
   // AP-10: the shared delete core for handleDeleteTurn and handleEditLast —
@@ -436,7 +450,13 @@ export function useAgentTurnActions(
       try {
         // CA-4e1: edit-last passes `keepAttachmentFiles` — the row's files are
         // resent with the edited turn, so they must outlive the row delete.
-        await transport.deleteTurn(threadId, { messageId, includeUserMessage, ...(keepAttachmentFiles ? { keepAttachmentFiles: true } : {}) });
+        const result = await transport.deleteTurn(threadId, { messageId, includeUserMessage, ...(keepAttachmentFiles ? { keepAttachmentFiles: true } : {}) });
+        // AFP-14: the server names the deleted rows — carry them into the
+        // paged feed's invalidation path BEFORE the settle refresh (the
+        // local outcome bumps the feed hook's generation, so no in-flight
+        // pre-delete read can re-add a row the user watched die). Legacy
+        // hosts settle-and-refetch only, exactly as before.
+        feedOutcome?.applyLocalOutcome({ deletedMessageIds: result.deletedMessageIds });
         return true;
       } catch (error) {
         showProviderErrorToast(error, getT());
@@ -446,7 +466,7 @@ export function useAgentTurnActions(
         setIsSending(false);
       }
     },
-    [threadId, transport, isSendingRef, setIsSending],
+    [threadId, transport, isSendingRef, setIsSending, feedOutcome],
   );
 
   const handleDeleteTurn = useCallback(
@@ -483,10 +503,19 @@ export function useAgentTurnActions(
         isSendingRef.current = false;
         setIsSending(false);
       }
-      if (ok) onTurnSettled?.(true);
+      if (ok) {
+        // AFP-14: the edited row may sit BELOW the head window — mark it
+        // (its window stales, cursors die under the epoch the write bumped),
+        // then re-read its bounded neighborhood so the fresh text lands
+        // there; the settle refresh below reconnects the head. Legacy hosts
+        // settle only, exactly as before.
+        feedOutcome?.applyLocalOutcome({ editedMessageIds: [messageId] });
+        feedOutcome?.loadAround(messageId);
+        onTurnSettled?.(true);
+      }
       return ok;
     },
-    [threadId, transport, isSendingRef, setIsSending, onTurnSettled],
+    [threadId, transport, isSendingRef, setIsSending, onTurnSettled, feedOutcome],
   );
 
   const handleRegenerate = useCallback(

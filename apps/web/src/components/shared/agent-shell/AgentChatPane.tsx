@@ -25,6 +25,7 @@ import { AgentTodoSection } from "./AgentTodoSection.js";
 import { AgentPlanSection } from "./AgentPlanSection.js";
 import { AgentMessageList } from "./AgentMessageList.js";
 import { AgentFeedUiStateProvider } from "./agent-feed-ui-state.js";
+import type { AgentFeedWindow } from "./agent-feed-reconcile.js";
 import { DestructiveConfirmModal } from "../destructive-confirm-modal.js";
 import type { AgentTurnRowCallbacks } from "./use-agent-turn-actions.js";
 import { AgentInputArea } from "./AgentInputArea.js";
@@ -53,7 +54,11 @@ import { AgentAttachmentActionsContext } from "./agent-attachment-actions-contex
  * controller (metrics / compaction), the mention catalog + pinned-context
  * pills + their handlers, the per-kind model binding, the send-options
  * dispatcher, and the composer top slot. The pane owns NO state and NO
- * logic of its own; `t` comes from the same i18n context the shell uses.
+ *  logic of its own; `t` comes from the same i18n context the shell uses.
+ *  AFP-14: the feed arrives as EITHER the legacy `messages`+`events` pair
+ *  OR the paged `pageWindows` (covered intervals — the list treats them as
+ *  authoritative ranges, never full history); the composer's ask routing
+ *  gates on the loaded windows reaching the thread head.
  */
 
 /** Stable empties for the store subscriptions' fallbacks (a fresh `[]` per
@@ -72,8 +77,17 @@ export interface AgentChatPaneProps {
   threadId: string | null;
   loadSession: () => Promise<void>;
   sessions: ExperienceCopilotThreadWire[];
-  messages: ExperienceCopilotMessageWire[];
-  events: AgentThreadEventWire[];
+  /** AFP-14: readonly + optional — the legacy full list (paged hosts pass
+   *  only `pageWindows`; the flattened covered rows still arrive here for
+   *  the live-ask routing below, from the shell's same source). */
+  messages?: readonly ExperienceCopilotMessageWire[];
+  /** AFP-14: the legacy frozen events (a paged host's summaries ride inside
+   *  `pageWindows`; this prop stays empty for it). */
+  events?: readonly AgentThreadEventWire[];
+  /** AFP-15/14: the paged feed's authoritative covered intervals — present
+   *  ⇒ the list renders from these and treats the rows as covered ranges,
+   *  never as full history. */
+  pageWindows?: readonly AgentFeedWindow[];
   handleActivate: (targetThreadId: string) => Promise<void>;
   handleNewSession: () => Promise<void>;
   handleRenameSession: (targetThreadId: string, title: string) => Promise<void>;
@@ -145,8 +159,9 @@ export function AgentChatPane({
   threadId,
   loadSession,
   sessions,
-  messages,
-  events,
+  messages = EMPTY_FEED,
+  events = EMPTY_FEED,
+  pageWindows,
   handleActivate,
   handleNewSession,
   handleRenameSession,
@@ -175,18 +190,25 @@ export function AgentChatPane({
 }: AgentChatPaneProps) {
   const { t } = useT();
 
+  // AFP-14: the composer's ask routing gates on the loaded feed reaching the
+  // thread HEAD — the same `atThreadHead` rule the list's ask cards derive
+  // from the last window (`!(hasNewer)`). The selector's own contract (the
+  // card that looks answerable and the send that answers it agree) demands
+  // both consumers read the same boundary; a legacy host (no windows) always
+  // has the head, exactly as before this unit.
+  const atThreadHead = !(pageWindows?.at(-1)?.hasNewer ?? false);
   // AP-6 / LAG-3: the answering state is the SAME live ask the AP-5 send
   // routing reads — one derivation (`selectAgentLiveAsk`), two consumers
   // (send routing at event time via `getState()` below, this visual flag at
   // render time). The subscription selects the derived ASK ID (a primitive),
-  // never the feed/activity arrays: a per-flush feed write re-runs the
+  // never the feed/activity arrays: a per-flush feed write re-renders the
   // selector but the result is unchanged (while a turn streams the selector
   // short-circuits to null), so this pane — and the header, meter and
   // composers under it — does not re-render per flush; only the message
   // list does (LAG-3's contract). The event-time reads below stay
   // `getState()` (the render closure would go stale mid-stream).
   const answeringAsk = useAgentTurnStore((s) => {
-    if (threadId === null || ctrl.isSending) return false;
+    if (threadId === null || ctrl.isSending || !atThreadHead) return false;
     const key = agentThreadKey(kind, threadId);
     return (
       selectAgentLiveAsk({
@@ -250,7 +272,7 @@ export function AgentChatPane({
     const turnState = useAgentTurnStore.getState();
     const key = threadId !== null ? agentThreadKey(kind, threadId) : null;
     const liveAsk =
-      key !== null
+      key !== null && atThreadHead
         ? selectAgentLiveAsk({
             feed: turnState.feedByThread[key] ?? [],
             activities: turnState.turnsByThread[key] ?? [],
@@ -370,6 +392,7 @@ export function AgentChatPane({
               threadId={threadId}
               messages={messages}
               events={events}
+              pageWindows={pageWindows}
               pendingUserContent={ctrl.pendingUserContent}
               pendingUserAttachments={ctrl.pendingUserAttachments}
               isSending={ctrl.isSending}
