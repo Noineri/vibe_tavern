@@ -419,6 +419,7 @@ function Lightbox({ attachments, messageAttachments, actions, initialIndex, onCl
           </>
         )}
         <button
+          aria-label={t("close")}
           className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20 active:scale-95"
           onClick={onClose}
         >
@@ -430,6 +431,7 @@ function Lightbox({ attachments, messageAttachments, actions, initialIndex, onCl
       {attachments.length > 1 && (
         <>
           <button
+            aria-label={t("attachment_prev")}
             className="absolute left-4 top-1/2 flex h-12 w-12 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20 active:scale-95"
             data-testid="attachment-lightbox-prev"
             onClick={goPrev}
@@ -437,6 +439,7 @@ function Lightbox({ attachments, messageAttachments, actions, initialIndex, onCl
             <Icons.Caret direction="l" className="h-6 w-6" />
           </button>
           <button
+            aria-label={t("attachment_next")}
             className="absolute right-4 top-1/2 flex h-12 w-12 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20 active:scale-95"
             data-testid="attachment-lightbox-next"
             onClick={goNext}

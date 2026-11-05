@@ -195,6 +195,7 @@ function DesktopInputArea({ data }: { data: ReturnType<typeof useInputArea> }) {
             <CustomTooltip content={t("attach_image")}>
               <button
                 type="button"
+                aria-label={t("attach_image")}
                 className="flex h-[26px] w-[26px] items-center justify-center rounded-md text-t3 transition-colors hover:bg-s2 hover:text-t1 disabled:opacity-45"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={draftAttachments.length >= 5}
@@ -243,6 +244,7 @@ function DesktopInputArea({ data }: { data: ReturnType<typeof useInputArea> }) {
                   onSelect={handleSelectFavoriteModel}
                   trigger={
                     <button type="button"
+                      aria-label={t("starred_models")}
                       className="flex h-8 items-center justify-center rounded-[5px] bg-s2 px-2.5 text-warning-text transition-colors hover:bg-s3 hover:brightness-110 data-[state=open]:brightness-110"
                     >
                       <Icons.StarFilled />

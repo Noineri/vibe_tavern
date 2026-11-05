@@ -39,6 +39,7 @@ export function FileAttachmentChip({ attachment, onRemove, status, excluded, tra
       {onRemove && (
         <button
           type="button"
+          aria-label={t("delete_attachment_title")}
           className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full border border-border bg-surface text-t2 shadow-sm transition-colors hover:bg-danger-dim hover:text-danger-text hover:border-danger"
           onClick={() => onRemove(attachment.id)}
         >

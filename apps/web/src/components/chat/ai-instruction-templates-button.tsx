@@ -229,6 +229,7 @@ function TemplateMenuBody(props: TemplateMenuBodyProps) {
                 ) : (
                   <button
                     type="button"
+                    aria-label={tpl.name}
                     className="min-w-0 flex-1 cursor-pointer rounded px-2 py-2 text-left font-ui text-[calc(var(--ui-fs)-2px)] text-t2 transition-colors hover:bg-s2 hover:text-t1"
                     onClick={() => props.onPick(tpl)}
                   >

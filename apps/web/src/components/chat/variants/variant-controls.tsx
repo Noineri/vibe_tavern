@@ -1,5 +1,6 @@
 import { Icons } from "../../shared/icons.js";
 import { cn } from "../../../lib/cn.js";
+import { useT } from "../../../i18n/context.js";
 import { VariantJump } from "./variant-jump.js";
 import type { SwipeDirection, VariantPickerItem } from "./types.js";
 
@@ -34,6 +35,7 @@ type VariantControlsProps = {
  *  this row. */
 export function VariantControls(props: VariantControlsProps) {
   const { controlsRef, hidden = false, isBusy, swipeWhileBusy = false, messageId, selectedVariantIndex, variantCount, items, mobile = false, overlay = false, onSelectVariant } = props;
+  const { t } = useT();
   const showJump = variantCount > 6 && items && items.length > 0 && !overlay;
 
   const swipeLocked = isBusy && !swipeWhileBusy;
@@ -47,6 +49,7 @@ export function VariantControls(props: VariantControlsProps) {
       <div className="inline-flex items-center justify-center gap-1 rounded-lg px-1 py-0.5">
         <button
           type="button"
+          aria-label={t("variant_prev_label")}
           className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-lg text-t3 active:bg-s2 disabled:opacity-35 [&_svg]:h-5 [&_svg]:w-5"
           disabled={!canGoPrevious}
           onClick={selectPrevious}
@@ -65,6 +68,7 @@ export function VariantControls(props: VariantControlsProps) {
         )}
         <button
           type="button"
+          aria-label={t("variant_next_label")}
           className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-lg text-t3 active:bg-s2 disabled:opacity-35 [&_svg]:h-5 [&_svg]:w-5"
           disabled={!canGoNext}
           onClick={selectNext}
@@ -83,6 +87,7 @@ export function VariantControls(props: VariantControlsProps) {
       style={hidden ? { visibility: "hidden" } : undefined}
     >
       <button type="button"
+        aria-label={t("variant_prev_label")}
         className="flex h-5 w-5 cursor-pointer items-center justify-center rounded-[3px] transition-colors duration-100 hover:bg-s2 hover:text-t1"
         disabled={!canGoPrevious}
         onClick={selectPrevious}
@@ -99,6 +104,7 @@ export function VariantControls(props: VariantControlsProps) {
         <span className="min-w-6 text-center tabular-nums">{selectedVariantIndex + 1}/{variantCount}</span>
       )}
       <button type="button"
+        aria-label={t("variant_next_label")}
         className="flex h-5 w-5 cursor-pointer items-center justify-center rounded-[3px] transition-colors duration-100 hover:bg-s2 hover:text-t1"
         disabled={!canGoNext}
         onClick={selectNext}

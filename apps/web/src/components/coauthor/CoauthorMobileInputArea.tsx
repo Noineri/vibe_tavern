@@ -122,6 +122,7 @@ export function CoauthorMobileInputArea({ data }: { data: CoauthorInputAreaData 
 						trigger={
 							<button
 								type="button"
+								aria-label={t("starred_models")}
 								disabled={!canUseLiveApi}
 								data-testid="coauthor-favorites-pill"
 								className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-s3 text-warning-text active:bg-s2"
@@ -185,6 +186,7 @@ export function CoauthorMobileInputArea({ data }: { data: CoauthorInputAreaData 
 						) : (
 							<button
 								type="button"
+								aria-label={t("send")}
 								data-testid="coauthor-send-btn"
 								className="flex h-9 w-9 items-center justify-center rounded-lg bg-accent text-on-accent disabled:opacity-45 active:scale-95"
 								disabled={!canSend}

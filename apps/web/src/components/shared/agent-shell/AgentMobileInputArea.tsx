@@ -177,6 +177,7 @@ export function AgentMobileInputArea(props: AgentInputAreaProps) {
             ) : (
               <button
                 type="button"
+                aria-label={t("send")}
                 data-testid="copilot-send-btn"
                 className={cn(
                   "flex h-9 w-9 items-center justify-center rounded-lg bg-accent text-on-accent active:scale-95",

@@ -164,6 +164,7 @@ export function MessageScroller({ displayIds, renderItem, bottomInset = 0 }: Mes
         )}
         renderJumpToBottom={(scrollToBottom) => isMobile ? (
           <button type="button"
+            aria-label={t("scroll_to_bottom")}
             className="absolute bottom-4 right-4 z-10 flex h-11 w-11 items-center justify-center rounded-full bg-surface/80 backdrop-blur-sm border border-border shadow-lg transition-all duration-300 active:scale-95"
             onClick={scrollToBottom}
           >
@@ -172,6 +173,7 @@ export function MessageScroller({ displayIds, renderItem, bottomInset = 0 }: Mes
         ) : (
           <CustomTooltip content={t("scroll_to_bottom")} side="left">
             <button type="button"
+              aria-label={t("scroll_to_bottom")}
               className="chat-rail-bottom-button absolute bottom-6 z-10 flex h-10 w-10 items-center justify-center rounded-full bg-accent text-on-accent shadow-lg transition-transform hover:scale-110 active:scale-95"
               onClick={scrollToBottom}
             >

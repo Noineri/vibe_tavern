@@ -190,6 +190,7 @@ function DesktopInput({ data }: { data: ReturnType<typeof useCoauthorInputArea> 
 							trigger={
 								<button
 									type="button"
+									aria-label={t("starred_models")}
 									disabled={!canUseLiveApi}
 									data-testid="coauthor-favorites-pill"
 									className="flex h-8 items-center justify-center rounded-[5px] bg-s2 px-2.5 text-warning-text transition-colors hover:bg-s3 hover:brightness-110"
