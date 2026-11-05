@@ -1,5 +1,6 @@
-import { useCallback, type ReactNode } from "react";
-import type { AgentThreadEventWire, ExperienceCopilotMessageWire } from "@vibe-tavern/api-contracts";
+import { useCallback, useEffect, useRef, type ReactNode } from "react";
+import type { AgentEventDetailResponse, AgentFeedEventSummary, AgentThreadEventWire, ExperienceCopilotMessageWire } from "@vibe-tavern/api-contracts";
+import { AgentEventDetail, useAgentEventDetailSource } from "./agent-event-detail.js";
 import { Icons } from "../icons.js";
 import { ScrollArea } from "../scroll-area.js";
 import { AnimatedDisclosure } from "../AnimatedDisclosure.js";
@@ -30,7 +31,46 @@ import { agentFeedEventUnitId, agentFeedMessageUnitId } from "./agent-feed-windo
  * `TimelineSeparatorFrame` — the compaction digest (`AgentDigestSeparator`)
  * renders through the same frame, never a second copy of the markup.
  */
-export function AgentTimelineSeparator({ event }: { event: AgentThreadEventWire }) {
+export function AgentTimelineSeparator({ event }: { event: AgentThreadEventWire | AgentFeedEventSummary }) {
+  return "payload" in event ? <FullTimelineSeparator event={event} /> : <SummaryTimelineSeparator event={event} />;
+}
+
+function SummaryTimelineSeparator({ event }: { event: AgentFeedEventSummary }) {
+  const { t } = useT();
+  const source = useAgentEventDetailSource();
+  const disclosure = useAgentFeedDisclosure(agentFeedEventUnitId(event.id), false);
+  let label: string;
+  switch (event.kind) {
+    case "rp_sync": label = t("sidechat_event_rp_sync", { n: event.messageCount ?? "?", ...(event.messageCount !== null ? { count: event.messageCount } : {}) }); break;
+    case "variants_attached": label = t("sidechat_event_variants_attached", { n: event.variantCount ?? "?" }); break;
+    case "selection_changed": label = t("sidechat_event_selection_changed"); break;
+    case "branch_forked": label = t("sidechat_event_branch_forked"); break;
+    case "profile_changed": label = t("sidechat_event_profile_changed", { from: event.fromLabel ?? "?", to: event.toLabel ?? "?" }); break;
+  }
+  if (event.kind === "branch_forked" || event.kind === "profile_changed") return <ProvenanceLine kind={event.kind} label={label} />;
+  const renderPage = (page: AgentEventDetailResponse) => {
+    // The SAME frozen-body renderer as legacy events; each response retains its
+    // own arrays and global variant offset. No reconstructed all-pages payload.
+    switch (page.kind) {
+      case "rp_sync": return <SeparatorBody event={{ ...event, kind: page.kind, payload: { fromPosition: page.fromPosition, toPosition: page.toPosition, messages: page.messages } }} />;
+      case "variants_attached": return <SeparatorBody indexOffset={page.offset} event={{ ...event, kind: page.kind, payload: { position: page.position, variants: page.variants } }} />;
+      case "selection_changed": return <SeparatorBody event={{ ...event, kind: page.kind, payload: { position: page.position, messageId: page.messageId, previous: page.previous, current: page.current } }} />;
+      default: throw new Error("Non-expandable event returned an expandable detail body");
+    }
+  };
+  return <TimelineSeparatorFrame stateKey={agentFeedEventUnitId(event.id)} kind={event.kind} label={label} expanded={disclosure.open} onToggle={disclosure.toggle}>
+    {disclosure.open && (source && event.detailAvailable
+      ? <AgentEventDetail key={JSON.stringify([source.threadId, event.id, source.epoch])} source={source} eventId={event.id} renderPage={renderPage} />
+      : <p role="alert">{t("agent_event_detail_unavailable")}</p>)}
+  </TimelineSeparatorFrame>;
+}
+
+function ProvenanceLine({ kind, label }: { kind: string; label: string }) {
+  return <div data-testid="timeline-separator" data-kind={kind}
+    className="mx-auto w-full max-w-[85%] px-3 py-1 text-center font-ui text-[calc(var(--ui-fs)-3px)] text-t4">{label}</div>;
+}
+
+function FullTimelineSeparator({ event }: { event: AgentThreadEventWire }) {
   const { t } = useT();
   // AFP-4: the disclosure is session-retained when a feed provider wraps
   // the tree (keyed by the window's event unit id), so an expanded frozen
@@ -72,15 +112,7 @@ export function AgentTimelineSeparator({ event }: { event: AgentThreadEventWire 
   // provenance note — neither carries content to show, so both render as a
   // static line (never a button, no caret, no toggle).
   if (event.kind === "branch_forked" || event.kind === "profile_changed") {
-    return (
-      <div
-        data-testid="timeline-separator"
-        data-kind={event.kind}
-        className="mx-auto w-full max-w-[85%] px-3 py-1 text-center font-ui text-[calc(var(--ui-fs)-3px)] text-t4"
-      >
-        {label}
-      </div>
-    );
+    return <ProvenanceLine kind={event.kind} label={label} />;
   }
 
   return (
@@ -124,13 +156,41 @@ function TimelineSeparatorFrame({
   dataRole?: string;
 }) {
   const store = useOptionalAgentFeedUiStateStore();
+  const pendingRestore = useRef<number | null>(null);
+  const restoreObserver = useRef<ResizeObserver | null>(null);
+  const cancelRestore = useCallback(() => { pendingRestore.current = null; }, []);
   const restoreViewport = useCallback((viewport: HTMLDivElement | null) => {
-    if (viewport && store) viewport.scrollTop = store.getRowState(stateKey)?.scrollTop ?? 0;
+    restoreObserver.current?.disconnect();
+    restoreObserver.current = null;
+    if (!viewport || !store) return;
+    pendingRestore.current = store.getRowState(stateKey)?.scrollTop ?? 0;
+    const restore = () => {
+      if (pendingRestore.current === null) return;
+      viewport.scrollTop = pendingRestore.current;
+      if (viewport.scrollTop === pendingRestore.current) {
+        pendingRestore.current = null;
+        restoreObserver.current?.disconnect();
+      }
+    };
+    restore();
+    // A lazy remount may initially contain only a loading line. Preserve its
+    // saved offset until the requested pages provide enough layout to restore;
+    // never replace it with the browser's temporary zero-height clamp.
+    if (pendingRestore.current !== null) {
+      const observer = new ResizeObserver(restore);
+      observer.observe(viewport.querySelector("[data-scroll-content]") ?? viewport);
+      restoreObserver.current = observer;
+    }
   }, [store, stateKey]);
+  useEffect(() => () => restoreObserver.current?.disconnect(), []);
   return (
     <div
       data-testid="timeline-separator"
       data-kind={kind}
+      onWheelCapture={cancelRestore}
+      onTouchMoveCapture={cancelRestore}
+      onPointerDownCapture={cancelRestore}
+      onKeyDownCapture={cancelRestore}
       {...(dataRole !== undefined ? { "data-role": dataRole } : {})}
       className="mx-auto w-full max-w-[85%]"
     >
@@ -155,7 +215,9 @@ function TimelineSeparatorFrame({
           contentClassName="p-2.5"
           viewportProps={{
             ref: restoreViewport,
-            onScroll: (event) => store?.setRowState(stateKey, { scrollTop: event.currentTarget.scrollTop }),
+            onScroll: (event) => {
+              if (pendingRestore.current === null) store?.setRowState(stateKey, { scrollTop: event.currentTarget.scrollTop });
+            },
           }}
         >
           {children}
@@ -231,8 +293,10 @@ export function AgentDigestSeparator({
  */
 function SeparatorBody({
   event,
+  indexOffset = 0,
 }: {
   event: Exclude<AgentThreadEventWire, { kind: "branch_forked" | "profile_changed" }>;
+  indexOffset?: number;
 }) {
   const { t } = useT();
   switch (event.kind) {
@@ -263,7 +327,7 @@ function SeparatorBody({
                   shows for the pending selection (`sidechat_chip_selected`). */}
               {variant.selected && (
                 <div className="mb-0.5 font-ui text-[calc(var(--ui-fs)-3px)] text-t3">
-                  {t("sidechat_chip_selected", { n: index + 1 })}
+                  {t("sidechat_chip_selected", { n: indexOffset + index + 1 })}
                 </div>
               )}
               {/* Frozen variant text (user/model RP text) — page-translatable;
