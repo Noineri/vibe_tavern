@@ -284,6 +284,7 @@ export function TrackerConfig({ chatId }: { chatId: ChatId }) {
               <CustomTooltip content={t("copy")}>
                 <button
                   type="button"
+                  aria-label={t("copy")}
                   onClick={async () => {
                     const result = await copyText(SCENE_DSL_EXAMPLE);
                     if (result.ok) {

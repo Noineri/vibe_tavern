@@ -385,6 +385,7 @@ export function VibeMdView({ form, characterId, isSaving }: VibeMdViewProps) {
                             <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
                               <button
                                 type="button"
+                                aria-label={t("coauthor.rename_chat_for", { name: chat.title || t("coauthor.untitled_chat") })}
                                 className="rounded p-1.5 text-t3 transition-colors hover:bg-s3 hover:text-t1"
                                 onClick={(e) => {
                                   e.stopPropagation();
@@ -396,6 +397,7 @@ export function VibeMdView({ form, characterId, isSaving }: VibeMdViewProps) {
                               </button>
                               <button
                                 type="button"
+                                aria-label={t("coauthor.delete_chat_for", { name: chat.title || t("coauthor.untitled_chat") })}
                                 className="rounded p-1.5 text-danger-text transition-colors hover:bg-danger-dim hover:text-danger-text"
                                 onClick={(e) => {
                                   e.stopPropagation();

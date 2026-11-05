@@ -162,6 +162,7 @@ export function LoreEntryEditor({
           </ControlledField>
           <CustomTooltip content={t("lore_duplicate_entry")}>
             <button type="button"
+              aria-label={t("lore_duplicate_entry")}
               className="flex h-8 w-8 cursor-pointer items-center justify-center rounded text-t3 transition-all hover:bg-s2 hover:text-t1"
               onClick={onDuplicate}
             >
@@ -170,6 +171,7 @@ export function LoreEntryEditor({
           </CustomTooltip>
           <CustomTooltip content={t("delete_entry_confirm")}>
             <button type="button"
+              aria-label={t("delete_entry_confirm")}
               className="flex h-8 w-8 cursor-pointer items-center justify-center rounded text-t3 transition-all hover:bg-s2 hover:text-danger"
               onClick={() => setConfirmDeleteEntry(true)}
             >
