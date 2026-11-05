@@ -22,16 +22,16 @@
  *   fresh page that fully re-covers the window clears the flag; a partial
  *   re-read leaves it set (its retained rows are still suspect).
  *
- * Ordering — the wire contract's comparator, implemented client-side:
- * seq ascending with the legacy NULL-seq prefix first, then createdAt, then
- * id, `record` only as the final equal-key tie (message before event — the
- * merged-timeline collection order). The single source of this contract is
- * the AFP-7 schema documentation (`agent-feed-schema.ts`,
- * `agentFeedOrderPositionSchema`) and the canonical server implementation it
- * cites (`packages/db/src/stores/agent-feed-order.ts`,
- * `compareTimelineEntries` — SC-1); that module lives behind `bun:sqlite` and
- * cannot be imported here, so this is its web-side twin. Keep all three in
- * sync; the tie pins live in `agent-feed-reconcile.test.ts`.
+ * Ordering — fork #1 of compareAgentFeedPositions
+ * (packages/db/src/stores/agent-feed-order.ts): seq ascending with the legacy
+ * NULL-seq prefix first, then createdAt, then id, `record` only as the final
+ * equal-key tie (message before event — the merged-timeline collection
+ * order). The server twin composes `compareTimelineEntries` (SC-1) and lives
+ * behind `bun:sqlite`, which the SPA cannot import — so the same ordering
+ * knowledge necessarily lives in both files, and a change to the tie
+ * semantics changes BOTH together with the AFP-7 schema doc that states the
+ * contract (`agent-feed-schema.ts`). The tie pins live in
+ * `agent-feed-reconcile.test.ts`.
  */
 
 import type {

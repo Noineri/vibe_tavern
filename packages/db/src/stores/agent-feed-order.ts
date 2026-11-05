@@ -1,5 +1,11 @@
 // AFP-9: coordinate-only indexed seeks. No payload columns, OFFSET paging or
 // all-history read. The wire layer owns cursor encoding/version and limits.
+// forks: 1 — compareAgentFeedOrderPositions
+//   (apps/web/src/components/shared/agent-shell/agent-feed-reconcile.ts):
+//   the SPA re-implements compareAgentFeedPositions (bun:sqlite is not
+//   importable there). A change to the ordering/tie semantics changes BOTH
+//   files together with the AFP-7 schema doc that states the contract
+//   (packages/api-contracts/src/schemas/agent-feed-schema.ts).
 import type { Database, SQLQueryBindings } from 'bun:sqlite';
 import { compareTimelineEntries } from './agent-thread-context-events.js';
 
