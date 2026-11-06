@@ -36,6 +36,7 @@
  */
 import { useEffect, useState } from "react";
 import { DICE_ACTOR_TYPE, type ChatId, type DiceActorType } from "@vibe-tavern/domain";
+import { CustomTooltip } from "../../shared/Tooltip.js";
 import { SegmentedControl } from "../../shared/SegmentedControl.js";
 import { EmptyState } from "../../shared/empty-state.js";
 import { LinkBindingPopover, type LinkTarget, type LinkBindingRecord } from "../../shared/LinkBindingPopover.js";
@@ -260,16 +261,17 @@ export function DiceAssignment({ chatId, diceMode, diceScriptIds, diceActorBindi
                   }}
                   disabled={pending}
                 />
-                <button
-                  type="button"
-                  aria-label={t("insights_dice_remove")}
-                  title={t("insights_dice_remove")}
-                  onClick={() => setChatSet(displayedIds.filter((id) => id !== def.scriptId))}
-                  disabled={pending}
-                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-t4 transition-colors hover:bg-danger/10 hover:text-danger disabled:opacity-40"
-                >
-                  <Ic.close />
-                </button>
+                <CustomTooltip content={t("insights_dice_remove")}>
+                  <button
+                    type="button"
+                    aria-label={t("insights_dice_remove")}
+                    onClick={() => setChatSet(displayedIds.filter((id) => id !== def.scriptId))}
+                    disabled={pending}
+                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-t4 transition-colors hover:bg-danger/10 hover:text-danger disabled:opacity-40"
+                  >
+                    <Ic.close />
+                  </button>
+                </CustomTooltip>
               </div>
             );
           })}

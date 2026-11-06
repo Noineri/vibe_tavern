@@ -1,3 +1,4 @@
+import { CustomTooltip } from "../../shared/Tooltip.js";
 import { useState, useEffect, useMemo, useRef, type ReactNode } from "react";
 import { toast } from "sonner";
 import { defaultObjectiveState, type ChatId } from "@vibe-tavern/domain";
@@ -308,15 +309,17 @@ function ShortTermGoals({ chatId, goals, planDriven }: { chatId: ChatId; goals: 
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void addGoal(); } }}
           />
-          <button
-            type="button"
-            onClick={() => void addGoal()}
-            disabled={!draft.trim()}
-            className="inline-flex items-center justify-center rounded-md border border-border2 bg-s2 px-2.5 text-t2 hover:border-accent disabled:opacity-40"
-            title={t("obj_add_short_button")}
-          >
-            <Ic.plus />
-          </button>
+          <CustomTooltip content={t("obj_add_short_button")}>
+            <button
+              type="button"
+              onClick={() => void addGoal()}
+              disabled={!draft.trim()}
+              className="inline-flex items-center justify-center rounded-md border border-border2 bg-s2 px-2.5 text-t2 hover:border-accent disabled:opacity-40"
+              aria-label={t("obj_add_short_button")}
+            >
+              <Ic.plus />
+            </button>
+          </CustomTooltip>
         </div>
       )}
     </div>
@@ -371,28 +374,31 @@ function ShortTermGoalRow({ chatId, goal }: { chatId: ChatId; goal: ObjectiveSho
           onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); if (e.key === "Escape") setEditing(false); }}
         />
       ) : (
+        <CustomTooltip content={t("obj_edit_short")}>
+          <button
+            type="button"
+            onClick={() => setEditing(true)}
+            className={cn(
+              "min-w-0 flex-1 truncate text-left font-ui text-[calc(var(--ui-fs)-2px)] hover:text-accent",
+              goal.status === "completed" && "text-success-text line-through",
+              goal.status === "abandoned" && "text-t4 line-through",
+              (goal.status === "pending" || goal.status === "active") && "text-t2",
+            )}
+          >
+            {goal.description}
+          </button>
+        </CustomTooltip>
+      )}
+      <CustomTooltip content={t("obj_delete_short")}>
         <button
           type="button"
-          onClick={() => setEditing(true)}
-          className={cn(
-            "min-w-0 flex-1 truncate text-left font-ui text-[calc(var(--ui-fs)-2px)] hover:text-accent",
-            goal.status === "completed" && "text-success-text line-through",
-            goal.status === "abandoned" && "text-t4 line-through",
-            (goal.status === "pending" || goal.status === "active") && "text-t2",
-          )}
-          title={t("obj_edit_short")}
+          onClick={() => void remove()}
+          className="shrink-0 text-t4 transition-opacity hover:text-danger-text md:opacity-0 md:group-hover:opacity-100"
+          aria-label={t("obj_delete_short")}
         >
-          {goal.description}
+          <Ic.del />
         </button>
-      )}
-      <button
-        type="button"
-        onClick={() => void remove()}
-        className="shrink-0 text-t4 transition-opacity hover:text-danger-text md:opacity-0 md:group-hover:opacity-100"
-        title={t("obj_delete_short")}
-      >
-        <Ic.del />
-      </button>
+      </CustomTooltip>
     </li>
   );
 }
@@ -463,15 +469,17 @@ function TaskRoute({ chatId, tasks, planDriven }: { chatId: ChatId; tasks: Objec
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void addTask(); } }}
           />
-          <button
-            type="button"
-            onClick={() => void addTask()}
-            disabled={!draft.trim()}
-            className="inline-flex items-center justify-center rounded-md border border-border2 bg-s2 px-2.5 text-t2 hover:border-accent disabled:opacity-40"
-            title={t("obj_add_task_button")}
-          >
-            <Ic.plus />
-          </button>
+          <CustomTooltip content={t("obj_add_task_button")}>
+            <button
+              type="button"
+              onClick={() => void addTask()}
+              disabled={!draft.trim()}
+              className="inline-flex items-center justify-center rounded-md border border-border2 bg-s2 px-2.5 text-t2 hover:border-accent disabled:opacity-40"
+              aria-label={t("obj_add_task_button")}
+            >
+              <Ic.plus />
+            </button>
+          </CustomTooltip>
         </div>
       )}
     </div>
@@ -525,49 +533,54 @@ function TaskRow({ chatId, index, task, taskCount, onMove }: { chatId: ChatId; i
           onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); (e.target as HTMLInputElement).blur(); } if (e.key === "Escape") setEditing(false); }}
         />
       ) : (
-        <button
-          type="button"
-          onClick={() => setEditing(true)}
-          className={cn(
-            "min-w-0 flex-1 truncate text-left font-ui text-[calc(var(--ui-fs)-2px)] hover:text-accent",
-            task.status === "completed" && "text-success-text line-through",
-            task.status === "abandoned" && "text-t4 line-through",
-            (task.status === "pending" || task.status === "active") && "text-t2",
-          )}
-          title={t("obj_edit_task")}
-        >
-          {task.description}
-        </button>
+        <CustomTooltip content={t("obj_edit_task")}>
+          <button
+            type="button"
+            onClick={() => setEditing(true)}
+            className={cn(
+              "min-w-0 flex-1 truncate text-left font-ui text-[calc(var(--ui-fs)-2px)] hover:text-accent",
+              task.status === "completed" && "text-success-text line-through",
+              task.status === "abandoned" && "text-t4 line-through",
+              (task.status === "pending" || task.status === "active") && "text-t2",
+            )}
+          >
+            {task.description}
+          </button>
+        </CustomTooltip>
       )}
       <div className="flex shrink-0 items-center gap-0.5">
-        <button
-          type="button"
-          onClick={() => onMove(-1)}
-          disabled={index === 0}
-          className="flex h-6 w-6 items-center justify-center text-t4 hover:text-t2 disabled:opacity-25"
-          title={t("obj_move_task_up")}
-          aria-label={t("obj_move_task_up")}
-        >
-          {Ic.caret("u")}
-        </button>
-        <button
-          type="button"
-          onClick={() => onMove(1)}
-          disabled={index === taskCount - 1}
-          className="flex h-6 w-6 items-center justify-center text-t4 hover:text-t2 disabled:opacity-25"
-          title={t("obj_move_task_down")}
-          aria-label={t("obj_move_task_down")}
-        >
-          {Ic.caret("d")}
-        </button>
-        <button
-          type="button"
-          onClick={() => void remove()}
-          className="shrink-0 text-t4 transition-opacity hover:text-danger-text md:opacity-0 md:group-hover:opacity-100"
-          title={t("obj_delete_task")}
-        >
-          <Ic.del />
-        </button>
+        <CustomTooltip content={t("obj_move_task_up")}>
+          <button
+            type="button"
+            onClick={() => onMove(-1)}
+            disabled={index === 0}
+            className="flex h-6 w-6 items-center justify-center text-t4 hover:text-t2 disabled:opacity-25"
+            aria-label={t("obj_move_task_up")}
+          >
+            {Ic.caret("u")}
+          </button>
+        </CustomTooltip>
+        <CustomTooltip content={t("obj_move_task_down")}>
+          <button
+            type="button"
+            onClick={() => onMove(1)}
+            disabled={index === taskCount - 1}
+            className="flex h-6 w-6 items-center justify-center text-t4 hover:text-t2 disabled:opacity-25"
+            aria-label={t("obj_move_task_down")}
+          >
+            {Ic.caret("d")}
+          </button>
+        </CustomTooltip>
+        <CustomTooltip content={t("obj_delete_task")}>
+          <button
+            type="button"
+            onClick={() => void remove()}
+            className="shrink-0 text-t4 transition-opacity hover:text-danger-text md:opacity-0 md:group-hover:opacity-100"
+            aria-label={t("obj_delete_task")}
+          >
+            <Ic.del />
+          </button>
+        </CustomTooltip>
       </div>
     </li>
   );
@@ -575,16 +588,18 @@ function TaskRow({ chatId, index, task, taskCount, onMove }: { chatId: ChatId; i
 
 function StatusDot({ status, onClick, title }: { status: ObjectiveTaskStatus; onClick: () => void; title: string }) {
   return (
-    <button
+    <CustomTooltip content={title}>
+      <button
       type="button"
       onClick={onClick}
-      title={title}
+      aria-label={title}
       className={cn("flex h-4 w-4 shrink-0 items-center justify-center rounded-full border transition-colors", statusClass(status))}
     >
       {status === "active" && <span className="h-2 w-2 rounded-full bg-current" />}
       {status === "completed" && <Ic.check />}
       {status === "abandoned" && <Ic.close />}
     </button>
+    </CustomTooltip>
   );
 }
 

@@ -34,7 +34,11 @@ import type { ExperienceAssignmentProps } from "./ExperienceAssignment.js";
 
 useDomEnv();
 
-const { render, fireEvent, waitFor } = await import("@testing-library/react");
+const { render: rtlRender, fireEvent, waitFor } = await import("@testing-library/react");
+const { TooltipProvider } = await import("../../shared/Tooltip.js");
+function render(ui: React.ReactNode) {
+  return rtlRender(ui, { wrapper: ({ children }) => <TooltipProvider delayDuration={0}>{children}</TooltipProvider> });
+}
 
 // Shared mock state is defined before the module registrations.
 const mocks = {
@@ -101,7 +105,6 @@ const realCharacterTrackerTemplate = await import("../../../hooks/use-character-
 const realExperienceAssignment = await import("./ExperienceAssignment.js");
 const realDestructiveConfirmModal = await import("../../shared/destructive-confirm-modal.js");
 const realUseMobile = await import("../../../hooks/use-mobile.js");
-const realTooltip = await import("../../shared/Tooltip.js");
 const realAiAssistantModal = await import("../../shared/AiAssistantModal.js");
 
 installI18nContextSeam();
@@ -215,13 +218,7 @@ mock.module("./ObjectiveConfig.js", () => ({
 }));
 
 
-// TrackerConfig renders CustomTooltip (icon buttons); presentational here —
-// passthrough so no Radix TooltipProvider is needed.
-mock.module("../../shared/Tooltip.js", () => ({
-  ...realTooltip,
-  CustomTooltip: ({ children, content }: { children: ReactNode; content?: ReactNode }) => <>{children}{content}</>,
-  TooltipProvider: ({ children }: { children: ReactNode }) => children,
-}));
+// TrackerConfig and DiceAssignment use real themed tooltips; the wrapper supplies their Radix context.
 
 mock.module("../../shared/destructive-confirm-modal.js", () => ({
   ...realDestructiveConfirmModal,
@@ -303,7 +300,7 @@ describe("InsightsPanel (INS-2)", () => {
     expect(getByRole("button", { name: "insights_template_save_as_character" })).toBeTruthy();
   });
 
-  it("disables loading and exposes its tooltip when the character has no template", () => {
+  it("disables loading and exposes its tooltip when the character has no template", async () => {
     mocks.activeChat = {
       id: "chat_template",
       characterId: "char_template",
@@ -311,9 +308,11 @@ describe("InsightsPanel (INS-2)", () => {
       insightsConfig: { objectiveEnabled: false, trackerEnabled: false },
     };
 
-    const { getByRole, getByText } = render(<InsightsPanel />);
-    expect(getByRole("button", { name: "insights_template_load_from_character" }).hasAttribute("disabled")).toBe(true);
-    expect(getByText("insights_template_empty_tooltip")).toBeTruthy();
+    const view = render(<InsightsPanel />);
+    const button = view.getByRole("button", { name: "insights_template_load_from_character" });
+    expect(button.hasAttribute("disabled")).toBe(true);
+    fireEvent.pointerMove(button.parentElement!, { pointerType: "mouse" });
+    expect((await view.findByRole("tooltip")).textContent).toBe("insights_template_empty_tooltip");
   });
 
   it("applies a character template through the snapshot patch and shows its schema and goals", async () => {
@@ -541,8 +540,10 @@ describe("InsightsPanel (INS-2)", () => {
       ],
     });
 
-    const { findAllByRole } = render(<InsightsPanel />);
+    const { findAllByRole, findByRole } = render(<InsightsPanel />);
     const removeBtns = await findAllByRole("button", { name: "insights_dice_remove" });
+    fireEvent.pointerMove(removeBtns[0], { pointerType: "mouse" });
+    expect((await findByRole("tooltip")).textContent).toBe("insights_dice_remove");
     // Remove Fate Die (first row) — the chat set freezes to the remainder.
     fireEvent.click(removeBtns[0]);
     expect(mocks.updateInsightsConfigAction).toHaveBeenCalledWith("chat_9", {

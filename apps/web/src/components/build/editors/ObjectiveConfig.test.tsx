@@ -24,7 +24,11 @@ import ru from "../../../i18n/locales/ru.json";
 type ProviderDataStore = ProviderDataState & ProviderDataActions;
 
 useDomEnv();
-const { render, fireEvent, waitFor } = await import("@testing-library/react");
+const { render: rtlRender, fireEvent, waitFor } = await import("@testing-library/react");
+const { TooltipProvider } = await import("../../shared/Tooltip.js");
+function render(ui: React.ReactNode) {
+  return rtlRender(ui, { wrapper: ({ children }) => <TooltipProvider delayDuration={0}>{children}</TooltipProvider> });
+}
 
 const mocks = {
   activeChat: null as null | { id: string; activeBranchId?: string; insightsObjectiveState: ObjectiveState },
@@ -246,7 +250,7 @@ describe("ObjectiveConfig (INS-5)", () => {
     expect(mocks.addObjectiveShortTermGoalAction).toHaveBeenCalledWith("chat_1", "Secure supplies");
 
     // Status controls: long-term, active short-term, pending short-term. Pending click selects it.
-    fireEvent.click(view.getAllByTitle("obj_cycle_status")[2]!);
+    fireEvent.click(view.getAllByLabelText("obj_cycle_status")[2]!);
     expect(mocks.selectObjectiveShortTermGoalAction).toHaveBeenCalledWith("chat_1", "s2");
 
     fireEvent.click(view.getByText("Reach the gate"));
@@ -255,7 +259,7 @@ describe("ObjectiveConfig (INS-5)", () => {
     fireEvent.blur(shortInput);
     expect(mocks.updateObjectiveShortTermGoalAction).toHaveBeenCalledWith("chat_1", "s1", { description: "Reach the eastern gate" });
 
-    fireEvent.click(view.getAllByTitle("obj_delete_short")[0]!);
+    fireEvent.click(view.getAllByLabelText("obj_delete_short")[0]!);
     expect(mocks.deleteObjectiveShortTermGoalAction).toHaveBeenCalledWith("chat_1", "s1");
   });
 
@@ -339,11 +343,24 @@ describe("ObjectiveConfig (INS-5)", () => {
     expect(mocks.updateObjectiveTaskAction).toHaveBeenCalledWith("chat_1", "t1", { description: "Open the heavy gate" });
   });
 
+  it("shows the status and edit hints while preserving named actions", async () => {
+    withState({ ...EMPTY, tasks: [{ id: "t1", description: "A task", status: "active" }] });
+    const view = render(<ObjectiveConfig chatId={CHAT_ID} />);
+    const dot = view.getByLabelText("obj_cycle_status");
+    expect(dot.hasAttribute("title")).toBe(false);
+    fireEvent.pointerMove(dot, { pointerType: "mouse" });
+    expect((await view.findByRole("tooltip")).textContent).toBe("obj_cycle_status");
+    view.unmount();
+    const editView = render(<ObjectiveConfig chatId={CHAT_ID} />);
+    fireEvent.pointerMove(editView.getByText("A task"), { pointerType: "mouse" });
+    expect((await editView.findByRole("tooltip")).textContent).toBe("obj_edit_task");
+  });
+
   it("clicking the status dot cycles the status (active → completed)", () => {
     withState({ ...EMPTY, tasks: [{ id: "t1", description: "A task", status: "active" }] });
     mocks.updateObjectiveTaskAction.mockResolvedValue(undefined);
-    const { getByTitle } = render(<ObjectiveConfig chatId={"chat_1" as never} />);
-    fireEvent.click(getByTitle("obj_cycle_status"));
+    const { getByLabelText } = render(<ObjectiveConfig chatId={"chat_1" as never} />);
+    fireEvent.click(getByLabelText("obj_cycle_status"));
     expect(mocks.updateObjectiveTaskAction).toHaveBeenCalledWith("chat_1", "t1", { status: "completed" });
   });
 
@@ -356,8 +373,8 @@ describe("ObjectiveConfig (INS-5)", () => {
       ],
     });
     mocks.reorderObjectiveTasksAction.mockResolvedValue(undefined);
-    const { getAllByTitle } = render(<ObjectiveConfig chatId={"chat_1" as never} />);
-    const moveUpButtons = getAllByTitle("obj_move_task_up");
+    const { getAllByLabelText } = render(<ObjectiveConfig chatId={"chat_1" as never} />);
+    const moveUpButtons = getAllByLabelText("obj_move_task_up");
     expect((moveUpButtons[0] as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(moveUpButtons[1]);
     expect(mocks.reorderObjectiveTasksAction).toHaveBeenCalledWith("chat_1", ["t2", "t1"]);
@@ -383,8 +400,8 @@ describe("ObjectiveConfig (INS-5)", () => {
   it("hovering + clicking delete dispatches deleteObjectiveTaskAction", () => {
     withState({ ...EMPTY, tasks: [{ id: "t1", description: "A task", status: "pending" }] });
     mocks.deleteObjectiveTaskAction.mockResolvedValue(undefined);
-    const { getByTitle } = render(<ObjectiveConfig chatId={"chat_1" as never} />);
-    const deleteButton = getByTitle("obj_delete_task");
+    const { getByLabelText } = render(<ObjectiveConfig chatId={"chat_1" as never} />);
+    const deleteButton = getByLabelText("obj_delete_task");
     const classes = deleteButton.className.split(/\s+/);
     expect(classes).not.toContain("opacity-0");
     expect(classes).toContain("md:opacity-0");
@@ -517,7 +534,7 @@ describe("ObjectiveConfig — under a story plan (DR-13 §8)", () => {
     // The check control and the status dots stay — statuses flow back into
     // the plan (R2), so cycling stays a tracker action under the plan.
     expect(view.getByText("obj_check_button")).toBeTruthy();
-    fireEvent.click(view.getAllByTitle("obj_cycle_status")[1]!);
+    fireEvent.click(view.getAllByLabelText("obj_cycle_status")[1]!);
     expect(mocks.updateObjectiveShortTermGoalAction).toHaveBeenCalledWith("chat_1", "ev2", { status: "completed" });
   });
 
