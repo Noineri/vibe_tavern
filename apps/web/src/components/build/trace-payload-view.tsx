@@ -28,65 +28,7 @@ import type { AssemblePromptResponse, PromptLayerDto, LoreActivationReason } fro
 import { cn } from "../../lib/cn.js";
 import { useT } from "../../i18n/context.js";
 import { AnimatedDisclosure } from "../shared/AnimatedDisclosure.js";
-
-/**
- * Render a structured lore-activation reason as a small color-coded badge.
- * Shown next to the entry title in the trace so the user can see WHY each
- * lore entry fired (constant / sticky / delay / @@activate / key match).
- */
-function LoreReasonBadge({ reason }: { reason: LoreActivationReason }) {
-  const { t } = useT();
-  let label: string;
-  let cls: string;
-  switch (reason.kind) {
-    case "constant":
-      label = t("lore_reason_constant");
-      cls = "bg-s3 text-t3";
-      break;
-    case "sticky":
-      label = t("lore_reason_sticky", { since: reason.turnsSinceActivation, window: reason.window });
-      cls = "bg-warning-dim text-warning-text";
-      break;
-    case "delay_fulfilled":
-      label = t("lore_reason_delay_fulfilled");
-      cls = "bg-warning-dim text-warning-text";
-      break;
-    case "decorator":
-      label = t("lore_reason_decorator");
-      cls = "bg-accent-dim text-accent-t";
-      break;
-    case "key_match": {
-      const keys = reason.matchedKeys.join(", ");
-      label = reason.scanState === "recursion"
-        ? t("lore_reason_key_match_recursion", { keys })
-        : t("lore_reason_key_match", { keys });
-      cls = "bg-success-dim text-success-text";
-      break;
-    }
-  }
-  return (
-    <span className={cn("shrink-0 rounded px-1 py-0.5 font-ui text-[calc(var(--ui-fs)-4px)] font-medium", cls)} title={label}>
-      {label}
-    </span>
-  );
-}
-
-/** Badge surfacing a merge-squashed payload entry: "+N merged" with the
- *  absorbed ids/names as the tooltip. Keeps the trace payload-faithful —
- *  without it a merged entry renders as a truncated fragment because the
- *  absorbed sources have no payload entries of their own. */
-function MergedBadge({ count, names }: { count: number; names?: string[] }) {
-	const { t } = useT();
-	if (count <= 0) return null;
-	return (
-		<span
-			className="shrink-0 rounded bg-s3 px-1 py-0.5 font-ui text-[calc(var(--ui-fs)-4px)] font-medium text-t3"
-			title={names && names.length > 0 ? names.join(", ") : undefined}
-		>
-			{t("trace_merged_badge", { n: count })}
-		</span>
-	);
-}
+import { LoreReasonBadge, MergedBadge, type MergedSource } from "./trace-merged-badge.js";
 
 /** One entry of `finalPayload.messages`. Content may be a string or a vision part-array. */
 export interface PayloadMessage {
@@ -276,6 +218,12 @@ export function TracePayloadView({ trace, searchQuery, formatTokens, compact = f
 			.map((l) => [l.id, loreReasonByEntryId.get(l.sourceId)!]),
 	);
 
+	const layerById = new Map(trace.layers.map((layer) => [layer.id, layer]));
+	const mergedSources = (refs: Array<{ layerId?: string; messageId?: string }>): MergedSource[] => refs.map((ref) => {
+		const layer = ref.layerId ? layerById.get(ref.layerId) : undefined;
+		return { name: layer?.sourceName ?? ref.layerId ?? ref.messageId ?? "", reason: ref.layerId ? loreReasonByLayerId.get(ref.layerId) : undefined };
+	});
+
 	const messages = (trace.finalPayload as { messages?: PayloadMessage[] } | undefined)?.messages;
 	const grouping =
 		Array.isArray(messages) && messages.length > 0
@@ -332,8 +280,7 @@ export function TracePayloadView({ trace, searchQuery, formatTokens, compact = f
 					compact={compact}
 					reason={entry.layer.sourceType === "lore_entry" ? loreReasonByEntryId.get(entry.layer.sourceId) : undefined}
 					text={entry.text}
-					mergedCount={entry.mergedLayerIds.length}
-					mergedNames={entry.mergedNames}
+					merged={mergedSources(entry.mergedLayerIds.map((layerId) => ({ layerId })))}
 				/>
 			))}
 
@@ -363,23 +310,25 @@ export function TracePayloadView({ trace, searchQuery, formatTokens, compact = f
 									const injectOpen = openInjects.has(item.layerId) || q.length > 0;
 									return (
 										<div key={`inj-${item.layerId}`} className="overflow-hidden rounded-md bg-s2/40">
-											<button
-												type="button"
-												className="flex w-full cursor-pointer items-center gap-2 px-1 py-1 text-left font-ui text-[calc(var(--ui-fs)-3px)] text-t3 active:bg-s3"
-												onClick={() => toggleInSet(setOpenInjects, item.layerId)}
-												aria-expanded={injectOpen}
-											>
-												<span className="h-px flex-none bg-border2" style={{ width: 12 }} />
-												<span className="min-w-0 truncate font-medium text-t2">{item.sourceName}</span>
+											<div className="flex flex-wrap items-center gap-2">
+												<button
+													type="button"
+													className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 px-1 py-1 text-left font-ui text-[calc(var(--ui-fs)-3px)] text-t3 active:bg-s3"
+													onClick={() => toggleInSet(setOpenInjects, item.layerId)}
+													aria-expanded={injectOpen}
+												>
+													<span className="h-px flex-none bg-border2" style={{ width: 12 }} />
+													<span className="min-w-0 truncate font-medium text-t2">{item.sourceName}</span>
+													{item.depth != null && <span className="shrink-0 rounded bg-s3 px-1 text-t4">{t("trace_inject_depth", { n: item.depth })}</span>}
+													<span className="h-px flex-1 bg-border2" />
+													<span className="shrink-0 tabular-nums">{formatTokens(item.tokenCount)}</span>
+													<span className={cn("shrink-0 text-[calc(var(--ui-fs)-4px)] text-t4 transition-transform", injectOpen && "rotate-90")}>▶</span>
+												</button>
 												{item.sourceType === "lore_entry" && loreReasonByLayerId.has(item.layerId) && (
 													<LoreReasonBadge reason={loreReasonByLayerId.get(item.layerId)!} />
 												)}
-												<MergedBadge count={item.mergedFrom.length} names={item.mergedFrom.map((r) => r.layerId ?? r.messageId ?? "")} />
-												{item.depth != null && <span className="shrink-0 rounded bg-s3 px-1 text-t4">{t("trace_inject_depth", { n: item.depth })}</span>}
-												<span className="h-px flex-1 bg-border2" />
-												<span className="shrink-0 tabular-nums">{formatTokens(item.tokenCount)}</span>
-												<span className={cn("shrink-0 text-[calc(var(--ui-fs)-4px)] text-t4 transition-transform", injectOpen && "rotate-90")}>▶</span>
-											</button>
+												<MergedBadge sources={mergedSources(item.mergedFrom)} />
+											</div>
 											<AnimatedDisclosure
 												open={injectOpen}
 												className="whitespace-pre-wrap border-t border-border2 px-3 py-2 font-mono text-[calc(var(--ui-fs)-3px)] leading-[1.55] text-t1"
@@ -416,7 +365,7 @@ export function TracePayloadView({ trace, searchQuery, formatTokens, compact = f
 												{item.messages.map((m, i) => (
 													<div key={m.messageId ?? `${item.start}-${i}`} className="whitespace-pre-wrap font-mono text-[calc(var(--ui-fs)-3px)] leading-[1.55] text-t1">
 														<span className="mr-1.5 rounded bg-s3 px-1 text-[calc(var(--ui-fs)-5px)] uppercase text-t3">{m.role}</span>
-														<MergedBadge count={m.mergedFrom?.length ?? 0} names={m.mergedFrom?.map((r) => r.layerId ?? r.messageId ?? "")} />
+														<MergedBadge sources={mergedSources(m.mergedFrom ?? [])} />
 														{m.content}
 													</div>
 												))}
@@ -558,8 +507,7 @@ function LayerCard({
 	compact = false,
 	reason,
 	text,
-	mergedCount,
-	mergedNames,
+	merged,
 }: {
 	layer: PromptLayerDto;
 	expanded: boolean;
@@ -570,10 +518,8 @@ function LayerCard({
 	reason?: LoreActivationReason;
 	/** Payload-faithful content override (the merged entry's own text). */
 	text?: string;
-	/** Absorbed-layer count — renders the merged badge when > 0. */
-	mergedCount?: number;
-	/** Display names of the absorbed layers (badge tooltip). */
-	mergedNames?: string[];
+	/** Absorbed sources resolved from the payload references. */
+	merged?: MergedSource[];
 }) {
 	const isPreset = layer.sourceType === "prompt_preset";
 	const isRetrieval = layer.sourceType.includes("memory") || layer.sourceType === "lore_entry";
@@ -586,43 +532,43 @@ function LayerCard({
 				!isPreset && !isRetrieval && "border-l-2 border-l-danger",
 			)}
 		>
-			{compact ? (
-				<button
-					type="button"
-					className="flex w-full cursor-pointer items-center justify-between gap-2 px-3.5 py-2 text-left text-[calc(var(--ui-fs)-2px)] leading-4 active:bg-s3"
-					onClick={onToggle}
-					aria-expanded={expanded}
-				>
-					<div className="flex min-w-0 items-baseline gap-1.5">
-						<span className="shrink-0 font-semibold text-t2">{layer.sourceName ?? layer.sourceType}</span>
-						{reason && <LoreReasonBadge reason={reason} />}
-						{mergedCount != null && mergedCount > 0 && <MergedBadge count={mergedCount} names={mergedNames} />}
-						<span className="min-w-0 truncate text-t4">{layer.sourceId || layer.sourceType}</span>
-					</div>
-					<div className="flex shrink-0 items-center gap-1.5 text-t3">
-						<span className="tabular-nums">{formatTokens(layer.tokenCount)}</span>
-						<span className={cn("text-[calc(var(--ui-fs)-4px)] text-t4 transition-transform", expanded && "rotate-90")}>▶</span>
-					</div>
-				</button>
-			) : (
-				<button
-					type="button"
-					className="flex w-full cursor-pointer flex-col px-3.5 py-3 text-left active:bg-s3"
-					onClick={onToggle}
-					aria-expanded={expanded}
-				>
-					<div className="flex min-w-0 items-center gap-2">
-						<div className="min-w-0 flex-1 font-semibold text-t2">{layer.sourceName ?? layer.sourceType}</div>
-						{reason && <LoreReasonBadge reason={reason} />}
-						{mergedCount != null && mergedCount > 0 && <MergedBadge count={mergedCount} names={mergedNames} />}
-						<span className={cn("shrink-0 text-[calc(var(--ui-fs)-3px)] text-t4 transition-transform", expanded && "rotate-90")}>▶</span>
-					</div>
-					<div className="mt-1 flex min-w-0 items-center gap-2 text-[calc(var(--ui-fs)-2px)] text-t3">
-						<span className="min-w-0 flex-1 truncate">{layer.sourceId || layer.sourceType}</span>
-						<span className="shrink-0 tabular-nums">{formatTokens(layer.tokenCount)}</span>
-					</div>
-				</button>
-			)}
+			<div className="flex flex-wrap items-center gap-2">
+				{compact ? (
+					<button
+						type="button"
+						className="flex min-w-0 flex-1 cursor-pointer items-center justify-between gap-2 px-3.5 py-2 text-left text-[calc(var(--ui-fs)-2px)] leading-4 active:bg-s3"
+						onClick={onToggle}
+						aria-expanded={expanded}
+					>
+						<div className="flex min-w-0 items-baseline gap-1.5">
+							<span className="min-w-0 break-words font-semibold text-t2">{layer.sourceName ?? layer.sourceType}</span>
+							<span className="min-w-0 truncate text-t4">{layer.sourceId || layer.sourceType}</span>
+						</div>
+						<div className="flex shrink-0 items-center gap-1.5 text-t3">
+							<span className="tabular-nums">{formatTokens(layer.tokenCount)}</span>
+							<span className={cn("text-[calc(var(--ui-fs)-4px)] text-t4 transition-transform", expanded && "rotate-90")}>▶</span>
+						</div>
+					</button>
+				) : (
+					<button
+						type="button"
+						className="flex min-w-0 flex-1 cursor-pointer flex-col px-3.5 py-3 text-left active:bg-s3"
+						onClick={onToggle}
+						aria-expanded={expanded}
+					>
+						<div className="flex min-w-0 items-center gap-2">
+							<div className="min-w-0 flex-1 font-semibold text-t2">{layer.sourceName ?? layer.sourceType}</div>
+							<span className={cn("shrink-0 text-[calc(var(--ui-fs)-3px)] text-t4 transition-transform", expanded && "rotate-90")}>▶</span>
+						</div>
+						<div className="mt-1 flex min-w-0 items-center gap-2 text-[calc(var(--ui-fs)-2px)] text-t3">
+							<span className="min-w-0 flex-1 truncate">{layer.sourceId || layer.sourceType}</span>
+							<span className="shrink-0 tabular-nums">{formatTokens(layer.tokenCount)}</span>
+						</div>
+					</button>
+				)}
+				{reason && <LoreReasonBadge reason={reason} />}
+				<MergedBadge sources={merged ?? []} />
+			</div>
 			<AnimatedDisclosure
 				open={expanded}
 				className="whitespace-pre-wrap border-t border-border bg-input-bg p-3 font-mono text-[calc(var(--ui-fs)-3px)] leading-[1.55] text-t1"

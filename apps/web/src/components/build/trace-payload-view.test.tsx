@@ -12,7 +12,7 @@
  */
 import { beforeAll, describe, it, expect } from "bun:test";
 import type { InjectEntry, PayloadMessage } from "./trace-payload-view.js";
-import type { PromptLayerDto } from "@vibe-tavern/domain";
+import type { AssemblePromptResponse, PromptLayerDto } from "@vibe-tavern/domain";
 import { useDomEnv } from "../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 
@@ -21,7 +21,7 @@ useDomEnv();
 const NOOP = () => {};
 
 // Mock useT at the module boundary via the shared co-load seam (raw keys render as-is).
-installI18nContextSeam();
+installI18nContextSeam({ interpolateKeys: ["lore_reason_key_match", "lore_reason_key_match_recursion"] });
 
 let groupPayloadForTrace: typeof import("./trace-payload-view.js").groupPayloadForTrace;
 let TracePayloadView: typeof import("./trace-payload-view.js").TracePayloadView;
@@ -315,4 +315,43 @@ describe("TracePayloadView (DOM)", () => {
 		// Exactly one merged badge in the group — only the assistant row merged.
 		expect((container.textContent.match(/trace_merged_badge/g) || []).length).toBe(1);
 	});
+	it("discloses each absorbed lore reason without opening the payload card", () => {
+		const trace = {
+			...traceFixture(),
+			layers: [layer({ id: "base", sourceName: "Base", sourceType: "lore_entry", sourceId: "e0" }), layer({ id: "l1", sourceName: "First lore", sourceType: "lore_entry", sourceId: "e1" }), layer({ id: "l2", sourceName: "Second lore", sourceType: "lore_entry", sourceId: "e2" })],
+			activatedLoreDetail: [{ id: "e0", reason: { kind: "constant" } }, { id: "e1", reason: { kind: "key_match", matchedKeys: ["dragon"], scanState: "initial" } }, { id: "e2", reason: { kind: "key_match", matchedKeys: ["castle"], scanState: "recursion" } }],
+			finalPayload: { messages: [{ layerId: "base", content: "PAYLOAD", mergedFrom: [{ layerId: "l1" }, { layerId: "l2" }, { layerId: "missing" }] }] },
+		};
+		const { getByRole, getByText, queryByText, container } = render(<TracePayloadView trace={trace as unknown as AssemblePromptResponse} searchQuery="" formatTokens={formatTokens} />);
+		const badge = getByRole("button", { name: "trace_merged_badge" });
+		expect(badge.getAttribute("aria-expanded")).toBe("false");
+		fireEvent.click(badge);
+		expect(badge.getAttribute("aria-expanded")).toBe("true");
+		expect(getByText("First lore")).toBeTruthy();
+		expect(getByText("Second lore")).toBeTruthy();
+		expect(getByText("missing")).toBeTruthy();
+		expect(getByText(/dragon/)).toBeTruthy();
+		expect(getByText(/castle/)).toBeTruthy();
+		expect(getByText("lore_reason_constant")).toBeTruthy();
+		expect(queryByText("PAYLOAD")).toBeNull();
+		expect(container.querySelector("[title]")).toBeNull();
+		fireEvent.click(badge);
+		expect(badge.getAttribute("aria-expanded")).toBe("false");
+	});
+
+	it("discloses inject absorbed layer names and chat reference fallbacks", () => {
+		const trace = {
+			...traceFixture(),
+			layers: [layer({ id: "inject", sourceName: "Inject" }), layer({ id: "absorbed-id", sourceName: "Absorbed name" })],
+			finalPayload: { messages: [{ messageId: "m1", content: "hi" }, { layerId: "inject", content: "INJECT BODY", mergedFrom: [{ layerId: "absorbed-id" }, { messageId: "m9" }] }] },
+		};
+		const { getByRole, getByText, queryByText } = render(<TracePayloadView trace={trace as unknown as AssemblePromptResponse} searchQuery="" formatTokens={formatTokens} />);
+		fireEvent.click(getByText("trace_chat_history"));
+		fireEvent.click(getByRole("button", { name: "trace_merged_badge" }));
+		expect(getByText("Absorbed name")).toBeTruthy();
+		expect(getByText("m9")).toBeTruthy();
+		expect(queryByText("absorbed-id")).toBeNull();
+		expect(queryByText("INJECT BODY")).toBeNull();
+	});
+
 });
