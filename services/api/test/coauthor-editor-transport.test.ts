@@ -14,6 +14,9 @@ import type { ProviderExecutionInput } from "../src/infrastructure/ai/provider-e
 import { SessionRuntime } from "../src/runtime/session/session-runtime.js";
 import { createRuntimeStore } from "../src/runtime/session/session-runtime-store.js";
 import { createApp } from "../src/server/app-factory.js";
+import { guardModelDiscovery } from "./model-discovery-guard.js";
+
+guardModelDiscovery("coauthor.example");
 
 const roots: string[] = [];
 
@@ -87,6 +90,9 @@ async function makeEnvironment() {
     endpoint: "https://coauthor.example/v1",
     defaultModel: "coauthor-profile-default",
   });
+  await stores.providers.saveCachedModels(coauthorProfile.id, [{
+    modelSlug: "coauthor-transport-model", modelName: "coauthor-transport-model", contextLength: null, capabilities: { vision: false },
+  }]);
   await stores.coauthorSettings.upsert(coauthorProfile.id, {
     modelName: "coauthor-transport-model",
     settings: { maxTokens: 128 },

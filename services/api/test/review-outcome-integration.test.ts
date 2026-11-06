@@ -13,8 +13,8 @@
  *
  * L1: fixture and temp paths derive from import.meta.dir / tmpdir; temp roots
  * are removed in afterAll (an open SQLite handle can hold a Windows file — the
- * test:file wrapper sweeps its private TEMP root); no globals, registries, env
- * or module mocks are touched; every wait is a terminal response or stream end.
+ * test:file wrapper sweeps its private TEMP root); the discovery guard restores
+ * fetch after each test; every wait is a terminal response or stream end.
  */
 import { afterAll, describe, expect, test } from "bun:test";
 import { mkdir, readdir, rm } from "node:fs/promises";
@@ -33,6 +33,9 @@ import type { ProviderExecutionInput } from "../src/infrastructure/ai/provider-e
 import { SessionRuntime } from "../src/runtime/session/session-runtime.js";
 import { createRuntimeStore } from "../src/runtime/session/session-runtime-store.js";
 import { createApp } from "../src/server/app-factory.js";
+import { guardModelDiscovery } from "./model-discovery-guard.js";
+
+guardModelDiscovery("ro6.example");
 
 interface FixtureRequest {
   mode: "nonstream" | "stream";
@@ -144,6 +147,9 @@ async function makeCoauthorEnvironment() {
   const stores = await createRuntimeStore(dataDir);
   await Promise.all([stores.personas.ensureDefault(), stores.presets.ensureDefault(), stores.uiSettings.ensureDefaults()]);
   const profile = await stores.providers.create({ name: "RO-6 co-author", providerPreset: "openai_compat", endpoint: "https://ro6.example/v1", defaultModel: "ro6" });
+  await stores.providers.saveCachedModels(profile.id, [{
+    modelSlug: "ro6-model", modelName: "ro6-model", contextLength: null, capabilities: { vision: false },
+  }]);
   await stores.coauthorSettings.upsert(profile.id, { modelName: "ro6-model", settings: { maxTokens: 128 } });
   await stores.uiSettings.update({ coauthorProviderId: profile.id });
   const runtime = new SessionRuntime(stores, { getActiveProviderProfile: async () => null });

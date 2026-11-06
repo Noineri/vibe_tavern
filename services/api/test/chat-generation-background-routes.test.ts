@@ -21,6 +21,9 @@ import { SessionRuntime } from "../src/runtime/session/session-runtime.js";
 import { AgentRunActiveError } from "../src/domain/agent/agent-run-registry.js";
 import { domainErrorToJson, httpStatusForDomainError, isDomainError } from "../src/shared/errors.js";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
+import { guardModelDiscovery } from "./model-discovery-guard.js";
+
+guardModelDiscovery("provider.invalid");
 
 type Mode = "rp" | "coauthor";
 type Operation = "send" | "regenerate" | "continue" | "generate";
@@ -90,6 +93,10 @@ async function setup(mode: Mode, dir: string) {
   await Promise.all([stores.personas.ensureDefault(), stores.presets.ensureDefault(), stores.uiSettings.ensureDefaults()]);
   const profiles = createProviderProfileService(stores.providers, stores.proxies);
   const profile = await stores.providers.create({ name: "Background", providerPreset: "multiai", endpoint: "https://provider.invalid/v1", defaultModel: "test-model" });
+  // These text-only fixture models include the explicit queue overrides below.
+  await stores.providers.saveCachedModels(profile.id, ["test-model", "first", "second", "third", "one", "two", "cut", "next", "queued"].map((modelSlug) => ({
+    modelSlug, modelName: modelSlug, contextLength: null, capabilities: { vision: false },
+  })));
   await profiles.activateProviderProfile(profile.id);
   await stores.uiSettings.update({ coauthorProviderId: profile.id });
   const runtime = new SessionRuntime(stores, { getActiveProviderProfile: () => profiles.resolveActiveProviderProfile() });
