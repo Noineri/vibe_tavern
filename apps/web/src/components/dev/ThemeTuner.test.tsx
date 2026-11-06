@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from "bun:test";
-import { StrictMode } from "react";
+import { StrictMode, type ReactElement } from "react";
 import { useDomEnv } from "../../../test/dom-env.js";
 
 useDomEnv();
@@ -8,11 +8,17 @@ let ThemeTuner: typeof import("./ThemeTuner.js").ThemeTuner;
 let render: typeof import("@testing-library/react").render;
 let fireEvent: typeof import("@testing-library/react").fireEvent;
 let waitFor: typeof import("@testing-library/react").waitFor;
+let TooltipProvider: typeof import("../shared/Tooltip.js").TooltipProvider;
 
 beforeAll(async () => {
   ({ render, fireEvent, waitFor } = await import("@testing-library/react"));
   ({ ThemeTuner } = await import("./ThemeTuner.js"));
+  ({ TooltipProvider } = await import("../shared/Tooltip.js"));
 });
+
+function renderWithTooltip(ui: ReactElement) {
+  return render(<TooltipProvider>{ui}</TooltipProvider>);
+}
 
 /** WebGL stub that behaves like a real context after WEBGL_lose_context:
  * shader creation fails once cleanup has explicitly killed the context. */
@@ -73,7 +79,7 @@ function installWebGlMock() {
 
 describe("ThemeTuner preview geometry", () => {
   it("pins each message to the production chat-column boundary", () => {
-    const { container } = render(<ThemeTuner />);
+    const { container } = renderWithTooltip(<ThemeTuner />);
     const message = container.querySelector<HTMLElement>(".tt-msg");
     expect(message).not.toBeNull();
     expect(getComputedStyle(message!).maxWidth).toBe(
@@ -82,7 +88,7 @@ describe("ThemeTuner preview geometry", () => {
   });
 
   it("separates animated CSS blobs from the editable WebGL palette", async () => {
-    const { container, getByRole, getByText, queryByText } = render(<ThemeTuner />);
+    const { container, getByRole, getByText, queryByText } = renderWithTooltip(<ThemeTuner />);
     fireEvent.change(getByRole("combobox"), { target: { value: "dark-lava" } });
 
     await waitFor(() => expect(getByRole("button", { name: "CSS-блобы" }).classList.contains("active")).toBe(true));
@@ -119,7 +125,7 @@ describe("ThemeTuner preview geometry", () => {
 
   it("keeps the scoped WebGL canvas alive through StrictMode effect replay", async () => {
     const webgl = installWebGlMock();
-    const view = render(<StrictMode><ThemeTuner /></StrictMode>);
+    const view = renderWithTooltip(<StrictMode><ThemeTuner /></StrictMode>);
     try {
       fireEvent.change(view.getByRole("combobox"), { target: { value: "dark-lava" } });
       fireEvent.click(await view.findByRole("button", { name: "WebGL-шары" }));
@@ -134,7 +140,7 @@ describe("ThemeTuner preview geometry", () => {
 
 describe("ThemeTuner scroll chrome (CNR-8r residual sweep)", () => {
   it("the three tool panes ride the shared thin lanes", () => {
-    const { container } = render(<ThemeTuner />);
+    const { container } = renderWithTooltip(<ThemeTuner />);
     // The truly-overflowing tool panes (token list, preview stage, editor)
     // ride the app-wide thin lane contract instead of the tuner's old baked
     // 7px WebKit rules — the host's global native fallback is gone, so baked
@@ -162,7 +168,7 @@ describe("ThemeTuner scroll chrome (CNR-8r residual sweep)", () => {
   });
 
   it("the export modal textarea composes as the thin editor viewport", () => {
-    const { container, getByRole } = render(<ThemeTuner />);
+    const { container, getByRole } = renderWithTooltip(<ThemeTuner />);
     fireEvent.click(getByRole("button", { name: "Экспортировать .css" }));
     const ta = container.querySelector<HTMLTextAreaElement>(".tt-modal-text");
     if (!ta) throw new Error("export textarea not rendered");

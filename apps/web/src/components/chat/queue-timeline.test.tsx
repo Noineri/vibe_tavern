@@ -278,7 +278,6 @@ describe("QueueTimeline desktop", () => {
     expect(rowLabels(view.container)).toEqual(["Variant 1model-0 · Preset 0", "Variant 2model-1 · Preset 1"]);
     const footer = view.getByRole("button", { name: /One more/ });
     expect(footer.textContent).toContain("live-one · Live preset one");
-    expect(footer.querySelector("span:last-child")?.getAttribute("title")).toBe("live-one · Live preset one");
     expect(footer.querySelector("span:last-child")?.getAttribute("class")).toContain("truncate");
     expect(footer.getAttribute("class")).toContain("px-3 py-[9px]");
 
@@ -287,7 +286,6 @@ describe("QueueTimeline desktop", () => {
       useSnapshotStore.setState({ activeChat: { promptPresetId: "preset-two" } as AppSnapshot["activeChat"] });
     });
     expect(footer.textContent).toContain("live-two · Live preset two");
-    expect(footer.querySelector("span:last-child")?.getAttribute("title")).toBe("live-two · Live preset two");
     await act(async () => { fireEvent.click(footer); await refreshGenerationQueue(CHAT); });
     const job = useGenerationQueueStore.getState().jobsByChat[CHAT]?.at(-1);
     expect(job?.messageId).toBe(MESSAGE_ID);
@@ -320,7 +318,7 @@ describe("QueueTimeline desktop", () => {
     expect(view.container.querySelector("[data-queue-timeline-track]")?.getAttribute("class")).toBe("absolute bottom-4 left-[19px] top-4 w-0.5 bg-border");
     expect(view.container.querySelector("[data-queue-timeline-row=finished]")?.getAttribute("class")).toContain("min-h-9 items-center gap-2.5 px-3 py-1.5");
     expect(view.container.querySelector("[data-queue-timeline-row=finished] button span:nth-child(2)")?.getAttribute("class")).toBe("shrink-0 whitespace-nowrap");
-    expect(view.container.querySelector("[data-queue-timeline-row=finished] button span:last-child")?.getAttribute("class")).toContain("min-w-0 truncate text-t3");
+    expect(view.container.querySelector("[data-queue-timeline-row=finished] button span:last-child")?.getAttribute("class")).toContain("truncate min-w-0 text-t3");
     expect(view.getByTestId("queue-timeline-running-ring").getAttribute("class")).toBe("h-4 w-4 animate-spin-slow");
     const dasharray = view.getByTestId("queue-timeline-running-done-arc").getAttribute("stroke-dasharray")?.split(" ").map(Number);
     expect(dasharray?.[0]).toBe(14);

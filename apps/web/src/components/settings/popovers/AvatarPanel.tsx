@@ -174,6 +174,7 @@ function DesktopAvatarPanel({ src, onClose }: AvatarPanelProps) {
   };
 
   return (
+    <CustomTooltip content={t('drag_scroll_zoom')}>
     <div
       ref={(el) => { frameRef.current = el; wheelRef.current = el; }}
       className={[
@@ -190,7 +191,6 @@ function DesktopAvatarPanel({ src, onClose }: AvatarPanelProps) {
       }}
       onMouseDown={onMouseDown}
       onDoubleClick={toggleFit}
-      title={t('drag_scroll_zoom')}
     >
       <img
         src={src}
@@ -216,6 +216,7 @@ function DesktopAvatarPanel({ src, onClose }: AvatarPanelProps) {
       </button>
       </CustomTooltip>
     </div>
+    </CustomTooltip>
   );
 }
 

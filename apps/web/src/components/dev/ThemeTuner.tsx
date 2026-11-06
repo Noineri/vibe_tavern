@@ -20,6 +20,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Markdown } from "../../lib/markdown.js";
 import { ScrollArea } from "../shared/scroll-area.js";
+import { withThemeTunerTooltip } from "./ThemeTunerTooltip.js";
 import { TT_CSS } from "./theme-tuner-css.js";
 import { MessageReasoning } from "../chat/MessageReasoning.js";
 import { THEMES, applyThemeClass, type ThemeId } from "../../themes/registry.js";
@@ -839,25 +840,21 @@ export function ThemeTuner() {
                 <button type="button" className={lavaPreviewMode === "webgl" ? "active" : ""} onClick={() => switchLavaPreviewMode("webgl")}>WebGL-шары</button>
               </div>
             )}
-            <button
+            {withThemeTunerTooltip("Зафиксировать hover-состояния в preview", <button
               type="button"
               className={showHoverStates ? "tt-drift-toggle active" : "tt-drift-toggle"}
               onClick={() => setShowHoverStates((visible) => !visible)}
-              title="Зафиксировать hover-состояния в preview"
             >
               {showHoverStates ? "◆ Hover показан" : "◇ Показать hover"}
-            </button>
-            {(!isLavaTheme || lavaPreviewMode === "css") && (
-              <button
+            </button>)}
+            {(!isLavaTheme || lavaPreviewMode === "css") && withThemeTunerTooltip(drifting ? "Остановить дрейф пятен" : "Запустить дрейф пятен", <button
                 type="button"
                 className="tt-drift-toggle"
                 disabled={blobs.length === 0}
                 onClick={() => setDrifting((d) => !d)}
-                title={drifting ? "Остановить дрейф пятен" : "Запустить дрейф пятен"}
               >
                 {drifting ? "⏸ Стоп" : "▶ Дрейф"}
-              </button>
-            )}
+            </button>)}
           </div>
         </div>
         <Preview
@@ -1008,7 +1005,7 @@ function BlobRow({
         <span className="tt-swatch-name">Пятно {index + 1}</span>
         <span className="tt-swatch-val">{Math.round(x)}% · {Math.round(y)}%</span>
       </button>
-      <button type="button" className="tt-swatch-del" onClick={onRemove} title="Удалить пятно" aria-label={`Удалить пятно ${index + 1}`}>×</button>
+      {withThemeTunerTooltip("Удалить пятно", <button type="button" className="tt-swatch-del" onClick={onRemove} aria-label={`Удалить пятно ${index + 1}`}>×</button>)}
     </div>
   );
 }
@@ -1347,12 +1344,11 @@ function CommentField({
     <div className="tt-comment">
       <div className="tt-slider-head">
         <span>Подпись в CSS</span>
-        <button
+        {withThemeTunerTooltip(`Подставить: ${suggest}`, <button
           type="button"
           className="tt-comment-regen"
           onClick={() => onChange(suggest)}
-          title={`Подставить: ${suggest}`}
-        >⟳ авто</button>
+        >⟳ авто</button>)}
       </div>
       <input
         className="tt-comment-input"

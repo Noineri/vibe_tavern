@@ -328,7 +328,6 @@ function NewVersionButton({ onClick, busy, disabled }: { onClick: () => void; bu
       className="flex h-8 shrink-0 cursor-pointer items-center gap-1 rounded-full border border-dashed border-border bg-transparent px-3 font-ui text-[calc(var(--ui-fs)-2px)] text-t2 transition-all hover:border-accent hover:text-accent-t disabled:opacity-40"
       disabled={busy || disabled}
       onClick={onClick}
-      title={t("version_branch")}
     >
       {Ic.plus()}
       <span className="whitespace-nowrap">{t("version_branch")}</span>
@@ -352,7 +351,6 @@ function VersionPillActions(props: {
         className="flex h-5 w-5 cursor-pointer items-center justify-center rounded text-t3 opacity-0 transition-opacity hover:bg-s3 hover:text-t1 group-hover/seg:opacity-100 disabled:opacity-0"
         onClick={(e) => { e.stopPropagation(); props.onRename(); }}
         disabled={props.disabled}
-        title={t("version_rename")}
         aria-label={t("version_rename")}
       >
         {Ic.edit()}
@@ -361,7 +359,6 @@ function VersionPillActions(props: {
         className="flex h-5 w-5 cursor-pointer items-center justify-center rounded text-t3 opacity-0 transition-opacity hover:bg-s3 hover:text-danger-text group-hover/seg:opacity-100 disabled:opacity-0"
         onClick={(e) => { e.stopPropagation(); props.onDelete(); }}
         disabled={props.disabled}
-        title={t("version_delete")}
         aria-label={t("version_delete")}
       >
         {Ic.del()}
@@ -387,7 +384,6 @@ function DropdownItemAction(props: {
         props.danger ? "hover:text-danger-text" : "hover:text-t1",
       )}
       disabled={props.disabled}
-      title={props.label}
       aria-label={props.label}
       onClick={(e) => { e.stopPropagation(); props.onClick(); }}
     >

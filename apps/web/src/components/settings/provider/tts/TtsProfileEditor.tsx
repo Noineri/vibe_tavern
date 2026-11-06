@@ -542,7 +542,6 @@ export function TtsVoiceFields({
             onClick={() => onRefreshVoices()}
             disabled={voicesLoading}
             className="mt-1.5 flex w-fit cursor-pointer items-center gap-1.5 rounded border border-s3 px-3 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] text-t2 transition-colors hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40 disabled:pointer-events-none"
-            title={t("tts_refresh_voices")}
           >
             <Icons.Regen />
             {t("tts_refresh_voices")}
