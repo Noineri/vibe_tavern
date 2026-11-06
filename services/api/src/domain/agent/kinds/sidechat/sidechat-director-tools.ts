@@ -49,6 +49,8 @@
 // tools (plan + tracker); validation/delegate failure paths return
 // model-facing text; the tracker tool reads its grounding through injected
 // loaders and takes the shared `TrackerDelegate`.
+// forks: 1 — sidechat-message-tools.ts (DIRECTOR_MESSAGE_TOOLS_PLAN DMT-21:
+// the three message tools' builder skeleton + delegate-failure text pattern).
 
 import { tool, type ToolSet } from "ai";
 import { z } from "zod";
