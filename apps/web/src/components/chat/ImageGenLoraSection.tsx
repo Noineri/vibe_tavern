@@ -31,6 +31,8 @@ import { DropdownSelect } from "../shared/DropdownSelect.js";
 import { SearchInput } from "../shared/SearchInput.js";
 import { ScrollArea } from "../shared/scroll-area.js";
 import { SliderField } from "../shared/SliderField.js";
+import { CustomTooltip } from "../shared/Tooltip.js";
+import { OverflowTooltip } from "../shared/OverflowTooltip.js";
 import { Toggle } from "../shared/Toggle.js";
 import { IMAGE_GEN_PARAM_RANGES } from "@vibe-tavern/domain";
 import { useT } from "../../i18n/context.js";
@@ -199,27 +201,23 @@ export function ImageGenLoraSection({ chatId, modelFamily, loras, failed, disabl
                           disabled={disabled}
                           aria-label={lora.name}
                         />
-                        <span
-                          className="min-w-0 flex-1 truncate font-ui text-[calc(var(--ui-fs)-2px)] text-t2"
-                          title={lora.name}
-                        >
-                          {lora.name}
-                        </span>
+                        <OverflowTooltip text={lora.name} className="min-w-0 flex-1 font-ui text-[calc(var(--ui-fs)-2px)] text-t2" />
                         {lora.triggerWords.length > 0 && (
-                          <button
-                            type="button"
-                            data-testid="image-gen-ft-lora-triggers"
-                            // Full words in the tooltip: the row may truncate the
-                            // chip, but the full value must stay reachable (the
-                            // truncation contract; some loras carry a whole
-                            // prompt template as their trigger).
-                            title={lora.triggerWords.join(", ")}
-                            aria-label={`${lora.name}: ${t("image_gen_lora_triggers_label")}`}
-                            onClick={() => copyTriggers(lora.triggerWords)}
-                            className="max-w-[60%] shrink-0 cursor-pointer truncate rounded border border-border bg-s2 px-1.5 py-0.5 text-left font-mono text-[calc(var(--ui-fs)-4px)] text-t3 transition-colors hover:border-accent/50 hover:text-t1"
-                          >
-                            {lora.triggerWords.join(", ")}
-                          </button>
+                          <CustomTooltip content={lora.triggerWords.join(", ")}>
+                            <button
+                              type="button"
+                              data-testid="image-gen-ft-lora-triggers"
+                              // Full words in the tooltip: the row may truncate the
+                              // chip, but the full value must stay reachable (the
+                              // truncation contract; some loras carry a whole
+                              // prompt template as their trigger).
+                              aria-label={`${lora.name}: ${t("image_gen_lora_triggers_label")}`}
+                              onClick={() => copyTriggers(lora.triggerWords)}
+                              className="max-w-[60%] shrink-0 cursor-pointer truncate rounded border border-border bg-s2 px-1.5 py-0.5 text-left font-mono text-[calc(var(--ui-fs)-4px)] text-t3 transition-colors hover:border-accent/50 hover:text-t1"
+                            >
+                              {lora.triggerWords.join(", ")}
+                            </button>
+                          </CustomTooltip>
                         )}
                       </div>
                       {enabled && (

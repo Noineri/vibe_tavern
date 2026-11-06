@@ -580,6 +580,8 @@ describe("ImageGenFineTuningChip — editor body (IG-17)", () => {
     const counter = within(armed.baseElement).getByTestId("image-gen-ft-prompt-cap");
     expect(counter.textContent).toBe("0 / 1200");
     expect(counter.className).not.toContain("text-danger");
+    fireEvent.pointerMove(counter, { pointerType: "mouse" });
+    expect((await armed.findByRole("tooltip")).textContent).toBe("image_gen_prompt_cap_hint");
 
     // Typing past the cap → the counter goes red (advisory — the send stays
     // enabled; the counter is a warning, never a gate).
@@ -952,6 +954,26 @@ describe("ImageGenFineTuningChip — LoRA section (CG-C3)", () => {
     return within(view.baseElement).getAllByTestId("image-gen-ft-lora-row");
   }
 
+  it("exposes a clipped LoRA name through its measured tooltip", async () => {
+    const scrollWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollWidth");
+    const clientWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth");
+    Object.defineProperty(HTMLElement.prototype, "scrollWidth", { configurable: true, get: () => 300 });
+    Object.defineProperty(HTMLElement.prototype, "clientWidth", { configurable: true, get: () => 100 });
+    try {
+      comfyProfile("chat-lora-tooltip");
+      seedLoras();
+      const view = await openSection("chat-lora-tooltip");
+      const name = await within(view.baseElement).findByText("nijireol_krea2_v1_ep5.safetensors");
+      fireEvent.pointerMove(name, { pointerType: "mouse" });
+      expect((await view.findByRole("tooltip")).textContent).toBe("nijireol_krea2_v1_ep5.safetensors");
+    } finally {
+      if (scrollWidth) Object.defineProperty(HTMLElement.prototype, "scrollWidth", scrollWidth);
+      else delete (HTMLElement.prototype as { scrollWidth?: number }).scrollWidth;
+      if (clientWidth) Object.defineProperty(HTMLElement.prototype, "clientWidth", clientWidth);
+      else delete (HTMLElement.prototype as { clientWidth?: number }).clientWidth;
+    }
+  });
+
   it("renders ONLY for a supportsLoras profile — false hides, absent (= false) hides too", async () => {
     comfyProfile("chat-lr0");
     seedLoras();
@@ -1102,7 +1124,8 @@ describe("ImageGenFineTuningChip — LoRA section (CG-C3)", () => {
     // Truncation contract: the row may clip the chip, but the FULL joined
     // words stay reachable in the tooltip.
     const dragonBtn = within(dragonRow).getByTestId("image-gen-ft-lora-triggers");
-    expect(dragonBtn.title).toBe("Dragon, dragon lord");
+    fireEvent.pointerMove(dragonBtn, { pointerType: "mouse" });
+    expect((await view.findByRole("tooltip")).textContent).toBe("Dragon, dragon lord");
     await act(async () => {
       dragonBtn.click();
     });

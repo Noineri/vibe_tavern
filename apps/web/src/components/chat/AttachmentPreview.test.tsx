@@ -14,7 +14,9 @@ import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 
 useDomEnv();
 
-const { render, act, cleanup } = await import("@testing-library/react");
+const { render: renderBase, act, cleanup, fireEvent } = await import("@testing-library/react");
+const { TooltipProvider } = await import("../shared/Tooltip.js");
+const render = (ui: React.ReactElement) => renderBase(ui, { wrapper: ({ children }) => <TooltipProvider delayDuration={0}>{children}</TooltipProvider> });
 
 const { default: userEvent } = await import("@testing-library/user-event");
 
@@ -124,11 +126,33 @@ describe("AttachmentPreview audio chip playback", () => {
     cleanup();
   });
 
-  test("the play toggle carries the file name in the accessible label", () => {
+  test("the play toggle carries the file name in the accessible label", async () => {
     setDrafts([audioDraft]);
     const view = renderPreview();
-    expect(view.getByTestId("draft-audio-play").getAttribute("aria-label")).toContain("voice-note.wav");
+    const play = view.getByTestId("draft-audio-play");
+    expect(play.getAttribute("aria-label")).toContain("voice-note.wav");
+    fireEvent.pointerMove(play, { pointerType: "mouse" });
+    expect((await view.findByRole("tooltip")).textContent).toBe("voice_draft_play");
     cleanup();
+  });
+
+  test("clipped media names expose the full value in a measured tooltip", async () => {
+    const scrollWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollWidth");
+    const clientWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth");
+    Object.defineProperty(HTMLElement.prototype, "scrollWidth", { configurable: true, get: () => 300 });
+    Object.defineProperty(HTMLElement.prototype, "clientWidth", { configurable: true, get: () => 100 });
+    try {
+      setDrafts([audioDraft]);
+      const view = renderPreview();
+      fireEvent.pointerMove(view.getByText(audioDraft.name), { pointerType: "mouse" });
+      expect((await view.findByRole("tooltip")).textContent).toBe(audioDraft.name);
+      cleanup();
+    } finally {
+      if (scrollWidth) Object.defineProperty(HTMLElement.prototype, "scrollWidth", scrollWidth);
+      else delete (HTMLElement.prototype as { scrollWidth?: number }).scrollWidth;
+      if (clientWidth) Object.defineProperty(HTMLElement.prototype, "clientWidth", clientWidth);
+      else delete (HTMLElement.prototype as { clientWidth?: number }).clientWidth;
+    }
   });
 
   test("non-audio drafts render the plain image thumb (no player)", () => {
@@ -166,9 +190,9 @@ describe("AttachmentPreview file chips (CA-1e)", () => {
         </LocaleProvider>,
       );
       const chip = view.getByTestId("file-attachment-chip");
-      expect(view.getByTitle(file.name).textContent).toBe(file.name);
+      expect(view.getByText(file.name).textContent).toBe(file.name);
       const label = (language === "ru" ? ru : en).attachment_tokens.replace("{tokens}", (file.tokenCount!).toLocaleString());
-      const count = view.getByTitle(file.name).nextElementSibling as HTMLElement;
+      const count = view.getByText(file.name).nextElementSibling as HTMLElement;
       expect(count.textContent).toBe(label);
       expect(count.className).toContain("whitespace-nowrap");
       expect(count.className).toContain("shrink-0");

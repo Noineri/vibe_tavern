@@ -12,7 +12,9 @@ import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 
 useDomEnv();
 
-const { render, act, fireEvent, waitFor } = await import("@testing-library/react");
+const { render: renderBase, act, fireEvent, waitFor } = await import("@testing-library/react");
+const { TooltipProvider } = await import("../shared/Tooltip.js");
+const render = (ui: React.ReactElement) => renderBase(ui, { wrapper: ({ children }) => <TooltipProvider delayDuration={0}>{children}</TooltipProvider> });
 
 const { default: userEvent } = await import("@testing-library/user-event");
 
@@ -157,7 +159,9 @@ describe("lightbox full-message write characterization (CA-1e)", () => {
     const attachments = [textFile, image, voiceAttachment()];
     const view = render(<AttachmentGrid attachments={attachments} messageId="message_1" />);
     fireEvent.click(view.getByAltText("a.png"));
-    fireEvent.click(view.getByTitle("Add description"));
+    fireEvent.pointerMove(view.getByLabelText("attachment_add_description"), { pointerType: "mouse" });
+    expect((await view.findByRole("tooltip")).textContent).toBe("attachment_add_description");
+    fireEvent.click(view.getByLabelText("attachment_add_description"));
     fireEvent.change(view.getByPlaceholderText("describe_attachment_placeholder"), { target: { value: "A tower" } });
     fireEvent.click(view.getByRole("button", { name: /^Save$/ }));
     await waitFor(() => expect(update).toHaveBeenCalledWith("message_1", {
@@ -173,7 +177,7 @@ describe("lightbox full-message write characterization (CA-1e)", () => {
     const audio = voiceAttachment();
     const view = render(<AttachmentGrid attachments={[textFile, image, audio]} messageId="message_1" />);
     fireEvent.click(view.getByAltText("a.png"));
-    fireEvent.click(view.getByTitle("delete_attachment_title"));
+    fireEvent.click(view.getByLabelText("delete_attachment_title"));
     fireEvent.click(await waitFor(() => view.getByRole("button", { name: /^delete$/ })));
     await waitFor(() => expect(remove).toHaveBeenCalledWith("_", "message_1", image.id));
     expect(update).toHaveBeenCalledWith("message_1", { attachments: [textFile, audio] });
@@ -184,8 +188,8 @@ describe("sent file chips and media-only navigation (CA-1e)", () => {
   test("sent markdown is a read-only counted file chip, never an image", () => {
     const view = render(<AttachmentGrid attachments={[textFile]} />);
     const chip = view.getByTestId("file-attachment-chip");
-    expect(view.getByTitle(textFile.name).textContent).toBe(textFile.name);
-    expect(view.getByTitle(textFile.name).nextElementSibling?.textContent).toBe(en.attachment_tokens.replace("{tokens}", (textFile.tokenCount!).toLocaleString()));
+    expect(view.getByText(textFile.name).textContent).toBe(textFile.name);
+    expect(view.getByText(textFile.name).nextElementSibling?.textContent).toBe(en.attachment_tokens.replace("{tokens}", (textFile.tokenCount!).toLocaleString()));
     expect(chip.querySelector("img")).toBeNull();
     expect(chip.querySelector("button")).toBeNull();
   });
@@ -217,7 +221,7 @@ describe("sent file chips and media-only navigation (CA-1e)", () => {
     const audio = voiceAttachment();
     const view = render(<AttachmentGrid attachments={[textFile, image, audio]} messageId="message_1" />);
     fireEvent.click(view.getByAltText(image.name));
-    fireEvent.click(view.getByTitle("regenerate_description_title"));
+    fireEvent.click(view.getByLabelText("regenerate_description_title"));
     await waitFor(() => expect(update).toHaveBeenCalledWith("message_1", { attachments: [textFile, { ...image, description: "A tower" }, audio] }));
     expect(regenerate).toHaveBeenCalledTimes(1);
   });
@@ -226,6 +230,34 @@ describe("sent file chips and media-only navigation (CA-1e)", () => {
 // ─── CA-4g2: the lightbox action seam ───────────────────────────────────────
 
 describe("lightbox actions seam (CA-4g2)", () => {
+  test("regeneration cancel keeps its hint and aborts the running action", async () => {
+    let signal: AbortSignal | undefined;
+    const actions = {
+      saveDescription: mock(async (_att: GridAttachment, _text: string) => {}),
+      regenerateDescription: mock((_att: GridAttachment, current: AbortSignal) => {
+        signal = current;
+        return new Promise<string>((_resolve, reject) => {
+          current.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+        });
+      }),
+      remove: mock(async (_att: GridAttachment) => {}),
+      applyLocal: mock((_next: GridAttachment[]) => {}),
+    };
+    const view = render(<AttachmentGrid attachments={[image]} imageActions={actions} />);
+    fireEvent.click(view.getByAltText(image.name));
+    const regenerate = view.getByLabelText("regenerate_description_title");
+    fireEvent.pointerMove(regenerate, { pointerType: "mouse" });
+    expect((await view.findByRole("tooltip")).textContent).toBe("regenerate_description_title");
+    fireEvent.pointerLeave(regenerate, { pointerType: "mouse" });
+    fireEvent.click(regenerate);
+    const cancel = view.getByLabelText("cancel_regenerate_title");
+    fireEvent.pointerMove(cancel, { pointerType: "mouse" });
+    expect((await view.findByRole("tooltip")).textContent).toBe("cancel_regenerate_title");
+    fireEvent.click(cancel);
+    expect(signal?.aborted).toBe(true);
+    await waitFor(() => expect(view.getByLabelText("regenerate_description_title")).toBeTruthy());
+  });
+
   test("with imageActions the three controls call the given actions", async () => {
     const actions = {
       saveDescription: mock(async (_att: GridAttachment, _text: string) => {}),
@@ -237,18 +269,18 @@ describe("lightbox actions seam (CA-4g2)", () => {
     const view = render(<AttachmentGrid attachments={[image, second]} imageActions={actions} />);
     fireEvent.click(view.getByAltText(image.name));
     // Regenerate → the seam's call + the applied description overlay.
-    fireEvent.click(view.getByTitle("regenerate_description_title"));
+    fireEvent.click(view.getByLabelText("regenerate_description_title"));
     await waitFor(() => expect(actions.regenerateDescription).toHaveBeenCalledTimes(1));
     expect(actions.regenerateDescription.mock.calls[0]![0].id).toBe(image.id);
     await waitFor(() => expect(document.body.textContent).toContain("Fresh text"));
     // Edit → save through the seam (the regenerated description turned the
     // add-hint into an edit button).
-    fireEvent.click(view.getByTitle("Edit description"));
+    fireEvent.click(view.getByLabelText("attachment_edit_description"));
     fireEvent.change(view.getByPlaceholderText("describe_attachment_placeholder"), { target: { value: "A tower" } });
     fireEvent.click(view.getByRole("button", { name: /^Save$/ }));
     await waitFor(() => expect(actions.saveDescription).toHaveBeenCalledWith(expect.objectContaining({ id: image.id }), "A tower"));
     // Delete → confirm through the seam (a surviving sibling keeps the call).
-    fireEvent.click(view.getByTitle("delete_attachment_title"));
+    fireEvent.click(view.getByLabelText("delete_attachment_title"));
     fireEvent.click(await waitFor(() => view.getByRole("button", { name: /^delete$/ })));
     await waitFor(() => expect(actions.remove).toHaveBeenCalledWith(expect.objectContaining({ id: image.id })));
     expect(actions.applyLocal).toHaveBeenCalled();
@@ -258,9 +290,9 @@ describe("lightbox actions seam (CA-4g2)", () => {
     const view = render(<AttachmentGrid attachments={[image]} />);
     fireEvent.click(view.getByAltText(image.name));
     expect(document.querySelector(".fixed.inset-0")).not.toBeNull();
-    expect(document.querySelector('[title="Edit description"], [title="Add description"]')).toBeNull();
-    expect(document.querySelector('[title="regenerate_description_title"]')).toBeNull();
-    expect(document.querySelector('[title="delete_attachment_title"]')).toBeNull();
+    expect(view.queryByLabelText("attachment_edit_description") ?? view.queryByLabelText("attachment_add_description")).toBeNull();
+    expect(view.queryByLabelText("regenerate_description_title")).toBeNull();
+    expect(view.queryByLabelText("delete_attachment_title")).toBeNull();
   });
 });
 
@@ -273,7 +305,7 @@ describe("last-attachment delete (CA-4h)", () => {
     actionSpies.push(remove, update);
     const view = render(<AttachmentGrid attachments={[image]} messageId="message_1" />);
     fireEvent.click(view.getByAltText(image.name));
-    fireEvent.click(view.getByTitle("delete_attachment_title"));
+    fireEvent.click(view.getByLabelText("delete_attachment_title"));
     fireEvent.click(await waitFor(() => view.getByRole("button", { name: /^delete$/ })));
     await waitFor(() => expect(remove).toHaveBeenCalledWith("_", "message_1", image.id));
     expect(update).toHaveBeenCalledWith("message_1", { attachments: [] });

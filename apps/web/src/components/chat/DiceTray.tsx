@@ -86,32 +86,33 @@ function ActorRollButton({
   const isReroll = state === "ready" || state === "again";
   const action = state === "idle" ? t("dice_roll") : isReroll ? t("dice_reroll") : t("dice_rolling");
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={state === "rolling"}
-      data-testid={`roll-btn-${actorType}-${checkId}`}
-      // Base UI Drawer's touch machinery claims any moving touch inside a
-      // non-scrolling popup region (preventDefault on touchmove) — which
-      // suppresses the synthesized click, so finger jitter (1-2px) kills the
-      // tap on phones while desktop mouse clicks work. `data-base-ui-swipe-ignore`
-      // makes DrawerViewport reset its touch tracking for this element
-      // (isSwipeIgnoredTarget on touchstart), keeping taps clickable.
-      data-base-ui-swipe-ignore=""
-      aria-label={`${action} — ${checkLabel} (${noun})`}
-      title={`${action} — ${noun}`}
-      className={cn(
-        "flex min-h-9 items-center justify-center gap-1 rounded-md border px-2.5 py-1 font-ui text-[calc(var(--ui-fs)-3px)] font-medium transition-colors",
-        isReroll
-          ? "border-accent/50 bg-accent-dim text-accent-t hover:bg-accent/20"
-          : "border-border2 bg-s2 text-t2 hover:border-t3 hover:text-t1",
-        state === "rolling" && "cursor-wait opacity-60",
-      )}
-    >
-      {state === "ready" && <Icons.regen />}
-      {state === "again" && <Ic.plus />}
-      <span>{state === "rolling" ? t("dice_rolling") : noun}</span>
-    </button>
+    <CustomTooltip content={`${action} — ${noun}`}>
+      <button
+        type="button"
+        onClick={onClick}
+        disabled={state === "rolling"}
+        data-testid={`roll-btn-${actorType}-${checkId}`}
+        // Base UI Drawer's touch machinery claims any moving touch inside a
+        // non-scrolling popup region (preventDefault on touchmove) — which
+        // suppresses the synthesized click, so finger jitter (1-2px) kills the
+        // tap on phones while desktop mouse clicks work. `data-base-ui-swipe-ignore`
+        // makes DrawerViewport reset its touch tracking for this element
+        // (isSwipeIgnoredTarget on touchstart), keeping taps clickable.
+        data-base-ui-swipe-ignore=""
+        aria-label={`${action} — ${checkLabel} (${noun})`}
+        className={cn(
+          "flex min-h-9 items-center justify-center gap-1 rounded-md border px-2.5 py-1 font-ui text-[calc(var(--ui-fs)-3px)] font-medium transition-colors",
+          isReroll
+            ? "border-accent/50 bg-accent-dim text-accent-t hover:bg-accent/20"
+            : "border-border2 bg-s2 text-t2 hover:border-t3 hover:text-t1",
+          state === "rolling" && "cursor-wait opacity-60",
+        )}
+      >
+        {state === "ready" && <Icons.regen />}
+        {state === "again" && <Ic.plus />}
+        <span>{state === "rolling" ? t("dice_rolling") : noun}</span>
+      </button>
+    </CustomTooltip>
   );
 }
 

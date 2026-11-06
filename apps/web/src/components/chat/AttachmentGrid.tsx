@@ -15,6 +15,7 @@ import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useT } from "../../i18n/context.js";
 import { toast } from "sonner";
 import { chatLightboxActions } from "./chat-lightbox-actions.js";
+import { CustomTooltip } from "../shared/Tooltip.js";
 
 /** Audio duration label ("0:07" / "1:23") for the voice bubble meta line. */
 function formatAudioDuration(ms: number): string {
@@ -383,39 +384,47 @@ function Lightbox({ attachments, messageAttachments, actions, initialIndex, onCl
       <div className="absolute right-4 top-4 z-10 flex gap-2">
         {!editing && actions !== undefined && att.id && (
           <>
-            <button
-              className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20 active:scale-95"
-              onClick={startEdit}
-              title={currentDescription ? "Edit description" : "Add description"}
-            >
-              <Icons.edit className="h-4 w-4" />
-            </button>
+            <CustomTooltip content={currentDescription ? t("attachment_edit_description") : t("attachment_add_description")}>
+              <button
+                className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20 active:scale-95"
+                onClick={startEdit}
+                aria-label={currentDescription ? t("attachment_edit_description") : t("attachment_add_description")}
+              >
+                <Icons.edit className="h-4 w-4" />
+              </button>
+            </CustomTooltip>
             {att.type === "image" && (
               regenerating ? (
-                <button
-                  className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full bg-danger/80 text-on-danger transition-colors hover:bg-danger active:scale-95"
-                  onClick={cancelRegenerate}
-                  title={t("cancel_regenerate_title")}
-                >
-                  <Icons.Close className="h-4 w-4" />
-                </button>
+                <CustomTooltip content={t("cancel_regenerate_title")}>
+                  <button
+                    className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full bg-danger/80 text-on-danger transition-colors hover:bg-danger active:scale-95"
+                    onClick={cancelRegenerate}
+                    aria-label={t("cancel_regenerate_title")}
+                  >
+                    <Icons.Close className="h-4 w-4" />
+                  </button>
+                </CustomTooltip>
               ) : (
-                <button
-                  className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20 active:scale-95"
-                  onClick={regenerateDescription}
-                  title={t("regenerate_description_title")}
-                >
-                  <Icons.regen />
-                </button>
+                <CustomTooltip content={t("regenerate_description_title")}>
+                  <button
+                    className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20 active:scale-95"
+                    onClick={regenerateDescription}
+                    aria-label={t("regenerate_description_title")}
+                  >
+                    <Icons.regen />
+                  </button>
+                </CustomTooltip>
               )
             )}
-            <button
-              className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-danger active:scale-95"
-              onClick={(event) => { event.stopPropagation(); setConfirmDeleteOpen(true); }}
-              title={t("delete_attachment_title")}
-            >
-              <Icons.del className="h-4 w-4" />
-            </button>
+            <CustomTooltip content={t("delete_attachment_title")}>
+              <button
+                className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-danger active:scale-95"
+                onClick={(event) => { event.stopPropagation(); setConfirmDeleteOpen(true); }}
+                aria-label={t("delete_attachment_title")}
+              >
+                <Icons.del className="h-4 w-4" />
+              </button>
+            </CustomTooltip>
           </>
         )}
         <button

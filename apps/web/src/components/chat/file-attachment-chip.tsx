@@ -5,6 +5,7 @@ import { useIsMobile } from "../../hooks/use-mobile.js";
 import { useT } from "../../i18n/context.js";
 import { Icons } from "../shared/icons.js";
 import { formatBytes } from "../../lib/format-bytes.js";
+import { OverflowTooltip } from "../shared/OverflowTooltip.js";
 
 /** One file shape for pending and sent attachments. The shell and thumbnail
  *  footprint match AttachmentPreview; only the file-name line may ellipsize. */
@@ -24,9 +25,7 @@ export function FileAttachmentChip({ attachment, onRemove, status, excluded, tra
         <Icons.FileText />
       </div>
       <div className="flex min-w-0 flex-col justify-center pr-2">
-        <span className={cn("max-w-[120px] truncate font-ui text-[calc(var(--ui-fs)-2px)] font-medium", excluded ? "text-t3 line-through" : "text-t1")} title={attachment.name}>
-          {attachment.name}
-        </span>
+        <OverflowTooltip text={attachment.name} className={cn("max-w-[120px] font-ui text-[calc(var(--ui-fs)-2px)] font-medium", excluded ? "text-t3 line-through" : "text-t1")} />
         {/* Keep the preview's 15px metadata line box (10px at 1.5 leading)
             while sizing the token text from the UI-font ladder. */}
         <span className={cn("shrink-0 font-ui text-[calc(var(--ui-fs)-3px)] leading-[15px] text-t3", status ? "whitespace-normal break-words" : "whitespace-nowrap")}>

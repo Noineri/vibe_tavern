@@ -2405,6 +2405,8 @@
 	"regenerating_description": "Перегенерация описания…",
 	"no_attachment_description_hint": "Нет описания — измените или перегенерируйте.",
 	"describe_attachment_placeholder": "Опишите вложение…",
+	"attachment_edit_description": "Изменить описание",
+	"attachment_add_description": "Добавить описание",
 	"attachment_delete_title": "Удалить вложение",
 	"attachment_prev": "Предыдущее вложение",
 	"attachment_next": "Следующее вложение",

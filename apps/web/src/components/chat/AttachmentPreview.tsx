@@ -7,6 +7,8 @@ import { useT } from "../../i18n/context.js";
 import { cn } from "../../lib/cn.js";
 import { FileAttachmentChip } from "./file-attachment-chip.js";
 import { formatBytes } from "../../lib/format-bytes.js";
+import { CustomTooltip } from "../shared/Tooltip.js";
+import { OverflowTooltip } from "../shared/OverflowTooltip.js";
 
 /** Audio draft chip duration (ST-6): "0:07" / "1:23" from durationMs. */
 function formatDuration(ms: number): string {
@@ -45,18 +47,19 @@ function AudioDraftPlayButton({ src, name }: { src: string; name: string }) {
         className="hidden"
         data-testid="draft-audio-element"
       />
-      <button
-        type="button"
-        data-testid="draft-audio-play"
-        aria-label={playing ? `${t("voice_draft_pause")} — ${name}` : `${t("voice_draft_play")} — ${name}`}
-        aria-pressed={playing}
-        title={playing ? t("voice_draft_pause") : t("voice_draft_play")}
-        onClick={toggle}
-        className="flex shrink-0 cursor-pointer items-center justify-center rounded-[5px] bg-s3 text-t2 transition-colors hover:bg-s3/70 hover:text-t1 active:scale-95"
-        style={{ width: size, height: size }}
-      >
-        {playing ? <Icons.pause /> : <Icons.play />}
-      </button>
+      <CustomTooltip content={playing ? t("voice_draft_pause") : t("voice_draft_play")}>
+        <button
+          type="button"
+          data-testid="draft-audio-play"
+          aria-label={playing ? `${t("voice_draft_pause")} — ${name}` : `${t("voice_draft_play")} — ${name}`}
+          aria-pressed={playing}
+          onClick={toggle}
+          className="flex shrink-0 cursor-pointer items-center justify-center rounded-[5px] bg-s3 text-t2 transition-colors hover:bg-s3/70 hover:text-t1 active:scale-95"
+          style={{ width: size, height: size }}
+        >
+          {playing ? <Icons.pause /> : <Icons.play />}
+        </button>
+      </CustomTooltip>
     </>
   );
 }
@@ -94,9 +97,7 @@ export function AttachmentPreview({ attachments, onRemove, className }: {
             />
           )}
           <div className="flex flex-col justify-center max-w-[120px] pr-2">
-            <span className="truncate font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t1" title={att.name}>
-              {att.name}
-            </span>
+            <OverflowTooltip text={att.name} className="font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t1" />
             <span className="font-ui text-[calc(var(--ui-fs)-4px)] uppercase tracking-wider text-t3">
               {att.type === "audio" && att.durationMs !== undefined
                 ? formatDuration(att.durationMs)

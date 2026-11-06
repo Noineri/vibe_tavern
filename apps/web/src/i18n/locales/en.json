@@ -2375,6 +2375,8 @@
 	"regenerating_description": "Regenerating description…",
 	"no_attachment_description_hint": "No description — use edit or regenerate to add one.",
 	"describe_attachment_placeholder": "Describe this attachment…",
+	"attachment_edit_description": "Edit description",
+	"attachment_add_description": "Add description",
 	"attachment_delete_title": "Delete attachment",
 	"attachment_prev": "Previous attachment",
 	"attachment_next": "Next attachment",
