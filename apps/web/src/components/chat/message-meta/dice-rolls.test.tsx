@@ -168,7 +168,7 @@ describe("DICE-F10 DiceRollDetailContent â€” read-only historical truth", () => 
   it("renders the captured-revision tooltip on the actor/script line", async () => {
     const roll = makeRoll({ scriptRevision: 7 });
     const view = render(<DiceRollDetailContent rolls={[roll]} />);
-    fireEvent.pointerMove(view.getByText("Hero · Fate Die"), { pointerType: "mouse" });
+    fireEvent.pointerMove(view.getByText("Hero Â· Fate Die"), { pointerType: "mouse" });
     const hint = await view.findByRole("tooltip");
     expect(hint.textContent).toContain("captured r7");
     expect(hint.textContent).toContain("7");
@@ -217,7 +217,7 @@ describe("DICE-F10 message isolation (registry renders per-message)", () => {
 
 it("shows the captured revision in a themed hint", async () => {
   const view = render(<DiceRollDetailContent rolls={[makeRoll()]} />);
-  const trigger = view.getByText("Hero · Fate Die");
+  const trigger = view.getByText("Hero Â· Fate Die");
   expect(trigger.hasAttribute("title")).toBe(false);
   fireEvent.pointerMove(trigger, { pointerType: "mouse" });
   expect((await view.findByRole("tooltip")).textContent).toBe("captured r3");
