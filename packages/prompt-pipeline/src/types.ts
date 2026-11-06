@@ -221,6 +221,18 @@ export interface PromptAssemblyContext {
   instructions?: {
     toolInstructions?: string | null;
   };
+  /** Director message tools (DMT-12): the one-shot instruction for a SINGLE
+   *  RP regeneration (request_message_swipe Allow) — the user-approved literal
+   *  text. Assembled as a budgeted `user` `in_chat` layer at depth 1 so it is
+   *  accounted by the compaction planner, visible in the stored layer trace,
+   *  and placed by the ordinary depth rule; no wrapper label is added around
+   *  the text. REQUEST-LOCAL by construction: this is an assembly INPUT, not
+   *  chat state — it is never persisted, never inherited by a later assembly,
+   *  and every other generation (later turns, manual swipes, summaries) simply
+   *  omits it. Distinct from `chat.scriptInjections` (script-owned), preset
+   *  injections (canvas slots) and history (persisted messages).
+   *  Null/undefined/blank = no layer; the output is unchanged. */
+  requestInstruction?: string | null;
   /** Insights — Objective Tracker: the active task injected as an `in_chat` layer (priority 180). `null`/undefined = objective off or no active task. */
   objectiveTask?: { description: string; injectPrompt: string; injectionDepth: number } | null;
   /** Insights — Objective Tracker (OGM, goals mode): the enduring long-term goal injected as an `in_chat` layer (priority 178), just above the active short-term objective. `null`/undefined = goals mode off, no long-term goal, or the goal is completed/abandoned (completed goals are not injected). */
