@@ -44,7 +44,7 @@ import { wireCharacter, wireUiSettings } from "../../../test/wire-fixtures.js";
 import { formatRelativeTime } from "../layout/sidebar-utils.js";
 
 useDomEnv();
-const { act, fireEvent, render, within } = await import("@testing-library/react");
+const { act, fireEvent, render: rtlRender, within } = await import("@testing-library/react");
 const { createElement } = await import("react");
 
 installI18nContextSeam({
@@ -54,14 +54,11 @@ installI18nContextSeam({
   },
 });
 
-// Radix Tooltip (ListSortToggle and friends inside the drawer) needs a
-// TooltipProvider ancestor the isolated render lacks — passthrough stub,
-// same pattern as CoauthorTopBar.test.tsx.
-const realTooltip = await import("../shared/Tooltip.js");
-mock.module("../shared/Tooltip.js", () => ({
-  ...realTooltip,
-  CustomTooltip: ({ children }: { children: React.ReactNode }) => children,
-}));
+// The real tooltip provider preserves the hint and focus behavior in this rail.
+const { TooltipProvider } = await import("../shared/Tooltip.js");
+function render(ui: React.ReactNode, options?: Parameters<typeof rtlRender>[1]) {
+  return rtlRender(ui, { wrapper: TooltipProvider, ...options });
+}
 
 const renameChatSpy = mock(async (_chatId: ChatId, _title: string): Promise<void> => {});
 const switchChatSpy = mock(async (_chatId: ChatId): Promise<void> => {});
@@ -121,10 +118,22 @@ describe("CoauthorRail — plug routes to the co-author provider modal (E3)", ()
   beforeEach(resetModals);
 
   it("collapsed strip: Ico plug opens the co-author modal, not the RP one", () => {
-    const { getByTitle } = render(createElement(CoauthorRail));
-    fireEvent.click(getByTitle("provider_settings_tooltip"));
+    const { getByRole } = render(createElement(CoauthorRail));
+    fireEvent.click(getByRole("button", { name: "provider_settings_tooltip" }));
     expect(useModalStore.getState().isCoauthorProviderModalOpen).toBe(true);
     expect(useModalStore.getState().isProviderModalOpen).toBe(false);
+  });
+
+  it("collapsed rail icons retain named focusable triggers and their themed hints", async () => {
+    const view = render(createElement(CoauthorRail));
+    for (const name of ["provider_settings_tooltip", "create_manual", "import_char_short"]) {
+      const trigger = view.getByRole("button", { name });
+      expect(trigger.tagName).toBe("BUTTON");
+      expect(trigger.className).toContain("h-10");
+      fireEvent.focus(trigger);
+      expect((await view.findByRole("tooltip")).textContent).toBe(name);
+      fireEvent.blur(trigger);
+    }
   });
 
   it("expanded drawer: NavRow plug opens the co-author modal, not the RP one", async () => {
@@ -136,8 +145,7 @@ describe("CoauthorRail — plug routes to the co-author provider modal (E3)", ()
       useNavigationStore.setState({ railForceOpen: (useNavigationStore.getState().railForceOpen ?? 0) + 1 });
     });
     // The drawer popup renders the NavRow cluster (portalled); the NavRow's
-    // label is a text node (the collapsed-strip Ico carries a title ATTRIBUTE,
-    // so a text query is unambiguous for the drawer row).
+    // label is a text node; collapsed-strip Ico exposes its hint in a tooltip.
     const label = await findByText("provider_settings_tooltip");
     const row = label.closest("div.cursor-pointer") as HTMLElement | null;
     expect(row).not.toBeNull();
@@ -555,11 +563,14 @@ describe("CoauthorRail drawer — the actions reachable before the drill-in", ()
     expect(useCharacterStore.getState().confirmDestroy?.title).toBe("sidebar_delete_chat");
   });
 
-  it("the tablet sheet (collapsed-strip avatar tap) lists the character's Co-Author chats; a chat switches, «+» creates a Co-Author chat", () => {
+  it("the tablet sheet (collapsed-strip avatar tap) lists the character's Co-Author chats; a chat switches, «+» creates a Co-Author chat", async () => {
     seedStores();
     const view = render(createElement(CoauthorRail));
-    const avatar = view.baseElement.querySelector<HTMLElement>('div[title="Aria"]');
-    if (!avatar) throw new Error("no collapsed-strip avatar for Aria");
+    const avatar = view.getByRole("button", { name: "Aria" });
+    expect(avatar.className).toContain("h-10 w-10");
+    fireEvent.focus(avatar);
+    expect((await view.findByRole("tooltip")).textContent).toBe("Aria");
+    fireEvent.blur(avatar);
     fireEvent.click(avatar);
     const sheet = view.baseElement.querySelector<HTMLElement>(".bs-popup");
     if (!sheet) throw new Error("the tablet chats sheet is not mounted");

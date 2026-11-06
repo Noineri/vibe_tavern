@@ -6,7 +6,11 @@ import type { ProviderProfileRecord } from "../../api/types.js";
 
 useDomEnv();
 
-const { fireEvent, render, waitFor } = await import("@testing-library/react");
+const { fireEvent, render: rtlRender, waitFor } = await import("@testing-library/react");
+const { TooltipProvider } = await import("../shared/Tooltip.js");
+function render(ui: React.ReactNode, options?: Parameters<typeof rtlRender>[1]) {
+  return rtlRender(ui, { wrapper: TooltipProvider, ...options });
+}
 const patchUiSettingsAction = mock(async (_patch: { coauthorLoreProviderId: string | null; coauthorLoreModelName: string | null }) => ({}));
 const realBootstrapActions = await import("../../stores/api-actions/bootstrap-actions.js");
 const realMobileHook = await import("../../hooks/use-mobile.js");
@@ -123,4 +127,25 @@ describe("CoauthorLoreAssistantSettings", () => {
     expect(capEl!.className).toContain("overflow-hidden");
     expect(capEl!.className).not.toContain("overflow-y-auto");
   });
+});
+
+it("shows the clipped current model binding in a measured tooltip", async () => {
+  const scrollWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollWidth");
+  const clientWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth");
+  Object.defineProperty(HTMLElement.prototype, "scrollWidth", { configurable: true, get: () => 300 });
+  Object.defineProperty(HTMLElement.prototype, "clientWidth", { configurable: true, get: () => 100 });
+  try {
+    const view = render(<CoauthorLoreAssistantSettings />);
+    const value = view.getByText("coauthor.lore_assistant.same_as_coauthor");
+    expect(value.tagName).toBe("SPAN");
+    expect(value.className).toBe("truncate min-w-0");
+    fireEvent.pointerMove(value, { pointerType: "mouse" });
+    expect((await view.findByRole("tooltip")).textContent).toBe("coauthor.lore_assistant.same_as_coauthor");
+    view.unmount();
+  } finally {
+    if (scrollWidth) Object.defineProperty(HTMLElement.prototype, "scrollWidth", scrollWidth);
+    else delete (HTMLElement.prototype as { scrollWidth?: number }).scrollWidth;
+    if (clientWidth) Object.defineProperty(HTMLElement.prototype, "clientWidth", clientWidth);
+    else delete (HTMLElement.prototype as { clientWidth?: number }).clientWidth;
+  }
 });

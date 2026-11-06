@@ -1,3 +1,4 @@
+import { SummaryMobileDeleteButton } from "./summary-mobile-delete-button.js";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { normalizeAutoSummaryConfig, type ChatId } from "@vibe-tavern/domain";
@@ -618,15 +619,9 @@ export function useSummaryTab({
           <div className={lblCls + " !mb-0"}>{t("summary_text_label")}</div>
           <div className="flex gap-2">
             {activeSummaryId && isMobile && (
-              <button type="button"
-                className="flex h-7 w-7 items-center justify-center rounded-md bg-danger-dim text-danger-text hover:bg-danger hover:text-on-danger transition-colors md:hidden"
-                onClick={() => {
-                  void handleDelete(activeSummaryId);
-                }}
-                title={t("delete")}
-              >
-                <Icons.Trash />
-              </button>
+              <SummaryMobileDeleteButton label={t("delete")} onClick={() => {
+                void handleDelete(activeSummaryId);
+              }} />
             )}
             <button type="button"
               className="h-7 rounded-md bg-s3 px-3 font-ui text-[calc(var(--ui-fs)-2px)] leading-4 text-t2 hover:bg-border2 hover:text-t1 disabled:opacity-40"

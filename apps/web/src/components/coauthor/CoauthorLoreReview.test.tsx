@@ -19,10 +19,12 @@ useDomEnv();
 let render: typeof import("@testing-library/react").render;
 let fireEvent: typeof import("@testing-library/react").fireEvent;
 
+let TooltipProvider: typeof import("../shared/Tooltip.js").TooltipProvider;
 let CoauthorLoreReview: typeof import("./CoauthorLoreReview.js").CoauthorLoreReview;
 
 beforeAll(async () => {
 	({ render, fireEvent } = await import("@testing-library/react"));
+	({ TooltipProvider } = await import("../shared/Tooltip.js"));
 	({ CoauthorLoreReview } = await import("./CoauthorLoreReview.js"));
 });
 
@@ -93,7 +95,7 @@ function renderReview(overrides: Partial<Parameters<typeof CoauthorLoreReview>[0
 		labels,
 		...overrides,
 	};
-	const result = render(<CoauthorLoreReview {...props} />);
+	const result = render(<TooltipProvider><CoauthorLoreReview {...props} /></TooltipProvider>);
 	return { ...result, onToggleLorebook, onToggleEntry, bundle: b };
 }
 
@@ -302,4 +304,25 @@ describe("CoauthorLoreReview — edit badge (CE-B2)", () => {
 		// No proposed parent checkbox exists; the entry is independently selectable.
 		expect((getByRole("checkbox") as HTMLButtonElement).disabled).toBe(false);
 	});
+});
+
+it("shows a clipped persisted lorebook id in a measured tooltip", async () => {
+  const scrollWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollWidth");
+  const clientWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth");
+  Object.defineProperty(HTMLElement.prototype, "scrollWidth", { configurable: true, get: () => 300 });
+  Object.defineProperty(HTMLElement.prototype, "clientWidth", { configurable: true, get: () => 100 });
+  try {
+    const b: CoauthorLoreBundle = { lorebooks: [], entries: [{ id: "ePersisted", lorebookId: "lb_existing", title: "Cross-turn edit", content: "Updated prose", keys: [], secondaryKeys: [], constant: false, position: "before_char", depth: 4, enabled: true, mode: "edit", parentMode: "persisted" }] };
+    const view = renderReview({ bundle: b, ...allSelected(b) });
+    const value = view.getByText("lb_existing");
+    expect(value.className).toContain("truncate max-w-[16rem]");
+    fireEvent.pointerMove(value, { pointerType: "mouse" });
+    expect((await view.findByRole("tooltip")).textContent).toBe("lb_existing");
+    view.unmount();
+  } finally {
+    if (scrollWidth) Object.defineProperty(HTMLElement.prototype, "scrollWidth", scrollWidth);
+    else delete (HTMLElement.prototype as { scrollWidth?: number }).scrollWidth;
+    if (clientWidth) Object.defineProperty(HTMLElement.prototype, "clientWidth", clientWidth);
+    else delete (HTMLElement.prototype as { clientWidth?: number }).clientWidth;
+  }
 });

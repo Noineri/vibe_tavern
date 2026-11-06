@@ -6,24 +6,28 @@
  * `RailRow` is NOT here: it is RP-only (used for the build-panel list that
  * the co-author rail does not render), so it stays inline in `Rail.tsx`.
  */
+import { CustomTooltip } from "../../shared/Tooltip.js";
 import type { ReactNode } from "react";
 import { cn } from "../../../lib/cn.js";
 
 /* ── Mini icon button (collapsed rail item) ── */
 export function Ico({ icon, active, onClick, title }: { icon: ReactNode; active?: boolean; onClick: () => void; title: string }) {
   return (
-    <div
-      className={cn(
-        // Specific properties only (not `transition-all`); scale 0.96 is the
-        // tactile-press spec — anything below 0.95 feels exaggerated.
-        "flex h-10 w-10 cursor-pointer items-center justify-center rounded-full transition-[background-color,color,border-radius,transform] duration-150 ease-out active:bg-s3 active:scale-[0.96]",
-        active ? "rounded-xl bg-accent-dim text-accent-t" : "text-t3",
-      )}
-      onClick={onClick}
-      title={title}
-    >
-      {icon}
-    </div>
+    <CustomTooltip content={title}>
+      <button
+        type="button"
+        aria-label={title}
+        className={cn(
+          // Specific properties only (not `transition-all`); scale 0.96 is the
+          // tactile-press spec — anything below 0.95 feels exaggerated.
+          "flex h-10 w-10 cursor-pointer items-center justify-center rounded-full transition-[background-color,color,border-radius,transform] duration-150 ease-out active:bg-s3 active:scale-[0.96]",
+          active ? "rounded-xl bg-accent-dim text-accent-t" : "text-t3",
+        )}
+        onClick={onClick}
+      >
+        {icon}
+      </button>
+    </CustomTooltip>
   );
 }
 

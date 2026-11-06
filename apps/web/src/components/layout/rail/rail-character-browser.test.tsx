@@ -60,7 +60,7 @@ installSnapshotStoreSeam();
 // register the real arm; the same effect is harmless against the real store.
 installExperienceStoreSeam();
 
-const { act, fireEvent, render } = await import("@testing-library/react");
+const { act, fireEvent, render: rtlRender } = await import("@testing-library/react");
 
 // ── Doubles ──────────────────────────────────────────────────────────────
 
@@ -71,12 +71,10 @@ installI18nContextSeam({
 	},
 });
 
-const realTooltip = await import("../../shared/Tooltip.js");
-mock.module("../../shared/Tooltip.js", () => ({
-	...realTooltip,
-	CustomTooltip: ({ children }: { children: ReactNode }) => children,
-	TooltipProvider: ({ children }: { children: ReactNode }) => children,
-}));
+const { TooltipProvider } = await import("../../shared/Tooltip.js");
+function render(ui: React.ReactNode, options?: Parameters<typeof rtlRender>[1]) {
+  return rtlRender(ui, { wrapper: TooltipProvider, ...options });
+}
 
 const activateBranchAction = mock(async (_chatId: ChatId, _branchId: ChatBranchId): Promise<void> => {});
 const renameBranchAction = mock(async (_chatId: ChatId, _branchId: ChatBranchId, _label: string): Promise<void> => {});

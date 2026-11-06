@@ -65,7 +65,7 @@ function render(ui: React.ReactNode, options?: Parameters<typeof renderReact>[1]
     }
     return transport(input, init);
   }, { preconnect: transport.preconnect });
-  return renderReact(ui, options);
+  return renderReact(ui, { wrapper: realTooltip.TooltipProvider, ...options });
 }
 
 // Mock useT at the module boundary — returns keys verbatim so assertions match.
@@ -97,14 +97,7 @@ mock.module("../../hooks/use-character-controller.js", () => ({
 	useCharacterController: () => ({ handleSaveCharacter, isSavingCharacter: false }),
 }));
 
-// CA-13: the lorebook picker (LinkBindingPopover) pulls in CustomTooltip,
-// which needs a Radix TooltipProvider context irrelevant to the form's
-// behaviours. Passthrough it, mirroring VibeMdView.test.tsx.
-mock.module("../shared/Tooltip.js", () => ({
-	...realTooltip,
-	CustomTooltip: ({ children }: { children: React.ReactNode }) => children,
-	TooltipProvider: ({ children }: { children: React.ReactNode }) => children,
-}));
+// CA-13: the lorebook picker and lore assistant use the real app tooltip provider.
 // The picker fetches the lorebook / persona / script lists on mount (CE-C1),
 // and BoundResourcesField reads + writes character bindings (CE-C2/C3); stub
 // them empty/no-op so the form renders without hitting the network. Reals are

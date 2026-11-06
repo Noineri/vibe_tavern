@@ -1,3 +1,4 @@
+import { CustomTooltip } from "../shared/Tooltip.js";
 /**
  * ExperienceModal — the trusted host chrome around the sandboxed visual frame
  * (IR-62). This is the DEFAULT host surface for an interactive experience: a
@@ -474,15 +475,15 @@ export function ExperienceModal(props: ExperienceModalProps) {
             </span>
           )}
           {onDetach && (
-            <button
+            <CustomTooltip content={t("experience_detach_title")}><button
               type="button"
               className="rounded px-2 py-1 text-[calc(var(--ui-fs)-2px)] leading-4 text-neutral-300 hover:bg-neutral-800 max-md:min-h-9 max-md:min-w-9"
               onClick={onDetach}
               data-testid="experience-detach"
-              title={t("experience_detach_title")}
+              aria-label={t("experience_detach_title")}
             >
               <Icons.Expand className="h-4 w-4" />
-            </button>
+            </button></CustomTooltip>
           )}
           {onFinishExperience && !confirmingFinish && (
             <button

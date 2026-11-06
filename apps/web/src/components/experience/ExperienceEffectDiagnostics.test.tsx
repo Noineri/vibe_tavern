@@ -24,7 +24,11 @@ import { useDomEnv } from "../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 
 useDomEnv();
-const { render, fireEvent, act } = await import("@testing-library/react");
+const { render: rtlRender, fireEvent, act } = await import("@testing-library/react");
+const { TooltipProvider } = await import("../shared/Tooltip.js");
+function render(ui: React.ReactNode, options?: Parameters<typeof rtlRender>[1]) {
+  return rtlRender(ui, { wrapper: ({ children }) => <TooltipProvider delayDuration={0}>{children}</TooltipProvider>, ...options });
+}
 
 // ─── i18n mock (keys verbatim; interpolation ignored — stable key text) ──────
 installI18nContextSeam();
@@ -171,4 +175,35 @@ describe("ExperienceEffectDiagnostics — retry action", () => {
     // The button is re-enabled for another attempt.
     expect((getByTestId("experience-effect-retry-eff-9") as HTMLButtonElement).disabled).toBe(false);
   });
+});
+
+
+it("shows only the full error as a hint when the styled error row is clipped", async () => {
+  const scrollWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollWidth");
+  const clientWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth");
+  let clipped = false;
+  Object.defineProperty(HTMLElement.prototype, "scrollWidth", { configurable: true, get: () => clipped ? 300 : 100 });
+  Object.defineProperty(HTMLElement.prototype, "clientWidth", { configurable: true, get: () => 100 });
+  try {
+    const ui = <ExperienceEffectDiagnostics effects={[makeEffect()]} onRetry={async () => {}} />;
+    const first = render(ui);
+    const label = first.getByText("experience_effect_error_label");
+    expect(label.className).toBe("text-t4");
+    fireEvent.pointerMove(first.getByTestId("experience-effect-error").parentElement!, { pointerType: "mouse" });
+    expect(first.queryByRole("tooltip")).toBeNull();
+    first.unmount();
+    clipped = true;
+    const second = render(ui);
+    expect(second.getByText("experience_effect_error_label").className).toBe("text-t4");
+    const measured = second.getByTestId("experience-effect-error").parentElement!;
+    expect(measured.className).toBe("truncate min-w-0 flex-1 text-t3");
+    fireEvent.pointerMove(measured, { pointerType: "mouse" });
+    expect((await second.findByRole("tooltip")).textContent).toBe("provider unavailable");
+    second.unmount();
+  } finally {
+    if (scrollWidth) Object.defineProperty(HTMLElement.prototype, "scrollWidth", scrollWidth);
+    else delete (HTMLElement.prototype as { scrollWidth?: number }).scrollWidth;
+    if (clientWidth) Object.defineProperty(HTMLElement.prototype, "clientWidth", clientWidth);
+    else delete (HTMLElement.prototype as { clientWidth?: number }).clientWidth;
+  }
 });

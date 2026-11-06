@@ -25,6 +25,7 @@
  * `handleSwitchChat(chatId: ChatId)` typechecks directly. Character ids stay
  * plain strings: `setSelectedCharacterId` takes `string | null`.
  */
+import { CustomTooltip } from "../../shared/Tooltip.js";
 import type { ReactNode } from "react";
 import { cn } from "../../../lib/cn.js";
 import { Ic } from "../../shared/icons.js";
@@ -63,16 +64,20 @@ export function RailCollapsedStrip({
     <>
       {/* Create + Import */}
       <div className="flex w-full flex-col gap-1 px-2">
-        <div className="flex h-10 w-full cursor-pointer items-center justify-center rounded-lg text-t3 transition-colors active:bg-s3"
-             onClick={onCreateCharacter}
-             title={createManualLabel}>
-          <Ic.plus />
-        </div>
-        <div className="flex h-10 w-full cursor-pointer items-center justify-center rounded-lg text-t3 transition-colors active:bg-s3"
-             onClick={onImport}
-             title={importCharShortLabel}>
-          <Ic.import />
-        </div>
+        <CustomTooltip content={createManualLabel}>
+          <button type="button" aria-label={createManualLabel} className="flex h-10 w-full cursor-pointer items-center justify-center rounded-lg text-t3 transition-colors active:bg-s3"
+            onClick={onCreateCharacter}
+          >
+            <Ic.plus />
+          </button>
+        </CustomTooltip>
+        <CustomTooltip content={importCharShortLabel}>
+          <button type="button" aria-label={importCharShortLabel} className="flex h-10 w-full cursor-pointer items-center justify-center rounded-lg text-t3 transition-colors active:bg-s3"
+            onClick={onImport}
+          >
+            <Ic.import />
+          </button>
+        </CustomTooltip>
       </div>
       <div className="h-px w-8 shrink-0 bg-border" />
       {/* Character avatars — always ALL characters (not the filtered
@@ -83,24 +88,24 @@ export function RailCollapsedStrip({
           select — selectedCharacterId is synced after the real chat switch
           inside the sheet. */}
       {characters.map((c) => (
-        <div
-          key={c.id}
-          className={cn(
-            "relative flex h-10 w-10 cursor-pointer items-center justify-center rounded-full transition-[background-color,border-radius,transform] duration-150 ease-out active:rounded-xl active:bg-s2 active:scale-[0.96]",
-            selectedCharacterId === c.id && "rounded-xl bg-accent-dim ring-2 ring-accent",
-          )}
-          onClick={() => onCharacterClick(c.id)}
-          title={c.name}
-        >
-          <span className="flex h-full w-full items-center justify-center overflow-hidden rounded-[inherit]">
-            {avatarSrc(c) ? (
-              <img className="h-full w-full object-cover" src={avatarSrc(c)!} alt={c.name} />
-            ) : (
-              <span className={cn("flex h-full w-full items-center justify-center rounded-full font-ui text-[var(--ui-fs)] leading-5", selectedCharacterId === c.id ? "bg-accent text-on-accent" : "bg-s3 text-t2")}>{initials(c.name)}</span>
+        <CustomTooltip key={c.id} content={c.name}>
+          <button type="button" aria-label={c.name}
+            className={cn(
+              "relative flex h-10 w-10 cursor-pointer items-center justify-center rounded-full transition-[background-color,border-radius,transform] duration-150 ease-out active:rounded-xl active:bg-s2 active:scale-[0.96]",
+              selectedCharacterId === c.id && "rounded-xl bg-accent-dim ring-2 ring-accent",
             )}
-          </span>
-          <CharacterActivityBadge characterId={c.id} />
-        </div>
+            onClick={() => onCharacterClick(c.id)}
+          >
+            <span className="flex h-full w-full items-center justify-center overflow-hidden rounded-[inherit]">
+              {avatarSrc(c) ? (
+                <img className="h-full w-full object-cover" src={avatarSrc(c)!} alt={c.name} />
+              ) : (
+                <span className={cn("flex h-full w-full items-center justify-center rounded-full font-ui text-[var(--ui-fs)] leading-5", selectedCharacterId === c.id ? "bg-accent text-on-accent" : "bg-s3 text-t2")}>{initials(c.name)}</span>
+              )}
+            </span>
+            <CharacterActivityBadge characterId={c.id} />
+          </button>
+        </CustomTooltip>
       ))}
     </>
   );

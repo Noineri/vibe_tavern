@@ -469,6 +469,8 @@ describe("CoauthorModuleModal — catalog-driven skill picker (CTX-S7)", () => {
 		expect(getByRole("button", { name: "Dialogue Generation" })).toBeTruthy();
 		const bound = getByRole("button", { name: "Dialogue Generation" });
 		expect(bound.className).toContain("accent");
+		fireEvent.focus(bound);
+		expect((await waitFor(() => document.querySelector('[role="tooltip"]')))?.textContent).toBe("Voice/dialogue.");
 	});
 
 	it("renders an orphan binding (skill no longer in the catalog) distinctly so it can be unbound", async () => {
@@ -485,6 +487,9 @@ describe("CoauthorModuleModal — catalog-driven skill picker (CTX-S7)", () => {
 		// The orphan chip is present (struck-through, danger) and unbinds on click.
 		const orphan = await waitFor(() => getByTestId("module-skill-orphan-dialogue-generation"));
 		expect(orphan.className).toContain("line-through");
+		fireEvent.focus(orphan);
+		expect((await waitFor(() => document.querySelector('[role="tooltip"]')))?.textContent).toBe("coauthor.module.skill_orphan_title");
+		fireEvent.blur(orphan);
 		fireEvent.click(orphan);
 		fireEvent.click(getByTestId("module-save-btn"));
 		await waitFor(() => expect(updateCoauthorModuleAction).toHaveBeenCalledTimes(1));

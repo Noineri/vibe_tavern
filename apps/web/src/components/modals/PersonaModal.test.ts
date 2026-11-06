@@ -161,6 +161,30 @@ describe("PersonaModal master-detail wiring", () => {
 		await act(async () => {});
 	}
 
+	test("a clipped persona name exposes its full text in the row", async () => {
+		const scrollWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollWidth");
+		const clientWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth");
+		Object.defineProperty(HTMLElement.prototype, "scrollWidth", { configurable: true, get: () => 300 });
+		Object.defineProperty(HTMLElement.prototype, "clientWidth", { configurable: true, get: () => 100 });
+		try {
+			const calls: Calls = { setActive: [], saveEdit: [] };
+			const view = renderOpen(calls);
+			await settled();
+			const name = view.getAllByText("Alice").find((element) => element.className.includes("truncate"));
+			if (!name) throw new Error("Missing persona name");
+			expect(name.tagName).toBe("SPAN");
+			expect(name.className).toContain("truncate min-w-0");
+			fireEvent.pointerMove(name, { pointerType: "mouse" });
+			expect((await view.findByRole("tooltip")).textContent).toBe("Alice");
+			view.unmount();
+		} finally {
+			if (scrollWidth) Object.defineProperty(HTMLElement.prototype, "scrollWidth", scrollWidth);
+			else delete (HTMLElement.prototype as { scrollWidth?: number }).scrollWidth;
+			if (clientWidth) Object.defineProperty(HTMLElement.prototype, "clientWidth", clientWidth);
+			else delete (HTMLElement.prototype as { clientWidth?: number }).clientWidth;
+		}
+	});
+
 	test("opening the modal seeds the editor with the active persona (no blank detail pane)", async () => {
 		useModalStore.setState({ isPersonaModalOpen: false });
 		const calls: Calls = { setActive: [], saveEdit: [] };

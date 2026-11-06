@@ -17,6 +17,10 @@ afterAll(() => { globalThis.fetch = originalFetch; });
 const realChatActions = await import("../../stores/api-actions/chat-actions.js");
 const realMasterDetailModal = await import("../shared/MasterDetailModal.js");
 const realDndKit = await import("@dnd-kit/core");
+const realMobile = await import("../../hooks/use-mobile.js");
+const { TooltipProvider } = await import("../shared/Tooltip.js");
+let mobile = false;
+mock.module("../../hooks/use-mobile.js", () => ({ ...realMobile, useIsMobile: () => mobile }));
 type RealDndContextProps = ComponentProps<typeof realDndKit.DndContext>;
 type RealDragOverlayProps = ComponentProps<typeof realDndKit.DragOverlay>;
 const RealDndContext = realDndKit.DndContext;
@@ -53,6 +57,7 @@ const reorderMock = mock(async (_chatId: ChatId, orderedIds: string[]): Promise<
   server = [...server].sort((a, b) => (rank.get(a.id) ?? 0) - (rank.get(b.id) ?? 0));
   return [...server];
 });
+const deleteMock = mock(async (_chatId: ChatId, _summaryId: string): Promise<void> => {});
 const updateMock = mock(async (_chatId: ChatId, summaryId: string, patch: Partial<ChatSummaryRecord>): Promise<ChatSummaryRecord> => {
   const current = server.find((s) => s.id === summaryId);
   if (!current) throw new Error("not found");
@@ -68,6 +73,7 @@ mock.module("../shared/MasterDetailModal.js", () => ({
 mock.module("../../stores/api-actions/chat-actions.js", () => ({
   ...realChatActions,
   listChatSummariesAction: listMock,
+  deleteChatSummaryAction: deleteMock,
   reorderChatSummariesAction: reorderMock,
   updateChatSummaryAction: updateMock,
 }));
@@ -106,9 +112,9 @@ const harnessProps = {
   onFetchModelsForProfile: async () => [],
 };
 
-function Harness() {
+function Harness({ detail = false }: { detail?: boolean }) {
   const tab = useSummaryTab(harnessProps);
-  return <>{tab.masterContent}</>;
+  return <TooltipProvider>{tab.masterContent}{detail && tab.detailEditor}</TooltipProvider>;
 }
 
 function rowOrder(view: ReturnType<typeof render>): string[] {
@@ -129,6 +135,7 @@ function dragEnd(activeId: string, overId: string): void {
 
 describe("SummaryTab master list (ML-4 primitive)", () => {
   beforeEach(() => {
+    mobile = false;
     globalThis.fetch = originalFetch;
     globalThis.fetch = Object.assign(runStateFetch, { preconnect: originalFetch.preconnect });
     mock.clearAllMocks();
@@ -150,6 +157,19 @@ describe("SummaryTab master list (ML-4 primitive)", () => {
       server = server.map((s) => (s.id === summaryId ? updated : s));
       return updated;
     });
+  });
+
+  test("mobile delete keeps its themed hint, accessible name and action", async () => {
+    mobile = true;
+    const view = render(<Harness detail />);
+    await waitFor(() => expect(view.getByTestId("summary-row-s1")).toBeTruthy());
+    fireEvent.click(view.getByTestId("summary-row-s1"));
+    const button = view.getAllByRole("button", { name: "delete" }).find((element) => element.className.includes("md:hidden"));
+    if (!button) throw new Error("Missing mobile delete");
+    fireEvent.focus(button);
+    expect((await view.findByRole("tooltip")).textContent).toBe("delete");
+    fireEvent.click(button);
+    await waitFor(() => expect(deleteMock).toHaveBeenCalledWith("chat", "s1"));
   });
 
   test("archive rows render on the primitive with handles, wrapping titles, and source second lines", async () => {

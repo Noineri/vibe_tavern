@@ -1,3 +1,4 @@
+import { CustomTooltip } from "../shared/Tooltip.js";
 import type { ReactNode } from "react";
 import { SliderField } from "../shared/SliderField.js";
 import { Toggle } from "../shared/Toggle.js";
@@ -27,10 +28,12 @@ export function SummaryHistoryLimitControl(input: {
 					onCommit={(value) => input.onValueCommitted(Math.round(value))}
 				/>
 			</div>
-			<div className="flex shrink-0 items-center gap-1.5" title={input.autoHint}>
-				<Toggle checked={input.latched} onChange={input.onAutoChange} aria-label={input.autoLabel} />
-				<span className="font-ui text-[calc(var(--ui-fs)-3px)] text-t3">{input.autoLabel}</span>
-			</div>
+			<CustomTooltip content={input.autoHint}>
+				<div className="flex shrink-0 items-center gap-1.5">
+					<Toggle checked={input.latched} onChange={input.onAutoChange} aria-label={input.autoLabel} />
+					<span className="font-ui text-[calc(var(--ui-fs)-3px)] text-t3">{input.autoLabel}</span>
+				</div>
+			</CustomTooltip>
 		</div>
 	);
 }

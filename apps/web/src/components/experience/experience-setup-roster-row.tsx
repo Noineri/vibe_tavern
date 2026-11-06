@@ -1,3 +1,4 @@
+import { CustomTooltip } from "../shared/Tooltip.js";
 /**
  * One participant-roster row of ExperienceSetupModal (IR-70F roster capability).
  *
@@ -48,14 +49,13 @@ export function RosterRow({
           aria-label={t("experience_setup_participant_name_placeholder")}
         />
         {seat.characterId !== undefined && (
-          <span
+          <CustomTooltip content={t("experience_setup_seat_character_badge")}><span
             className="flex shrink-0 items-center gap-1 rounded-full border border-border bg-s3 px-2 py-0.5 font-ui text-[calc(var(--ui-fs)-3px)] text-t3"
-            title={t("experience_setup_seat_character_badge")}
             data-testid="experience-setup-seat-character"
           >
             <Ic.user />
             {characterName ?? seat.characterId}
-          </span>
+          </span></CustomTooltip>
         )}
         <SegmentedControl
           value={seat.controller}

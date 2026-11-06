@@ -24,7 +24,11 @@ import type { ExperienceLoopConfig } from "../../lib/experience-loop-host.js";
 
 useDomEnv();
 
-const { render, fireEvent, act } = await import("@testing-library/react");
+const { render: rtlRender, fireEvent, act } = await import("@testing-library/react");
+const { TooltipProvider } = await import("../shared/Tooltip.js");
+function render(ui: React.ReactNode, options?: Parameters<typeof rtlRender>[1]) {
+  return rtlRender(ui, { wrapper: TooltipProvider, ...options });
+}
 
 // Spy on URL.createObjectURL so happy-dom does not try to navigate the embedded
 // iframe (its BrowserFrameNavigator rejects a real blob URL as "null" and logs
@@ -133,6 +137,13 @@ describe("ExperienceModal — trusted chrome", () => {
     const { getByTestId, onDetach } = renderModal();
     fireEvent.click(getByTestId("experience-detach"));
     expect(onDetach).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the detach hint and accessible name", async () => {
+    const view = renderModal();
+    const button = view.getByRole("button", { name: "experience_detach_title" });
+    fireEvent.focus(button);
+    expect((await view.findByRole("tooltip")).textContent).toBe("experience_detach_title");
   });
 
   it("renders the reportControls footer OUTSIDE the frame when supplied (IR-73C)", () => {

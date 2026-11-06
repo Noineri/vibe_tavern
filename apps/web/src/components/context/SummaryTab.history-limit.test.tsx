@@ -81,10 +81,12 @@ let act: typeof import("@testing-library/react").act;
 let fireEvent: typeof import("@testing-library/react").fireEvent;
 let render: typeof import("@testing-library/react").render;
 let waitFor: typeof import("@testing-library/react").waitFor;
+let TooltipProvider: typeof import("../shared/Tooltip.js").TooltipProvider;
 let useSummaryTab: typeof import("./SummaryTab.js").useSummaryTab;
 
 beforeAll(async () => {
 	({ act, fireEvent, render, waitFor } = await import("@testing-library/react"));
+	({ TooltipProvider } = await import("../shared/Tooltip.js"));
 	({ useSummaryTab } = await import("./SummaryTab.js"));
 });
 
@@ -111,7 +113,7 @@ afterAll(() => {
 
 function Harness() {
 	const tab = useSummaryTab(harnessProps);
-	return <>{tab.detailEditor}{tab.footer}</>;
+	return <TooltipProvider delayDuration={0}>{tab.detailEditor}{tab.footer}</TooltipProvider>;
 }
 
 async function renderHistoryField() {
@@ -164,7 +166,10 @@ describe("SummaryTab history limit", () => {
 			expect(shell.querySelector("[data-slider-field-editor]")).toBeNull();
 			const auto = view.getByRole("switch", { name: "summary_history_auto" });
 			expect(auto.parentElement?.parentElement).toBe(row);
-			expect(auto.parentElement?.title).toBe("summary_history_auto_hint");
+			if (!auto.parentElement) throw new Error("Missing auto hint trigger");
+			await act(async () => {});
+		fireEvent.pointerMove(auto.parentElement, { pointerType: "mouse" });
+			await waitFor(() => expect(view.getByRole("tooltip").textContent).toBe("summary_history_auto_hint"));
 			expect(view.getByText("summary_history_auto").parentElement).toBe(auto.parentElement);
 			if (mobile) {
 				const section = row.closest("section");

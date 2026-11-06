@@ -15,6 +15,7 @@
  * worldbuilding prose in a capped scroll block, key chips as pills, activation
  * as badges.
  */
+import { OverflowTooltip } from "../shared/OverflowTooltip.js";
 import { Fragment, useMemo } from "react";
 import type {
   CoauthorDraftLoreEntry,
@@ -321,12 +322,7 @@ export function CoauthorLoreReview({
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5">
                   <span className="font-body text-[calc(var(--ui-fs)-1px)] font-medium text-t1">{labels.existingLorebook}</span>
-                  <span
-                    className="max-w-[16rem] truncate rounded-full border border-border/70 bg-surface px-1.5 py-px font-mono text-[calc(var(--ui-fs)-5px)] text-t4"
-                    title={lorebookId}
-                  >
-                    {lorebookId}
-                  </span>
+                  <OverflowTooltip asSpan className="max-w-[16rem] rounded-full border border-border/70 bg-surface px-1.5 py-px font-mono text-[calc(var(--ui-fs)-5px)] text-t4" text={lorebookId} />
                 </div>
               </div>
               <span className="shrink-0 font-ui text-[calc(var(--ui-fs)-4px)] text-t4">

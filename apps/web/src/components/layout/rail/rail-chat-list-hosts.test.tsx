@@ -32,7 +32,7 @@ import { formatRelativeTime } from "../sidebar-utils.js";
 
 useDomEnv({ failOnNetwork: true });
 
-const { act, fireEvent, render } = await import("@testing-library/react");
+const { act, fireEvent, render: rtlRender } = await import("@testing-library/react");
 
 // ── Doubles ──────────────────────────────────────────────────────────────
 
@@ -43,12 +43,10 @@ installI18nContextSeam({
 	},
 });
 
-const realTooltip = await import("../../shared/Tooltip.js");
-mock.module("../../shared/Tooltip.js", () => ({
-	...realTooltip,
-	CustomTooltip: ({ children }: { children: ReactNode }) => children,
-	TooltipProvider: ({ children }: { children: ReactNode }) => children,
-}));
+const { TooltipProvider } = await import("../../shared/Tooltip.js");
+function render(ui: React.ReactNode, options?: Parameters<typeof rtlRender>[1]) {
+  return rtlRender(ui, { wrapper: TooltipProvider, ...options });
+}
 
 const NOOP_ASYNC = async () => {};
 const CHAT_STUB = {
@@ -230,7 +228,7 @@ function chatList(root: HTMLElement, title: string): HTMLElement {
 
 /** The tablet sheet is launched from a collapsed-strip avatar (title = the character's name). */
 function openTabletSheet(view: View, name: string): HTMLElement {
-	const avatar = view.baseElement.querySelector<HTMLElement>(`div[title="${name}"]`);
+	const avatar = view.baseElement.querySelector<HTMLElement>(`button[aria-label="${name}"]`);
 	if (!avatar) throw new Error(`no collapsed-strip avatar for "${name}"`);
 	fireEvent.click(avatar);
 	const sheet = view.baseElement.querySelector<HTMLElement>(".bs-popup");
@@ -325,7 +323,7 @@ describe("Mobile scrollbar policy — real RP and Co-Author hosts", () => {
 		await act(async () => { fireEvent.change(search, { target: { value: "" } }); });
 		expect(chatTitles(popup).sort()).toEqual(["Moonlit Harbor", "Winter Market"]);
 		await act(async () => { fireEvent.keyDown(popup, { key: "Escape", code: "Escape" }); });
-		const avatar = view.container.querySelector<HTMLElement>('div[title="Aria"]')!;
+		const avatar = view.getByRole("button", { name: "Aria" });
 		await act(async () => { fireEvent.click(avatar); });
 		const sheet = view.baseElement.querySelector<HTMLElement>(".bs-popup")!;
 		const sheetList = chatList(sheet, "Moonlit Harbor");

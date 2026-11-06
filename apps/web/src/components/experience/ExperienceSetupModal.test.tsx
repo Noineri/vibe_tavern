@@ -40,7 +40,6 @@ import { installSnapshotStoreSeam } from "../../../test/snapshot-store-seam.js";
 import { installExperienceStoreSeam } from "../../../test/experience-store-seam.js";
 import { installPersonaApiSeam } from "../../../test/persona-api-seam.js";
 
-import type { ReactNode } from "react";
 import type {
   ExperienceChatConfigRow,
   ExperiencePromptOverridesResponse,
@@ -57,7 +56,7 @@ import type { ExperienceCapability } from "@vibe-tavern/domain";
 useDomEnv();
 
 type RenderResult = import("@testing-library/react").RenderResult;
-const { render, fireEvent, waitFor, cleanup, act } = await import("@testing-library/react");
+const { render: rtlRender, fireEvent, waitFor, cleanup, act } = await import("@testing-library/react");
 const { useSyncExternalStore } = await import("react");
 
 const CHAT_ID = "chat_1";
@@ -120,7 +119,10 @@ const mocks = {
 const realScriptApi = await import("../../api/script-api.js");
 const realExperienceApi = await import("../../api/experience-api.js");
 const realProviderApi = await import("../../api/provider-api.js");
-const realTooltip = await import("../shared/Tooltip.js");
+const { TooltipProvider } = await import("../shared/Tooltip.js");
+function render(ui: React.ReactNode, options?: Parameters<typeof rtlRender>[1]) {
+  return rtlRender(ui, { wrapper: TooltipProvider, ...options });
+}
 const realMobile = await import("../../hooks/use-mobile.js");
 
 // RP-context source picker data (report item 6): mutable fakes consumed by the
@@ -196,12 +198,7 @@ mock.module("../../api/provider-api.js", () => ({
   fetchProviderProfileModels: mocks.fetchProviderProfileModels,
 }));
 
-// SegmentedControl wraps options in CustomTooltip; passthrough (InsightsPanel.test pattern).
-mock.module("../shared/Tooltip.js", () => ({
-  ...realTooltip,
-  CustomTooltip: ({ children }: { children: ReactNode }) => children,
-  TooltipProvider: ({ children }: { children: ReactNode }) => children,
-}));
+// Use the real tooltip provider for seat badges and segmented options.
 
 let mobileOverride: boolean | null = null;
 mock.module("../../hooks/use-mobile.js", () => ({
@@ -676,6 +673,8 @@ describe("ExperienceSetupModal — character-backed seats", () => {
     expect((seat3.querySelector('input[type="text"]') as HTMLInputElement).value).toBe("Bruno");
     expect(seat2.querySelector('[data-testid="experience-setup-seat-character"]')).toBeTruthy();
     expect(seat3.querySelector('[data-testid="experience-setup-seat-character"]')).toBeTruthy();
+    fireEvent.pointerMove(seat2.querySelector('[data-testid="experience-setup-seat-character"]')!, { pointerType: "mouse" });
+    expect((await view.findByRole("tooltip")).textContent).toBe("experience_setup_seat_character_badge");
     // Controller defaults to model.
     expect([...seat2.querySelectorAll('[role="radio"]')].some((r) => r.getAttribute("data-state") === "checked" && r.textContent?.trim() === "experience_setup_controller_model")).toBe(true);
   });
