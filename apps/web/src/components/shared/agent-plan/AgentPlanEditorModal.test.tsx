@@ -125,11 +125,11 @@ describe("AgentPlanEditorModal", () => {
 // absent. The save pins the owner routing: the branch route, never the
 // script one.
 describe("AgentPlanEditorModal — story labels for a branch owner (DR-9)", () => {
-  function renderStoryModal(locked = false) {
+  function renderStoryModal(locked = false, branchId = "story-branch") {
     const onClose = mock();
     const view = render(
       <AgentPlanEditorModal
-        owner={{ kind: "chatBranch", chatId: "story-chat", branchId: "story-branch" }}
+        owner={{ kind: "chatBranch", chatId: "story-chat", branchId }}
         open
         onClose={onClose}
         locked={locked}
@@ -139,7 +139,7 @@ describe("AgentPlanEditorModal — story labels for a branch owner (DR-9)", () =
   }
 
   it("renders every §7 label: title, premise + hint, rules, events, body hint + placeholder", async () => {
-    const { getByLabelText, getByTestId, queryByPlaceholderText, queryAllByPlaceholderText, getAllByText, getAllByLabelText, getAllByPlaceholderText, queryByText } = renderStoryModal();
+    const { getByLabelText, getByTestId, queryByPlaceholderText, queryAllByPlaceholderText, getAllByText, getAllByLabelText, getAllByPlaceholderText, queryByText } = renderStoryModal(false, "story-labels-branch");
     // Terminal state: the premise field carries the canned plan's goal.
     await waitFor(() => expect((getByLabelText("agent_plan_story_goal") as HTMLTextAreaElement).value).toBe("Build the editor"));
 

@@ -88,7 +88,8 @@ export const BUDGETS = {
 	// 196 (2026-10-04): ratcheted to the merged tree's count after PR #51
 	// (provider-lists unification removed the forked pickers' screen usage;
 	// 2026-10-09 regex remediation removed the rest — locked at 156).
-	screen: 156,
+	// Ratcheted to the current tree's count.
+	screen: 138,
 	/** `innerHTML = ""` surgeries (TtsProfileEditor legacy block). */
 	innerHTMLEmpty: 30,
 	/** Literal `await sleep/delay/wait(N)` with N > 200 in test files. */

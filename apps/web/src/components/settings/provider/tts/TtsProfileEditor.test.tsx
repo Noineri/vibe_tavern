@@ -34,22 +34,25 @@ const { TTS_BACKEND } = await import("@vibe-tavern/domain");
 // captured first, only draft helpers overridden.
 const realTtsApi = await import("../../../../api/tts-api.js");
 import type { TtsDraftVoicesResponse } from "../../../../api/tts-api.js";
-const listTtsDraftVoicesMock = mock(async (_body: { backend: string; config: Record<string, unknown>; profileId?: string; source?: "stored" }): Promise<TtsDraftVoicesResponse> => ({
+const defaultVoices = async (_body: { backend: string; config: Record<string, unknown>; profileId?: string; source?: "stored" }): Promise<TtsDraftVoicesResponse> => ({
   voices: [
     { id: "alloy", label: "Alloy", lang: "en" },
     { id: "echo", label: "Echo", lang: "en" },
   ],
   capabilities: { supportsCloning: false },
-}));
-const listTtsDraftModelsMock = mock(async (_body: { backend: string; config: Record<string, unknown>; profileId?: string; source?: "stored" }): Promise<Array<{ id: string; label: string }>> => [
+});
+const listTtsDraftVoicesMock = mock(defaultVoices);
+const defaultModels = async (_body: { backend: string; config: Record<string, unknown>; profileId?: string; source?: "stored" }): Promise<Array<{ id: string; label: string }>> => [
   { id: "gemini-2.5-flash-preview-tts", label: "gemini-2.5-flash-preview-tts" },
   { id: "gemini-2.5-pro-preview-tts", label: "gemini-2.5-pro-preview-tts" },
-]);
-const cloneTtsVoiceMock = mock(async (body: { backend: string; name: string; audio: File }) => ({
+];
+const listTtsDraftModelsMock = mock(defaultModels);
+const defaultCloneVoice = async (body: { backend: string; name: string; audio: File }) => ({
   id: body.name,
   label: body.name,
   lang: "en",
-}));
+});
+const cloneTtsVoiceMock = mock(defaultCloneVoice);
 mock.module("../../../../api/tts-api.js", () => ({
   ...realTtsApi,
   listTtsDraftVoices: listTtsDraftVoicesMock,
@@ -100,6 +103,15 @@ function makeTts(overrides: Partial<ReturnType<typeof import("../../../../hooks/
   }
   return merged as unknown as ReturnType<typeof import("../../../../hooks/use-tts-profiles.js").useTtsProfiles>;
 }
+
+beforeEach(() => {
+  listTtsDraftVoicesMock.mockReset();
+  listTtsDraftVoicesMock.mockImplementation(defaultVoices);
+  listTtsDraftModelsMock.mockReset();
+  listTtsDraftModelsMock.mockImplementation(defaultModels);
+  cloneTtsVoiceMock.mockReset();
+  cloneTtsVoiceMock.mockImplementation(defaultCloneVoice);
+});
 
 afterEach(async () => {
   await act(async () => {});

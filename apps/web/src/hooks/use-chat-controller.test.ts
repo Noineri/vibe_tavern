@@ -212,6 +212,7 @@ beforeEach(() => {
     profiles: [{ id: "p1", isActive: true, defaultModel: "gpt-x" } as never],
   });
   useBootstrapStore.setState({ data: null });
+  useSnapshotStore.setState({ activeChat: null });
   useGenerationQueueStore.setState({ jobsByChat: {}, batchesByChat: {}, recordsByChat: {} });
 });
 

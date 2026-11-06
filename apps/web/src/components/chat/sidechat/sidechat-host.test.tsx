@@ -601,9 +601,10 @@ describe("sidechat-host — copy to composer (SC-16)", () => {
 
 describe("sidechat-host — chat-only shell render (SC-13b)", () => {
   it("a chat owner mounts the chat pane with the empty hint and no editor pane", async () => {
-    router.activeThread = chatThread("sidechat-thread-1", "chat-1", "branch-1");
+    const owner: AgentThreadOwner = { ...CHAT_OWNER, branchId: "chat-only-branch" };
+    router.activeThread = chatThread("sidechat-thread-1", "chat-1", "chat-only-branch");
     const { getByText, getByTestId, queryByTestId } = render(
-      withIsolatedI18n(<AgentShell kind={SIDECHAT_AGENT_KIND} owner={CHAT_OWNER} isMobile={false} />),
+      withIsolatedI18n(<AgentShell kind={SIDECHAT_AGENT_KIND} owner={owner} isMobile={false} />),
     );
     await flushSessionLoad();
 
@@ -613,7 +614,7 @@ describe("sidechat-host — chat-only shell render (SC-13b)", () => {
     expect(getByTestId("copilot-send-btn")).toBeDefined();
     expect(queryByTestId("copilot-review-bar")).toBeNull();
     // The branch plan loads through the descriptor's chatBranch owner.
-    expect(apiCalls("GET", /\/api\/agent\/chats\/chat-1\/branches\/branch-1\/plan$/).length).toBe(1);
+    expect(apiCalls("GET", /\/api\/agent\/chats\/chat-1\/branches\/chat-only-branch\/plan$/).length).toBe(1);
   });
 });
 

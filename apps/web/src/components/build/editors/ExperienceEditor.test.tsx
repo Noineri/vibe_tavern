@@ -327,6 +327,7 @@ function holdNextUpdate() {
 }
 
 beforeEach(() => {
+  useScriptSafetySettingsStore.setState({ suppressImportWarnings: false });
   useBuildNavigationStore.setState(navigationBeforeSuite, true);
   mobileMocks.mobile = false;
   listAllScripts.mockClear();

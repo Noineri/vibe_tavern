@@ -313,7 +313,7 @@ describe("willAcceptReplaceForeignGoals", () => {
 
 describe("StoryPlanProposalCard (DR-10a)", () => {
   it("renders the revision rows with markers and the current event's body (mock §6)", async () => {
-    const { getAllByTestId, getByTestId } = await mountCard();
+    const { getAllByTestId, getByTestId } = await mountCard({ branchId: "b-revision-rows" });
     const rows = getAllByTestId("story-plan-event");
     expect(rows.map((row) => [row.getAttribute("data-event-id"), row.getAttribute("data-marker")])).toEqual([
       ["ev1", ""],
