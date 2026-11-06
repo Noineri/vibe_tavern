@@ -125,13 +125,34 @@ export type ExperienceCopilotStreamAskAnswer = z.infer<typeof experienceCopilotA
  * `.strict()` member rejects them here. The `toolCallId` must point at a
  * still-awaiting permission marker row in THIS thread (thread state —
  * enforced by the stream, not the schema).
+ *
+ * DMT-11 (editable swipe permissions): an ALLOW answer may carry an optional
+ * `instruction` — the user-edited one-shot text for the swipe-permission
+ * family (`request_message_swipe`); the bound mirrors the ask family's
+ * `text`. A DENY answer carrying an `instruction` is rejected (there is
+ * nothing to approve), and an `instruction` on a prompt-read allow is
+ * meaningless by construction: which family the referenced row belongs to is
+ * THREAD STATE, so the stream's permission continuation (not this schema)
+ * refuses an instruction override for a tool whose executor does not accept
+ * one — a prompt read can never become a swipe merely because a client sends
+ * the field.
  */
 export const experienceCopilotStreamPermissionAnswerSchema = z
   .object({
     toolCallId: z.string().min(1),
     decision: z.enum(["allow", "deny"]),
+    instruction: z.string().min(1).max(50_000).optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((val, ctx) => {
+    if (val.decision === "deny" && val.instruction !== undefined) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["instruction"],
+        message: "A denied permission cannot carry an instruction.",
+      });
+    }
+  });
 export type ExperienceCopilotStreamPermissionAnswer = z.infer<
   typeof experienceCopilotStreamPermissionAnswerSchema
 >;

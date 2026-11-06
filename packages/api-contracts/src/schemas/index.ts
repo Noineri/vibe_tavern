@@ -429,6 +429,36 @@ export type {
   CopilotProfileUpdate,
 } from "./experience-copilot-schema.js";
 
+export {
+  DIRECTOR_MESSAGE_TOOLS,
+  DIRECTOR_MESSAGE_TOOL_NAMES,
+  DIRECTOR_MESSAGE_RECORD_TYPES,
+  proposeMessageEditInputSchema,
+  proposeMessageVariantInputSchema,
+  requestMessageSwipeInputSchema,
+  directorMessageSourceIdentitySchema,
+  directorMessageEditProposalSchema,
+  directorMessageVariantProposalSchema,
+  directorSwipePermissionMarkerSchema,
+  directorSwipeGrantedReceiptSchema,
+  directorSwipeDeniedReceiptSchema,
+  directorSwipeToolOutputSchema,
+} from "./director-message-tools-schema.js";
+export type {
+  DirectorMessageToolName,
+  DirectorMessageRecordType,
+  DirectorMessageSourceIdentity,
+  ProposeMessageEditInput,
+  ProposeMessageVariantInput,
+  RequestMessageSwipeInput,
+  DirectorMessageEditProposal,
+  DirectorMessageVariantProposal,
+  DirectorSwipePermissionMarker,
+  DirectorSwipeGrantedReceipt,
+  DirectorSwipeDeniedReceipt,
+  DirectorSwipeToolOutput,
+} from "./director-message-tools-schema.js";
+
 export { experienceTestDiscoverRequestSchema } from "./experience-test-discover-schema.js";
 export type { ExperienceTestDiscoverRequestDto } from "./experience-test-discover-schema.js";
 

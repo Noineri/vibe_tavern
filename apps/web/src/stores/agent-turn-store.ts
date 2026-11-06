@@ -437,7 +437,11 @@ function readNonNegativeInt(source: Record<string, unknown>, key: string): numbe
  *  shows the resolved label, never the prompt text). Anything else → null
  *  (error card). BOTH extraction paths (live SSE + persisted rows) call
  *  this one function, which is what makes their payloads field-for-field
- *  identical. Pure. */
+ *  identical. Pure.
+ *
+ *  forks: 1 — packages/api-contracts/src/agent-permission-state.ts (DMT-11
+ *  added the swipe family + the canonical decoder there; this web copy is
+ *  retired onto it in DMT-31). */
 export function parseAgentPermissionState(output: unknown): AgentPermissionState | null {
   if (typeof output !== "object" || output === null) return null;
   const out = output as Record<string, unknown>;
