@@ -226,9 +226,9 @@ function chatList(root: HTMLElement, title: string): HTMLElement {
 	return list;
 }
 
-/** The tablet sheet is launched from a collapsed-strip avatar (title = the character's name). */
+/** The tablet sheet is launched from a collapsed-strip avatar (aria-label = the character's name). */
 function openTabletSheet(view: View, name: string): HTMLElement {
-	const avatar = view.baseElement.querySelector<HTMLElement>(`button[aria-label="${name}"]`);
+	const avatar = view.baseElement.querySelector<HTMLElement>(`div[aria-label="${name}"]`);
 	if (!avatar) throw new Error(`no collapsed-strip avatar for "${name}"`);
 	fireEvent.click(avatar);
 	const sheet = view.baseElement.querySelector<HTMLElement>(".bs-popup");
@@ -323,7 +323,8 @@ describe("Mobile scrollbar policy — real RP and Co-Author hosts", () => {
 		await act(async () => { fireEvent.change(search, { target: { value: "" } }); });
 		expect(chatTitles(popup).sort()).toEqual(["Moonlit Harbor", "Winter Market"]);
 		await act(async () => { fireEvent.keyDown(popup, { key: "Escape", code: "Escape" }); });
-		const avatar = view.getByRole("button", { name: "Aria" });
+		const avatar = view.container.querySelector<HTMLElement>('div[aria-label="Aria"]');
+		if (!avatar) throw new Error("no collapsed-strip avatar for Aria");
 		await act(async () => { fireEvent.click(avatar); });
 		const sheet = view.baseElement.querySelector<HTMLElement>(".bs-popup")!;
 		const sheetList = chatList(sheet, "Moonlit Harbor");

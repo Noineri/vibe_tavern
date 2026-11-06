@@ -14,8 +14,7 @@ import { cn } from "../../../lib/cn.js";
 export function Ico({ icon, active, onClick, title }: { icon: ReactNode; active?: boolean; onClick: () => void; title: string }) {
   return (
     <CustomTooltip content={title}>
-      <button
-        type="button"
+      <div
         aria-label={title}
         className={cn(
           // Specific properties only (not `transition-all`); scale 0.96 is the
@@ -26,7 +25,7 @@ export function Ico({ icon, active, onClick, title }: { icon: ReactNode; active?
         onClick={onClick}
       >
         {icon}
-      </button>
+      </div>
     </CustomTooltip>
   );
 }

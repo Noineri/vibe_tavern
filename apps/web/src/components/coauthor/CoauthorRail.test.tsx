@@ -54,7 +54,7 @@ installI18nContextSeam({
   },
 });
 
-// The real tooltip provider preserves the hint and focus behavior in this rail.
+// The real tooltip provider exercises the rail hints without replacing the triggers.
 const { TooltipProvider } = await import("../shared/Tooltip.js");
 function render(ui: React.ReactNode, options?: Parameters<typeof rtlRender>[1]) {
   return rtlRender(ui, { wrapper: TooltipProvider, ...options });
@@ -118,22 +118,39 @@ describe("CoauthorRail — plug routes to the co-author provider modal (E3)", ()
   beforeEach(resetModals);
 
   it("collapsed strip: Ico plug opens the co-author modal, not the RP one", () => {
-    const { getByRole } = render(createElement(CoauthorRail));
-    fireEvent.click(getByRole("button", { name: "provider_settings_tooltip" }));
+    const view = render(createElement(CoauthorRail));
+    const plug = view.container.querySelector<HTMLElement>('div[aria-label="provider_settings_tooltip"]');
+    if (!plug) throw new Error("Missing collapsed provider control");
+    fireEvent.click(plug);
     expect(useModalStore.getState().isCoauthorProviderModalOpen).toBe(true);
     expect(useModalStore.getState().isProviderModalOpen).toBe(false);
   });
 
-  it("collapsed rail icons retain named focusable triggers and their themed hints", async () => {
-    const view = render(createElement(CoauthorRail));
+  it("collapsed rail icons retain named div triggers and their themed hints", async () => {
     for (const name of ["provider_settings_tooltip", "create_manual", "import_char_short"]) {
-      const trigger = view.getByRole("button", { name });
-      expect(trigger.tagName).toBe("BUTTON");
+      const view = render(createElement(CoauthorRail));
+      const trigger = view.container.querySelector<HTMLElement>(`div[aria-label="${name}"]`);
+      if (!trigger) throw new Error(`Missing collapsed control: ${name}`);
       expect(trigger.className).toContain("h-10");
-      fireEvent.focus(trigger);
+      expect(trigger.hasAttribute("tabindex")).toBe(false);
+      fireEvent.pointerMove(trigger, { pointerType: "mouse" });
       expect((await view.findByRole("tooltip")).textContent).toBe(name);
-      fireEvent.blur(trigger);
+      view.unmount();
     }
+  });
+
+  it("collapsed create and import controls retain their actions", () => {
+    useModalStore.setState({ isCreateCharacterModalOpen: false });
+    openCharacterPicker.mockClear();
+    const view = render(createElement(CoauthorRail));
+    const create = view.container.querySelector<HTMLElement>('div[aria-label="create_manual"]');
+    const importControl = view.container.querySelector<HTMLElement>('div[aria-label="import_char_short"]');
+    if (!create || !importControl) throw new Error("Missing collapsed create/import controls");
+    fireEvent.click(create);
+    expect(useModalStore.getState().isCreateCharacterModalOpen).toBe(true);
+    fireEvent.click(importControl);
+    expect(openCharacterPicker).toHaveBeenCalledTimes(1);
+    useModalStore.setState({ isCreateCharacterModalOpen: false });
   });
 
   it("expanded drawer: NavRow plug opens the co-author modal, not the RP one", async () => {
@@ -566,11 +583,13 @@ describe("CoauthorRail drawer — the actions reachable before the drill-in", ()
   it("the tablet sheet (collapsed-strip avatar tap) lists the character's Co-Author chats; a chat switches, «+» creates a Co-Author chat", async () => {
     seedStores();
     const view = render(createElement(CoauthorRail));
-    const avatar = view.getByRole("button", { name: "Aria" });
+    const avatar = view.container.querySelector<HTMLElement>('div[aria-label="Aria"]');
+    if (!avatar) throw new Error("Missing collapsed avatar");
     expect(avatar.className).toContain("h-10 w-10");
-    fireEvent.focus(avatar);
+    expect(avatar.hasAttribute("tabindex")).toBe(false);
+    fireEvent.pointerMove(avatar, { pointerType: "mouse" });
     expect((await view.findByRole("tooltip")).textContent).toBe("Aria");
-    fireEvent.blur(avatar);
+    fireEvent.pointerLeave(avatar);
     fireEvent.click(avatar);
     const sheet = view.baseElement.querySelector<HTMLElement>(".bs-popup");
     if (!sheet) throw new Error("the tablet chats sheet is not mounted");

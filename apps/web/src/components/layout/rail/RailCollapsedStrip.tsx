@@ -65,18 +65,18 @@ export function RailCollapsedStrip({
       {/* Create + Import */}
       <div className="flex w-full flex-col gap-1 px-2">
         <CustomTooltip content={createManualLabel}>
-          <button type="button" aria-label={createManualLabel} className="flex h-10 w-full cursor-pointer items-center justify-center rounded-lg text-t3 transition-colors active:bg-s3"
+          <div aria-label={createManualLabel} className="flex h-10 w-full cursor-pointer items-center justify-center rounded-lg text-t3 transition-colors active:bg-s3"
             onClick={onCreateCharacter}
           >
             <Ic.plus />
-          </button>
+          </div>
         </CustomTooltip>
         <CustomTooltip content={importCharShortLabel}>
-          <button type="button" aria-label={importCharShortLabel} className="flex h-10 w-full cursor-pointer items-center justify-center rounded-lg text-t3 transition-colors active:bg-s3"
+          <div aria-label={importCharShortLabel} className="flex h-10 w-full cursor-pointer items-center justify-center rounded-lg text-t3 transition-colors active:bg-s3"
             onClick={onImport}
           >
             <Ic.import />
-          </button>
+          </div>
         </CustomTooltip>
       </div>
       <div className="h-px w-8 shrink-0 bg-border" />
@@ -89,7 +89,7 @@ export function RailCollapsedStrip({
           inside the sheet. */}
       {characters.map((c) => (
         <CustomTooltip key={c.id} content={c.name}>
-          <button type="button" aria-label={c.name}
+          <div aria-label={c.name}
             className={cn(
               "relative flex h-10 w-10 cursor-pointer items-center justify-center rounded-full transition-[background-color,border-radius,transform] duration-150 ease-out active:rounded-xl active:bg-s2 active:scale-[0.96]",
               selectedCharacterId === c.id && "rounded-xl bg-accent-dim ring-2 ring-accent",
@@ -104,7 +104,7 @@ export function RailCollapsedStrip({
               )}
             </span>
             <CharacterActivityBadge characterId={c.id} />
-          </button>
+          </div>
         </CustomTooltip>
       ))}
     </>
