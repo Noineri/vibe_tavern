@@ -86,7 +86,7 @@ function makeData(overrides: Record<string, unknown> = {}) {
 }
 
 function mount(data: InputAreaData) {
-  return render(<TooltipProvider><MobileInputArea data={data} /></TooltipProvider>);
+  return render(<TooltipProvider delayDuration={0}><MobileInputArea data={data} /></TooltipProvider>);
 }
 
 
@@ -208,4 +208,15 @@ describe("MobileInputArea generate-more", () => {
 
     expect(view.queryByText("generate_more_label")).toBeNull();
   });
+});
+
+it("shows the distinct generate-more hint without changing its action", async () => {
+  const action = mock();
+  const view = mount(makeData({ showGenerateMore: true, handleGenerateMore: action }));
+  const button = view.getByRole("button", { name: "generate_more_label" });
+  expect(button.hasAttribute("title")).toBe(false);
+  fireEvent.pointerMove(button, { pointerType: "mouse" });
+  expect((await view.findByRole("tooltip")).textContent).toBe("generate_more_tooltip");
+  fireEvent.click(button);
+  expect(action).toHaveBeenCalledTimes(1);
 });

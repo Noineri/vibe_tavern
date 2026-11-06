@@ -23,6 +23,7 @@ import { Icons } from "../shared/icons.js";
 import { cn } from "../../lib/cn.js";
 import { composerCls } from "../../lib/field-tokens.js";
 import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
+import { CustomTooltip } from "../shared/Tooltip.js";
 import { BottomSheet } from "../shared/BottomSheet.js";
 import { ScrollArea } from "../shared/scroll-area.js";
 import { ContextRing, getContextUsage } from "../shared/TokenCounterPopover.js";
@@ -185,14 +186,15 @@ export function MobileInputArea({ data }: { data: InputAreaData }) {
           } />
           <div className="flex shrink-0 items-center gap-2">
             {showGenerateMore && (
-              <button type="button"
-                onClick={handleGenerateMore}
-                title={t("generate_more_tooltip")}
-                className="flex h-9 items-center gap-1 whitespace-nowrap rounded-lg border border-border2 bg-s3 px-2.5 font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t2 active:bg-s2"
-              >
-                <Icons.Plus />
-                <span>{t("generate_more_label")}</span>
-              </button>
+              <CustomTooltip content={t("generate_more_tooltip")}>
+                <button type="button"
+                  onClick={handleGenerateMore}
+                  className="flex h-9 items-center gap-1 whitespace-nowrap rounded-lg border border-border2 bg-s3 px-2.5 font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t2 active:bg-s2"
+                >
+                  <Icons.Plus />
+                  <span>{t("generate_more_label")}</span>
+                </button>
+              </CustomTooltip>
             )}
             {/* Always mounted (see the header): hidden while send/cancel own the
                 slot. Without a voice profile it renders the disabled send as

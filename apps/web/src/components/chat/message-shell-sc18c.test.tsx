@@ -36,8 +36,7 @@ mock.module("../../hooks/use-mobile.js", () => ({
 
 const { MessageShell } = await import("./MessageShell.js");
 const { fireEvent, render, cleanup } = await import("@testing-library/react");
-const Tooltip = await import("@radix-ui/react-tooltip");
-const TooltipProvider: React.ComponentType<{ children: React.ReactNode }> = (Tooltip as unknown as { Provider: React.ComponentType<{ children: React.ReactNode }> }).Provider ?? (Tooltip as unknown as { TooltipProvider: React.ComponentType<{ children: React.ReactNode }> }).TooltipProvider ?? (({ children }: { children: React.ReactNode }) => <>{children}</>);
+const { TooltipProvider } = await import("../shared/Tooltip.js");
 
 type ShellProps = Parameters<typeof MessageShell>[0];
 
@@ -122,7 +121,7 @@ function fullAssistantProps(overrides: Partial<ShellProps> = {}): ShellProps {
 }
 
 function renderWithTooltip(ui: React.ReactElement) {
-  return render(<TooltipProvider>{ui}</TooltipProvider>);
+  return render(<TooltipProvider delayDuration={0}>{ui}</TooltipProvider>);
 }
 
 /** The mobile action grid (the only `mt-2 grid` in a text-message render). */
@@ -177,15 +176,15 @@ describe("SC-18c mobile assistant row — switcher + images + continue + regener
     expect(grid.children[0].contains(stub), "the switcher must sit in the row's first cell").toBe(true);
     expect(grid.querySelector('[data-testid="image-gen-message-trigger"]'), "images stay in the row").not.toBeNull();
     expect(grid.querySelector('[data-testid="mobile-continue-btn"]'), "continue joins the row").not.toBeNull();
-    expect(grid.querySelector('[title="regen"]'), "regenerate stays in the row").not.toBeNull();
+    expect(grid.querySelector('[aria-label="regen"]'), "regenerate stays in the row").not.toBeNull();
 
     // Gone from the row: branch, narrate, AI editor, annotate, discuss, resend.
-    expect(grid.querySelector('[title="branch"]'), "branch leaves the row").toBeNull();
+    expect(grid.querySelector('[aria-label="branch"]'), "branch leaves the row").toBeNull();
     expect(grid.querySelector('[data-testid="mobile-narrate-btn"]'), "narrate leaves the row").toBeNull();
     expect(grid.querySelector('[aria-label="message_ai_editor_tooltip"]'), "AI editor leaves the row").toBeNull();
     expect(grid.querySelector('[data-testid="mobile-annotate-btn"]'), "annotate leaves the row").toBeNull();
     expect(grid.querySelector('[data-testid="discuss-sidechat-trigger"]'), "discuss leaves the row").toBeNull();
-    expect(grid.querySelector('[title="resend"]'), "resend is a user action, not in the assistant row").toBeNull();
+    expect(grid.querySelector('[aria-label="resend"]'), "resend is a user action, not in the assistant row").toBeNull();
     cleanup();
   });
 
@@ -308,9 +307,28 @@ describe("SC-18c user rows keep their controls", () => {
       canResend: true,
     })));
     const grid = rowGrid(view.container);
-    expect(grid.querySelector('[title="resend"]'), "resend stays a user-row action").not.toBeNull();
-    expect(grid.querySelector('[title="branch"]'), "branch stays on the user row").not.toBeNull();
+    expect(grid.querySelector('[aria-label="resend"]'), "resend stays a user-row action").not.toBeNull();
+    expect(grid.querySelector('[aria-label="branch"]'), "branch stays on the user row").not.toBeNull();
     expect(grid.querySelector('[data-testid="mobile-continue-btn"]'), "no continue on user rows").toBeNull();
     cleanup();
   });
+});
+
+test("mobile regenerate and branch keep named themed hints and actions", async () => {
+  const onRegenerate = mock();
+  const assistant = renderWithTooltip(React.createElement(MessageShell, fullAssistantProps({ actions: { ...makeProps().actions, onRegenerate } })));
+  const regen = assistant.getByRole("button", { name: "regen" });
+  fireEvent.pointerMove(regen, { pointerType: "mouse" });
+  expect((await assistant.findByRole("tooltip")).textContent).toBe("regen");
+  fireEvent.click(regen);
+  expect(onRegenerate).toHaveBeenCalledTimes(1);
+  cleanup();
+  const onBranch = mock();
+  const user = renderWithTooltip(React.createElement(MessageShell, makeProps({ role: "user", isUser: true, canBranch: true, actions: { ...makeProps().actions, onBranch } })));
+  const branch = user.getByRole("button", { name: "branch" });
+  fireEvent.pointerMove(branch, { pointerType: "mouse" });
+  expect((await user.findByRole("tooltip")).textContent).toBe("branch");
+  fireEvent.click(branch);
+  expect(onBranch).toHaveBeenCalledTimes(1);
+  cleanup();
 });

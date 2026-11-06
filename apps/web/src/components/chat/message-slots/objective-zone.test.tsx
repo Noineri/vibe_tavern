@@ -24,7 +24,7 @@ import type { AgentPlan } from "@vibe-tavern/api-contracts";
 import { ingestAgentPlan } from "../../../hooks/use-agent-plan.js";
 
 useDomEnv();
-const { act, fireEvent, render, waitFor } = await import("@testing-library/react");
+const { act, fireEvent, render: rtlRender, waitFor } = await import("@testing-library/react");
 import { useSnapshotStore } from "../../../stores/snapshot-store.js";
 import { useHeaderZoneExpansionStore } from "../../../stores/header-zone-expansion.js";
 import type { InsightsCompletionPatchResponse, ObjectiveState } from "../../../api/types.js";
@@ -41,7 +41,10 @@ const mocks = {
 };
 const realChatApi = await import("../../../api/chat-api.js");
 const realChatActions = await import("../../../stores/api-actions/chat-actions.js");
-const realTooltip = await import("../../shared/Tooltip.js");
+const { TooltipProvider } = await import("../../shared/Tooltip.js");
+function render(node: ReactNode) {
+  return rtlRender(node, { wrapper: ({ children }) => <TooltipProvider delayDuration={0}>{children}</TooltipProvider> });
+}
 
 mock.module("sonner", () => ({ toast: { error: mocks.toastError } }));
 
@@ -60,14 +63,6 @@ mock.module("../../../stores/api-actions/chat-actions.js", () => ({
   selectObjectiveShortTermGoalAction: mocks.selectObjectiveShortTermGoalAction,
   generateObjectiveTasksAction: mocks.generateObjectiveTasksAction,
   checkObjectiveCompletionAction: mocks.checkObjectiveCompletionAction,
-}));
-
-// CustomTooltip is presentational; these tests verify zone button behavior, not
-// tooltip rendering. Passthrough children so no Radix TooltipProvider is needed.
-mock.module("../../shared/Tooltip.js", () => ({
-  ...realTooltip,
-  CustomTooltip: ({ children }: { children: ReactNode }) => children,
-  TooltipProvider: ({ children }: { children: ReactNode }) => children,
 }));
 
 let AssistantContextHeader: typeof import("../AssistantContextHeader.js").AssistantContextHeader;
@@ -497,4 +492,30 @@ describe("Objective slot vs the story plan (DR-13 §8)", () => {
     expect(container.querySelector('[aria-label="obj_zone_expand"]')).not.toBeNull();
     expect(container.querySelector('[class*="bg-border"]')).not.toBeNull();
   });
+});
+
+it("exposes clipped full text in the button through a measured themed hint", async () => {
+  const scrollWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollWidth");
+  const clientWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth");
+  Object.defineProperty(HTMLElement.prototype, "scrollWidth", { configurable: true, get: () => 300 });
+  Object.defineProperty(HTMLElement.prototype, "clientWidth", { configurable: true, get: () => 100 });
+  try {
+    seedState(GOALS, true);
+    const view = render(<ObjectiveZone chatId="c1" messageId="m1" />);
+    const text = view.getByText("Free the city");
+    expect(text.tagName).toBe("SPAN");
+    expect(text.className).toBe("truncate block");
+    fireEvent.pointerMove(text, { pointerType: "mouse" });
+    expect((await view.findByRole("tooltip")).textContent).toBe("Free the city");
+    view.unmount();
+    const outer = render(<ObjectiveZone chatId="c1" messageId="m1" />);
+    fireEvent.pointerMove(outer.getByLabelText("obj_zone_expand"), { pointerType: "mouse" });
+    expect((await outer.findByRole("tooltip")).textContent).toBe("obj_zone_expand");
+    outer.unmount();
+  } finally {
+    if (scrollWidth) Object.defineProperty(HTMLElement.prototype, "scrollWidth", scrollWidth);
+    else delete (HTMLElement.prototype as { scrollWidth?: number }).scrollWidth;
+    if (clientWidth) Object.defineProperty(HTMLElement.prototype, "clientWidth", clientWidth);
+    else delete (HTMLElement.prototype as { clientWidth?: number }).clientWidth;
+  }
 });

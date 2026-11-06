@@ -9,10 +9,12 @@ interface OverflowTooltipProps {
   className?: string;
   /** Where the tooltip opens relative to the text. Defaults to `right` (sidebar-friendly). */
   side?: "top" | "right" | "bottom" | "left";
+  /** Use inside buttons, where a div is invalid phrasing content. */
+  asSpan?: boolean;
 }
 
 /**
- * Renders `text` in a single-line, truncating div and shows a hover tooltip with
+ * Renders `text` in a single-line, truncating div (or span inside a button) and shows a hover tooltip with
  * the full text — but ONLY when the text is actually clipped.
  *
  * Truncation is detected by comparing `scrollWidth` to `clientWidth`, re-checked
@@ -23,12 +25,12 @@ interface OverflowTooltipProps {
  * Requires the rendered element to have a bounded width (e.g. live in a
  * `min-w-0 flex-1` or block column) for the comparison to be meaningful.
  */
-export function OverflowTooltip({ text, className, side = "right" }: OverflowTooltipProps) {
-  const ref = useRef<HTMLDivElement>(null);
+export function OverflowTooltip({ text, className, side = "right", asSpan = false }: OverflowTooltipProps) {
+  const ref = useRef<HTMLElement>(null);
   const [truncated, setTruncated] = useState(false);
 
   // Re-run when `text` changes (new content) OR when `truncated` flips (the
-  // wrapper restructure below remounts the measured div, so we must re-observe
+  // wrapper restructure below remounts the measured element, so we must re-observe
   // the new node). Measurements are idempotent, so this does not loop.
   useLayoutEffect(() => {
     const el = ref.current;
@@ -40,10 +42,10 @@ export function OverflowTooltip({ text, className, side = "right" }: OverflowToo
     return () => ro.disconnect();
   }, [text, truncated]);
 
-  const node = (
-    <div ref={ref} className={cn("truncate", className)}>
-      {text}
-    </div>
+  const node = asSpan ? (
+    <span ref={(element) => { ref.current = element; }} className={cn("truncate", className)}>{text}</span>
+  ) : (
+    <div ref={(element) => { ref.current = element; }} className={cn("truncate", className)}>{text}</div>
   );
 
   if (!truncated) return node;

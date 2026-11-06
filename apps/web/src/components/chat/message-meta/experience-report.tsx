@@ -4,6 +4,7 @@ import { renderExperienceEventLine, type ExperienceMessageReport } from "@vibe-t
 import { useIsMobile } from "../../../hooks/use-mobile.js";
 import { useT } from "../../../i18n/context.js";
 import { registerMessageMeta, type MessageMetaDescriptor } from "../../../lib/message-meta-registry.js";
+import { OverflowTooltip } from "../../shared/OverflowTooltip.js";
 import { BottomSheet } from "../../shared/BottomSheet.js";
 import { ScrollArea } from "../../shared/scroll-area.js";
 import { Icons } from "../../shared/icons.js";
@@ -27,7 +28,7 @@ export function ExperienceReportChip({ report }: { report: ExperienceMessageRepo
       data-testid="experience-report-chip"
     >
       <Icons.Sparkles className="shrink-0" />
-      <span className="min-w-0 max-w-[12rem] truncate" title={report.title}>{report.title}</span>
+      <OverflowTooltip asSpan text={report.title} className="min-w-0 max-w-[12rem]" />
       <span className="shrink-0">· {t("experience_report_event_count", { count: report.eventCount })}</span>
     </button>
   );

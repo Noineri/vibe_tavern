@@ -51,9 +51,14 @@ mock.module("../../../hooks/use-mobile.js", () => ({ ...realMobileHook, useIsMob
 let DiceRollsBadge: typeof import("./dice-rolls.js").DiceRollsBadge;
 let DiceRollDetailContent: typeof import("./dice-rolls.js").DiceRollDetailContent;
 let diceRollsMetaDescriptor: typeof import("./dice-rolls.js").diceRollsMetaDescriptor;
-let render: typeof import("@testing-library/react").render;
+let rtlRender: typeof import("@testing-library/react").render;
+let fireEvent: typeof import("@testing-library/react").fireEvent;
+const { TooltipProvider } = await import("../../shared/Tooltip.js");
+function render(node: React.ReactNode) {
+  return rtlRender(node, { wrapper: ({ children }) => <TooltipProvider delayDuration={0}>{children}</TooltipProvider> });
+}
 beforeAll(async () => {
-	({ render } = await import("@testing-library/react"));
+	({ render: rtlRender, fireEvent } = await import("@testing-library/react"));
 	({ DiceRollsBadge, DiceRollDetailContent, diceRollsMetaDescriptor } = await import("./dice-rolls.js"));
 });
 
@@ -160,12 +165,13 @@ describe("DICE-F10 DiceRollDetailContent â€” read-only historical truth", () => 
     expect(text).toContain("9"); // attempt total
   });
 
-  it("renders the captured-revision tooltip on the actor/script line", () => {
+  it("renders the captured-revision tooltip on the actor/script line", async () => {
     const roll = makeRoll({ scriptRevision: 7 });
-    const { container } = render(<DiceRollDetailContent rolls={[roll]} />);
-    const line = container.querySelector('[title]')!;
-    expect(line.getAttribute("title")).toContain("captured r7");
-    expect(line.getAttribute("title")).toContain("7");
+    const view = render(<DiceRollDetailContent rolls={[roll]} />);
+    fireEvent.pointerMove(view.getByText("Hero · Fate Die"), { pointerType: "mouse" });
+    const hint = await view.findByRole("tooltip");
+    expect(hint.textContent).toContain("captured r7");
+    expect(hint.textContent).toContain("7");
   });
 
   it("renders multiple rolls as independent cards", () => {
@@ -207,4 +213,12 @@ describe("DICE-F10 message isolation (registry renders per-message)", () => {
     expect(b.textContent).toContain("Aim");
     expect(b.textContent).not.toContain("Luck");
   });
+});
+
+it("shows the captured revision in a themed hint", async () => {
+  const view = render(<DiceRollDetailContent rolls={[makeRoll()]} />);
+  const trigger = view.getByText("Hero · Fate Die");
+  expect(trigger.hasAttribute("title")).toBe(false);
+  fireEvent.pointerMove(trigger, { pointerType: "mouse" });
+  expect((await view.findByRole("tooltip")).textContent).toBe("captured r3");
 });
