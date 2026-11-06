@@ -48,12 +48,18 @@ export const streamExperienceCopilot = (
  *  family; the permission sender is SC-23f's). */
 export type CopilotAskAnswerInput = Omit<ExperienceCopilotStreamAskAnswer, "toolCallId">;
 
-/** SC-23f: the permission decision for a pending `read_message_prompt`
- *  request (SC-23e split-turn), minus the `toolCallId` the caller supplies —
- *  `decision: "allow"` lets the model read the reply's exact prompt,
- *  `"deny"` continues the turn without it. The permission MEMBER of the
- *  wire answer union (narrowed by shape — the contracts package exports the
- *  union, not the member, so this derives it here and stays web-local). */
+/** SC-23f: the permission decision for a pending permission request
+ *  (SC-23e split-turn), minus the `toolCallId` the caller supplies —
+ *  `decision: "allow"` lets the model proceed with the recorded material,
+ *  `"deny"` continues the turn without it. DMT-31: an allow decision for the
+ *  Director's `request_message_swipe` may carry the optional `instruction` —
+ *  the user-edited text the server runs instead of the recorded draft (the
+ *  contract defines it `.strict()` on the same member: refused on deny, and
+ *  a prompt-read allow never sends one). It rides THIS existing answer
+ *  request — no new endpoint, no other shape change. The permission MEMBER
+ *  of the wire answer union (narrowed by shape — the contracts package
+ *  exports the union, not the member, so this derives it here and stays
+ *  web-local). */
 export type CopilotPermissionAnswerInput = Omit<
   Extract<ExperienceCopilotStreamAnswer, { decision: unknown }>,
   "toolCallId"

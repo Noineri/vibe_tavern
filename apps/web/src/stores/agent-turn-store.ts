@@ -1,6 +1,8 @@
 import { create } from "zustand";
 import { agentThreadKey, type AgentKind } from "../lib/agent-host-registry.js";
 import {
+  decodeAgentPermissionState,
+  isAgentPermissionToolName,
   experienceCopilotToolOutputSchema,
   coauthorSkillReadOutputSchema,
   copilotTodoListSchema,
@@ -10,7 +12,6 @@ import {
   type AgentToolActivity,
   type AgentTodoActivityResult,
   type AgentAskState,
-  type AgentPermissionState,
   type RecordProposal,
 } from "@vibe-tavern/api-contracts";
 export type { AgentToolStatus, AgentToolActivity, AgentTodoActivityResult, AgentAskState, AgentPermissionState } from "@vibe-tavern/api-contracts";
@@ -250,13 +251,18 @@ export function extractPersistedAgentActivities(
       });
       continue;
     }
-    // A read_message_prompt row is the awaiting marker or the post-decision
-    // rewrite (SC-23e): awaiting carries everything the card renders (first
-    // line, variant number, token estimate); granted carries the real
-    // rendered prompt; denied carries only the status. Anything else is a
+    // A permission-family row (`read_message_prompt` or the Director's
+    // `request_message_swipe`, DMT-31) is the awaiting marker or the
+    // post-decision rewrite (SC-23e): decoded by THE ONE shared decoder
+    // (packages/api-contracts agent-permission-state.ts) that the live SSE
+    // path uses, so history and live project field-for-field identically and
+    // the `kind` comes from the TOOL NAME alone — never from payload fields.
+    // Awaiting carries everything the card renders (for a swipe, the proposed
+    // instruction in full); granted carries the receipt (the FINAL approved
+    // instruction); denied carries only the status. Anything else is a
     // malformed row (error card with the raw content).
-    if (toolName === "read_message_prompt") {
-      const permission = parseAgentPermissionState(rawOutput);
+    if (isAgentPermissionToolName(toolName)) {
+      const permission = decodeAgentPermissionState(toolName, rawOutput);
       activities.push({
         toolCallId,
         toolName,
@@ -412,65 +418,6 @@ export function parseAgentAskState(args: unknown, output: unknown): AgentAskStat
       ...(options !== undefined ? { options } : {}),
       ...(recommended !== undefined ? { recommended } : {}),
       status: "skipped",
-    };
-  }
-  return null;
-}
-
-/** Structural read of a record field as a non-negative integer (undefined
- *  when absent, non-integer, or negative) — the permission marker's numeric
- *  fields (`position`, `variantNumber`, `promptTokens`). */
-function readNonNegativeInt(source: Record<string, unknown>, key: string): number | undefined {
-  const value = source[key];
-  if (typeof value !== "number" || !Number.isInteger(value) || value < 0) return undefined;
-  return value;
-}
-
-/** Parse a `read_message_prompt` tool-call's state (SC-23f) from the
- *  tool-result output. The output carries the STATUS: the awaiting marker
- *  (`{status:"awaiting_permission", position, variantNumber,
- *  replyFirstLine, promptTokens, presetName?}` — everything the card
- *  renders) or the post-decision rewrites (`{status:"granted", ...}` — the
- *  real rendered prompt — / `{status:"denied"}` — status only). The
- *  awaiting marker requires the card's rendered fields (first line, variant
- *  number, token estimate); the rewrites need only their status (the card
- *  shows the resolved label, never the prompt text). Anything else → null
- *  (error card). BOTH extraction paths (live SSE + persisted rows) call
- *  this one function, which is what makes their payloads field-for-field
- *  identical. Pure.
- *
- *  forks: 1 — packages/api-contracts/src/agent-permission-state.ts (DMT-11
- *  added the swipe family + the canonical decoder there; this web copy is
- *  retired onto it in DMT-31). */
-export function parseAgentPermissionState(output: unknown): AgentPermissionState | null {
-  if (typeof output !== "object" || output === null) return null;
-  const out = output as Record<string, unknown>;
-  const position = readNonNegativeInt(out, "position");
-  const variantNumber = readNonNegativeInt(out, "variantNumber");
-  const replyFirstLine = readString(out, "replyFirstLine");
-  const promptTokens = readNonNegativeInt(out, "promptTokens");
-  const presetName = readString(out, "presetName");
-  if (out.status === "awaiting_permission") {
-    // The card names the reply by its first line and numbers it — a marker
-    // missing those (or the token estimate) cannot render, so it is malformed.
-    if (replyFirstLine === undefined || replyFirstLine === "" || variantNumber === undefined || promptTokens === undefined) return null;
-    return {
-      status: "awaiting_permission",
-      ...(position !== undefined ? { position } : {}),
-      variantNumber,
-      replyFirstLine,
-      promptTokens,
-      ...(presetName !== undefined ? { presetName } : {}),
-    };
-  }
-  if (out.status === "granted" || out.status === "denied") {
-    return {
-      status: out.status,
-      ...(position !== undefined ? { position } : {}),
-      ...(variantNumber !== undefined ? { variantNumber } : {}),
-      ...(replyFirstLine !== undefined ? { replyFirstLine } : {}),
-      ...(promptTokens !== undefined ? { promptTokens } : {}),
-      ...(presetName !== undefined ? { presetName } : {}),
     };
   }
   return null;

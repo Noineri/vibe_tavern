@@ -167,7 +167,10 @@ export interface AgentController extends AgentTurnActions {
    *  streams the continuation with the `answer` body (no new user row).
    *  SC-23f: also carries the permission decision (`{ decision }` — just
    *  another answer-union member on the SAME path, no transport fork); ask
-   *  bodies behave byte-identically to before. */
+   *  bodies behave byte-identically to before. DMT-31: an allow decision may
+   *  carry the optional `instruction` — the user-edited swipe text forwarded
+   *  VERBATIM in the same answer body (never converted into a sidechat user
+   *  message or the ask `text` slot); the wire refuses it on deny. */
   handleAnswer: (toolCallId: string, answer: CopilotAnswerInput, opts?: AgentSendOptions) => Promise<void>;
   // AP-10 turn actions (handleRegenerate / handleDeleteTurn / handleEditLast)
   // and the AP-31 assistant edit (handleEditAssistant) arrive through
@@ -473,12 +476,17 @@ export function useAgentController(
       // SAME path — `decision` present = the permission family, absent =
       // the ask family. The wire union members are both `.strict()`, so a
       // mixed body (decision + text/skipped) matches NEITHER and is refused
-      // here, before any stream call.
+      // here, before any stream call. DMT-31: `instruction` is ALLOW-only
+      // (the wire's refinement refuses it on deny; a prompt-read allow never
+      // sends one) — refused here with the same silent guard, before any
+      // stream call.
       const decision = "decision" in answer ? answer.decision : undefined;
       const text = "text" in answer ? answer.text?.trim() : undefined;
       const skipped = "skipped" in answer && answer.skipped === true;
+      const instruction = "instruction" in answer ? answer.instruction : undefined;
       if (decision !== undefined && (text !== undefined || skipped)) return;
       if (decision !== undefined && decision !== "allow" && decision !== "deny") return;
+      if (decision === "deny" && instruction !== undefined) return;
 
       // Silent guards: the wire schema's exactly-one-of (a chip click sends
       // `text`, the skip button sends `skipped`, free text sends `text` —
@@ -529,6 +537,13 @@ export function useAgentController(
               ...(text ? { text } : {}),
               ...(skipped ? { skipped: true } : {}),
               ...(decision !== undefined ? { decision } : {}),
+              // DMT-31: the user-edited swipe instruction rides the allow
+              // decision VERBATIM — the exact UI-approved text reaches the
+              // server through the original permission answer transport.
+              // Never the ask `text` slot, never a sidechat user row; the
+              // server runs it instead of the recorded draft and its
+              // validation (min length / deny refusal) is the wire contract.
+              ...(decision !== undefined && instruction !== undefined ? { instruction } : {}),
             },
             providerProfileId,
             ...(model ? { model } : {}),

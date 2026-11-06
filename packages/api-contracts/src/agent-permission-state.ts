@@ -9,10 +9,11 @@
  *
  * Family dispatch is on the TOOL NAME alone:
  * - `read_message_prompt` (SC-23e/SC-23f, the legacy permission tool) →
- *   `kind: "prompt_read"`. This arm replicates the web's
- *   `parseAgentPermissionState`
- *   (apps/web/src/stores/agent-turn-store.ts — counted fork #1) byte-for-byte;
- *   DMT-31 retires that copy and points both web ingestion paths here.
+ *   `kind: "prompt_read"`. This arm replicated the web's retired
+ *   `parseAgentPermissionState` byte-for-byte; DMT-31 retired that web copy
+ *   (forks: 0 — both web ingestion paths — persisted history in
+ *   agent-turn-store.ts and live/replayed SSE in agent-stream-callbacks.ts —
+ *   decode HERE).
  * - `request_message_swipe` (DIRECTOR_MESSAGE_TOOLS_PLAN) → `kind: "swipe"`.
  *
  * Because `kind` is derived from the name, a prompt read can never become a

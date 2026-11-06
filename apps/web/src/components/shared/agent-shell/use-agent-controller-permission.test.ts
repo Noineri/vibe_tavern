@@ -1,9 +1,14 @@
 /**
- * useAgentController — permission decisions (SC-23f): the decision rides the
- * SAME split-turn answer path as the ask family (no transport fork), flips
- * the optimistic `pendingPermissionAnswer`, and rolls back on a pre-stream
- * failure. The transport enters through the hook's DI seam (a stub — no
- * fetch router, no process-global patches).
+ * useAgentController — permission decisions (SC-23f + DMT-31): the decision
+ * rides the SAME split-turn answer path as the ask family (no transport
+ * fork), flips the optimistic `pendingPermissionAnswer`, and rolls back on a
+ * pre-stream failure. DMT-31: an allow decision carries the user-edited
+ * swipe `instruction` VERBATIM in the same answer body (never converted into
+ * a sidechat user message), a deny never carries one, a refused request can
+ * be retried (the rollback keeps the card interactive), and a duplicate
+ * submission while one decision is in flight is suppressed. The transport
+ * enters through the hook's DI seam (a stub — no fetch router, no
+ * process-global patches).
  */
 import { afterAll, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 
@@ -127,6 +132,54 @@ describe("useAgentController — permission decisions (SC-23f)", () => {
     expect(result.current.pendingPermissionAnswer).toEqual({ toolCallId: "tc-perm", decision: "deny" });
   });
 
+  test("DMT-31: an allow with the edited instruction forwards the EXACT text on the same answer body (never a user message)", async () => {
+    let capturedBody!: Record<string, unknown>;
+    answerAsk.mockImplementation((_threadId, body, _opts) => {
+      capturedBody = body as Record<string, unknown>;
+      return Promise.resolve({ finishReason: "stop" });
+    });
+    const { result } = renderHook(() =>
+      useAgentController({ transport: stubTransport, kind: "experience", threadId: THREAD, providerProfileId: PROVIDER }),
+    );
+
+    await act(async () => {
+      await result.current.handleAnswer("tc-perm", {
+        decision: "allow",
+        instruction: "Rewrite it spicier, keep the accent",
+      });
+    });
+
+    expect(answerAsk).toHaveBeenCalledTimes(1);
+    // The exact UI-approved text rides the original permission answer
+    // transport — one body, no `content` user row, no ask `text` slot.
+    expect(capturedBody).toEqual({
+      answer: {
+        toolCallId: "tc-perm",
+        decision: "allow",
+        instruction: "Rewrite it spicier, keep the accent",
+      },
+      providerProfileId: PROVIDER,
+    });
+    expect(result.current.pendingUserContent).toBe("");
+    expect(result.current.pendingAskAnswer).toBeNull();
+    expect(result.current.pendingPermissionAnswer).toEqual({ toolCallId: "tc-perm", decision: "allow" });
+  });
+
+  test("DMT-31: a deny never sends an instruction (the guard refuses the body before any stream call)", async () => {
+    const { result } = renderHook(() =>
+      useAgentController({ transport: stubTransport, kind: "experience", threadId: THREAD, providerProfileId: PROVIDER }),
+    );
+
+    await act(async () => {
+      await result.current.handleAnswer("tc-perm", { decision: "deny", instruction: "reject text" });
+    });
+
+    expect(answerAsk).not.toHaveBeenCalled();
+    expect(sendStream).not.toHaveBeenCalled();
+    expect(result.current.pendingPermissionAnswer).toBeNull();
+    expect(result.current.pendingAskAnswer).toBeNull();
+  });
+
   test("guards: neither family / a mixed body / a bad decision → no stream call", async () => {
     const { result } = renderHook(() =>
       useAgentController({ transport: stubTransport, kind: "experience", threadId: THREAD, providerProfileId: PROVIDER }),
@@ -163,6 +216,64 @@ describe("useAgentController — permission decisions (SC-23f)", () => {
     // no toast, the record carries the category (a plain Error has none).
     expect(toastError).not.toHaveBeenCalled();
     expect(result.current.turnFailure).toEqual({ category: "unknown" });
+  });
+
+  test("DMT-31: after a transport refusal the card is interactive again — the retry re-sends and succeeds", async () => {
+    answerAsk.mockImplementationOnce(() => Promise.reject(new Error("validation 400")));
+    const { result } = renderHook(() =>
+      useAgentController({ transport: stubTransport, kind: "experience", threadId: THREAD, providerProfileId: PROVIDER }),
+    );
+
+    await act(async () => {
+      await result.current.handleAnswer("tc-perm", { decision: "allow", instruction: "edited text" });
+    });
+    // Refused: the optimistic receipt rolled back, the failure recorded.
+    expect(result.current.pendingPermissionAnswer).toBeNull();
+    expect(result.current.turnFailure).toEqual({ category: "unknown" });
+
+    // The retry goes out again — the refusal must not resurrect a decided
+    // state (the row was never rewritten, so the card returns to awaiting).
+    let capturedBody!: Record<string, unknown>;
+    answerAsk.mockImplementation((_threadId, body, _opts) => {
+      capturedBody = body as Record<string, unknown>;
+      return Promise.resolve({ finishReason: "stop" });
+    });
+    await act(async () => {
+      await result.current.handleAnswer("tc-perm", { decision: "allow", instruction: "edited text" });
+    });
+
+    expect(answerAsk).toHaveBeenCalledTimes(2);
+    expect(capturedBody).toEqual({
+      answer: { toolCallId: "tc-perm", decision: "allow", instruction: "edited text" },
+      providerProfileId: PROVIDER,
+    });
+    expect(result.current.pendingPermissionAnswer).toEqual({ toolCallId: "tc-perm", decision: "allow" });
+    expect(result.current.turnFailure).toBeNull();
+  });
+
+  test("DMT-31: a duplicate submission while a decision is in flight is suppressed (exactly one call, no double flip)", async () => {
+    const d = deferred<{ finishReason: string }>();
+    answerAsk.mockImplementation((_threadId, _body, _opts) => d.promise);
+    const { result } = renderHook(() =>
+      useAgentController({ transport: stubTransport, kind: "experience", threadId: THREAD, providerProfileId: PROVIDER }),
+    );
+
+    let first!: Promise<void>;
+    let second!: Promise<void>;
+    await act(async () => {
+      first = result.current.handleAnswer("tc-perm", { decision: "allow", instruction: "in-flight text" });
+      // The duplicate fires while the first decision has not settled.
+      second = result.current.handleAnswer("tc-perm", { decision: "deny" });
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      d.resolve({ finishReason: "stop" });
+      await Promise.all([first, second]);
+    });
+
+    expect(answerAsk).toHaveBeenCalledTimes(1);
+    expect(result.current.pendingPermissionAnswer).toEqual({ toolCallId: "tc-perm", decision: "allow" });
   });
 
   test("a MID-stream failure keeps the decision (the backend already persisted it)", async () => {
@@ -221,11 +332,68 @@ describe("useAgentController — permission decisions (SC-23f)", () => {
       status: "done",
       permission: {
         status: "awaiting_permission",
+        kind: "prompt_read",
         position: 7,
         variantNumber: 2,
         replyFirstLine: "First line",
         promptTokens: 99,
         presetName: "Preset",
+      },
+    }]);
+
+    await act(async () => {
+      d.resolve({ finishReason: "stop" });
+      await pending;
+    });
+    expect(result.current.isSending).toBe(false);
+  });
+
+  test("a live request_message_swipe tool-result projects through the SAME decoder (kind + instruction, like history)", async () => {
+    const d = deferred<{ finishReason: string }>();
+    let captured!: AnswerAskOpts;
+    answerAsk.mockImplementation((_threadId, _body, opts) => {
+      captured = opts;
+      return d.promise;
+    });
+    const { result } = renderHook(() =>
+      useAgentController({ transport: stubTransport, kind: "experience", threadId: THREAD, providerProfileId: PROVIDER }),
+    );
+
+    let pending!: Promise<void>;
+    await act(async () => {
+      pending = result.current.handleAnswer("tc-perm", { decision: "allow" });
+      await Promise.resolve();
+    });
+    await act(async () => {
+      captured.onToolCall!({ toolCallId: "tc-swipe", toolName: "request_message_swipe", args: { messageId: "msg-1" } });
+      captured.onToolResult!({
+        toolCallId: "tc-swipe",
+        toolName: "request_message_swipe",
+        output: {
+          status: "awaiting_permission",
+          variantNumber: 2,
+          replyFirstLine: "Live swipe line",
+          messageId: "msg-1",
+          variantId: "var-2",
+          instruction: "Rewrite it spicier",
+        },
+        isError: false,
+      });
+    });
+
+    expect(useAgentTurnStore.getState().getActivities("experience", THREAD)).toEqual([{
+      toolCallId: "tc-swipe",
+      toolName: "request_message_swipe",
+      args: { messageId: "msg-1" },
+      status: "done",
+      permission: {
+        status: "awaiting_permission",
+        kind: "swipe",
+        variantNumber: 2,
+        replyFirstLine: "Live swipe line",
+        messageId: "msg-1",
+        variantId: "var-2",
+        instruction: "Rewrite it spicier",
       },
     }]);
 
