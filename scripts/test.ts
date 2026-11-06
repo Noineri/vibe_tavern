@@ -150,7 +150,13 @@ const TEST_SUITES = createTestSuites();
  *  pin VT's proxy semantics, not inherit the desktop setup — same rationale
  *  as the FORCE_COLOR/NO_COLOR overrides below. (In-file env mutation cannot
  *  fix this: the values are captured before any test file's code runs;
- *  verified 2026-09-14.) */
+ *  verified 2026-09-14.)
+ *  ALL_PROXY joined the family 2026-11-06: the desktop began exporting
+ *  all_proxy=http://127.0.0.1:… alongside the others, and the local proxy
+ *  answers loopback fetches with 503 — every socket-based test (web
+ *  dev-server readiness, api mirror/npm suites) failed fast or timed out
+ *  while CI stayed green. Bun honors all_proxy exactly like HTTP(S)_PROXY
+ *  (probed: an all_proxy-only env routes 127.0.0.1 fetches through it). */
 const HOST_PROXY_ENV_KEYS = [
 	"HTTP_PROXY",
 	"HTTPS_PROXY",
@@ -158,6 +164,8 @@ const HOST_PROXY_ENV_KEYS = [
 	"http_proxy",
 	"https_proxy",
 	"no_proxy",
+	"ALL_PROXY",
+	"all_proxy",
 ] as const;
 
 /** Suite spawn environment: the host env minus the desktop proxy variables

@@ -47,6 +47,11 @@ const HOST_PROXY_ENV_KEYS = [
 	"http_proxy",
 	"https_proxy",
 	"no_proxy",
+	// ALL_PROXY joined the desktop proxy set 2026-11-06 — the local proxy
+	// answers loopback fetches 503, breaking every socket-based test through
+	// the spot wrapper too (see scripts/test.ts for the full incident note).
+	"ALL_PROXY",
+	"all_proxy",
 ] as const;
 
 function childEnv(tempRoot: string): Record<string, string> {
