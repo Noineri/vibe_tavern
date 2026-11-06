@@ -248,6 +248,194 @@ describe("applyAgentTurnAnswer — the permission family (SC-23e)", () => {
 	});
 });
 
+// ─── DMT-23: the permission continuation (awaiting output + instruction) ────
+
+describe("applyAgentTurnAnswer — the DMT-23 permission continuation", () => {
+	/** A swipe-permission fixture: the tool-call row (the immutable call
+	 *  record) plus its awaiting DMT-11 marker row. */
+	function swipeFixture(): ReturnType<typeof makeFixture> {
+		return makeFixture([
+			callRow("tc_sw1", "request_message_swipe", { position: 1, instruction: "DRAFT-INSTRUCTION" }),
+			resultRow("tc_sw1", "request_message_swipe", {
+				status: "awaiting_permission",
+				messageId: "m1",
+				variantId: "v1",
+				position: 1,
+				variantNumber: 1,
+				replyFirstLine: "The tavern keeper greets you.",
+				instruction: "DRAFT-INSTRUCTION",
+			}),
+		]);
+	}
+
+	const MARKER_OUTPUT = {
+		status: "awaiting_permission",
+		messageId: "m1",
+		variantId: "v1",
+		position: 1,
+		variantNumber: 1,
+		replyFirstLine: "The tavern keeper greets you.",
+		instruction: "DRAFT-INSTRUCTION",
+	};
+
+	it("an edited approved instruction is forwarded VERBATIM beside the recorded awaiting output; the original arguments stay the immutable call record", async () => {
+		const fx = swipeFixture();
+		const calls: Array<{ toolName: string; toolInput: unknown; toolCallId: string; continuation: unknown }> = [];
+		await applyAgentTurnAnswer({
+			threadId: "t1",
+			answer: { toolCallId: "tc_sw1", decision: "allow", instruction: "  EDITED-TEXT  " },
+			priorMessages: fx.rows,
+			store: fx.store,
+			runWaitTool: async (toolName, toolInput, toolCallId, continuation) => {
+				calls.push({ toolName, toolInput, toolCallId, continuation });
+				return {
+					status: "granted",
+					messageId: "m1",
+					variantId: "v1",
+					position: 1,
+					variantNumber: 1,
+					replyFirstLine: "The tavern keeper greets you.",
+					instruction: "EDITED-TEXT",
+				};
+			},
+		});
+		// The executor saw the RECORDED input (never the answer), the awaiting
+		// output, and the user's text VERBATIM (trim/validation is the
+		// executor's job, not the mechanism's).
+		expect(calls).toEqual([
+			{
+				toolName: "request_message_swipe",
+				toolInput: { position: 1, instruction: "DRAFT-INSTRUCTION" },
+				toolCallId: "tc_sw1",
+				continuation: { awaitingOutput: MARKER_OUTPUT, instruction: "  EDITED-TEXT  " },
+			},
+		]);
+		// The stored CALL row is untouched — the immutable call record the
+		// resumed turn replays.
+		expect(JSON.parse(fx.rows[0]!.toolCallsJson!)).toEqual([
+			{ type: "tool-call", toolCallId: "tc_sw1", toolName: "request_message_swipe", input: { position: 1, instruction: "DRAFT-INSTRUCTION" } },
+		]);
+		// The RESULT row was rewritten to the executor's REAL result (the
+		// granted receipt with the final approved text).
+		expect(fx.rewrites).toEqual([
+			{
+				toolCallId: "tc_sw1",
+				payload: {
+					toolName: "request_message_swipe",
+					output: {
+						status: "granted",
+						messageId: "m1",
+						variantId: "v1",
+						position: 1,
+						variantNumber: 1,
+						replyFirstLine: "The tavern keeper greets you.",
+						instruction: "EDITED-TEXT",
+					},
+				},
+			},
+		]);
+		expect(JSON.parse(fx.rows[1]!.content)).toEqual(fx.rewrites[0]!.payload);
+	});
+
+	it("an allow WITHOUT an instruction forwards the recorded output with NO instruction key (the executor falls back to the draft)", async () => {
+		const fx = swipeFixture();
+		const continuations: unknown[] = [];
+		await applyAgentTurnAnswer({
+			threadId: "t1",
+			answer: { toolCallId: "tc_sw1", decision: "allow" },
+			priorMessages: fx.rows,
+			store: fx.store,
+			runWaitTool: async (_toolName, _toolInput, _toolCallId, continuation) => {
+				continuations.push(continuation);
+				return { status: "granted", instruction: "DRAFT-INSTRUCTION" };
+			},
+		});
+		expect(continuations).toEqual([{ awaitingOutput: MARKER_OUTPUT }]);
+		expect(fx.rewrites[0]!.payload.output).toEqual({ status: "granted", instruction: "DRAFT-INSTRUCTION" });
+	});
+
+	it("a deny carrying an instruction is the invalid Deny payload — refused before any rewrite", async () => {
+		const fx = swipeFixture();
+		await expect(
+			applyAgentTurnAnswer({
+				threadId: "t1",
+				answer: { toolCallId: "tc_sw1", decision: "deny", instruction: "smuggled text" },
+				priorMessages: fx.rows,
+				store: fx.store,
+				runWaitTool: async () => "never",
+			}),
+		).rejects.toThrow("A denied permission cannot carry an instruction.");
+		expect(fx.rewrites).toEqual([]);
+		expect(JSON.parse(fx.rows[1]!.content)).toEqual({ toolName: "request_message_swipe", output: MARKER_OUTPUT });
+	});
+
+	it("answering an already-resolved (granted) row is refused — the decision cannot be replayed", async () => {
+		const fx = makeFixture([
+			resultRow("tc_done", "request_message_swipe", {
+				status: "granted",
+				messageId: "m1",
+				variantId: "v1",
+				position: 1,
+				variantNumber: 1,
+				replyFirstLine: "L",
+				instruction: "FINAL",
+			}),
+		]);
+		await expect(
+			applyAgentTurnAnswer({
+				threadId: "t1",
+				answer: { toolCallId: "tc_done", decision: "allow" },
+				priorMessages: fx.rows,
+				store: fx.store,
+				runWaitTool: async () => "again",
+			}),
+		).rejects.toThrow(
+			"The permission request being answered was not found (or is no longer awaiting) in this thread.",
+		);
+		expect(fx.rewrites).toEqual([]);
+	});
+});
+
+// ─── DMT-23: the granted wire rendering generalization ──────────────────────
+
+describe("renderWaitToolOutputWireText — the granted families (DMT-23)", () => {
+	it("a swipe granted receipt renders GENERATION FACTS (approved + the final instruction), never the prompt-read shape", () => {
+		const wire = renderWaitToolOutputWireText("request_message_swipe", {
+			status: "granted",
+			messageId: "m1",
+			variantId: "v1",
+			position: 1,
+			variantNumber: 1,
+			replyFirstLine: "L",
+			instruction: "FINAL-APPROVED-TEXT",
+		});
+		expect(JSON.parse(wire!)).toEqual({
+			approved: true,
+			messageId: "m1",
+			variantId: "v1",
+			position: 1,
+			variantNumber: 1,
+			replyFirstLine: "L",
+			instruction: "FINAL-APPROVED-TEXT",
+		});
+		// Never interpreted as the read_message_prompt payload, never the raw
+		// stored status enum:
+		expect(wire).not.toContain('"prompt"');
+		expect(wire).not.toContain('"promptTokens"');
+		expect(wire).not.toContain('"status"');
+	});
+
+	it("a granted record with no prompt field renders approved facts; the awaiting and denied arms are unchanged", () => {
+		expect(renderWaitToolOutputWireText("request_message_swipe", { status: "granted", instruction: "X" })).toBe(
+			'{"approved":true,"instruction":"X"}',
+		);
+		expect(
+			renderWaitToolOutputWireText("request_message_swipe", { status: "awaiting_permission", instruction: "D" }),
+		).toBe('{"unanswered":true,"note":"the user did not answer this permission request; they moved on"}');
+		expect(renderWaitToolOutputWireText("request_message_swipe", { status: "denied" })).toBe('{"denied":true}');
+	});
+});
+
 // ─── The marker-aware stop condition ────────────────────────────────────────
 
 describe("hasAwaitingPermissionMarker (the SC-23e stop condition)", () => {

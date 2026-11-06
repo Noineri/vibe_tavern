@@ -23,14 +23,23 @@ export interface ExperienceCopilotAskTurnAnswer {
 /** Permission decision for a pending wait-tool marker (SC-23e split-turn):
  *  `allow` re-runs the tool's granted execution and stores its real result in
  *  the awaiting row; `deny` stores the denied marker — either way the turn
- *  resumes with NO new user row. Wire twin of the permission member of the
- *  api-contracts `experienceCopilotStreamAnswerSchema`. */
+ *  resumes with NO new user row. DMT-23: an allow may carry an optional
+ *  `instruction` — the user-edited one-shot text for the swipe-permission
+ *  family (`request_message_swipe`); the continuation refuses it for a tool
+ *  whose executor does not accept one, and a deny carrying the field is
+ *  rejected (the wire schema's `.superRefine`). Wire twin of the permission
+ *  member of the api-contracts `experienceCopilotStreamAnswerSchema`. */
 export interface ExperienceCopilotPermissionTurnAnswer {
   /** The awaiting permission tool-result row being decided (in this thread). */
   toolCallId: string;
   /** The user's decision: allow reads the material, deny continues without
    *  it. Mutually exclusive with the ask family's fields (wire-enforced). */
   decision: "allow" | "deny";
+  /** DMT-23 — the user's final edited instruction (swipe family only). The
+   *  route's zod schema already validates the body; this declaration makes
+   *  the field TYPE through the structural request into the split-turn
+   *  continuation instead of riding untyped. */
+  instruction?: string;
 }
 
 /** Answer to a pending wait-tool request — the ask family (TAG-5) or the

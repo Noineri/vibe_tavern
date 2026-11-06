@@ -20,7 +20,7 @@
  */
 
 import { streamText, isStepCount } from "ai";
-import type { LanguageModel, ModelMessage, AssistantContent, ToolCallPart, ToolResultPart, StopCondition } from "ai";
+import type { LanguageModel, ToolCallPart, ToolResultPart, StopCondition } from "ai";
 import type { ToolSet } from "ai";
 import type { ProviderProfile, CopilotContextMetrics } from "@vibe-tavern/db";
 import { buildContextMetrics, type AgentTokenAccounting } from "./agent-context-metrics.js";
@@ -45,7 +45,15 @@ import {
   type AgentPersistedToolCall,
   type AgentPersistedToolResult,
   type AgentTurnAnswer,
+  type AgentPermissionContinuation,
 } from "./agent-split-turn.js";
+// DMT-23 extraction: the assembled-prompt → SDK fold moved verbatim to the
+// sibling `agent-model-messages.ts` (the loop file sat at the arch-gate cap —
+// extraction is the sanctioned remedy); the re-export keeps every historical
+// `agent-stream.js` importer (agent-attachments, the compaction services)
+// stable.
+export type { AgentPromptMessage } from "./agent-model-messages.js";
+import { toModelMessages, type AgentPromptMessage } from "./agent-model-messages.js";
 import { applyAgentTurnRegenerate, type AgentTurnDeleteTurn } from "./agent-regenerate.js";
 import {
   persistTurn,
@@ -167,14 +175,8 @@ export interface AgentStreamDeps<THREAD extends AgentStreamThread = AgentStreamT
 }
 
 // ─── Assembled-prompt shape (seam result) ────────────────────────────────────
-
-/** One message in a kind's assembled prompt (system + compacted history) —
- *  the shape the generic `toModelMessages` fold consumes. */
-export type AgentPromptMessage =
-  | { role: "system"; content: string }
-  | { role: "user"; content: string; attachments?: Attachment[] }
-  | { role: "assistant"; content: string; toolCalls?: ToolCallPart[] }
-  | { role: "tool"; content: ToolResultPart[] };
+// (`AgentPromptMessage` — the message shape the folds consume — moved to the
+// sibling `agent-model-messages.ts` with the SDK fold; re-exported above.)
 
 /** Structural view of a kind's assembly result the loop reads (system length
  *  for the debug line, the messages for the model call, and the segmented
@@ -283,21 +285,28 @@ export interface AgentStreamSeams<
    *  execution when the user allows its permission request, returning the
    *  result the awaiting row stores. Called with the loop's loaded THREAD row
    * (chat-owned ids come from the row, never the request) plus the tool's
-   * name, its ORIGINAL recorded input, and the toolCallId. Absent → the kind
-   * serves no permission tools; an allow answer is refused by the split-turn
-   * module, never silently skipped. */
+   * name, its ORIGINAL recorded input, the toolCallId, and — since DMT-23 —
+   * the permission continuation data (`AgentPermissionContinuation`: the
+   * recorded awaiting output + the optional approved instruction) and the
+   * turn's own cancellation signal (the same `signal` the loop streams
+   * under). The loop embeds NO tool-name switches: WHICH tools a kind serves
+   * and whether one accepts the instruction override stay the kind's
+   * dispatch. Absent → the kind serves no permission tools; an allow answer
+   * is refused by the split-turn module, never silently skipped. */
   readonly runWaitTool?: (
     thread: THREAD,
     toolName: string,
     toolInput: unknown,
     toolCallId: string,
+    continuation: AgentPermissionContinuation,
+    signal?: AbortSignal,
   ) => Promise<unknown>;
 }
 
 // ─── History conversion (store ↔ prompt ↔ SDK) ───────────────────────────────
 
 /** Convert stored agent messages into the history shape the assembly expects.
- *  Round-trips the {@link toModelMessages} serialization: assistant rows carry
+ *  Round-trips the `toModelMessages` serialization: assistant rows carry
  *  parsed `toolCalls`; tool rows carry a reconstructed `ToolResultPart`.
  *  Exported (CM-5) so the compaction service reuses the SAME conversion for its
  *  tool-pair-safe boundary walk and post-compaction token estimate. */
@@ -380,33 +389,8 @@ export function storeMessagesToHistory<M extends AgentStreamStoredMessage>(
   });
 }
 
-/** Convert the assembled prompt messages into AI SDK `ModelMessage[]`.
- *  Mirrors `prepareSdkMessages`'s assistant branch: the SDK has NO top-level
- *  `toolCalls` field on an assistant message — tool calls live INSIDE `content`
- *  as `ToolCallPart[]` (AssistantContent) — without this fold the SDK silently
- *  ignores them and the model loses its cross-turn tool-call context. */
-function toModelMessages(
-  messages: ReadonlyArray<AgentPromptMessage>,
-): ModelMessage[] {
-  return messages.map((msg): ModelMessage => {
-    switch (msg.role) {
-      case "system":
-        return { role: "system", content: msg.content };
-      case "user":
-        return { role: "user", content: msg.content };
-      case "assistant": {
-        if (msg.toolCalls?.length) {
-          const parts: AssistantContent = [...msg.toolCalls];
-          if (msg.content) parts.push({ type: "text", text: msg.content });
-          return { role: "assistant", content: parts };
-        }
-        return { role: "assistant", content: msg.content };
-      }
-      case "tool":
-        return { role: "tool", content: msg.content };
-    }
-  });
-}
+// (`toModelMessages` — the assembled prompt → SDK `ModelMessage[]` fold —
+// moved to the sibling `agent-model-messages.ts`, DMT-23 extraction.)
 
 // ─── Turn persistence (TF-3) lives in the sibling `agent-turn-persist.ts` ────
 // (AP-28 extraction: the segment vocabulary + the persist walk + the reasoning
@@ -521,11 +505,18 @@ export async function* streamAgentTurn<
       // SC-23e: the permission allow re-runs the tool's granted execution
       // through the KIND's executor seam (absent → the kind serves no
       // permission tools and an allow is refused there, never silently
-      // skipped).
+      // skipped). DMT-23: the seam forwards the split-turn module's
+      // permission continuation (the recorded awaiting output + the optional
+      // approved instruction) and the loop's own cancellation signal beside
+      // the run's THREAD row — no tool-name knowledge crosses this seam.
       ...(seams.runWaitTool !== undefined
         ? {
-            runWaitTool: (toolName: string, toolInput: unknown, toolCallId: string) =>
-              seams.runWaitTool!(thread, toolName, toolInput, toolCallId),
+            runWaitTool: (
+              toolName: string,
+              toolInput: unknown,
+              toolCallId: string,
+              continuation: AgentPermissionContinuation,
+            ) => seams.runWaitTool!(thread, toolName, toolInput, toolCallId, continuation, signal),
           }
         : {}),
     });

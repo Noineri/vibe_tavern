@@ -70,6 +70,24 @@
  * profile's toggles exactly like every other sidechat tool. The turn now
  * stops on EITHER wait family: the ask marker (ask_user) or the permission
  * marker (read_message_prompt).
+ *
+ * Since DMT-23 (DIRECTOR_MESSAGE_TOOLS_PLAN Wave 2) the stream also spreads
+ * the Director MESSAGE tool builder (`kinds/sidechat/sidechat-message-tools.ts`
+ * — `propose_message_edit` / `propose_message_variant` /
+ * `request_message_swipe`, gated by the resolved profile's set like every
+ * other family; no builtin seed or public toggle key carries these keys
+ * until DMT-34, so they stay DORMANT here) and serves the swipe request as
+ * the kind's SECOND permission tool: the turn stops on its awaiting marker
+ * and the user's Allow resumes through the SAME split-turn mechanism — the
+ * granted executor revalidates the recorded DMT-11 marker, resolves the
+ * FINAL approved instruction (the user-edited text when the Allow answer
+ * carried one, the recorded draft otherwise, non-empty enforced), runs the
+ * ONE generation through the INJECTED delegate seam (`buildSwipeGenerationDelegate`
+ * — absent → refuse loudly, the DMT-14 delegate-seam pattern; DMT-24 injects
+ * the real RP generation), and stores the granted receipt with that final
+ * text. ONLY the swipe executor accepts an instruction override: a
+ * prompt-read Allow carrying the field is refused before execution, and a
+ * Deny never reaches any executor (the mechanism stores the denied marker).
  */
 
 // fork #1 of script-agent-stream.ts (services/api/src/domain/agent/script-agent/script-agent-stream.ts)
@@ -91,7 +109,13 @@ import type { LanguageModel } from "ai";
 import type { ProviderProfile, AppDb, ExperienceCopilotStore, ExperienceCopilotThread } from "@vibe-tavern/db";
 import type { AgentPlan, AgentPlanOwner } from "@vibe-tavern/domain";
 import { brandId, type ChatBranchId, type ChatId } from "@vibe-tavern/domain";
-import type { CopilotProfile, ExperienceCopilotContextLink } from "@vibe-tavern/api-contracts";
+import type {
+  CopilotProfile,
+  DirectorSwipeGrantedReceipt,
+  DirectorSwipePermissionMarker,
+  ExperienceCopilotContextLink,
+} from "@vibe-tavern/api-contracts";
+import { DIRECTOR_MESSAGE_TOOLS, directorSwipePermissionMarkerSchema } from "@vibe-tavern/api-contracts";
 import type { ProviderFetch } from "../providers/provider-fetch-factory.js";
 import { logSendDebug } from "../../shared/send-debug-log.js";
 import { validation } from "../../shared/errors.js";
@@ -115,6 +139,9 @@ import { buildSidechatChecklistTools } from "../agent/kinds/sidechat/sidechat-ch
 import {
   buildSidechatDirectorTools,
 } from "../agent/kinds/sidechat/sidechat-director-tools.js";
+import {
+  buildSidechatMessageTools,
+} from "../agent/kinds/sidechat/sidechat-message-tools.js";
 import { createAskUserTool, AGENT_ASK_USER_TOOL_NAME } from "../agent/agent-ask-user-tool.js";
 import type { TrackerDelegate } from "../coauthor/tracker/tracker-delegate.js";
 import {
@@ -123,7 +150,7 @@ import {
   SIDECHAT_PROMPT_READ_TOOL_NAME,
   type SidechatPromptReadTurnState,
 } from "../agent/kinds/sidechat/sidechat-prompt-read-tools.js";
-import { hasAwaitingPermissionMarker } from "../agent/agent-split-turn.js";
+import { hasAwaitingPermissionMarker, type AgentPermissionContinuation } from "../agent/agent-split-turn.js";
 import type { SidechatAutoCompactPressure, SidechatOocCompactionService } from "./sidechat-compaction.js";
 // The value import doubles as the side effect: importing the kind module
 // registers the `sidechat-ooc` kind at module init, so the descriptor read
@@ -225,6 +252,14 @@ export interface SidechatStreamDeps {
    *  stream passes no delegate and the tool refuses loudly at call time (the
    *  Co-Author `set_tracker_template` seam shape). */
   readonly buildTrackerDelegate?: () => Promise<TrackerDelegate | undefined>;
+  /** DMT-23: build the swipe GENERATION delegate an allowed
+   *  `request_message_swipe` resumes through — resolved lazily PER CALL (the
+   *  tracker delegate's seam shape: a turn that never allows a swipe pays
+   *  nothing). DMT-24 wires the real RP generation delegate. Absent (tests,
+   *  legacy harnesses, pre-DMT-24 wiring) → the granted executor refuses
+   *  loudly at allow time (the DMT-14 delegate-seam pattern): the awaiting
+   *  row stays awaiting, nothing is stored, no generation is faked. */
+  readonly buildSwipeGenerationDelegate?: () => Promise<DirectorSwipeGenerationDelegate | undefined>;
   /** SC-8c: the kind's own compaction service — present → the stream wires
    *  the loop's autoCompact hook to the sidechat rule (the discussion
    *  against the room left after the static context and the RP layer).
@@ -239,6 +274,94 @@ export interface SidechatStreamDeps {
    *  event-preservation rule is the store sibling's own). Absent (tests,
    *  legacy harnesses) → regenerate turns are refused, never trimmed. */
   readonly deleteTurn?: AgentTurnDeleteTurn;
+}
+
+// ─── DMT-23: the swipe generation delegate seam + the granted executor ───────
+
+/** The swipe GENERATION delegate's input: the recorded awaiting marker (the
+ *  DMT-11 shape, revalidated by the executor before this call — the frozen
+ *  target identity's source of truth), the FINAL user-approved instruction
+ *  text, the THREAD ROW's own branch scope (never the request), and the
+ *  answer turn's cancellation signal. */
+export interface DirectorSwipeGenerationInput {
+  readonly chatId: string;
+  readonly branchId: string;
+  readonly marker: DirectorSwipePermissionMarker;
+  readonly instruction: string;
+  readonly signal?: AbortSignal;
+}
+
+/** The ONE generation an allowed swipe request may run (DMT-23's injected
+ *  seam; DMT-24 supplies the real branch-pinned RP generation over the
+ *  normal lifecycle). Exactly one call per accepted permission answer — the
+ *  mechanism's duplicate-decision guards are the split-turn module's. */
+export type DirectorSwipeGenerationDelegate = (
+  input: DirectorSwipeGenerationInput,
+) => Promise<unknown>;
+
+/**
+ * DMT-23 — the granted execution of one allowed `request_message_swipe`
+ * (dispatched beside the prompt read in the seams' `runWaitTool`): the
+ * recorded awaiting output is revalidated through the DMT-11 marker schema
+ * (a corrupted row is refused, never resumed on guessed state — the
+ * `runGrantedPromptRead` precedent); the FINAL approved instruction is the
+ * user-edited text when the Allow answer carried one and the recorded draft
+ * otherwise, trimmed and REQUIRED non-empty (an empty approval generates
+ * nothing — refused, the row stays awaiting); the ONE generation runs
+ * through the injected delegate (absent → refuse loudly BEFORE any state
+ * change); the resolved row stores the granted receipt carrying that final
+ * text (the DMT-11 receipt schema — the request-local instruction is never
+ * persisted anywhere else). Deny never reaches this executor: the mechanism
+ * itself stores `{ status: "denied" }`.
+ *
+ * @throws {@link validation} when the recorded output is not the marker
+ *   shape, when the final instruction is empty, or when no generation
+ *   delegate is wired (and whatever the delegate itself throws).
+ */
+async function runGrantedMessageSwipe(input: {
+  readonly threadOwner: { readonly chatId: string; readonly branchId: string };
+  readonly continuation: AgentPermissionContinuation;
+  readonly signal?: AbortSignal;
+  readonly buildSwipeGenerationDelegate?: () => Promise<DirectorSwipeGenerationDelegate | undefined>;
+}): Promise<DirectorSwipeGrantedReceipt> {
+  const marker = directorSwipePermissionMarkerSchema.safeParse(input.continuation.awaitingOutput);
+  if (!marker.success) {
+    throw validation(
+      "The recorded request_message_swipe output is not the tool's marker shape — refusing to resume it.",
+    );
+  }
+  const finalInstruction = (input.continuation.instruction ?? marker.data.instruction).trim();
+  if (finalInstruction.length === 0) {
+    throw validation(
+      "The approved swipe instruction is empty — refusing to run the generation without text.",
+    );
+  }
+  const delegate =
+    input.buildSwipeGenerationDelegate === undefined
+      ? undefined
+      : await input.buildSwipeGenerationDelegate();
+  if (delegate === undefined) {
+    throw validation(
+      "request_message_swipe: swipe generation is not configured — the allowance cannot run.",
+    );
+  }
+  await delegate({
+    chatId: input.threadOwner.chatId,
+    branchId: input.threadOwner.branchId,
+    marker: marker.data,
+    instruction: finalInstruction,
+    ...(input.signal !== undefined ? { signal: input.signal } : {}),
+  });
+  const receipt: DirectorSwipeGrantedReceipt = {
+    status: "granted",
+    messageId: marker.data.messageId,
+    variantId: marker.data.variantId,
+    position: marker.data.position,
+    variantNumber: marker.data.variantNumber,
+    replyFirstLine: marker.data.replyFirstLine,
+    instruction: finalInstruction,
+  };
+  return receipt;
 }
 
 // ─── Kind context ────────────────────────────────────────────────────────────
@@ -514,39 +637,76 @@ export async function* streamSidechatTurn(
         agentProfile.toolSet[AGENT_ASK_USER_TOOL_NAME] === true
           ? { [AGENT_ASK_USER_TOOL_NAME]: createAskUserTool() }
           : {};
+      // DMT-23: the Director MESSAGE tools (DMT-21's builder) spread at the
+      // SAME profile-gated seam — served only when the resolved set enables
+      // their keys. No builtin seed or public toggle key carries these keys
+      // until DMT-34, so the tools stay dormant here; the edit tool's
+      // generation delegate is DMT-24's adapter wiring (absent → the tool
+      // refuses loudly at call time — the tracker delegate's seam shape).
+      const messageTools = buildSidechatMessageTools({
+        toolSet: agentProfile.toolSet,
+        owner: threadOwner,
+        messages: deps.context.messages,
+      });
       return {
         ...search,
         ...buildSidechatObjectiveTools({ toolSet: agentProfile.toolSet }),
         ...checklist,
         ...promptRead,
         ...director,
+        ...messageTools,
         ...askUser,
       };
     },
 
-    // ── SC-23e + DR-4b: the kind's wait-tool stop conditions — BOTH wait
-    //  families the kind now serves. `read_message_prompt` (the permission
-    //  tool) stops on its AWAITING MARKER, never on the call (a call that
-    //  answers unknown_prompt / unresolved does not stop the turn — the
-    //  model relays that answer in the same turn); `ask_user` (owner ruling
-    //  2026-10-27) stops on the call — the mechanism's own default condition
-    //  for the ask family, whose every call awaits by construction. ──
+    // ── SC-23e + DR-4b + DMT-23: the kind's wait-tool stop conditions — ALL
+    //  THREE wait families the kind now serves. `read_message_prompt` and
+    //  `request_message_swipe` (the permission tools) stop on their AWAITING
+    //  MARKERS, never on the calls (a prompt-read call that answers
+    //  unknown_prompt / unresolved does not stop the turn — the model relays
+    //  that answer in the same turn); `ask_user` (owner ruling 2026-10-27)
+    //  stops on the call — the mechanism's own default condition for the ask
+    //  family, whose every call awaits by construction. ──
     waitStopConditions: [
       hasToolCall(AGENT_ASK_USER_TOOL_NAME),
       hasAwaitingPermissionMarker(SIDECHAT_PROMPT_READ_TOOL_NAME),
+      hasAwaitingPermissionMarker(DIRECTOR_MESSAGE_TOOLS.requestMessageSwipe),
     ],
 
-    // ── SC-23e: the granted re-run for an allowed permission request — the
-    //  same resolution the marker came from, against the ANSWER turn's fresh
-    //  held set (loadContext has already run by the time the split-turn
-    //  applies the answer). The chat/branch pair comes from the loop's
+    // ── SC-23e + DMT-23: the granted re-run for an allowed permission
+    //  request — dispatched BY TOOL NAME across the kind's permission
+    //  families (the generic loop stays kind-agnostic). The prompt read
+    //  re-runs the same resolution its marker came from, against the ANSWER
+    //  turn's fresh held set (loadContext has already run by the time the
+    //  split-turn applies the answer); the swipe resumes through
+    //  `runGrantedMessageSwipe` with the split-turn module's continuation
+    //  (the recorded marker + the optional approved instruction) and the
+    //  loop's cancellation signal. ONLY the swipe executor accepts an
+    //  instruction override — a prompt-read Allow carrying the field is
+    //  REFUSED here before execution (the DMT-11 decoder guarantee enforced
+    //  at the continuation: a prompt read can never become a swipe because a
+    //  client sent the field). The chat/branch pair comes from the loop's
     //  THREAD row — the same row every other seam reads, never the request. ──
-    runWaitTool: (thread, toolName, toolInput) => {
-      if (toolName !== SIDECHAT_PROMPT_READ_TOOL_NAME) {
+    runWaitTool: (thread, toolName, toolInput, toolCallId, continuation, signal) => {
+      if (toolName !== SIDECHAT_PROMPT_READ_TOOL_NAME && toolName !== DIRECTOR_MESSAGE_TOOLS.requestMessageSwipe) {
         throw validation(`The sidechat serves no permission tool '${toolName}'.`);
       }
       if (!isChatOwnedAgentThread(thread) || thread.branchId === null) {
         throw new RpSyncThreadNotChatOwnedError(thread.id);
+      }
+      if (toolName === SIDECHAT_PROMPT_READ_TOOL_NAME && continuation.instruction !== undefined) {
+        throw validation("read_message_prompt does not accept an approved-instruction override.");
+      }
+      const threadOwner = { chatId: thread.chatId, branchId: thread.branchId };
+      if (toolName === DIRECTOR_MESSAGE_TOOLS.requestMessageSwipe) {
+        return runGrantedMessageSwipe({
+          threadOwner,
+          continuation,
+          ...(signal !== undefined ? { signal } : {}),
+          ...(deps.buildSwipeGenerationDelegate !== undefined
+            ? { buildSwipeGenerationDelegate: deps.buildSwipeGenerationDelegate }
+            : {}),
+        });
       }
       return runGrantedPromptRead(
         { messages: deps.context.messages, traces: deps.context.traces },

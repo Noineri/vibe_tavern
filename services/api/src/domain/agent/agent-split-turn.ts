@@ -17,7 +17,13 @@
  *   block: validate the referenced row is still awaiting IN THIS THREAD,
  *   rewrite it (ask → answered/skipped; permission deny → `{ status:
  *   "denied" }`; permission allow → the kind's wait-tool executor re-run with
- *   the ORIGINAL tool-call input, its real result stored).
+ *   the ORIGINAL tool-call input, its real result stored). Since DMT-23 the
+ *   allow carries a permission CONTINUATION to the executor — the recorded
+ *   awaiting output plus the optional approved instruction the user edited
+ *   (a deny carrying the field is refused; whether a tool accepts the
+ *   override is the kind's dispatch decision) — and the granted wire
+ *   rendering gained the GENERAL arm beside the prompt-read family's
+ *   specialized one.
  *
  * Kind-agnostic by construction: no kind imports, no tool names beyond the
  * pre-existing `ask_user` literal (whose handling is byte-identical to the
@@ -67,11 +73,20 @@ export interface AgentAskTurnAnswer {
 /** Permission decision for a pending wait-tool marker (SC-23e split-turn):
  *  `allow` re-runs the tool's granted execution (through the kind's
  *  `runWaitTool` seam) and stores its REAL result in the awaiting row;
- *  `deny` stores the denied marker. Wire twin of the permission member of the
- *  api-contracts `experienceCopilotStreamAnswerSchema`. */
+ *  `deny` stores the denied marker. DMT-23: an allow may carry an optional
+ *  `instruction` — the user-edited one-shot text the swipe-permission family
+ *  resumes with (validated/accepted ONLY by that family's executor — the
+ *  stream's dispatch refuses the field for any other tool); a deny carrying
+ *  the field is refused here. Wire twin of the permission member of the
+ *  api-contracts `experienceCopilotStreamAnswerSchema` (whose `.superRefine`
+ *  rejects the deny+instruction body on the wire — this module re-checks it
+ *  for direct domain callers). */
 export interface AgentPermissionTurnAnswer {
   readonly toolCallId: string;
   readonly decision: "allow" | "deny";
+  /** DMT-23: the user's final edited instruction for the swipe-permission
+   *  family. Absent → the executor falls back to the recorded draft. */
+  readonly instruction?: string;
 }
 
 /** Answer to a pending wait-tool request — the ask family or the permission
@@ -248,10 +263,16 @@ function renderAskOutputWireText(output: unknown): string {
 /** The model-visible wire JSON for a PERMISSION-family tool-result output
  *  (SC-23e) — the same stored-state-vs-wire-facts discipline as the ask
  *  family: the awaiting marker (the user moved on) → `{ unanswered: true,
- *  note }`; a granted result → `{ prompt, promptTokens }` (the material the
- *  user allowed, never the `granted` status enum); a denial →
- *  `{ denied: true }`. Any other output renders through the generic object
- *  guarantee. */
+ *  note }`; a granted result → one renderer per family (DMT-23): the
+ *  prompt-read family's record (it carries the family's `prompt` field)
+ *  keeps its SC-23e specialized renderer `{ prompt, promptTokens }` — the
+ *  material the user allowed; ANY other granted record (a
+ *  `request_message_swipe` receipt's generation facts: the approved target
+ *  identity + the final approved instruction) renders its self-describing
+ *  keys under `approved: true`, the mechanism's own status enum replaced —
+ *  never interpreted as the prompt-read payload and never the raw
+ *  `granted` enum; a denial → `{ denied: true }`. Any other output renders
+ *  through the generic object guarantee. */
 function renderPermissionOutputWireText(output: unknown): string {
   const status = permissionStatusOf(output);
   if (status === "awaiting_permission") {
@@ -260,11 +281,19 @@ function renderPermissionOutputWireText(output: unknown): string {
   if (status === "granted" && output !== null && typeof output === "object") {
     const record = output as { prompt?: unknown; promptTokens?: unknown };
     if (typeof record.prompt === "string") {
+      // The prompt-read family's specialized renderer (SC-23e) — unchanged.
       return JSON.stringify({
         prompt: record.prompt,
         ...(typeof record.promptTokens === "number" ? { promptTokens: record.promptTokens } : {}),
       });
     }
+    // The GENERAL granted arm (DMT-23): every other granted permission
+    // receipt reports its own facts. Destructure the mechanism's status
+    // field OFF (it is this module's vocabulary, never wire material) and
+    // mark the allowance with `approved: true` — the same enum-to-fact
+    // rewrite the ask family's `answered` arm does.
+    const { status: _mechanismStatus, ...facts } = output as Record<string, unknown>;
+    return JSON.stringify({ approved: true, ...facts });
   }
   if (status === "denied") return JSON.stringify({ denied: true });
   return stringifyObjectWireText(output);
@@ -283,13 +312,31 @@ export function renderWaitToolOutputWireText(toolName: string, output: unknown):
 
 // ─── The answer application step (the loop's turn-input branch) ─────────────
 
+/** The permission CONTINUATION data the mechanism passes to the kind's
+ *  granted-execution seam (DMT-23): the recorded awaiting marker output —
+ *  the state the tool persisted when it stopped the turn, the executor's
+ *  source of truth for the frozen identity — plus the optional approved
+ *  instruction the user edited on the Allow answer (present ONLY when the
+ *  client sent one; whether the tool accepts an override is the kind's
+ *  dispatch decision, never the mechanism's). */
+export interface AgentPermissionContinuation {
+  readonly awaitingOutput: unknown;
+  readonly instruction?: string;
+}
+
 /** The kind's granted-execution seam for one wait tool (SC-23e): re-run the
  *  tool's REAL execution for an allowed request and return the result the
- *  row stores. Throws for a tool the kind does not serve. */
+ *  row stores. Called with the tool's name, its ORIGINAL recorded input —
+ *  the immutable call record, never rewritten by the answer — the
+ *  toolCallId, and (DMT-23) the permission continuation data above. Throws
+ *  for a tool the kind does not serve (and for an executor that refuses an
+ *  instruction override — the DMT-11 decoder guarantee enforced at the
+ *  continuation). */
 export type RunWaitTool = (
   toolName: string,
   toolInput: unknown,
   toolCallId: string,
+  continuation: AgentPermissionContinuation,
 ) => Promise<unknown>;
 
 /**
@@ -325,9 +372,16 @@ export async function applyAgentTurnAnswer(input: {
         "The permission request being answered was not found (or is no longer awaiting) in this thread.",
       );
     }
-    const rowToolName = parseToolResultRow(target)!.toolName;
+    const rowPayload = parseToolResultRow(target)!;
+    const rowToolName = rowPayload.toolName;
     let output: unknown;
     if (answer.decision === "deny") {
+      // DMT-23: the invalid Deny payload — a denial cannot carry an approved
+      // instruction (nothing to approve; the wire schema rejects the same
+      // body). Refused BEFORE any rewrite: the row stays awaiting.
+      if (answer.instruction !== undefined) {
+        throw validation("A denied permission cannot carry an instruction.");
+      }
       output = { status: "denied" };
     } else {
       const toolCall = findPersistedToolCall(input.priorMessages, answer.toolCallId);
@@ -341,7 +395,14 @@ export async function applyAgentTurnAnswer(input: {
           "This thread's kind serves no permission tools (no wait-tool executor is wired).",
         );
       }
-      output = await input.runWaitTool(rowToolName, toolCall.input, answer.toolCallId);
+      // DMT-23: the executor receives the RECORDED awaiting output (the
+      // marker it persisted — the frozen identity's source of truth) and the
+      // optional approved instruction, while `toolCall.input` stays the
+      // immutable call record the row round-trips on resume.
+      output = await input.runWaitTool(rowToolName, toolCall.input, answer.toolCallId, {
+        awaitingOutput: rowPayload.output,
+        ...(answer.instruction !== undefined ? { instruction: answer.instruction } : {}),
+      });
     }
     const answerPayload: AgentPersistedToolResult = { toolName: rowToolName, output };
     await input.store.setToolResultOutput(input.threadId, answer.toolCallId, answerPayload);
