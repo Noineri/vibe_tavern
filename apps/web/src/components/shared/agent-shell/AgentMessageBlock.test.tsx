@@ -1013,7 +1013,7 @@ describe("ExperienceCopilotMessageBlock — sent attachments (CA-4f)", () => {
   it("a user message with a text file shows the chip and its «⋯» menu", async () => {
     const view = renderWithActions(<AgentMessageBlock messageMarkup="plain" message={userMsg({ attachments: [textFile] })} />);
     expect(view.getByTestId("file-attachment-chip")).toBeDefined();
-    expect(view.getByTitle("notes.md")).toBeDefined();
+    expect(view.getByText("notes.md")).toBeDefined();
     // The menu trigger mounts (desktop — the mobile override is false here).
     expect(view.getByRole("button", { name: "attachment_file_actions" })).toBeDefined();
   });
@@ -1040,9 +1040,9 @@ describe("ExperienceCopilotMessageBlock — sent attachments (CA-4f)", () => {
     expect(document.querySelector("img")).not.toBeNull();
     // WAS (CA-4f): view-only — no edit / regenerate / delete control. NOW:
     // the shell's action seam supplies the RP lightbox's three controls.
-    expect(document.querySelector('[title="Edit description"], [title="Add description"]')).not.toBeNull();
-    expect(document.querySelector('[title="regenerate_description_title"]')).not.toBeNull();
-    expect(document.querySelector('[title="delete_attachment_title"]')).not.toBeNull();
+    expect(view.getByRole("button", { name: "attachment_add_description" })).toBeDefined();
+    expect(view.getByRole("button", { name: "regenerate_description_title" })).toBeDefined();
+    expect(view.getByRole("button", { name: "delete_attachment_title" })).toBeDefined();
   });
 
   it("regenerate calls the agent client with the picker's profile + model", async () => {
@@ -1050,13 +1050,13 @@ describe("ExperienceCopilotMessageBlock — sent attachments (CA-4f)", () => {
     spies.push(regenerate);
     const view = renderWithActions(<AgentMessageBlock messageMarkup="plain" message={userMsg({ attachments: [image] })} />);
     fireEvent.click(view.getByRole("button"));
-    await waitFor(() => expect(document.querySelector('[title="regenerate_description_title"]')).not.toBeNull());
-    fireEvent.click(document.querySelector('[title="regenerate_description_title"]')!);
+    fireEvent.click(await view.findByRole("button", { name: "regenerate_description_title" }));
     await waitFor(() => expect(regenerate).toHaveBeenCalledTimes(1));
     const call = regenerate.mock.calls[0]!;
     expect(call.slice(0, 4)).toEqual(["thread-1", "u1", "img1", { providerProfileId: "p1", model: "m1" }]);
     expect(call[4]).toBeInstanceOf(AbortSignal);
     await waitFor(() => expect(document.body.textContent).toContain("Fresh."));
+    expect(view.getByRole("button", { name: "attachment_edit_description" })).toBeDefined();
   });
 
   it("edit and delete call the agent description/remove clients", async () => {
@@ -1069,14 +1069,13 @@ describe("ExperienceCopilotMessageBlock — sent attachments (CA-4f)", () => {
     const second = { ...image, id: "img2", assetId: "asset-3", name: "b.png" };
     const view = renderWithActions(<AgentMessageBlock messageMarkup="plain" message={userMsg({ attachments: [image, second] })} />);
     fireEvent.click(view.getByAltText("capture.png"));
-    await waitFor(() => expect(document.querySelector('[title="Add description"], [title="Edit description"]')).not.toBeNull());
     // Edit: open the editor, type, save.
-    fireEvent.click(document.querySelector('[title="Add description"], [title="Edit description"]')!);
+    fireEvent.click(await view.findByRole("button", { name: "attachment_add_description" }));
     fireEvent.change(document.querySelector("textarea")!, { target: { value: "Hand-written." } });
     fireEvent.click([...document.querySelectorAll("button")].find((b) => b.textContent === "Save")!);
     await waitFor(() => expect(update).toHaveBeenCalledWith("thread-1", "u1", "img1", "Hand-written."));
     // Delete: confirm through the destructive modal.
-    fireEvent.click(document.querySelector('[title="delete_attachment_title"]')!);
+    fireEvent.click(view.getByRole("button", { name: "delete_attachment_title" }));
     const confirm = await waitFor(() => {
       const found = [...document.querySelectorAll("button")].find((b) => b.textContent === "delete");
       expect(found).toBeDefined();
@@ -1092,8 +1091,7 @@ describe("ExperienceCopilotMessageBlock — sent attachments (CA-4f)", () => {
     spies.push(remove);
     const view = renderWithActions(<AgentMessageBlock messageMarkup="plain" message={userMsg({ attachments: [image] })} />);
     fireEvent.click(view.getByAltText("capture.png"));
-    await waitFor(() => expect(document.querySelector('[title="delete_attachment_title"]')).not.toBeNull());
-    fireEvent.click(document.querySelector('[title="delete_attachment_title"]')!);
+    fireEvent.click(await view.findByRole("button", { name: "delete_attachment_title" }));
     // The confirm button is located by its label text (the sibling CA-4g2
     // test's idiom), not by the real modal's chrome classes: in a hand-bundled
     // co-load the `destructive-confirm-modal` mock another suite registers
@@ -1119,9 +1117,10 @@ describe("ExperienceCopilotMessageBlock — sent attachments (CA-4f)", () => {
       expect(document.querySelector(".fixed.inset-0")).not.toBeNull();
     });
     expect(document.querySelector("img")).not.toBeNull();
-    expect(document.querySelector('[title="regenerate_description_title"]')).toBeNull();
-    expect(document.querySelector('[title="delete_attachment_title"]')).toBeNull();
-    expect(document.querySelector('[title="Edit description"], [title="Add description"]')).toBeNull();
+    expect(view.queryByRole("button", { name: "regenerate_description_title" })).toBeNull();
+    expect(view.queryByRole("button", { name: "delete_attachment_title" })).toBeNull();
+    expect(view.queryByRole("button", { name: "attachment_edit_description" })).toBeNull();
+    expect(view.queryByRole("button", { name: "attachment_add_description" })).toBeNull();
   });
 
   it("summarize calls the agent client with the picker's profile + model", async () => {

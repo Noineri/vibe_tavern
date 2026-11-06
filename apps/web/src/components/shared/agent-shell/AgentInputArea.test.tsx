@@ -495,7 +495,7 @@ describe("ExperienceCopilotInputArea — pinned context (CX-6)", () => {
 describe("ExperienceCopilotInputArea — attachments (CA-4e2)", () => {
   it("attaching through the file input renders a removable chip", async () => {
     const view = await renderWithTextFile();
-    expect(view.getByTitle("notes.md")).toBeDefined();
+    expect(view.getByText("notes.md")).toBeDefined();
     fireEvent.click(view.getByTestId("file-attachment-chip").querySelector("button")!);
     await waitFor(() => expect(view.queryByTestId("file-attachment-chip")).toBeNull());
   });

@@ -268,7 +268,7 @@ describe("CoauthorInputArea attachments (CA-3b)", () => {
     await waitFor(() => expect(useChatStore.getState().draftAttachments).toHaveLength(2));
     expect(upload).toHaveBeenCalledTimes(2);
     expect(view.getByAltText("capture.png")).toBeDefined();
-    expect(view.getByTitle("notes.md")).toBeDefined();
+    expect(view.getByText("notes.md")).toBeDefined();
     expect(useChatStore.getState().draftAttachments[1]).toMatchObject({ type: "file", mimeType: "text/markdown", tokenCount: 42 });
     fireEvent.click(view.getByTestId("file-attachment-chip").querySelector("button")!);
     expect(useChatStore.getState().draftAttachments).toHaveLength(1);

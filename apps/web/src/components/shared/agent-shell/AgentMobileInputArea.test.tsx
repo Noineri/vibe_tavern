@@ -505,7 +505,7 @@ describe("ExperienceCopilotMobileInputArea — attachments (CA-4e2)", () => {
     // 2026-10-29 (DR-15, mockup §9) — same boundary (attach → chip renders),
     // new position truth.
     const view = await renderWithTextFile();
-    expect(view.getByTitle("notes.md")).toBeDefined();
+    expect(view.getByText("notes.md")).toBeDefined();
     const row = view.getByTestId("agent-attached-row");
     const chip = view.getByTestId("file-attachment-chip");
     const card = (view.getByTestId("copilot-chat-input") as HTMLTextAreaElement).closest("div.rounded-xl")!;
