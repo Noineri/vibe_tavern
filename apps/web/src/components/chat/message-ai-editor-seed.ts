@@ -1,3 +1,5 @@
+import { resolveMessageEditorModelPair } from "@vibe-tavern/domain";
+
 import type { UiSettingsRecord } from "../../api/types.js";
 
 type EditorPairSource = Pick<
@@ -6,17 +8,12 @@ type EditorPairSource = Pick<
 >;
 
 /**
- * SUM-5: the message editor owns its context slot. Seed order: the editor's own
- * persisted pair (its model may be empty — that provider's default), then the
- * legacy ai-assistant pair (upgrade fallback — a selection made before the
- * split keeps working and STOPS writing there), then empty (active-profile
- * default resolves downstream). The pair is taken whole: a model belongs to the
- * provider it was saved with, so the editor's provider never borrows the legacy
- * pair's model.
+ * SUM-5 web compatibility shim (DMT-14): the editor-pair selection rule moved
+ * to `@vibe-tavern/domain/message-editor-model` so the Director's editor
+ * delegate resolves the SAME pair — this file is a consumer of that one
+ * derivation, not a second copy. The exported shape is unchanged so the
+ * modal's call site is untouched.
  */
 export function resolveMessageEditorSeed(ui: EditorPairSource | null): { providerId: string; modelName: string } {
-  if (ui?.messageEditorProviderId) {
-    return { providerId: ui.messageEditorProviderId, modelName: ui.messageEditorModelName ?? "" };
-  }
-  return { providerId: ui?.aiAssistantProviderId ?? "", modelName: ui?.aiAssistantModelName ?? "" };
+  return resolveMessageEditorModelPair(ui);
 }

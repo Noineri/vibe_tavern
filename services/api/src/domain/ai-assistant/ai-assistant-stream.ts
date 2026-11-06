@@ -13,7 +13,6 @@ import { streamText } from "ai";
 import type { LanguageModel } from "ai";
 import type { ProviderFetch } from "../../domain/providers/provider-fetch-factory.js";
 import { resolveProviderFetchForProfile } from "../../domain/providers/provider-fetch-factory.js";
-import type { Message, MessageVariant } from "@vibe-tavern/db";
 import {
   getAiAssistantAssembler,
   estimateMessageArrayTokens,
@@ -38,42 +37,17 @@ import type { AppDb } from "@vibe-tavern/db";
 import type { AiAssistantRequest, AiAssistantTokenCount } from "@vibe-tavern/api-contracts";
 import type { BuiltPipelineContext } from "../prompt/prompt-assembly-service.js";
 import { notFound, validation } from "../../shared/errors.js";
+import type { MessageEditorPromptMode } from "./message-editor-prompt.js";
 import {
-  composeMessageEditorPrompt,
-  type MessageEditorPromptMode,
-  type MessageEditorPromptSource,
-} from "./message-editor-prompt.js";
+  prepareMessageEditorTask,
+  type MessageEditorTaskDeps,
+  type PreparedAiAssistantRequest,
+} from "./message-editor-task.js";
 
 // ─── Request / response types ────────────────────────────────────────────────
 
 /** Request body, validated at the route by `aiAssistantRequestSchema`. */
 export type AiAssistantStreamRequest = AiAssistantRequest;
-
-interface AiAssistantProviderProfile {
-  readonly id: string;
-  readonly providerPreset: string;
-  readonly endpoint: string;
-  readonly apiKey: string | null;
-  readonly defaultModel: string | null;
-  readonly contextBudget: number | null;
-  readonly maxTokens: number;
-  /** Proxy policy used to resolve the proxy-aware fetch for this profile. */
-  readonly proxyMode: import("@vibe-tavern/domain").ProviderProxyMode;
-  readonly proxyId: string | null;
-}
-
-interface MessageEditorPipelineContextInput {
-  readonly chatId: string;
-  readonly branchId: string;
-  readonly model: string;
-  readonly contextBudget: number | null;
-  readonly responseReserve: number;
-  readonly throughMessageId: string;
-  readonly excludeMessageIds: string[];
-  /** Optional cap on how many recent messages (before the target) are included.
-   *  Mirrors chat_impersonate's recentMessageCount. Undefined = all up to target. */
-  readonly recentMessageLimit?: number;
-}
 
 interface ChatImpersonationPipelineContextInput {
   readonly chatId: string;
@@ -85,11 +59,7 @@ interface ChatImpersonationPipelineContextInput {
   readonly quietPrompt?: string;
 }
 
-export interface StreamDeps extends ContextResolverDeps {
-  readonly db: AppDb;
-  readonly resolveModel: (profile: { providerPreset: string; endpoint: string; apiKey: string | null }, model: string, fetch?: ProviderFetch) => LanguageModel;
-  readonly getProviderProfile: (id: string) => Promise<AiAssistantProviderProfile | null>;
-  readonly getEffectiveProviderProfile: (id: string, model: string) => Promise<AiAssistantProviderProfile>;
+export interface StreamDeps extends ContextResolverDeps, MessageEditorTaskDeps {
   // SP-10: legacy preset plumbing — prompt resolution now uses service-prompt
   // profiles (db). Kept for compat until SP-10 cleanup.
   readonly getPresetPromptData: (chatId?: string) => Promise<{
@@ -98,142 +68,9 @@ export interface StreamDeps extends ContextResolverDeps {
   }>;
   /** Build the full RP world for impersonation without persisting lore timed state. */
   readonly buildChatImpersonationPipelineContext: (input: ChatImpersonationPipelineContextInput) => Promise<BuiltPipelineContext>;
-  readonly getMessageEditorChat: (chatId: string) => Promise<{ id: string; activeBranchId: string } | null>;
-  readonly getMessageEditorMessages: (branchId: string) => Promise<Message[]>;
-  readonly getMessageEditorVariantsByBranch: (branchId: string) => Promise<Map<string, MessageVariant[]>>;
-  readonly buildMessageEditorPipelineContext: (input: MessageEditorPipelineContextInput) => Promise<BuiltPipelineContext>;
-  /** Optional debug logger. */
-  readonly logDebug?: (event: string, data: Record<string, unknown>) => void;
 }
 
 // ─── Assembly / token preview ────────────────────────────────────────────────
-
-interface PreparedAiAssistantRequest {
-  config: ReturnType<typeof getModeConfig>;
-  profile: AiAssistantProviderProfile;
-  modelName: string;
-  assembly: PromptAssemblyResult | null;
-  messages: Array<{
-    role: "system" | "user" | "assistant";
-    content: string;
-  }>;
-  doneMetadata: { modelId: string; promptPresetId: string | null } | null;
-}
-
-interface MessageEditorPreparationInput {
-  readonly request: AiAssistantStreamRequest & { readonly mode: MessageEditorPromptMode };
-  readonly deps: StreamDeps;
-  readonly config: ReturnType<typeof getModeConfig>;
-  readonly profile: AiAssistantProviderProfile;
-  readonly modelName: string;
-}
-
-async function prepareMessageEditorRequest(input: MessageEditorPreparationInput): Promise<PreparedAiAssistantRequest> {
-  const { request, deps, config, profile, modelName } = input;
-  if (!request.chatId) {
-    throw validation("A chat is required for message editor generation.");
-  }
-  if (!request.targetMessageId) {
-    throw validation("A target message is required for message editor generation.");
-  }
-  if (!request.sourceVariantIds?.length) {
-    throw validation("Select at least one canonical message variant.");
-  }
-
-  const chat = await deps.getMessageEditorChat(request.chatId);
-  if (!chat) {
-    throw notFound("Chat", `Chat '${request.chatId}' was not found.`);
-  }
-  const messages = await deps.getMessageEditorMessages(chat.activeBranchId);
-  const target = messages.find((message) => message.id === request.targetMessageId);
-  if (!target) {
-    throw notFound("Message", `Message '${request.targetMessageId}' was not found on the active branch.`);
-  }
-  if (target.role !== "assistant" || target.state !== "complete") {
-    throw validation("Message editor targets must be committed assistant messages.");
-  }
-
-  const variantsByMessage = await deps.getMessageEditorVariantsByBranch(chat.activeBranchId);
-  const targetVariants = new Map((variantsByMessage.get(target.id) ?? []).map((variant) => [variant.id, variant]));
-  const branchVariantOwners = new Map<string, string>();
-  for (const [messageId, variants] of variantsByMessage) {
-    for (const variant of variants) branchVariantOwners.set(variant.id, messageId);
-  }
-  const sources: MessageEditorPromptSource[] = [];
-  for (const variantId of request.sourceVariantIds) {
-    const source = targetVariants.get(variantId);
-    if (!source) {
-      const ownerMessageId = branchVariantOwners.get(variantId);
-      if (ownerMessageId) {
-        throw validation(`Message editor source variant '${variantId}' does not belong to target message '${target.id}'.`);
-      }
-      throw notFound("MessageVariant", `Message editor source variant '${variantId}' was not found on the active branch.`);
-    }
-    sources.push(source);
-  }
-
-  const { prompt: systemPrompt, source } = await resolveSystemPrompt(deps.db, request.mode, {
-    promptFormat: request.promptFormat,
-  });
-  const effectiveProfile = await deps.getEffectiveProviderProfile(profile.id, modelName);
-  const built = await deps.buildMessageEditorPipelineContext({
-    chatId: chat.id,
-    branchId: chat.activeBranchId,
-    model: modelName,
-    contextBudget: effectiveProfile.contextBudget,
-    responseReserve: effectiveProfile.maxTokens,
-    throughMessageId: target.id,
-    excludeMessageIds: [target.id],
-    recentMessageLimit: request.recentMessageCount,
-  });
-  const task = composeMessageEditorPrompt({
-    mode: request.mode,
-    targetMessageId: target.id,
-    resolvedModePrompt: systemPrompt,
-    sources,
-    userInstruction: request.instruction,
-  });
-  const pipelineContext: PromptAssemblyContext = {
-    ...built.context,
-    aiAssistant: {
-      mode: request.mode,
-      enabledLayers: request.enabledLayers,
-      instruction: task,
-      systemPrompt: "",
-    },
-  };
-
-  deps.logDebug?.("api.ai-assistant.prompt-resolved", {
-    mode: request.mode,
-    source,
-    systemPromptLength: systemPrompt.length,
-    systemPromptPreview: systemPrompt.slice(0, 120),
-    model: modelName,
-    providerProfileId: request.providerProfileId,
-  });
-  setModelHint(modelName);
-  const assembly = getAiAssistantAssembler(request.mode).assemble(pipelineContext);
-  const messagesForModel = assembly.finalPayload.messages as Array<{
-    role: "system" | "user" | "assistant";
-    content: string;
-  }>;
-  deps.logDebug?.("api.ai-assistant.assembly-complete", {
-    mode: request.mode,
-    layerCount: assembly.layers.length,
-    totalTokenEstimate: assembly.totalTokenEstimate,
-    messageCount: messagesForModel.length,
-    droppedLayers: assembly.droppedLayers.length,
-  });
-
-  return {
-    config,
-    profile: effectiveProfile,
-    modelName,
-    assembly,
-    messages: messagesForModel,
-    doneMetadata: { modelId: modelName, promptPresetId: built.promptPresetId },
-  };
-}
 
 function isMessageEditorRequest(
   request: AiAssistantStreamRequest,
@@ -247,16 +84,41 @@ async function prepareAiAssistantRequest(
 ): Promise<PreparedAiAssistantRequest> {
   const config = getModeConfig(request.mode);
 
+  // Message editor modes run through the SHARED editor task (DMT-14): the
+  // ordinary editor derives the branch from the chat's ACTIVE branch and
+  // passes it as the task's explicit internal scope; the task owns profile /
+  // model resolution, canonical-target validation and assembly for both this
+  // path and the Director's delegate.
+  if (isMessageEditorRequest(request)) {
+    const chatId = request.chatId;
+    if (!chatId) {
+      throw validation("A chat is required for message editor generation.");
+    }
+    const editorChat = await deps.getMessageEditorChat(chatId);
+    if (!editorChat) {
+      throw notFound("Chat", `Chat '${chatId}' was not found.`);
+    }
+    return prepareMessageEditorTask({
+      mode: request.mode,
+      chatId,
+      branchId: editorChat.activeBranchId,
+      targetMessageId: request.targetMessageId ?? "",
+      sourceVariantIds: request.sourceVariantIds ?? [],
+      instruction: request.instruction,
+      providerProfileId: request.providerProfileId,
+      model: request.model,
+      enabledLayers: request.enabledLayers,
+      recentMessageCount: request.recentMessageCount,
+      promptFormat: request.promptFormat,
+    }, deps);
+  }
+
   // 1. Resolve provider + model
   const profile = await deps.getProviderProfile(request.providerProfileId);
   if (!profile) {
     throw new Error(`Provider profile not found: ${request.providerProfileId}`);
   }
   const modelName = request.model ?? profile.defaultModel ?? "gpt-4o-mini";
-
-  if (isMessageEditorRequest(request)) {
-    return prepareMessageEditorRequest({ request, deps, config, profile, modelName });
-  }
 
   // 2. Resolve system prompt via service-prompt profiles
   const promptField = request.mode === "chat_impersonate"

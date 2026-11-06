@@ -37,6 +37,7 @@ export * from "./experience-round-limits.js";
 export * from "./ids.js";
 export * from "./is-record.js";
 export * from "./logger.js";
+export * from "./message-editor-model.js";
 export * from "./model-mirror.js";
 export * from "./platform-constants.js";
 export * from "./prompt-canvas.js";
