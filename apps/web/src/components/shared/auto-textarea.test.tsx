@@ -1,10 +1,22 @@
-import { beforeAll, describe, expect, it } from "bun:test";
+import { beforeAll, beforeEach, describe, expect, it } from "bun:test";
 
 import { useDomEnv } from "../../../test/dom-env.js";
 
 useDomEnv();
 
+import { useMacroAutocompleteStore } from "./macro-autocomplete-store.js";
+
 const { act, fireEvent, render } = await import("@testing-library/react");
+
+// Order determinism (--randomize shuffles tests within the file): the macro
+// recency store is a module-level singleton shared across EVERY AutoTextarea
+// instance — a test that inserts {{persona}} promotes it to the top of the
+// picker, and any test shuffled after it gets persona from Enter-on-first
+// instead of user. Start every test from the seed order
+// (WEB_TEST_RANDOMIZE_ORDER_REPORT step 1).
+beforeEach(() => {
+  useMacroAutocompleteStore.setState({ recency: [] });
+});
 
 // The component reads `window.HTMLTextAreaElement` at module scope, so it must
 // be imported only after useDomEnv() has registered happy-dom.

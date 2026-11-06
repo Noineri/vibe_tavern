@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 import type { GenerationBatchSummary } from "../../stores/generation-queue-store.js";
 import { useDomEnv } from "../../../test/dom-env.js";
 import ru from "../../i18n/locales/ru.json";
@@ -18,6 +18,16 @@ beforeAll(async () => {
   ({ QueueChip } = await import("./queue-chip.js"));
   ({ i18next, initI18n } = await import("../../i18n/i18n.js"));
   initI18n("en");
+});
+
+// Order determinism (--randomize shuffles tests within the file): the CLDR
+// test below switches the GLOBAL i18next to "ru"; the restore used to live
+// only in afterAll, so any EN-asserting test shuffled after it rendered RU.
+// Reset after EVERY test instead (WEB_TEST_RANDOMIZE_ORDER_REPORT step 1).
+afterEach(async () => {
+  await act(async () => {
+    await i18next.changeLanguage("en");
+  });
 });
 
 afterAll(async () => {

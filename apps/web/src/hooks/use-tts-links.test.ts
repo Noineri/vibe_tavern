@@ -33,9 +33,10 @@ const getLinks = mock(async (id: string): Promise<TtsLinkRecord[]> => {
   return getLinksResponse;
 });
 const putCalls: Array<{ id: string; rows: TtsLinkPutRow[] }> = [];
-const putLinks = mock(async (id: string, rows: TtsLinkPutRow[]): Promise<void> => {
+const recordPut = async (id: string, rows: TtsLinkPutRow[]): Promise<void> => {
   putCalls.push({ id, rows });
-});
+};
+const putLinks = mock(recordPut);
 const refreshVoiceMap = mock(async (): Promise<void> => {});
 
 const deps: TtsLinksDeps = { getLinks, putLinks, refreshVoiceMap };
@@ -52,6 +53,12 @@ beforeEach(() => {
   putCalls.length = 0;
   getLinks.mockClear();
   putLinks.mockClear();
+  // Order determinism (--randomize shuffles tests within the file):
+  // mockClear() drops recorded CALLS but keeps a mockImplementation override
+  // alive — the PUT-failure test's throwing impl used to survive into any
+  // test shuffled after it, leaving putCalls empty. Re-pin the recording
+  // implementation for every test (WEB_TEST_RANDOMIZE_ORDER_REPORT step 1).
+  putLinks.mockImplementation(recordPut);
   refreshVoiceMap.mockClear();
   __setTtsLinksDepsForTests(deps);
 });

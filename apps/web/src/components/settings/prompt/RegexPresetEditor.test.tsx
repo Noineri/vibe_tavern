@@ -239,11 +239,19 @@ describe("RegexPresetEditor", () => {
 // ── R-7 redesign contracts ─────────────────────────────────────────────────
 describe("RegexPresetEditor — R-7 redesign", () => {
   beforeEach(() => {
+    // mockReset() strips the implementation entirely (bun probe 2026-11-06:
+    // a post-reset call returns undefined) — every reset here MUST re-pin.
+    // setRegexLinksMock's reset used to leave it dead for the rest of the
+    // file's run: in sorted order nothing noticed (the reset-carrying
+    // describes run last), but under --randomize any shuffled-earlier test's
+    // setRegexLinks call then hit `undefined.then`
+    // (WEB_TEST_RANDOMIZE_ORDER_REPORT step 1).
     getRegexLinksMock.mockReset();
     getRegexLinksMock.mockResolvedValue([]);
     listPromptPresetsMock.mockReset();
     listPromptPresetsMock.mockResolvedValue([]);
     setRegexLinksMock.mockReset();
+    setRegexLinksMock.mockResolvedValue([]);
   });
 
   it("Активен toggle: saved preset → onActiveChange only (instant patch, draft untouched)", async () => {
@@ -388,11 +396,19 @@ describe("RegexPresetEditor — R-7 redesign", () => {
 // ── RXU-14: new-rule draft gate, feedback, and member chip ───────────────
 describe("RegexPresetEditor — new-rule draft (RXU-14)", () => {
   beforeEach(() => {
+    // mockReset() strips the implementation entirely (bun probe 2026-11-06:
+    // a post-reset call returns undefined) — every reset here MUST re-pin.
+    // setRegexLinksMock's reset used to leave it dead for the rest of the
+    // file's run: in sorted order nothing noticed (the reset-carrying
+    // describes run last), but under --randomize any shuffled-earlier test's
+    // setRegexLinks call then hit `undefined.then`
+    // (WEB_TEST_RANDOMIZE_ORDER_REPORT step 1).
     getRegexLinksMock.mockReset();
     getRegexLinksMock.mockResolvedValue([]);
     listPromptPresetsMock.mockReset();
     listPromptPresetsMock.mockResolvedValue([]);
     setRegexLinksMock.mockReset();
+    setRegexLinksMock.mockResolvedValue([]);
   });
 
   it("pure gate: a non-empty name AND a compilable find pattern are required", () => {
@@ -488,11 +504,19 @@ describe("RegexPresetEditor — new-rule draft (RXU-14)", () => {
 // ── RXU-31 availability reason marker in the editor ─────────────────────
 describe("RegexPresetEditor — unbound reason marker", () => {
   beforeEach(() => {
+    // mockReset() strips the implementation entirely (bun probe 2026-11-06:
+    // a post-reset call returns undefined) — every reset here MUST re-pin.
+    // setRegexLinksMock's reset used to leave it dead for the rest of the
+    // file's run: in sorted order nothing noticed (the reset-carrying
+    // describes run last), but under --randomize any shuffled-earlier test's
+    // setRegexLinks call then hit `undefined.then`
+    // (WEB_TEST_RANDOMIZE_ORDER_REPORT step 1).
     getRegexLinksMock.mockReset();
     getRegexLinksMock.mockResolvedValue([]);
     listPromptPresetsMock.mockReset();
     listPromptPresetsMock.mockResolvedValue([]);
     setRegexLinksMock.mockReset();
+    setRegexLinksMock.mockResolvedValue([]);
   });
 
   it("shows the unbound reason for an enabled standalone Rule with confirmed zero resolvable links", async () => {

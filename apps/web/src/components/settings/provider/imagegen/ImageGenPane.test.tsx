@@ -77,7 +77,7 @@ const listSamplersApi = mock(async (): Promise<import("@vibe-tavern/api-contract
   { name: "Euler a", aliases: [] },
   { name: "DPM++ 2M", aliases: [] },
 ]);
-const listSamplerSetsApi = mock(async (): Promise<ImageGenSamplerSet[]> => [
+const defaultSamplerSets: ImageGenSamplerSet[] = [
   {
     id: "set-a",
     name: "Cinematic 30",
@@ -86,7 +86,8 @@ const listSamplerSetsApi = mock(async (): Promise<ImageGenSamplerSet[]> => [
     createdAt: "2026-09-17T00:00:00.000Z",
     updatedAt: "2026-09-17T00:00:00.000Z",
   },
-]);
+];
+const listSamplerSetsApi = mock(async (): Promise<ImageGenSamplerSet[]> => defaultSamplerSets.map((set) => ({ ...set })));
 // IF-7b: the pane's hires section fetches the upscaler vocabulary through
 // the same api seam the chip uses — overridden here so no test ever issues
 // a real network call.
@@ -409,6 +410,17 @@ afterEach(async () => {
   ]) {
     m.mockClear();
   }
+  // Order determinism (--randomize shuffles tests within the file): bun's
+  // mockImplementation() return value does NOT restore the previous
+  // implementation (verified by probe 2026-11-06) and mockClear() drops only
+  // recorded calls — so a test's mockImplementation/mockResolvedValue override
+  // used to survive into every test shuffled after it (the former
+  // `restoreSets()` disposers were silent no-ops). Re-pin the defaults after
+  // EVERY test; per-test overrides apply on top of a clean base
+  // (WEB_TEST_RANDOMIZE_ORDER_REPORT step 1).
+  listSamplerSetsApi.mockImplementation(async () => defaultSamplerSets.map((set) => ({ ...set })));
+  listLlmProfilesApi.mockImplementation(async () => []);
+  fetchLlmModelsApi.mockImplementation(async () => ({ models: [] }));
   extensionsValue = [];
   faceDetectorsValue = null;
   faceDetectorCalls.length = 0;
@@ -1987,13 +1999,12 @@ describe("ImageGenPane — named set row in the advanced header (CF15c, LLM acco
       createdAt: "2026-09-25T00:00:00.000Z",
       updatedAt: "2026-09-25T00:00:00.000Z",
     } as ImageGenSamplerSet;
-    const restoreSets = listSamplerSetsApi.mockImplementation(async () => [grown]);
+    listSamplerSetsApi.mockImplementation(async () => [grown]);
     const view = render(<ImageGenPane imageGen={makeImageGen({ applyBaseSamplerSet })} />);
     await waitFor(() => expect(view.getByTestId("image-gen-model-set-row")).toBeTruthy());
     await pickOption(view, "image-gen-model-set-trigger", "Anima");
     await waitFor(() => expect(applyBaseSamplerSet).toHaveBeenCalledTimes(1));
     expect(applyBaseSamplerSet.mock.calls[0]![1]).toEqual(grown.payload);
-    restoreSets();
   });
 
   it("IF-12a: applying a workflow set restores its sidecars with the workflow selection", async () => {
@@ -2014,7 +2025,7 @@ describe("ImageGenPane — named set row in the advanced header (CF15c, LLM acco
       createdAt: "2026-09-25T00:00:00.000Z",
       updatedAt: "2026-09-25T00:00:00.000Z",
     } as ImageGenSamplerSet;
-    const restoreSets = listSamplerSetsApi.mockImplementation(async () => [qwen]);
+    listSamplerSetsApi.mockImplementation(async () => [qwen]);
     const view = render(
       <ImageGenPane
         imageGen={makeImageGen({
@@ -2043,7 +2054,6 @@ describe("ImageGenPane — named set row in the advanced header (CF15c, LLM acco
       vaeName: "qwen_image_2.1_vae.safetensors",
       workflowFamily: "qwen-image-2.1",
     });
-    restoreSets();
   });
 
   it("IF-7c: an A1111-vocabulary set on a COMFY target translates through the alias bridge before applying", async () => {
@@ -2056,7 +2066,7 @@ describe("ImageGenPane — named set row in the advanced header (CF15c, LLM acco
       createdAt: "2026-09-25T00:00:00.000Z",
       updatedAt: "2026-09-25T00:00:00.000Z",
     } as ImageGenSamplerSet;
-    const restoreSets = listSamplerSetsApi.mockImplementation(async () => [diffusion]);
+    listSamplerSetsApi.mockImplementation(async () => [diffusion]);
     const view = render(
       <ImageGenPane
         imageGen={makeImageGen({
@@ -2079,7 +2089,6 @@ describe("ImageGenPane — named set row in the advanced header (CF15c, LLM acco
       cfgScale: 5,
       clipSkip: 2,
     });
-    restoreSets();
   });
 
   it("IF-7c: a sampler missing from the target's live list is SKIPPED with a note — the rest applies, never silent garbage", async () => {
@@ -2092,7 +2101,7 @@ describe("ImageGenPane — named set row in the advanced header (CF15c, LLM acco
       createdAt: "2026-09-25T00:00:00.000Z",
       updatedAt: "2026-09-25T00:00:00.000Z",
     } as ImageGenSamplerSet;
-    const restoreSets = listSamplerSetsApi.mockImplementation(async () => [bogus]);
+    listSamplerSetsApi.mockImplementation(async () => [bogus]);
     const view = render(
       <ImageGenPane
         imageGen={makeImageGen({
@@ -2108,7 +2117,6 @@ describe("ImageGenPane — named set row in the advanced header (CF15c, LLM acco
     await waitFor(() => expect(applyBaseSamplerSet).toHaveBeenCalledTimes(1));
     // The arm keeps its current sampler (field skipped), steps still apply.
     expect(applyBaseSamplerSet.mock.calls[0]![1]).toEqual({ steps: 30 });
-    restoreSets();
   });
 
   it("IF-7c: a set vae on a DiT target (family-fixed sidecar) is stripped — the encoder never applies, the sampler still does", async () => {
@@ -2121,7 +2129,7 @@ describe("ImageGenPane — named set row in the advanced header (CF15c, LLM acco
       createdAt: "2026-09-25T00:00:00.000Z",
       updatedAt: "2026-09-25T00:00:00.000Z",
     } as ImageGenSamplerSet;
-    const restoreSets = listSamplerSetsApi.mockImplementation(async () => [anima]);
+    listSamplerSetsApi.mockImplementation(async () => [anima]);
     const view = render(
       <ImageGenPane
         imageGen={makeImageGen({
@@ -2144,7 +2152,6 @@ describe("ImageGenPane — named set row in the advanced header (CF15c, LLM acco
       steps: 30,
       cfgScale: 5,
     });
-    restoreSets();
   });
 
   // ── Set-switch leak (IMAGEGEN_SET_SWITCH_AND_CHIP_FIXES_REPORT, A) ──
@@ -2164,7 +2171,7 @@ describe("ImageGenPane — named set row in the advanced header (CF15c, LLM acco
       createdAt: "2026-10-01T00:00:00.000Z",
       updatedAt: "2026-10-01T00:00:00.000Z",
     } as ImageGenSamplerSet;
-    const restoreSets = listSamplerSetsApi.mockImplementation(async () => [minimal]);
+    listSamplerSetsApi.mockImplementation(async () => [minimal]);
     const view = render(
       <ImageGenPane
         imageGen={makeImageGen({
@@ -2210,7 +2217,6 @@ describe("ImageGenPane — named set row in the advanced header (CF15c, LLM acco
     // Kept keys are never mentioned at all.
     expect(Object.hasOwn(values, "seed")).toBe(false);
     expect(Object.hasOwn(values, "adetailerModel")).toBe(false);
-    restoreSets();
   });
 
   it("set-switch (b): the bound arm twin — setModelSamplerSetBinding receives the same replace-semantics values", async () => {
@@ -2223,7 +2229,7 @@ describe("ImageGenPane — named set row in the advanced header (CF15c, LLM acco
       createdAt: "2026-10-01T00:00:00.000Z",
       updatedAt: "2026-10-01T00:00:00.000Z",
     } as ImageGenSamplerSet;
-    const restoreSets = listSamplerSetsApi.mockImplementation(async () => [minimal]);
+    listSamplerSetsApi.mockImplementation(async () => [minimal]);
     const view = render(
       <ImageGenPane
         imageGen={makeImageGen({
@@ -2266,7 +2272,6 @@ describe("ImageGenPane — named set row in the advanced header (CF15c, LLM acco
     }
     expect(Object.hasOwn(values, "seed")).toBe(false);
     expect(Object.hasOwn(values, "adetailerModel")).toBe(false);
-    restoreSets();
   });
 
   it("set-switch (c): after a pick the dirty dot is OFF while the arm mirrors what was written; an owned-field nudge lights it; seed/detector-model changes never do", async () => {
@@ -2286,7 +2291,7 @@ describe("ImageGenPane — named set row in the advanced header (CF15c, LLM acco
       createdAt: "2026-10-01T00:00:00.000Z",
       updatedAt: "2026-10-01T00:00:00.000Z",
     } as ImageGenSamplerSet;
-    const restoreSets = listSamplerSetsApi.mockImplementation(async () => [dotSet]);
+    listSamplerSetsApi.mockImplementation(async () => [dotSet]);
     const applyBaseSamplerSet = mock((_setId: string | null, _payload?: Record<string, unknown>) => {});
     const imageGen = makeImageGen({ applyBaseSamplerSet });
     // The pane's mocked hook never updates the form itself — the harness
@@ -2324,7 +2329,6 @@ describe("ImageGenPane — named set row in the advanced header (CF15c, LLM acco
     view.rerender(pane(syncedForm({ adetailerModel: "bbox/face_yolov8m.pt" })));
     await act(async () => {});
     expect(view.queryByTestId("image-gen-set-dirty-dot")).toBeNull();
-    restoreSets();
   });
 });
 
@@ -2873,7 +2877,7 @@ describe("ImageGenPane — overlay round-trip via the API seam (plan self-check)
       createdAt: "2026-09-25T00:00:00.000Z",
       updatedAt: "2026-09-25T00:00:00.000Z",
     } as ImageGenSamplerSet;
-    const restoreSets = listSamplerSetsApi.mockImplementation(async () => [qwenSet]);
+    listSamplerSetsApi.mockImplementation(async () => [qwenSet]);
     apiStore = [
       makeRecord({
         id: "p-qwen",
@@ -2916,7 +2920,6 @@ describe("ImageGenPane — overlay round-trip via the API seam (plan self-check)
     expect(hookRef.current!.modelOverlay?.workflowFamily).toBe("qwen-image-2.1");
     expect(hookRef.current!.modelOverlay?.encoderName).toBe("qwen3vl_8b.safetensors");
     expect(hookRef.current!.modelOverlay?.vaeName).toBe("qwen_image_2.1_vae.safetensors");
-    restoreSets();
   });
 
   it("unbind immediately DELETEs the stored overlay (the revert is the destructive action)", async () => {

@@ -1,10 +1,10 @@
-import { describe, expect, it } from "bun:test";
+import { beforeEach, describe, expect, it } from "bun:test";
 
 // Real i18next with the committed locale files — the summaries' plural calls
 // must resolve through the ACTUAL ru/en plural rules (the i18n.test.ts
 // precedent: initI18n configures the global instance a pure test can read
 // through getT()).
-import { initI18n } from "../../i18n/i18n.js";
+import { i18next, initI18n } from "../../i18n/i18n.js";
 import { getT } from "../../i18n/locale-helpers.js";
 import {
   adetailerSummary,
@@ -22,15 +22,24 @@ const KREA_OPTIONS = [
 ] as const;
 
 describe("chip-section-summaries (ICR-2)", () => {
-  it("lorasSummary: count > 0 uses the enabled plural, 0 says «не выбраны» (RU)", () => {
+  // Order determinism (--randomize shuffles tests within the file):
+  // initI18n is a guarded single init — the per-test initI18n("ru") calls
+  // this replaces were silent no-ops after the first, so any test shuffled
+  // after the EN-ladder test read EN instead of RU. Set the shared
+  // instance's language explicitly before EVERY test instead
+  // (WEB_TEST_RANDOMIZE_ORDER_REPORT step 1).
+  beforeEach(async () => {
     initI18n("ru");
+    await i18next.changeLanguage("ru");
+  });
+
+  it("lorasSummary: count > 0 uses the enabled plural, 0 says «не выбраны» (RU)", () => {
     const t = getT();
     expect(lorasSummary(3, t)).toBe("Включено: 3");
     expect(lorasSummary(0, t)).toBe("не выбраны");
   });
 
   it("hiresSummary: off = «выкл»; on shows the effective steps/scale incl. RU plurals 1/2/5/21 and display anchors", () => {
-    initI18n("ru");
     const t = getT();
     expect(hiresSummary({ enabled: false }, { steps: 0, scale: 2 }, t)).toBe("выкл");
 
@@ -58,7 +67,6 @@ describe("chip-section-summaries (ICR-2)", () => {
   });
 
   it("adetailerSummary: off = «выкл»; on shows the detector model + steps plural", () => {
-    initI18n("ru");
     const t = getT();
     expect(adetailerSummary(false, "face_yolov8m.pt", 12, t)).toBe("выкл");
     expect(adetailerSummary(true, "face_yolov8m.pt", 12, t)).toBe("face_yolov8m.pt · шагов: 12");
@@ -66,7 +74,6 @@ describe("chip-section-summaries (ICR-2)", () => {
   });
 
   it("samplersSummary: present parts joined with « · », unset rendered controls read «Авто», absent controls are omitted", () => {
-    initI18n("ru");
     const t = getT();
     // The mockup's line: euler · simple · шагов: 8 · CFG 1.
     expect(
@@ -86,7 +93,6 @@ describe("chip-section-summaries (ICR-2)", () => {
   });
 
   it("kreaSummary: the translated creativity label; unknown values fall back to the raw string", () => {
-    initI18n("ru");
     const t = getT();
     expect(kreaSummary("high", KREA_OPTIONS, t)).toBe(t("image_gen_krea_creativity_high"));
     expect(kreaSummary("nonsense", KREA_OPTIONS, t)).toBe("nonsense");
@@ -95,7 +101,6 @@ describe("chip-section-summaries (ICR-2)", () => {
   it("EN ladder: one/other plural forms resolve through the en resources", async () => {
     // initI18n is guarded (single init); the language switch goes through
     // the shared instance's changeLanguage — getT reads it at call time.
-    const { i18next } = await import("../../i18n/i18n.js");
     await i18next.changeLanguage("en");
     const t = getT();
     expect(hiresSummary({ enabled: true, steps: 20, scale: 1.5 }, { steps: 0, scale: 2 }, t)).toBe(
