@@ -382,16 +382,37 @@ export class ChatApplicationService {
     return removed;
   }
 
-  async editMessage(messageId: string, content: string, expectedVariantId?: string): Promise<Message> {
+  /**
+   * The ordinary guarded edit (volatile macros frozen on the candidate,
+   * selected-variant guard). DMT-22 adds the optional `expectedBaseContent`
+   * guard: the proposal apply passes the reviewed diff base so the store's
+   * transactional check refuses (409) when the selected variant's content
+   * changed since — a newer edit to the same variant id is never overwritten.
+   * Callers without the extra guard keep today's behavior byte-identical.
+   */
+  async editMessage(
+    messageId: string,
+    content: string,
+    expectedVariantId?: string,
+    expectedBaseContent?: string,
+  ): Promise<Message> {
     try {
       const existing = await this.messageStore.getMessageById(messageId);
       if (!existing) throw notFound("Message", `Message '${messageId}' was not found.`);
       const chat = await this.requireChat(existing.chatId as ChatId);
-      const message = await this.messageStore.editMessage(messageId, await this.freezeVolatileMacros(chat, content), expectedVariantId);
+      const message = await this.messageStore.editMessage(
+        messageId,
+        await this.freezeVolatileMacros(chat, content),
+        expectedVariantId,
+        expectedBaseContent,
+      );
       return mapDbMessage(message);
     } catch (error) {
       if (error instanceof Error && error.name === "SelectedVariantMismatchError") {
         throw conflict("The selected message variant changed before this edit could be applied.");
+      }
+      if (error instanceof Error && error.name === "SelectedVariantContentMismatchError") {
+        throw conflict("The selected message variant's content changed before this edit could be applied.");
       }
       throw error;
     }

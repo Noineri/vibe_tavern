@@ -21,7 +21,12 @@
  *   (A6's auto-check switch);
  * - `applyTrackerScene` — the insights adapter's shared tracker-template
  *   apply tail (`applyTrackerSceneTemplate`);
- * - `readInsightsPatch` — the read-only active-chat patch a reject returns.
+ * - `readInsightsPatch` — the read-only active-chat patch a reject returns;
+ * - `editMessage` / `addEditorVariant` (DMT-22) — `ChatApplicationService`'s
+ *   ordinary guarded edit (with the reviewed base content) and add-variant
+ *   path the message-edit / message-variant handlers run through. The RP
+ *   message READS need no injection — the stores' `messages` member satisfies
+ *   the handlers' narrow read seam directly.
  *
  * The branded ids enter at the seam closures the WIRING creates (the
  * `addShortTermGoal` precedent — see runtime-api-adapter.ts).
@@ -60,6 +65,21 @@ export interface AgentThreadProposalServices {
     scene: NonNullable<TrackerTemplate["scene"]>,
   ) => Promise<ConfigPatchResponse>;
   readonly readInsightsPatch: (chatId: string) => Promise<ConfigPatchResponse>;
+  /** DMT-22: the ordinary guarded edit WITH the reviewed base content —
+   *  `ChatApplicationService.editMessage` (409-class conflicts on a moved
+   *  selection or a newer edit to the same still-selected swipe). */
+  readonly editMessage: (
+    messageId: string,
+    content: string,
+    expectedVariantId?: string,
+    expectedBaseContent?: string,
+  ) => Promise<unknown>;
+  /** DMT-22: the ordinary add-variant path — `ChatApplicationService.
+   *  addEditorVariant` (source-existence checks; no provenance input). */
+  readonly addEditorVariant: (
+    messageId: string,
+    input: { readonly content: string; readonly sourceVariantIds: readonly string[] },
+  ) => Promise<unknown>;
 }
 
 export class AgentThreadProposalAdapter implements AgentThreadProposalsRuntimeApi {
@@ -90,13 +110,21 @@ export class AgentThreadProposalAdapter implements AgentThreadProposalsRuntimeAp
       updateObjectiveConfig: services.updateObjectiveConfig,
       applyTrackerScene: services.applyTrackerScene,
       readInsightsPatch: services.readInsightsPatch,
+      // DMT-22: the RP-message reads come straight from the stores (the
+      // handlers' narrow structural seam); the two write seams are the
+      // injected ChatApplicationService members.
+      messages: this.stores.messages,
+      editMessage: services.editMessage,
+      addEditorVariant: services.addEditorVariant,
     };
   }
 
   /** The wire mapping: the resolution's companion is opaque to the domain
    *  (the layer rule — it cannot import the api contract), but the seams
    *  this adapter wires produce `ConfigPatchResponse` patches; narrow once
-   *  here, at the edge that knows the producer. */
+   *  here, at the edge that knows the producer. The DMT-22 message
+   *  companion passes through as-is (the contract imports the domain type —
+   *  one source for the shape). */
   private toWire(resolution: SidechatRecordProposalResolution): AgentThreadProposalResolveWire {
     const { companion, proposal } = resolution;
     if (companion === undefined) return { proposal };
@@ -106,6 +134,7 @@ export class AgentThreadProposalAdapter implements AgentThreadProposalsRuntimeAp
       ...(companion.patch !== undefined
         ? { patch: companion.patch as ConfigPatchResponse }
         : {}),
+      ...(companion.message !== undefined ? { message: companion.message } : {}),
     };
   }
 

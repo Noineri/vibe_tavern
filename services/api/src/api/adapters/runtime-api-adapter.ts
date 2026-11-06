@@ -261,6 +261,15 @@ export class RuntimeApiAdapter implements RuntimeApi {
 			applyTrackerScene: (chatId, scene) => this.insights.applyTrackerSceneTemplate(chatId, scene),
 			readInsightsPatch: (chatId) =>
 				sessionRuntime.buildConfigPatchResponse(brandId<ChatId>(chatId), { activeChat: true }),
+			// DMT-22: the message-edit / message-variant handlers run the
+			// ordinary ChatApplicationService members — the guarded edit WITH
+			// the reviewed base content, and the add-variant path (source
+			// checks; a Director save passes no provenance). Plain string ids:
+			// the chat application service is domain-level, brands enter at
+			// route edges.
+			editMessage: (messageId, content, expectedVariantId, expectedBaseContent) =>
+				sessionRuntime.chatApp.editMessage(messageId, content, expectedVariantId, expectedBaseContent),
+			addEditorVariant: (messageId, input) => sessionRuntime.chatApp.addEditorVariant(messageId, input),
 		});
 	}
 }

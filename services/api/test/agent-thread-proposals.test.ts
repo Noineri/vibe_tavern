@@ -3,22 +3,30 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Hono } from "hono";
-import { createStoreContainer, type StoreContainer, type Chat } from "@vibe-tavern/db";
+import { createStoreContainer, type StoreContainer, type Chat, type Message as DbMessage, type MessageVariant as DbMessageVariant } from "@vibe-tavern/db";
 import {
 	brandId,
 	OBJECTIVE_MODE,
 	type ChatBranchId,
 	type ChatId,
 } from "@vibe-tavern/domain";
-import type { RecordProposal } from "@vibe-tavern/api-contracts";
+import {
+	DIRECTOR_MESSAGE_RECORD_TYPES,
+	DIRECTOR_MESSAGE_TOOLS,
+	type DirectorMessageEditProposal,
+	type DirectorMessageVariantProposal,
+	type RecordProposal,
+} from "@vibe-tavern/api-contracts";
 import { ExperienceCopilotAdapter } from "../src/api/adapters/experience-copilot-adapter.js";
 import { AgentThreadProposalAdapter } from "../src/api/adapters/agent-thread-proposal-adapter.js";
 import { InsightsAdapter } from "../src/api/adapters/insights-adapter.js";
+import { ChatApplicationService } from "../src/domain/chat/chat-application-service.js";
 import { ObjectiveService } from "../src/domain/insights/objective-service.js";
 import { StoryPlanSync } from "../src/domain/director/story-plan-sync.js";
 import type { ProviderProfileService } from "../src/domain/providers/provider-profile-service.js";
 import type { SceneTrackerService } from "../src/domain/insights/tracker-service.js";
 import type { SessionRuntime } from "../src/runtime/session/session-runtime.js";
+import { SIDECHAT_RECORD_PROPOSAL_REGISTRY } from "../src/domain/sidechat/sidechat-objective-proposal.js";
 import { createAgentThreadProposalRoutes } from "../src/api/routes/agent-thread-proposals.js";
 import {
 	SIDECHAT_PROPOSE_PLAN_TOOL_NAME,
@@ -90,6 +98,10 @@ let adapter: AgentThreadProposalAdapter;
 let storyPlanSync: StoryPlanSync;
 let objectiveService: ObjectiveService;
 let insights: InsightsAdapter;
+/** The REAL chat application service behind the DMT-22 message seams (the
+ *  ordinary guarded edit + add-variant path — the same construction
+ *  SessionRuntime uses). */
+let chatApp: ChatApplicationService;
 /** The copilot wire read (the reload path SC-13 consumes) over the SAME
  *  stores — a store-only instance; the lifecycle-only harness shape. */
 let copilotWire: ExperienceCopilotAdapter;
@@ -109,10 +121,14 @@ beforeAll(async () => {
 	// story-plan apply + R3's next-event insert), ObjectiveService's config
 	// updater (A6), the insights adapter's shared template tail (tracker-scene)
 	// and the session runtime's config patch (the reject companion, stubbed
-	// above). The branded ids enter at these seam closures, as in production.
+	// above). DMT-22: the message handlers run the REAL ChatApplicationService
+	// (the guarded edit with the base-content guard + the add-variant path),
+	// the same construction SessionRuntime uses. The branded ids enter at
+	// these seam closures, as in production.
 	objectiveService = new ObjectiveService(stores, stubSessionRuntime, stubUncalledProviders);
 	insights = new InsightsAdapter(stores, stubSessionRuntime, objectiveService, stubUncalledTracker);
 	storyPlanSync = new StoryPlanSync(stores, objectiveService);
+	chatApp = new ChatApplicationService(stores.chats, stores.messages, stores.diceRolls, stores.experiences, stores);
 	adapter = new AgentThreadProposalAdapter(stores, {
 		addObjectiveTask: (chatId, body) => insights.addObjectiveTask(chatId, body),
 		addShortTermGoal: (chatId, description) =>
@@ -126,6 +142,9 @@ beforeAll(async () => {
 		applyTrackerScene: (chatId, scene) => insights.applyTrackerSceneTemplate(chatId, scene),
 		readInsightsPatch: (chatId) =>
 			stubSessionRuntime.buildConfigPatchResponse(brandId<ChatId>(chatId), { activeChat: true }),
+		editMessage: (messageId, content, expectedVariantId, expectedBaseContent) =>
+			chatApp.editMessage(messageId, content, expectedVariantId, expectedBaseContent),
+		addEditorVariant: (messageId, input) => chatApp.addEditorVariant(messageId, input),
 	});
 	app = mountDomainErrorMapping(createAgentThreadProposalRoutes(adapter));
 	copilotWire = new ExperienceCopilotAdapter(stores);
@@ -706,5 +725,510 @@ describe("POST /api/agent/threads/:threadId/proposals/:toolCallId/{apply,reject}
 		expect(((await second.json()) as ErrorWire).error.details?.code).toBe("objective_proposal_already_resolved");
 		// Still exactly the one applied plan.
 		expect((await storedPlan(chat))?.tasks).toHaveLength(2);
+	});
+});
+
+// ─── DMT-22 — the message-edit / message-variant resolutions ─────────────────
+//
+// The Director's two reviewable tools resolve through the SAME pipeline and
+// registry (no parallel system): apply runs the ordinary chat edit /
+// add-variant services over the THREAD's own branch with the frozen
+// identities; the store's transactional selected-variant + reviewed-base
+// guards refuse stale/moved/foreign targets; reject changes only the status;
+// the per-proposal FIFO serializes double applies.
+
+/** A plain RP chat (no tracker state needed — the message handlers read the
+ *  thread's own branch, not the insights config). */
+async function newPlainChat(): Promise<Chat> {
+	return stores.chats.createChat({ characterId, title: "DMT-22 fixture", promptPresetId: null });
+}
+
+/** An assistant reply on the chat's active branch with the given swipe texts
+ *  (the same store path the RP send path uses). */
+async function addReply(chat: Chat, variants: string[], selectedVariantIndex = 0): Promise<DbMessage> {
+	return stores.messages.addMessage({
+		chatId: chat.id,
+		branchId: chat.activeBranchId as string,
+		role: "assistant",
+		authorType: "assistant",
+		content: variants[selectedVariantIndex] ?? variants[0]!,
+		variants,
+		selectedVariantIndex,
+	});
+}
+
+const EDIT_CANDIDATE = "She opened the door quietly.";
+const VARIANT_SAVE_TEXT = "The Director's own alternative reply.";
+
+/** A `message-edit` proposal frozen from a real swipe row — the exact payload
+ *  shape the DMT-21 tool persists (identity + diff base + candidate + editor
+ *  provenance). */
+function makeEditProposal(id: string, message: DbMessage, variant: DbMessageVariant): RecordProposal {
+	const payload: DirectorMessageEditProposal = {
+		source: {
+			messageId: message.id,
+			variantId: variant.id,
+			position: message.position,
+			variantNumber: variant.variantIndex + 1,
+		},
+		sourceText: variant.content,
+		instruction: "Fix the adverb.",
+		candidate: EDIT_CANDIDATE,
+		editor: { modelId: "editor_model_1" },
+	};
+	return {
+		kind: "record",
+		id,
+		recordType: DIRECTOR_MESSAGE_RECORD_TYPES.messageEdit,
+		op: "update",
+		targetId: message.id,
+		payload,
+		status: "pending",
+	};
+}
+
+/** A `message-variant` proposal frozen from real swipe rows — the DMT-21
+ *  shape: frozen source identities + the complete Director-written text. */
+function makeVariantProposal(
+	id: string,
+	message: DbMessage,
+	sources: readonly DbMessageVariant[],
+	content: string,
+): RecordProposal {
+	const payload: DirectorMessageVariantProposal = {
+		sources: sources.map((variant) => ({
+			messageId: message.id,
+			variantId: variant.id,
+			position: message.position,
+			variantNumber: variant.variantIndex + 1,
+		})),
+		content,
+	};
+	return {
+		kind: "record",
+		id,
+		recordType: DIRECTOR_MESSAGE_RECORD_TYPES.messageVariant,
+		op: "create",
+		targetId: message.id,
+		payload,
+		status: "pending",
+	};
+}
+
+/** The reply's swipe rows as the tools froze them (variantIndex order). */
+async function replyVariants(message: DbMessage): Promise<DbMessageVariant[]> {
+	return stores.messages.getVariants(message.id);
+}
+
+describe("the one record-proposal registry (DMT-22 registration)", () => {
+	test("carries exactly the five record types — the two message types included, no parallel table", () => {
+		expect(Object.keys(SIDECHAT_RECORD_PROPOSAL_REGISTRY).sort()).toEqual([
+			DIRECTOR_MESSAGE_RECORD_TYPES.messageEdit,
+			DIRECTOR_MESSAGE_RECORD_TYPES.messageVariant,
+			"objective",
+			"story-plan",
+			"tracker-scene",
+		]);
+		expect(SIDECHAT_RECORD_PROPOSAL_REGISTRY[DIRECTOR_MESSAGE_RECORD_TYPES.messageEdit]?.toolName).toBe(
+			DIRECTOR_MESSAGE_TOOLS.proposeMessageEdit,
+		);
+		expect(SIDECHAT_RECORD_PROPOSAL_REGISTRY[DIRECTOR_MESSAGE_RECORD_TYPES.messageVariant]?.toolName).toBe(
+			DIRECTOR_MESSAGE_TOOLS.proposeMessageVariant,
+		);
+	});
+});
+
+describe("message-edit apply — the ordinary guarded edit through the registry (DMT-22)", () => {
+	test("applies the candidate to the selected swipe and returns the target-scoped message companion", async () => {
+		const chat = await newPlainChat();
+		const reply = await addReply(chat, ["She opened the door slowly.", "She pushed the door open."]);
+		const [v0] = await replyVariants(reply);
+		const { threadId, toolCallId } = await seedRecordProposal(
+			chat,
+			DIRECTOR_MESSAGE_TOOLS.proposeMessageEdit,
+			makeEditProposal("tc_edit_ok", reply, v0!),
+		);
+
+		const response = await post(applyUrl(threadId, toolCallId));
+		expect(response.status).toBe(200);
+		const body = (await response.json()) as {
+			proposal: RecordProposal;
+			message?: {
+				chatId: string;
+				branchId: string;
+				message: { id: string; content: string; position: number; updatedAt: string };
+				variants: Array<{ id: string; content: string; isSelected: boolean }>;
+			};
+		};
+		expect(body.proposal).toEqual({ ...makeEditProposal("tc_edit_ok", reply, v0!), status: "applied" });
+		// The companion is TARGET-SCOPED: the affected message + its full
+		// variant list, with the chat/branch scope attached (a client refuses
+		// to ingest it into a different open conversation).
+		expect(body.message?.chatId).toBe(chat.id);
+		expect(body.message?.branchId).toBe(chat.activeBranchId);
+		const stored = await stores.messages.getMessageById(reply.id);
+		expect(body.message?.message).toEqual({
+			id: reply.id,
+			content: EDIT_CANDIDATE,
+			position: reply.position,
+			updatedAt: stored?.updatedAt,
+		});
+		expect(body.message?.variants).toHaveLength(2);
+		expect(body.message?.variants[0]).toMatchObject({ id: v0!.id, content: EDIT_CANDIDATE, isSelected: true });
+		expect(body.message?.variants[1]).toMatchObject({ content: "She pushed the door open.", isSelected: false });
+
+		// Store level: the ordinary edit path rewrote the selected swipe (and
+		// the mirrored row content), the sibling swipe untouched.
+		const after = await stores.messages.getVariants(reply.id);
+		expect(after[0]?.content).toBe(EDIT_CANDIDATE);
+		expect(after[0]?.isSelected).toBeTrue();
+		expect(after[1]?.content).toBe("She pushed the door open.");
+		expect((await stores.messages.getMessageById(reply.id))?.content).toBe(EDIT_CANDIDATE);
+	});
+
+	test("a newer edit to the SAME still-selected swipe refuses the apply (stale base) and writes nothing", async () => {
+		const chat = await newPlainChat();
+		const reply = await addReply(chat, ["She opened the door slowly."]);
+		const [v0] = await replyVariants(reply);
+		const { threadId, toolCallId } = await seedRecordProposal(
+			chat,
+			DIRECTOR_MESSAGE_TOOLS.proposeMessageEdit,
+			makeEditProposal("tc_edit_stale", reply, v0!),
+		);
+		// The variant id did NOT change, but its content moved on after the
+		// user reviewed the proposal — the exact overwrite the base guard
+		// exists to refuse.
+		await stores.messages.editMessage(reply.id, "She opened the door slowly, hesitating.");
+
+		const response = await post(applyUrl(threadId, toolCallId));
+		expect(response.status).toBe(409);
+		expect(((await response.json()) as ErrorWire).error.message).toContain("content changed");
+		// The proposal stays pending (a failed apply resolves nothing) and the
+		// newer text stands.
+		expect(await rowStatus(threadId, toolCallId)).toBe("pending");
+		expect((await stores.messages.getMessageById(reply.id))?.content).toBe("She opened the door slowly, hesitating.");
+	});
+
+	test("a moved selection refuses the apply (the guard names the selected source) and writes nothing", async () => {
+		const chat = await newPlainChat();
+		const reply = await addReply(chat, ["first swipe", "second swipe"], 0);
+		const [v0] = await replyVariants(reply);
+		const { threadId, toolCallId } = await seedRecordProposal(
+			chat,
+			DIRECTOR_MESSAGE_TOOLS.proposeMessageEdit,
+			makeEditProposal("tc_edit_moved", reply, v0!),
+		);
+		// The user swiped to the sibling between proposal and Accept.
+		await stores.messages.selectVariant(reply.id, 1);
+
+		const response = await post(applyUrl(threadId, toolCallId));
+		expect(response.status).toBe(409);
+		expect(((await response.json()) as ErrorWire).error.message).toContain("variant changed");
+		expect(await rowStatus(threadId, toolCallId)).toBe("pending");
+		const after = await stores.messages.getVariants(reply.id);
+		expect(after[0]?.content).toBe("first swipe");
+		expect(after[1]?.content).toBe("second swipe");
+	});
+
+	test("a deleted target refuses the apply with 404 — the proposal never resurrects or redirects", async () => {
+		const chat = await newPlainChat();
+		const reply = await addReply(chat, ["Doomed reply."]);
+		const [v0] = await replyVariants(reply);
+		const { threadId, toolCallId } = await seedRecordProposal(
+			chat,
+			DIRECTOR_MESSAGE_TOOLS.proposeMessageEdit,
+			makeEditProposal("tc_edit_deleted", reply, v0!),
+		);
+		await stores.messages.deleteMessage(reply.id);
+
+		const response = await post(applyUrl(threadId, toolCallId));
+		expect(response.status).toBe(404);
+		expect(await rowStatus(threadId, toolCallId)).toBe("pending");
+	});
+
+	test("a target from ANOTHER chat refuses the apply with 404 — the frozen identity never retargets", async () => {
+		const chat = await newPlainChat();
+		const ownReply = await addReply(chat, ["Own reply."]);
+		const foreignChat = await newPlainChat();
+		const foreignReply = await addReply(foreignChat, ["Foreign reply."]);
+		const [foreignVariant] = await replyVariants(foreignReply);
+		// The proposal row lives in the OWN thread but names the FOREIGN chat's
+		// message identity (a hand-corrupted or reused row): the thread-branch
+		// ownership check refuses before any write.
+		const { threadId, toolCallId } = await seedRecordProposal(
+			chat,
+			DIRECTOR_MESSAGE_TOOLS.proposeMessageEdit,
+			makeEditProposal("tc_edit_foreign", foreignReply, foreignVariant!),
+		);
+
+		const response = await post(applyUrl(threadId, toolCallId));
+		expect(response.status).toBe(404);
+		expect(await rowStatus(threadId, toolCallId)).toBe("pending");
+		// The foreign message's bytes were never touched; the own reply is
+		// untouched too (never a fallback to a different source).
+		const foreignAfter = await stores.messages.getVariants(foreignReply.id);
+		expect(foreignAfter[0]?.content).toBe("Foreign reply.");
+		expect((await stores.messages.getVariants(ownReply.id))[0]?.content).toBe("Own reply.");
+	});
+
+	test("two racing applies of ONE proposal serialize: one 200, one typed 409, exactly one edit", async () => {
+		const chat = await newPlainChat();
+		const reply = await addReply(chat, ["She opened the door slowly."]);
+		const [v0] = await replyVariants(reply);
+		const { threadId, toolCallId } = await seedRecordProposal(
+			chat,
+			DIRECTOR_MESSAGE_TOOLS.proposeMessageEdit,
+			makeEditProposal("tc_edit_race", reply, v0!),
+		);
+
+		const [a, b] = await Promise.all([post(applyUrl(threadId, toolCallId)), post(applyUrl(threadId, toolCallId))]);
+		expect([a.status, b.status].sort()).toEqual([200, 409]);
+		const conflictBody = (await (a.status === 409 ? a : b).json()) as ErrorWire;
+		expect(conflictBody.error.details?.code).toBe("objective_proposal_already_resolved");
+		const after = await stores.messages.getVariants(reply.id);
+		expect(after[0]?.content).toBe(EDIT_CANDIDATE);
+	});
+
+	test("two proposals for the SAME source resolve sequentially: the second apply hits the stale-base 409, never an overwrite", async () => {
+		const chat = await newPlainChat();
+		const reply = await addReply(chat, ["She opened the door slowly."]);
+		const [v0] = await replyVariants(reply);
+		// Two tabs, two pending rows, one frozen source identity.
+		const first = await seedRecordProposal(
+			chat,
+			DIRECTOR_MESSAGE_TOOLS.proposeMessageEdit,
+			makeEditProposal("tc_edit_tab1", reply, v0!),
+		);
+		const second = await seedRecordProposal(
+			chat,
+			DIRECTOR_MESSAGE_TOOLS.proposeMessageEdit,
+			makeEditProposal("tc_edit_tab2", reply, v0!),
+		);
+
+		const firstApply = await post(applyUrl(first.threadId, first.toolCallId));
+		expect(firstApply.status).toBe(200);
+
+		// The second tab's apply addresses a PENDING row (no already-resolved
+		// refusal possible) — the base-content guard inside the store
+		// transaction is what refuses it.
+		const secondApply = await post(applyUrl(second.threadId, second.toolCallId));
+		expect(secondApply.status).toBe(409);
+		expect(((await secondApply.json()) as ErrorWire).error.message).toContain("content changed");
+		expect(await rowStatus(second.threadId, second.toolCallId)).toBe("pending");
+		// Exactly the first tab's candidate stands.
+		const after = await stores.messages.getVariants(reply.id);
+		expect(after[0]?.content).toBe(EDIT_CANDIDATE);
+	});
+
+	test("corrupt payloads (missing candidate / foreign toolName) are the parse-gate 404 — nothing written", async () => {
+		const chat = await newPlainChat();
+		const reply = await addReply(chat, ["She opened the door slowly."]);
+		const [v0] = await replyVariants(reply);
+		const broken = makeEditProposal("tc_edit_bad", reply, v0!);
+		delete (broken.payload as Record<string, unknown>).candidate;
+		const brokenSeed = await seedRecordProposal(chat, DIRECTOR_MESSAGE_TOOLS.proposeMessageEdit, broken);
+		const brokenApply = await post(applyUrl(brokenSeed.threadId, brokenSeed.toolCallId));
+		expect(brokenApply.status).toBe(404);
+		expect(await rowStatus(brokenSeed.threadId, brokenSeed.toolCallId)).toBe("pending");
+		expect((await stores.messages.getVariants(reply.id))[0]?.content).toBe("She opened the door slowly.");
+
+		// A well-formed message-edit payload under ANOTHER tool's name — the
+		// toolName gate refuses before the recordType dispatch could apply it.
+		const mismatched = await seedRecordProposal(
+			chat,
+			SIDECHAT_OBJECTIVE_TOOL_NAME,
+			makeEditProposal("tc_edit_mismatch", reply, v0!),
+		);
+		const mismatchedApply = await post(applyUrl(mismatched.threadId, mismatched.toolCallId));
+		expect(mismatchedApply.status).toBe(404);
+		expect(await rowStatus(mismatched.threadId, mismatched.toolCallId)).toBe("pending");
+	});
+
+	test("reject changes ONLY the status — no message companion, the reply bytes untouched", async () => {
+		const chat = await newPlainChat();
+		const reply = await addReply(chat, ["She opened the door slowly."]);
+		const [v0] = await replyVariants(reply);
+		const { threadId, toolCallId } = await seedRecordProposal(
+			chat,
+			DIRECTOR_MESSAGE_TOOLS.proposeMessageEdit,
+			makeEditProposal("tc_edit_rej", reply, v0!),
+		);
+
+		const response = await post(rejectUrl(threadId, toolCallId));
+		expect(response.status).toBe(200);
+		const body = (await response.json()) as { proposal: RecordProposal; message?: unknown };
+		expect(body.proposal.status).toBe("rejected");
+		expect(body.message).toBeUndefined();
+		const after = await stores.messages.getVariants(reply.id);
+		expect(after[0]?.content).toBe("She opened the door slowly.");
+		expect(after[0]?.isSelected).toBeTrue();
+	});
+});
+
+describe("message-variant apply (Save) — the ordinary add-variant path through the registry (DMT-22)", () => {
+	test("save appends and selects a separate swipe, leaves every source byte intact, records no RP provenance, attaches no trace", async () => {
+		const chat = await newPlainChat();
+		const reply = await addReply(chat, ["Original reply."]);
+		const [v0] = await replyVariants(reply);
+		const { threadId, toolCallId } = await seedRecordProposal(
+			chat,
+			DIRECTOR_MESSAGE_TOOLS.proposeMessageVariant,
+			makeVariantProposal("tc_var_ok", reply, [v0!], VARIANT_SAVE_TEXT),
+		);
+
+		const response = await post(applyUrl(threadId, toolCallId));
+		expect(response.status).toBe(200);
+		const body = (await response.json()) as {
+			proposal: RecordProposal;
+			message?: {
+				chatId: string;
+				branchId: string;
+				message: { id: string; content: string };
+				variants: Array<{ id: string; content: string; isSelected: boolean; modelId: string | null; presetName: string | null }>;
+			};
+		};
+		expect(body.proposal.status).toBe("applied");
+		expect(body.message?.chatId).toBe(chat.id);
+		expect(body.message?.branchId).toBe(chat.activeBranchId);
+
+		// The appended swipe: content verbatim, selected, and NO model/preset
+		// provenance — Director authorship, never an RP-model or preset claim.
+		const after = await stores.messages.getVariants(reply.id);
+		expect(after).toHaveLength(2);
+		expect(after[0]).toMatchObject({ id: v0!.id, content: "Original reply.", isSelected: false });
+		expect(after[1]).toMatchObject({
+			content: VARIANT_SAVE_TEXT,
+			isSelected: true,
+			modelId: null,
+			presetName: null,
+			finishReason: null,
+		});
+		// The message row mirrors the newly selected swipe.
+		expect((await stores.messages.getMessageById(reply.id))?.content).toBe(VARIANT_SAVE_TEXT);
+		// The companion carries the FULL post-save variant list.
+		expect(body.message?.variants).toHaveLength(2);
+		expect(body.message?.variants[1]).toMatchObject({
+			content: VARIANT_SAVE_TEXT,
+			isSelected: true,
+			modelId: null,
+			presetName: null,
+		});
+		// No prompt trace of any kind was attached to the chat by the save
+		// (the add-variant service path never touches pending RP traces).
+		expect(await stores.traces.listTraceIds({ chatId: chat.id })).toEqual([]);
+	});
+
+	test("a save whose source swipe was deleted refuses with 404 and appends nothing", async () => {
+		const chat = await newPlainChat();
+		const reply = await addReply(chat, ["first source", "second source"]);
+		const variants = await replyVariants(reply);
+		const { threadId, toolCallId } = await seedRecordProposal(
+			chat,
+			DIRECTOR_MESSAGE_TOOLS.proposeMessageVariant,
+			makeVariantProposal("tc_var_missing", reply, variants, VARIANT_SAVE_TEXT),
+		);
+		// One frozen source swipe is deleted before Accept.
+		await stores.messages.deleteVariant(reply.id, 0);
+
+		const response = await post(applyUrl(threadId, toolCallId));
+		expect(response.status).toBe(404);
+		expect(await rowStatus(threadId, toolCallId)).toBe("pending");
+		// Nothing appended by the failed save — the surviving swipe count is
+		// the post-delete state's.
+		expect(await stores.messages.getVariants(reply.id)).toHaveLength(1);
+	});
+
+	test("a save whose target message was deleted refuses with 404", async () => {
+		const chat = await newPlainChat();
+		const reply = await addReply(chat, ["Doomed reply."]);
+		const [v0] = await replyVariants(reply);
+		const { threadId, toolCallId } = await seedRecordProposal(
+			chat,
+			DIRECTOR_MESSAGE_TOOLS.proposeMessageVariant,
+			makeVariantProposal("tc_var_deleted", reply, [v0!], VARIANT_SAVE_TEXT),
+		);
+		await stores.messages.deleteMessage(reply.id);
+
+		const response = await post(applyUrl(threadId, toolCallId));
+		expect(response.status).toBe(404);
+		expect(await rowStatus(threadId, toolCallId)).toBe("pending");
+	});
+
+	test("a save targeting another chat's message refuses with 404 — the thread branch owns the resolution", async () => {
+		const chat = await newPlainChat();
+		const ownReply = await addReply(chat, ["Own reply."]);
+		const foreignChat = await newPlainChat();
+		const foreignReply = await addReply(foreignChat, ["Foreign reply."]);
+		const [foreignVariant] = await replyVariants(foreignReply);
+		const { threadId, toolCallId } = await seedRecordProposal(
+			chat,
+			DIRECTOR_MESSAGE_TOOLS.proposeMessageVariant,
+			makeVariantProposal("tc_var_foreign", foreignReply, [foreignVariant!], VARIANT_SAVE_TEXT),
+		);
+
+		const response = await post(applyUrl(threadId, toolCallId));
+		expect(response.status).toBe(404);
+		expect(await rowStatus(threadId, toolCallId)).toBe("pending");
+		const foreignAfter = await stores.messages.getVariants(foreignReply.id);
+		expect(foreignAfter).toHaveLength(1);
+		expect(foreignAfter[0]?.content).toBe("Foreign reply.");
+		expect((await stores.messages.getVariants(ownReply.id))[0]?.content).toBe("Own reply.");
+	});
+
+	test("double apply of the same save is the already-resolved 409 with exactly one appended swipe", async () => {
+		const chat = await newPlainChat();
+		const reply = await addReply(chat, ["Original reply."]);
+		const [v0] = await replyVariants(reply);
+		const { threadId, toolCallId } = await seedRecordProposal(
+			chat,
+			DIRECTOR_MESSAGE_TOOLS.proposeMessageVariant,
+			makeVariantProposal("tc_var_twice", reply, [v0!], VARIANT_SAVE_TEXT),
+		);
+		expect((await post(applyUrl(threadId, toolCallId))).status).toBe(200);
+
+		const second = await post(applyUrl(threadId, toolCallId));
+		expect(second.status).toBe(409);
+		expect(((await second.json()) as ErrorWire).error.details?.code).toBe("objective_proposal_already_resolved");
+		expect(await stores.messages.getVariants(reply.id)).toHaveLength(2);
+	});
+
+	test("reject changes ONLY the status — the swipe count is unchanged", async () => {
+		const chat = await newPlainChat();
+		const reply = await addReply(chat, ["Original reply."]);
+		const [v0] = await replyVariants(reply);
+		const { threadId, toolCallId } = await seedRecordProposal(
+			chat,
+			DIRECTOR_MESSAGE_TOOLS.proposeMessageVariant,
+			makeVariantProposal("tc_var_rej", reply, [v0!], VARIANT_SAVE_TEXT),
+		);
+
+		const response = await post(rejectUrl(threadId, toolCallId));
+		expect(response.status).toBe(200);
+		const body = (await response.json()) as { proposal: RecordProposal; message?: unknown };
+		expect(body.proposal.status).toBe("rejected");
+		expect(body.message).toBeUndefined();
+		const after = await stores.messages.getVariants(reply.id);
+		expect(after).toHaveLength(1);
+		expect(after[0]?.content).toBe("Original reply.");
+	});
+
+	test("the resolved status survives a reload for the message types — the wire row parses back applied", async () => {
+		const chat = await newPlainChat();
+		const reply = await addReply(chat, ["She opened the door slowly."]);
+		const [v0] = await replyVariants(reply);
+		const { threadId, toolCallId } = await seedRecordProposal(
+			chat,
+			DIRECTOR_MESSAGE_TOOLS.proposeMessageEdit,
+			makeEditProposal("tc_edit_reload", reply, v0!),
+		);
+		await post(applyUrl(threadId, toolCallId));
+
+		// The reload path SC-13/DMT-32 reads: the row keeps its parseable
+		// `{ toolName, output }` wrapper with the final status.
+		const messages = await copilotWire.experienceCopilotListMessages(threadId);
+		const row = messages.find((message) => message.toolCallId === toolCallId);
+		const parsed = JSON.parse(row!.content as string) as { toolName: string; output: RecordProposal };
+		expect(parsed.toolName).toBe(DIRECTOR_MESSAGE_TOOLS.proposeMessageEdit);
+		expect(parsed.output.status).toBe("applied");
 	});
 });

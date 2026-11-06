@@ -24,8 +24,11 @@
  *    proposal to the recordType's registry handler — the objective handler
  *    reuses the insights services verbatim (SC-11), the story-plan and
  *    tracker-scene handlers (DR-5) delegate to `StoryPlanSync` and the
- *    insights adapter's shared template tail. The services are injected
- *    (never re-implemented here, never altered in the insights area).
+ *    insights adapter's shared template tail, and the message-edit /
+ *    message-variant handlers (DMT-22) run the ordinary chat edit /
+ *    add-variant services over the thread's own branch. The services are
+ *    injected (never re-implemented here, never altered in the insights
+ *    area).
  * 5. the WRITE: the status rides back into the SAME tool row through
  *    `setToolResultOutput`, preserving the row's parseable
  *    `{ toolName, output }` wrapper and every proposal field (only `status`
@@ -42,9 +45,10 @@
  * Both decisions also return the refreshed companion data the review card
  * needs ({@link SidechatProposalCompanion}): the target branch's plan for
  * plan-touching types, the insights config patch for the tracker-scene
- * type. The objective handler under NO plan returns no companion — today's
- * `{ proposal }` response, byte-identical (the SC-11 suite is
- * characterization).
+ * type, and (DMT-22) the target-scoped message view for the message-edit /
+ * message-variant types. The objective handler under NO plan returns no
+ * companion — today's `{ proposal }` response, byte-identical (the SC-11
+ * suite is characterization).
  *
  * CONCURRENCY: the pending-check and the writes are serialized per
  * (thread, toolCallId) by an in-process FIFO — the single-process server
@@ -60,7 +64,7 @@ import {
   type AgentPlanOwner,
   type TrackerTemplate,
 } from "@vibe-tavern/domain";
-import type { Chat, ExperienceCopilotMessage, ExperienceCopilotThread } from "@vibe-tavern/db";
+import type { Chat, ExperienceCopilotMessage, ExperienceCopilotThread, Message, MessageVariant } from "@vibe-tavern/db";
 import type {
   AgentThreadProposalApplyRequest,
   RecordProposal,
@@ -76,6 +80,7 @@ import {
   STORY_PLAN_RECORD_TYPE,
   TRACKER_SCENE_RECORD_TYPE,
 } from "../agent/kinds/sidechat/sidechat-director-tools.js";
+import { DIRECTOR_MESSAGE_PROPOSAL_ENTRIES } from "../director/director-message-proposals.js";
 
 /** Typed 409 code for a tracker that is off at Accept time (the plan's own
  *  spelling — lowercase, the `not_an_rp_chat` family). */
@@ -106,7 +111,13 @@ export type SidechatRecordProposalDecision = "apply" | "reject";
  *  `updateObjectiveConfig` is `ObjectiveService.updateObjectiveConfig` (A6's
  *  auto-check switch), `applyTrackerScene` is the insights adapter's shared
  *  template tail (`applyTrackerSceneTemplate`), and `readInsightsPatch` is
- *  the read-only config patch a reject returns. */
+ *  the read-only config patch a reject returns. DMT-22 adds the message
+ *  seams: `messages` is the plain store read trio the message handlers'
+ *  ownership revalidation + companion run through, `editMessage` is
+ *  `ChatApplicationService.editMessage` WITH the expected base content (the
+ *  store-transactional selected-variant + same-id content guards), and
+ *  `addEditorVariant` is `ChatApplicationService.addEditorVariant` (source
+ *  existence checks; no provenance input on the Director save). */
 export interface SidechatRecordProposalDeps {
   readonly store: {
     getById(threadId: string): Promise<ExperienceCopilotThread | null>;
@@ -140,6 +151,29 @@ export interface SidechatRecordProposalDeps {
     scene: NonNullable<TrackerTemplate["scene"]>,
   ) => Promise<unknown>;
   readonly readInsightsPatch: (chatId: string) => Promise<unknown>;
+  /** The narrow RP-message reads (DMT-22) — a structural Pick of the real
+   *  `MessageStore`, satisfied by the container's `messages` member. */
+  readonly messages: {
+    getMessages(branchId: string): Promise<Message[]>;
+    getMessageById(id: string): Promise<Message | null>;
+    getVariants(messageId: string): Promise<MessageVariant[]>;
+  };
+  /** The ordinary guarded edit WITH the reviewed base content (DMT-22) —
+   *  throws the 409-class conflict when the selected variant id or its
+   *  content no longer matches. */
+  readonly editMessage: (
+    messageId: string,
+    content: string,
+    expectedVariantId?: string,
+    expectedBaseContent?: string,
+  ) => Promise<unknown>;
+  /** The ordinary add-editor-variant path (DMT-22) — validates the source
+   *  variant ids exist on the message; provenance stays unset for a
+   *  Director-authored save. */
+  readonly addEditorVariant: (
+    messageId: string,
+    input: { readonly content: string; readonly sourceVariantIds: readonly string[] },
+  ) => Promise<unknown>;
 }
 
 /** The refreshed data a resolution returns beyond the proposal itself (the
@@ -156,6 +190,34 @@ export interface SidechatProposalCompanion {
   readonly plan?: AgentPlan;
   /** The refreshed insights config patch — the tracker-scene companion. */
   readonly patch?: unknown;
+  /** The refreshed TARGET-SCOPED message view (DMT-22) — the message-edit /
+   *  message-variant companion on an accepted resolution. */
+  readonly message?: SidechatProposalMessageCompanion;
+}
+
+/** The DMT-22 message companion — ONLY the affected message, never a
+ *  branch/chat snapshot a client could merge over a different open chat.
+ *  `chatId`/`branchId` scope it (the client refuses to ingest it when its
+ *  open conversation differs); `message` is the row post-write; `variants`
+ *  is the message's FULL variant list post-write (a Save appends + selects,
+ *  an Apply rewrites the selected variant's text). */
+export interface SidechatProposalMessageCompanion {
+  readonly chatId: string;
+  readonly branchId: string;
+  readonly message: {
+    readonly id: string;
+    readonly position: number;
+    readonly content: string;
+    readonly updatedAt: string;
+  };
+  readonly variants: readonly {
+    readonly id: string;
+    readonly variantIndex: number;
+    readonly content: string;
+    readonly isSelected: boolean;
+    readonly modelId: string | null;
+    readonly presetName: string | null;
+  }[];
 }
 
 /** Everything one recordType's handlers resolve against. */
@@ -163,6 +225,11 @@ export interface SidechatProposalHandlerContext {
   readonly deps: SidechatRecordProposalDeps;
   /** The owning thread's chat (chat-owned by step 1). */
   readonly chatId: string;
+  /** The owning thread's OWN branch — the message handlers'
+   *  ownership-revalidation scope (DMT-22). Null on corrupt rows (a
+   *  chat-owned sidechat thread always carries one); the message handlers
+   *  refuse the same 404 then. The other handlers ignore it. */
+  readonly branchId: string | null;
   readonly proposal: RecordProposal;
   /** The apply request body (`.enableAutoCheck` — only the story-plan
    *  handler reads it; reject ignores it). */
@@ -279,6 +346,10 @@ async function objectivePlanCompanion(
  *    in the apply body also sets the tracker's auto-check frequency to 1 (A6).
  *  - `tracker-scene` — the insights adapter's shared template tail with
  *    `{ scene, objective: null }` (scene only — goals come from the plan, A9).
+ *  - `message-edit` / `message-variant` (DMT-22) — defined in
+ *    `director/director-message-proposals.ts` and spread in here: the
+ *    ordinary guarded chat edit / add-variant services over the thread's own
+ *    branch, with the transactional selected-variant + reviewed-base guards.
  */
 export const SIDECHAT_RECORD_PROPOSAL_REGISTRY: Readonly<
   Record<string, SidechatRecordProposalEntry>
@@ -381,6 +452,12 @@ export const SIDECHAT_RECORD_PROPOSAL_REGISTRY: Readonly<
     },
     reject: async ({ deps, chatId }) => ({ patch: await deps.readInsightsPatch(chatId) }),
   },
+
+  // DMT-22: the Director's two reviewable message tools resolve through the
+  // SAME pipeline — the entries (recognition via the DMT-11 payload schemas,
+  // the ordinary guarded edit / add-variant services, the target-scoped
+  // message companion) live in the handlers' own module.
+  ...DIRECTOR_MESSAGE_PROPOSAL_ENTRIES,
 };
 
 /** Structural check for a scene template half (the tracker-scene payload):
@@ -520,6 +597,10 @@ export async function resolveSidechatRecordProposal(
     const ctx: SidechatProposalHandlerContext = {
       deps,
       chatId: thread.chatId,
+      // The thread row's OWN branch — the DMT-22 message handlers'
+      // ownership scope (never request-supplied). Null on corrupt rows;
+      // the handlers that need it refuse the same 404 then.
+      branchId: thread.branchId,
       proposal,
       body,
     };
