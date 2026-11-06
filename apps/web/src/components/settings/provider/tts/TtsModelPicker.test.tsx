@@ -37,6 +37,11 @@ mock.module("../../../../hooks/use-mobile.js", () => ({
 
 const { TtsModelPicker } = await import("./TtsModelPicker.js");
 
+// The mobile icon-only refresh button is wrapped in the real themed tooltip
+// (bare-title step 3), so mounts need its Radix context — same pattern as
+// ProviderModelSelector.test.tsx (W1).
+const { TooltipProvider } = await import("../../../shared/Tooltip.js");
+
 const ENRICHED = [
   {
     id: "deepgram/flux-tts:free",
@@ -51,7 +56,7 @@ const ENRICHED = [
 function mountPicker(overrides: Partial<React.ComponentProps<typeof TtsModelPicker>> = {}) {
   const onChange = mock((_v: string) => {});
   const view = render(
-    React.createElement(TtsModelPicker, {
+    React.createElement(TooltipProvider, null, React.createElement(TtsModelPicker, {
       value: "",
       onChange,
       models: ENRICHED,
@@ -60,7 +65,7 @@ function mountPicker(overrides: Partial<React.ComponentProps<typeof TtsModelPick
       onRefresh: () => {},
       label: "tts_field_model",
       ...overrides,
-    }),
+    })),
   );
   return { view, onChange };
 }
