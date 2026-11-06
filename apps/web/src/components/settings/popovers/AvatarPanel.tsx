@@ -1,3 +1,4 @@
+// forks: 1 — GalleryViewer (../../build/editors/GalleryViewer.tsx)
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useKeyDown } from '../../../hooks/use-key-down.js';
 import { Icons } from '../../shared/icons.js';

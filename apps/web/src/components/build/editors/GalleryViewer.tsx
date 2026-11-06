@@ -1,3 +1,6 @@
+// fork #1 of AvatarPanel (../../settings/popovers/AvatarPanel.tsx)
+// Correspondence: DesktopGalleryPanel / MobileLightbox mirror the avatar panel's desktop / mobile paths.
+// Deviations: gallery asset adapter and shared src viewer, larger fit dimensions, frameless styling, themed frame and mobile-close hints.
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useKeyDown } from "../../../hooks/use-key-down.js";
 import { Icons } from "../../shared/icons.js";
