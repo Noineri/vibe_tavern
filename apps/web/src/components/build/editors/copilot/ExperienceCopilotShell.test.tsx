@@ -248,6 +248,8 @@ mock.module("../../../../lib/markdown.js", () => ({
   Markdown: ({ text }: { text: string }) => <div>{text}</div>,
 }));
 
+// Radix tooltips require a provider; isolated renders mount the real provider
+// so the pending-review hint is exercised instead of replaced by an inert mock.
 const { TooltipProvider } = await import("../../../shared/Tooltip.js");
 
 // The shared Toggle wraps Radix Switch (no happy-dom anchor); the shell test
