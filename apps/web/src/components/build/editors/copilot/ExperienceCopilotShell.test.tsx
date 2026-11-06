@@ -248,13 +248,7 @@ mock.module("../../../../lib/markdown.js", () => ({
   Markdown: ({ text }: { text: string }) => <div>{text}</div>,
 }));
 
-// Radix Tooltip needs a global Provider the isolated render here doesn't mount.
-const realTooltip = await import("../../../shared/Tooltip.js");
-mock.module("../../../shared/Tooltip.js", () => ({
-  ...realTooltip,
-  CustomTooltip: ({ children }: { children: ReactNode }) => <>{children}</>,
-  TooltipProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
-}));
+const { TooltipProvider } = await import("../../../shared/Tooltip.js");
 
 // The shared Toggle wraps Radix Switch (no happy-dom anchor); the shell test
 // renders the REAL meter (so its compact button is clickable) — stub the switch
@@ -506,7 +500,7 @@ function makeIsolatedI18n() {
 // The provider must wrap BOTH the initial render and every rerender: a root
 // element type change between render and rerender unmounts/remounts the tree.
 function withIsolatedI18n(node: ReactNode) {
-  return <I18nextProvider i18n={makeIsolatedI18n()}>{node}</I18nextProvider>;
+  return <I18nextProvider i18n={makeIsolatedI18n()}><TooltipProvider delayDuration={0}>{node}</TooltipProvider></I18nextProvider>;
 }
 
 function renderShell(over: Partial<Parameters<typeof ExperienceCopilotShell>[0]> = {}) {
@@ -2204,7 +2198,7 @@ describe("ExperienceCopilotShell — RO-4: resolved outcomes through real HTTP",
 describe("ExperienceCopilotShell — CD-6: inline review flow", () => {
   it("shows the review bar + tab dot after a proposal and accepts all into the buffer", async () => {
     const onRulesChange = mock();
-    const { getByTestId, queryByTestId } = renderShell({ onRulesChange, rulesSaved: false, visualSaved: true });
+    const { getByTestId, queryByTestId, findByRole } = renderShell({ onRulesChange, rulesSaved: false, visualSaved: true });
     await flushSessionLoad();
     // AFP-14 pin baseline, captured before the send for the same reason as
     // CD-3 (the immediately-resolving stream drains the settle chain inside
@@ -2246,6 +2240,11 @@ describe("ExperienceCopilotShell — CD-6: inline review flow", () => {
     expect(queryByTestId("copilot-buffer-dot-visual")).toBeNull();
     // XU-5: the OUTER Code tab also carries a dot (review dots on both levels).
     expect(queryByTestId("copilot-outer-dot-code")).not.toBeNull();
+    const dot = getByTestId("copilot-buffer-dot-rules");
+    expect(dot.getAttribute("title")).toBeNull();
+    expect(getByTestId("copilot-outer-dot-code").getAttribute("title")).toBeNull();
+    fireEvent.pointerMove(dot, { pointerType: "mouse" });
+    expect((await findByRole("tooltip")).textContent).toBe("copilot_review_pending_badge");
 
     // Accept-all writes the proposed buffer into the rules draft.
     fireEvent.click(getByTestId("copilot-accept-all"));

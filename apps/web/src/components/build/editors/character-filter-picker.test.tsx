@@ -43,6 +43,7 @@ const { useSnapshotStore } = await import("../../../stores/snapshot-store.js");
 const { wireLoreEntry } = await import("../../../../test/wire-fixtures.js");
 const { popoverMaxHeight } = await import("../../shared/popover-constants.js");
 const { CharacterFilterPicker } = await import("./character-filter-picker.js");
+const { TooltipProvider } = await import("../../shared/Tooltip.js");
 
 import type { UseFormReturn } from "react-hook-form";
 import type { LoreEntryDraft } from "./use-lorebook-editor-state.js";
@@ -88,9 +89,11 @@ function renderPicker(filter: Array<{ id: string | null; name: string }>, exclud
 		});
 		handle.form = form;
 		return (
-			<FormProvider {...form}>
-				<CharacterFilterPicker t={(key) => key} />
-			</FormProvider>
+			<TooltipProvider delayDuration={0}>
+				<FormProvider {...form}>
+					<CharacterFilterPicker t={(key) => key} />
+				</FormProvider>
+			</TooltipProvider>
 		);
 	}
 	const view = render(<Harness />);
@@ -152,8 +155,8 @@ describe("CharacterFilterPicker — characterization (LB-3B)", () => {
 			{ id: null, name: "?" },
 			{ id: "c3", name: "Cory" },
 		]);
-		// The ghost chip is the dashed pill (title = lore_char_filter_bind).
-		const ghost = within(document.body).getByTitle("lore_char_filter_bind");
+		// The ghost chip is the dashed pill containing its unbound name.
+		const ghost = within(document.body).getByText("?", { selector: "span.truncate" }).parentElement!;
 		act(() => {
 			fireEvent.pointerDown(ghost);
 			fireEvent.click(ghost);
@@ -180,6 +183,16 @@ describe("CharacterFilterPicker — characterization (LB-3B)", () => {
 			fireEvent.click(removeCory as HTMLButtonElement);
 		});
 		expect(filterValue(handle)).toEqual([{ id: "c1", name: "Alpha" }]);
+	});
+
+	it("shows the binding hint only for an unbound chip", async () => {
+		const { view } = renderPicker([{ id: "c1", name: "Alpha" }, { id: null, name: "?" }]);
+		const ghost = view.getByText("?", { selector: "span.truncate" }).parentElement!;
+		expect(ghost.getAttribute("title")).toBeNull();
+		fireEvent.pointerMove(ghost, { pointerType: "mouse" });
+		expect((await view.findByRole("tooltip")).textContent).toBe("lore_char_filter_bind");
+		const bound = view.getByText("Alpha").parentElement!;
+		expect(bound.getAttribute("data-state")).toBeNull();
 	});
 
 	it("every character already added → the empty message, no rows", () => {
@@ -293,7 +306,7 @@ describe("CharacterFilterPicker — search / order / mobile (LB-3B)", () => {
 			{ id: "c1", name: "Alpha" },
 			{ id: null, name: "?" },
 		]);
-		const ghost = within(document.body).getByTitle("lore_char_filter_bind");
+		const ghost = within(document.body).getByText("?", { selector: "span.truncate" }).parentElement!;
 		act(() => {
 			fireEvent.pointerDown(ghost);
 			fireEvent.click(ghost);

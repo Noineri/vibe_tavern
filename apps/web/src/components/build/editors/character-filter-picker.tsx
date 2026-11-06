@@ -34,6 +34,7 @@ import { MAX_VISIBLE_ITEMS, popoverMaxHeight } from "../../shared/popover-consta
 import { SearchInput } from "../../shared/SearchInput.js";
 import { BottomSheet } from "../../shared/BottomSheet.js";
 import { ScrollArea } from "../../shared/scroll-area.js";
+import { CustomTooltip } from "../../shared/Tooltip.js";
 import { resolveTargetAvatarUrl } from "../../shared/LinkBindingPopover.js";
 import { characterToLinkTarget } from "../../../lib/link-targets.js";
 import { matchesLinkQuery, orderLinkTargets } from "../../../lib/link-binding-sections.js";
@@ -188,44 +189,44 @@ export function CharacterFilterPicker({ t }: { t: TFunc }) {
                   })
                 : null;
               return (
-                <span
-                  key={`${f.id ?? "ghost"}-${idx}`}
-                  className={cn(
-                    "flex items-center gap-1 rounded px-1.5 py-0.5 text-[calc(var(--ui-fs)-2px)] transition-all",
-                    isGhost
-                      ? "cursor-pointer border border-dashed border-amber-500/60 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20"
-                      : "bg-accent-dim text-accent-t hover:bg-border2 hover:text-t1",
-                  )}
-                  title={isGhost ? t("lore_char_filter_bind") : undefined}
-                  onClick={isGhost ? () => setCharFilterPicker(idx) : undefined}
-                >
-                  <span className="h-4 w-4 shrink-0 overflow-hidden rounded-full bg-s3">
-                    {avatarUrl ? (
-                      <img src={avatarUrl} alt="" className="h-full w-full object-cover" loading="lazy" decoding="async" />
-                    ) : (
-                      <span className="flex h-full w-full items-center justify-center text-[calc(var(--ui-fs)-6px)] font-bold text-t3">
-                        {f.name.charAt(0).toUpperCase()}
-                      </span>
+                <CustomTooltip key={`${f.id ?? "ghost"}-${idx}`} content={isGhost ? t("lore_char_filter_bind") : null}>
+                  <span
+                    className={cn(
+                      "flex items-center gap-1 rounded px-1.5 py-0.5 text-[calc(var(--ui-fs)-2px)] transition-all",
+                      isGhost
+                        ? "cursor-pointer border border-dashed border-amber-500/60 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20"
+                        : "bg-accent-dim text-accent-t hover:bg-border2 hover:text-t1",
+                    )}
+                    onClick={isGhost ? () => setCharFilterPicker(idx) : undefined}
+                  >
+                    <span className="h-4 w-4 shrink-0 overflow-hidden rounded-full bg-s3">
+                      {avatarUrl ? (
+                        <img src={avatarUrl} alt="" className="h-full w-full object-cover" loading="lazy" decoding="async" />
+                      ) : (
+                        <span className="flex h-full w-full items-center justify-center text-[calc(var(--ui-fs)-6px)] font-bold text-t3">
+                          {f.name.charAt(0).toUpperCase()}
+                        </span>
+                      )}
+                    </span>
+                    <span className="max-w-[120px] truncate">{f.name}</span>
+                    {!isGhost && (
+                      <button
+                        type="button"
+                        className="ml-0.5 cursor-pointer text-t3 hover:text-t1"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          form.setValue(
+                            "characterFilter",
+                            characterFilter.filter((_, i) => i !== idx),
+                            { shouldDirty: true },
+                          );
+                        }}
+                      >
+                        ✕
+                      </button>
                     )}
                   </span>
-                  <span className="max-w-[120px] truncate">{f.name}</span>
-                  {!isGhost && (
-                    <button
-                      type="button"
-                      className="ml-0.5 cursor-pointer text-t3 hover:text-t1"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        form.setValue(
-                          "characterFilter",
-                          characterFilter.filter((_, i) => i !== idx),
-                          { shouldDirty: true },
-                        );
-                      }}
-                    >
-                      ✕
-                    </button>
-                  )}
-                </span>
+                </CustomTooltip>
               );
             })}
             <button

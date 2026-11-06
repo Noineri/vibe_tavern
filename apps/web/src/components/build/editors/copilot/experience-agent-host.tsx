@@ -5,6 +5,7 @@ import { COPILOT_TOOL_KEYS, type ExperienceCopilotLaunchContext } from "@vibe-ta
 import { Icons } from "../../../shared/icons.js";
 import { EmptyState } from "../../../shared/empty-state.js";
 import { SegmentedControl } from "../../../shared/SegmentedControl.js";
+import { CustomTooltip } from "../../../shared/Tooltip.js";
 import { ExperiencePlayground } from "../ExperiencePlayground.js";
 import { ExperienceFrame } from "../../../experience/ExperienceFrame.js";
 import { useT } from "../../../../i18n/context.js";
@@ -227,11 +228,12 @@ function ExperienceEditorPane({
     return (
       <span className="inline-flex items-center gap-1.5">
         {label}
-        <span
-          data-testid={`copilot-buffer-dot-${value}`}
-          title={t("copilot_review_pending_badge")}
-          className="h-1.5 w-1.5 rounded-full bg-accent"
-        />
+        <CustomTooltip content={t("copilot_review_pending_badge")}>
+          <span
+            data-testid={`copilot-buffer-dot-${value}`}
+            className="h-1.5 w-1.5 rounded-full bg-accent"
+          />
+        </CustomTooltip>
       </span>
     );
   };
@@ -242,11 +244,12 @@ function ExperienceEditorPane({
     ? (
       <span className="inline-flex items-center gap-1.5">
         {t("agent_code")}
-        <span
-          data-testid="copilot-outer-dot-code"
-          title={t("copilot_review_pending_badge")}
-          className="h-1.5 w-1.5 rounded-full bg-accent"
-        />
+        <CustomTooltip content={t("copilot_review_pending_badge")}>
+          <span
+            data-testid="copilot-outer-dot-code"
+            className="h-1.5 w-1.5 rounded-full bg-accent"
+          />
+        </CustomTooltip>
       </span>
     )
     : t("agent_code");
