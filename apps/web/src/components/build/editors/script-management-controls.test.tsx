@@ -11,8 +11,7 @@
  *
  * Runner: bun:test with scoped happy-dom.
  */
-import { beforeAll, describe, expect, it, mock } from "bun:test";
-import type { ReactNode } from "react";
+import { beforeAll, describe, expect, it } from "bun:test";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 import type {
@@ -22,15 +21,9 @@ import type {
 
 useDomEnv();
 
-const realTooltip = await import("../../shared/Tooltip.js");
+const { TooltipProvider } = await import("../../shared/Tooltip.js");
 
 installI18nContextSeam();
-
-mock.module("../../shared/Tooltip.js", () => ({
-  ...realTooltip,
-  CustomTooltip: ({ children }: { children: ReactNode }) => children,
-  TooltipProvider: ({ children }: { children: ReactNode }) => children,
-}));
 
 let render: typeof import("@testing-library/react").render;
 let fireEvent: typeof import("@testing-library/react").fireEvent;
@@ -57,6 +50,7 @@ function renderControls(overrides: ControlOverrides = {}) {
   let saves = 0;
   let deletes = 0;
   const result = render(
+    <TooltipProvider delayDuration={0}>
     <ScriptManagementControls
       name="My script"
       enabled={true}
@@ -71,7 +65,8 @@ function renderControls(overrides: ControlOverrides = {}) {
       onDelete={() => { deletes += 1; }}
       onSave={() => { saves += 1; }}
       {...overrides}
-    />,
+    />
+    </TooltipProvider>,
   );
   return {
     ...result,
@@ -95,6 +90,14 @@ describe("ScriptManagementControls", () => {
     expect(queryByPlaceholderText("script_desc_placeholder")).toBeNull();
     expect(queryByText("script_links_label")).toBeNull();
     expect(queryByTestId("links-picker")).toBeNull();
+  });
+
+  it("preserves the save error detail as a themed hint", async () => {
+    const { getByText, findByRole } = renderControls({ draftSaveState: "error", draftError: "Save failed in detail" });
+    const state = getByText("retry", { selector: "span.text-danger" });
+    expect(state.getAttribute("title")).toBeNull();
+    fireEvent.pointerMove(state, { pointerType: "mouse" });
+    expect((await findByRole("tooltip")).textContent).toBe("Save failed in detail");
   });
 
   it("shows the dice kind label for dice scripts", () => {

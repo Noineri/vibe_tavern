@@ -140,12 +140,13 @@ export function ExperienceManagementControls({
 
         {/* Save-state text is desktop-only: on mobile the state is conveyed by
             the SaveButton's visual state + the Edit-tab dirty badge (E6). */}
-        <span
-          className={cn("shrink-0 max-md:hidden font-ui text-[calc(var(--ui-fs)-2px)]", scriptSaveState === "error" ? "text-danger" : "text-t3")}
-          title={saveError ?? undefined}
-        >
-          {scriptSaveState === "error" ? t("retry") : scriptDirty ? t("unsaved_changes") : t("saved_state")}
-        </span>
+        <CustomTooltip content={saveError}>
+          <span
+            className={cn("shrink-0 max-md:hidden font-ui text-[calc(var(--ui-fs)-2px)]", scriptSaveState === "error" ? "text-danger" : "text-t3")}
+          >
+            {scriptSaveState === "error" ? t("retry") : scriptDirty ? t("unsaved_changes") : t("saved_state")}
+          </span>
+        </CustomTooltip>
         <SaveButton
           icon={isMobile ? <Ic.floppy /> : undefined}
           dirty={scriptDirty}

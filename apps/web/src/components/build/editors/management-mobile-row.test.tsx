@@ -13,7 +13,7 @@
  *
  * Runner: bun:test with scoped happy-dom.
  */
-import { beforeAll, describe, expect, it, mock } from "bun:test";
+import { beforeAll, describe, expect, it } from "bun:test";
 import type { ReactNode } from "react";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
@@ -22,15 +22,9 @@ import type { ActionSheetItem } from "../../shared/ActionSheet.js";
 
 useDomEnv();
 
-const realTooltip = await import("../../shared/Tooltip.js");
+const { TooltipProvider } = await import("../../shared/Tooltip.js");
 
 installI18nContextSeam();
-
-mock.module("../../shared/Tooltip.js", () => ({
-  ...realTooltip,
-  CustomTooltip: ({ children }: { children: ReactNode }) => children,
-  TooltipProvider: ({ children }: { children: ReactNode }) => children,
-}));
 
 let render: typeof import("@testing-library/react").render;
 let fireEvent: typeof import("@testing-library/react").fireEvent;
@@ -58,6 +52,7 @@ function renderRow(overrides: RowOverrides = {}) {
   let saves = 0;
   const actions: string[] = [];
   const result = render(
+    <TooltipProvider delayDuration={0}>
     <ManagementMobileRow
       name="My script"
       namePlaceholder="Name here"
@@ -75,7 +70,8 @@ function renderRow(overrides: RowOverrides = {}) {
         { icon: <span />, label: "Delete it", danger: true, action: () => { actions.push("delete"); } },
       ]}
       {...overrides}
-    />,
+    />
+    </TooltipProvider>,
   );
   return {
     ...result,
@@ -94,6 +90,14 @@ describe("ManagementMobileRow", () => {
     expect(container.querySelector("div.flex.w-full.items-center.gap-1\\.5")).toBeTruthy();
     expect(queryByText("Kind info")).toBeNull();
     expect(queryByText("Delete it")).toBeNull();
+  });
+
+  it("preserves the more-actions hint and accessible name", async () => {
+    const { getByRole, findByRole } = renderRow();
+    const button = getByRole("button", { name: "management_more_actions" });
+    expect(button.getAttribute("title")).toBeNull();
+    fireEvent.focus(button);
+    expect((await findByRole("tooltip")).textContent).toBe("management_more_actions");
   });
 
   it("renders the badge in the row when given, inside a shrink-0 wrapper", () => {

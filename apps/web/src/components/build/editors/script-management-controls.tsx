@@ -145,12 +145,13 @@ export function ScriptManagementControls({
 
         {/* Save-state text is desktop-only: on mobile the state is conveyed by
             the SaveButton's visual state. */}
-        <span
-          className={cn("shrink-0 max-md:hidden font-ui text-[calc(var(--ui-fs)-2px)]", draftSaveState === "error" ? "text-danger" : "text-t3")}
-          title={draftError ?? undefined}
-        >
-          {draftSaveState === "error" ? t("retry") : draftDirty ? t("unsaved_changes") : t("saved_state")}
-        </span>
+        <CustomTooltip content={draftError}>
+          <span
+            className={cn("shrink-0 max-md:hidden font-ui text-[calc(var(--ui-fs)-2px)]", draftSaveState === "error" ? "text-danger" : "text-t3")}
+          >
+            {draftSaveState === "error" ? t("retry") : draftDirty ? t("unsaved_changes") : t("saved_state")}
+          </span>
+        </CustomTooltip>
         <SaveButton
           icon={isMobile ? <Ic.floppy /> : undefined}
           dirty={draftDirty}
