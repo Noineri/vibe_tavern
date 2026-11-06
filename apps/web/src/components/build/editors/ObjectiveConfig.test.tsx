@@ -422,7 +422,7 @@ describe("ObjectiveConfig (INS-5)", () => {
 
   it("locks both dropdowns and the pin while using the chat model", async () => {
     withState({ ...EMPTY, model: "gpt-mini" });
-    const { getByRole, getByTitle } = render(<ObjectiveConfig chatId={"chat_1" as never} />);
+    const { getByRole } = render(<ObjectiveConfig chatId={"chat_1" as never} />);
 
     const providerDropdown = getByRole("button", { name: /Active/ });
     await waitFor(() => expect(getByRole("button", { name: /GPT Active/ })).toBeTruthy());
@@ -430,7 +430,7 @@ describe("ObjectiveConfig (INS-5)", () => {
 
     expect(providerDropdown.className).toContain("opacity-40");
     expect(modelDropdown.className).toContain("opacity-40");
-    expect((getByTitle("obj_model_unpin") as HTMLButtonElement).disabled).toBe(true);
+    expect((getByRole("button", { name: "obj_model_unpin" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   // MUI-W3 (MOBILE_UI_DEFECTS_REPORT step 10): the Objective model picker row

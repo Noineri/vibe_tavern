@@ -144,7 +144,6 @@ export function AgentModelPills(props: AgentModelPillsProps) {
       <button
         type="button"
         data-testid={`copilot-model-star-${modelId}`}
-        title={favored ? t("copilot_model_unstar") : t("copilot_model_star")}
         aria-label={favored ? t("copilot_model_unstar") : t("copilot_model_star")}
         className={cn(
           "flex h-5 w-5 shrink-0 items-center justify-center rounded text-t4 transition-colors hover:text-t1",

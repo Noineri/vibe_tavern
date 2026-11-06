@@ -32,12 +32,16 @@ mock.module("sonner", () => ({
 }));
 
 let AvatarDescriptionField: typeof import("./AvatarDescriptionField.js").AvatarDescriptionField;
-let render: typeof import("@testing-library/react").render;
+let rtlRender: typeof import("@testing-library/react").render;
+const { TooltipProvider } = await import("../../shared/Tooltip.js");
+function render(ui: React.ReactNode) {
+  return rtlRender(ui, { wrapper: ({ children }) => <TooltipProvider delayDuration={0}>{children}</TooltipProvider> });
+}
 let fireEvent: typeof import("@testing-library/react").fireEvent;
 let waitFor: typeof import("@testing-library/react").waitFor;
 let userEvent: typeof import("@testing-library/user-event").default;
 beforeAll(async () => {
-	({ render, fireEvent, waitFor } = await import("@testing-library/react"));
+	({ render: rtlRender, fireEvent, waitFor } = await import("@testing-library/react"));
 	({ default: userEvent } = await import("@testing-library/user-event"));
 	({ AvatarDescriptionField } = await import("./AvatarDescriptionField.js"));
 });

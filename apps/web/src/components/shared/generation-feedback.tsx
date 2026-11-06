@@ -24,6 +24,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Ic } from "./icons.js";
+import { CustomTooltip } from "./Tooltip.js";
 import { cn } from "../../lib/cn.js";
 
 // ---------------------------------------------------------------------------
@@ -108,7 +109,7 @@ export interface GenerateCancelButtonProps {
 	/** Committed value non-empty → show the "regenerate" label + accent sparkles. */
 	hasValue: boolean;
 	labels: { generate: string; regenerate: string; cancel: string };
-	/** Title attributes. Falls back to the matching label when omitted. */
+	/** Tooltip hints. Falls back to the matching label when omitted. */
 	titles?: { generate?: string; cancel?: string };
 	onGenerate: () => void;
 	onCancel: () => void;
@@ -145,20 +146,21 @@ export function GenerateCancelButton({
 						transition={morphSpring}
 						className="absolute inset-0 flex items-center"
 					>
-						<button
-							type="button"
-							className={cn(
-								"flex h-8 cursor-pointer items-center gap-1.5 rounded-md border border-danger/40 bg-danger/10 px-3",
-								"font-ui text-[calc(var(--ui-fs)-2px)] text-danger",
-								"transition-[background-color,color] duration-150",
-								"hover:bg-danger/20 hover:text-danger-strong",
-							)}
-							onClick={onCancel}
-							title={titles?.cancel ?? labels.cancel}
-						>
-							<Ic.close />
-							<span>{labels.cancel}</span>
-						</button>
+						<CustomTooltip content={titles?.cancel ?? labels.cancel}>
+							<button
+								type="button"
+								className={cn(
+									"flex h-8 cursor-pointer items-center gap-1.5 rounded-md border border-danger/40 bg-danger/10 px-3",
+									"font-ui text-[calc(var(--ui-fs)-2px)] text-danger",
+									"transition-[background-color,color] duration-150",
+									"hover:bg-danger/20 hover:text-danger-strong",
+								)}
+								onClick={onCancel}
+							>
+								<Ic.close />
+								<span>{labels.cancel}</span>
+							</button>
+						</CustomTooltip>
 					</motion.div>
 				) : (
 					<motion.div
@@ -169,21 +171,22 @@ export function GenerateCancelButton({
 						transition={morphSpring}
 						className="absolute inset-0 flex items-center"
 					>
-						<button
-							type="button"
-							className={cn(
-								"flex h-8 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-3",
-								"font-ui text-[calc(var(--ui-fs)-2px)] text-t2",
-								"transition-[background-color,color,border-color] duration-150",
-								"hover:bg-s2 hover:text-t1 hover:border-accent/40",
-							)}
-							onClick={onGenerate}
-							disabled={disabled}
-							title={titles?.generate ?? labels.generate}
-						>
-							<Ic.sparkles className={hasValue ? "text-accent" : undefined} />
-							<span>{hasValue ? labels.regenerate : labels.generate}</span>
-						</button>
+						<CustomTooltip content={titles?.generate ?? labels.generate}>
+							<button
+								type="button"
+								className={cn(
+									"flex h-8 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-3",
+									"font-ui text-[calc(var(--ui-fs)-2px)] text-t2",
+									"transition-[background-color,color,border-color] duration-150",
+									"hover:bg-s2 hover:text-t1 hover:border-accent/40",
+								)}
+								onClick={onGenerate}
+								disabled={disabled}
+							>
+								<Ic.sparkles className={hasValue ? "text-accent" : undefined} />
+								<span>{hasValue ? labels.regenerate : labels.generate}</span>
+							</button>
+						</CustomTooltip>
 					</motion.div>
 				)}
 			</AnimatePresence>

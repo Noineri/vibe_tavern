@@ -6,7 +6,11 @@ import type { ManualSummaryRunState } from "@vibe-tavern/api-contracts";
 import { useDomEnv } from "../../../test/dom-env.js";
 
 useDomEnv();
-const { act, fireEvent, render, waitFor } = await import("@testing-library/react");
+const { act, fireEvent, render: rtlRender, waitFor } = await import("@testing-library/react");
+const { TooltipProvider } = await import("../shared/Tooltip.js");
+function render(ui: React.ReactNode) {
+  return rtlRender(ui, { wrapper: ({ children }) => <TooltipProvider delayDuration={0}>{children}</TooltipProvider> });
+}
 const { toast } = await import("sonner");
 const { useSummaryTab } = await import("./SummaryTab.js");
 const { useChatEvents } = await import("../../hooks/use-chat-events.js");

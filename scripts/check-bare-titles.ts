@@ -36,7 +36,7 @@ import { join, relative } from "node:path";
 
 /** Snapshot of the tree on 2026-11-05 — the step-1 inventory table lives in
  *  plan repo BARE_TITLE_TOOLTIPS_REPORT. Lower after cleanups, never raise. */
-export const BARE_TITLE_BUDGET = 16;
+export const BARE_TITLE_BUDGET = 0;
 
 const ROOT = join(import.meta.dir, "..");
 const WEB_SRC = join(ROOT, "apps", "web", "src");

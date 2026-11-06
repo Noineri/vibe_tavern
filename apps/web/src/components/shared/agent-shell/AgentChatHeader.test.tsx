@@ -50,7 +50,7 @@ describe("AgentChatHeader — settings gear", () => {
 		const { getByTestId } = renderHeader();
 		const gear = getByTestId("copilot-profile-gear-btn");
 		expect(gear.getAttribute("aria-label")).toBe("agent_settings_title");
-		expect(gear.getAttribute("title")).toBe("agent_settings_title");
+		expect(gear.getAttribute("title")).toBeNull();
 	});
 });
 

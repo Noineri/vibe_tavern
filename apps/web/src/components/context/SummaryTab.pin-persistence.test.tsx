@@ -31,7 +31,11 @@ import type { ChatSummaryRecord, UiSettingsRecord } from "../../api/types.js";
 
 useDomEnv();
 
-const { fireEvent, render, waitFor } = await import("@testing-library/react");
+const { fireEvent, render: rtlRender, waitFor } = await import("@testing-library/react");
+const { TooltipProvider } = await import("../shared/Tooltip.js");
+function render(ui: React.ReactNode) {
+  return rtlRender(ui, { wrapper: ({ children }) => <TooltipProvider delayDuration={0}>{children}</TooltipProvider> });
+}
 
 const originalFetch = globalThis.fetch;
 async function stateFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
@@ -105,9 +109,10 @@ function Harness() {
   return <>{tab.detailEditor}</>;
 }
 
-function starTitle(view: ReturnType<typeof render>): string | null {
-  const star = view.container.querySelector('button[title^="summary_"]');
-  return star ? star.getAttribute("title") : null;
+function starLabel(view: ReturnType<typeof render>): string | null {
+  if (view.queryByRole("button", { name: "summary_unpin_model" })) return "summary_unpin_model";
+  if (view.queryByRole("button", { name: "summary_pin_model" })) return "summary_pin_model";
+  return null;
 }
 
 function triggerWithText(view: ReturnType<typeof render>, text: string): HTMLButtonElement | null {
@@ -168,7 +173,7 @@ beforeEach(() => {
 describe("SummaryTab pin persistence (SUM-4)", () => {
   test("hydrate: the persisted pair restores the pin on open", async () => {
     const view = render(<Harness />);
-    await waitFor(() => expect(starTitle(view)).toBe("summary_unpin_model"));
+    await waitFor(() => expect(starLabel(view)).toBe("summary_unpin_model"));
     await waitFor(() => expect(triggerWithText(view, "GLM 5.2")).toBeTruthy());
   });
 
@@ -177,7 +182,7 @@ describe("SummaryTab pin persistence (SUM-4)", () => {
     // Settled state first (hydration + model list loaded)…
     await waitFor(() => expect(triggerWithText(view, "GLM 5.2")).toBeTruthy());
     // …then click the star on a freshly queried node.
-    const star = view.container.querySelector('button[title="summary_unpin_model"]');
+    const star = view.getByRole("button", { name: "summary_unpin_model" });
     expect(star).toBeTruthy();
     fireEvent.click(star!);
 
@@ -188,13 +193,13 @@ describe("SummaryTab pin persistence (SUM-4)", () => {
     // the bare updateUiSettings call skipped (the stale pair lived on in the
     // store for the whole session).
     await waitFor(() => expect(useBootstrapStore.getState().data?.uiSettings.summaryModelName).toBeNull());
-    await waitFor(() => expect(starTitle(view)).toBe("summary_pin_model"));
+    await waitFor(() => expect(starLabel(view)).toBe("summary_pin_model"));
 
     // AppShell re-renders (generation, SSE, toasts) hand the tab a NEW
     // providers array with the same content — the old pinned pair must NOT
     // resurrect from the store.
     rerenderWithFreshProviders(view);
-    await waitFor(() => expect(starTitle(view)).toBe("summary_pin_model"));
+    await waitFor(() => expect(starLabel(view)).toBe("summary_pin_model"));
     expect(useBootstrapStore.getState().data?.uiSettings.summaryProviderId).toBeNull();
   });
 

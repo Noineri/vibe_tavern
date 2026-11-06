@@ -19,7 +19,11 @@ import { useDomEnv } from "../../../test/dom-env.js";
 
 useDomEnv();
 
-const { render, fireEvent, waitFor, act } = await import("@testing-library/react");
+const { render: rtlRender, fireEvent, waitFor, act } = await import("@testing-library/react");
+const { TooltipProvider } = await import("./Tooltip.js");
+function render(ui: React.ReactNode) {
+	return rtlRender(ui, { wrapper: ({ children }) => <TooltipProvider delayDuration={0}>{children}</TooltipProvider> });
+}
 
 let useGenerationTask: typeof import("./generation-feedback.js").useGenerationTask;
 let GenerateCancelButton: typeof import("./generation-feedback.js").GenerateCancelButton;
@@ -127,6 +131,21 @@ describe("useGenerationTask", () => {
 
 describe("GenerateCancelButton", () => {
 	const labels = { generate: "GEN", regenerate: "REGEN", cancel: "CANCEL" };
+
+	it("keeps explicit titles distinct from visible labels and falls back to generate when regenerating", async () => {
+		const common = { labels, onGenerate: mock(), onCancel: mock() };
+		const view = render(<GenerateCancelButton {...common} generating={false} hasValue titles={{ generate: "GEN HINT", cancel: "CANCEL HINT" }} />);
+		fireEvent.pointerMove(view.getByRole("button", { name: "REGEN" }), { pointerType: "mouse" });
+		expect((await view.findByRole("tooltip")).textContent).toBe("GEN HINT");
+		view.unmount();
+		const cancel = render(<GenerateCancelButton {...common} generating hasValue titles={{ generate: "GEN HINT", cancel: "CANCEL HINT" }} />);
+		fireEvent.pointerMove(cancel.getByRole("button", { name: "CANCEL" }), { pointerType: "mouse" });
+		expect((await cancel.findByRole("tooltip")).textContent).toBe("CANCEL HINT");
+		cancel.unmount();
+		const fallback = render(<GenerateCancelButton {...common} generating={false} hasValue />);
+		fireEvent.pointerMove(fallback.getByRole("button", { name: "REGEN" }), { pointerType: "mouse" });
+		expect((await fallback.findByRole("tooltip")).textContent).toBe("GEN");
+	});
 
 	it("shows the generate label when hasValue=false", () => {
 		const { getByText, queryByText } = render(

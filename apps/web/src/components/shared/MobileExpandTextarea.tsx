@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Icons } from "./icons.js";
+import { CustomTooltip } from "./Tooltip.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { useT } from "../../i18n/context.js";
 
@@ -41,13 +42,15 @@ export function MobileExpandTextarea({
     <>
       <div className="relative">
         {children}
-        <div
-          className="absolute right-1.5 top-1.5 flex h-7 w-7 cursor-pointer items-center justify-center rounded-md bg-surface/80 text-t3 transition-colors hover:bg-s2 hover:text-t1 active:bg-s3"
-          onClick={() => setOpen(true)}
-          title={t("expand_fullscreen")}
-        >
-          <Icons.Expand />
-        </div>
+        <CustomTooltip content={t("expand_fullscreen")}>
+          <div
+            className="absolute right-1.5 top-1.5 flex h-7 w-7 cursor-pointer items-center justify-center rounded-md bg-surface/80 text-t3 transition-colors hover:bg-s2 hover:text-t1 active:bg-s3"
+            onClick={() => setOpen(true)}
+            aria-label={t("expand_fullscreen")}
+          >
+            <Icons.Expand />
+          </div>
+        </CustomTooltip>
       </div>
 
       {open && (

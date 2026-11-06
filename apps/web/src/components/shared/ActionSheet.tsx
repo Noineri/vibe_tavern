@@ -115,7 +115,6 @@ export function ActionSheet({ open, title, items, onClose }: ActionSheetProps) {
                   sub.danger ? "text-t3 hover:bg-s3 hover:text-danger-text" : "text-t3 hover:bg-s3 hover:text-t1",
                 )}
                 aria-label={sub.label}
-                title={sub.label}
                 onClick={() => { onClose(); sub.action(); }}
               >
                 {sub.icon}

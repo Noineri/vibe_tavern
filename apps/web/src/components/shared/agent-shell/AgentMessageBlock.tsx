@@ -399,7 +399,6 @@ function MessageActionRow({ actions, text }: { actions: AgentMessageAction[]; te
                 <button
                   type="button"
                   aria-label={label}
-                  title={label}
                   data-testid={action.testId}
                   className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-lg text-t3 active:bg-s2 [&_svg]:h-5 [&_svg]:w-5"
                   onClick={() => action.onSelect(text)}

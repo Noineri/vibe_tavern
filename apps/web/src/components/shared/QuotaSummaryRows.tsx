@@ -7,6 +7,7 @@ import {
 } from "@vibe-tavern/domain";
 import { useT } from "../../i18n/context.js";
 import { cn } from "../../lib/cn.js";
+import { OverflowTooltip } from "./OverflowTooltip.js";
 import {
   formatBalance,
   quotaBalanceLabelKey,
@@ -59,9 +60,9 @@ export function QuotaSummaryRows({ snapshot, lastError, now }: QuotaSummaryRowsP
         return (
           <div key={window.kind} className="mb-2 last:mb-0">
             <div className="mb-1 flex items-baseline justify-between gap-2 text-[calc(var(--ui-fs)-2px)] leading-4">
-              <span className="truncate text-t2" title={window.label}>
+              <OverflowTooltip asSpan className="min-w-0 text-t2" text={window.label}>
                 {tDynamic(quotaWindowLabelKey(window.kind))}
-              </span>
+              </OverflowTooltip>
               <span className={cn("shrink-0 tabular-nums", quotaTextClass(state))}>
                 {t("quota_remaining_value", { percent: Math.round(100 - window.usedPercent) })}
               </span>
