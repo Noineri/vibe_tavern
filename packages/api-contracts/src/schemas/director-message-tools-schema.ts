@@ -295,3 +295,63 @@ export const directorSwipeToolOutputSchema = z.union([
   directorSwipeDeniedReceiptSchema,
 ]);
 export type DirectorSwipeToolOutput = z.infer<typeof directorSwipeToolOutputSchema>;
+
+// ─── The swipe run outcome + its answer-stream frame (DMT-24b) ────────────────
+
+/**
+ * The canonical outcome of the ONE approved swipe regeneration — what an
+ * ordinary branch-pinned RP regeneration produces (the DMT-24 delegate's
+ * return; the backend domain consumes THIS schema as its source — one
+ * derivation, no second union). Provider-grade failures are absorbed by the
+ * adapter into `failed`/`cancelled` so the permission decision stays durable;
+ * a provider that produced no text appends no variant (`no_output`).
+ */
+export const directorSwipeRunOutcomeSchema = z.union([
+  z
+    .object({
+      status: z.literal("completed"),
+      messageId: z.string().min(1),
+      variantId: z.string().min(1),
+      traceId: z.string().nullable(),
+    })
+    .strict(),
+  z
+    .object({
+      status: z.literal("no_output"),
+      messageId: z.string().min(1),
+    })
+    .strict(),
+  z.object({ status: z.literal("cancelled") }).strict(),
+  z
+    .object({
+      status: z.literal("failed"),
+      reason: z.string().min(1),
+    })
+    .strict(),
+]);
+export type DirectorSwipeRunOutcome = z.infer<typeof directorSwipeRunOutcomeSchema>;
+
+/**
+ * The SSE event name of the swipe-run outcome frame (DMT-24b): the
+ * non-fatal tail frame the sidechat ANSWER stream emits after its turn
+ * completes when an allowed swipe's absorbed run outcome was not
+ * `completed`. The web's ONE shared SSE parser forwards it and the live
+ * answer path toasts the failure — the established generation-failure
+ * scheme (owner ruling 2026-11-06). A frame never fails the answer turn:
+ * the decision was accepted, the receipt stored; only the generation
+ * outcome is carried.
+ */
+export const DIRECTOR_SWIPE_RUN_OUTCOME_SSE_EVENT = "swipe-run-outcome" as const;
+
+/**
+ * The outcome frame's data payload: the answered permission row's
+ * `toolCallId` (correlation for consumers and the run-event replay) plus the
+ * run outcome verbatim. Server-authored state — `.strict()`.
+ */
+export const directorSwipeRunOutcomeFrameSchema = z
+  .object({
+    toolCallId: z.string().min(1),
+    outcome: directorSwipeRunOutcomeSchema,
+  })
+  .strict();
+export type DirectorSwipeRunOutcomeFrame = z.infer<typeof directorSwipeRunOutcomeFrameSchema>;

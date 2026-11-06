@@ -111,11 +111,14 @@ import type { AgentPlan, AgentPlanOwner } from "@vibe-tavern/domain";
 import { brandId, type ChatBranchId, type ChatId } from "@vibe-tavern/domain";
 import type {
   CopilotProfile,
-  DirectorSwipeGrantedReceipt,
-  DirectorSwipePermissionMarker,
+  DirectorSwipeRunOutcome,
+  DirectorSwipeRunOutcomeFrame,
   ExperienceCopilotContextLink,
 } from "@vibe-tavern/api-contracts";
-import { DIRECTOR_MESSAGE_TOOLS, directorSwipePermissionMarkerSchema } from "@vibe-tavern/api-contracts";
+import {
+  DIRECTOR_MESSAGE_TOOLS,
+  DIRECTOR_SWIPE_RUN_OUTCOME_SSE_EVENT,
+} from "@vibe-tavern/api-contracts";
 import type { ProviderFetch } from "../providers/provider-fetch-factory.js";
 import { logSendDebug } from "../../shared/send-debug-log.js";
 import { validation } from "../../shared/errors.js";
@@ -168,6 +171,13 @@ import {
   type SidechatContextPackage,
 } from "./sidechat-context.js";
 import { assembleSidechatPrompt, type SidechatAssembledPrompt } from "./sidechat-assembly.js";
+// DMT-24b: the granted swipe executor + its delegate seam types (extracted
+// out of this module at the arch-gate size cap — see the section comment at
+// the extraction site below).
+import {
+  runGrantedMessageSwipe,
+  type DirectorSwipeGenerationDelegate,
+} from "./sidechat-swipe-executor.js";
 import type { ExperienceCopilotStreamRequest, ExperienceCopilotStreamEvent } from "../interactive/copilot/experience-copilot-stream-contract.js";
 import { buildSidechatCoreDeps } from "./sidechat-core-deps.js";
 
@@ -286,92 +296,10 @@ export interface SidechatStreamDeps {
 }
 
 // ─── DMT-23: the swipe generation delegate seam + the granted executor ───────
-
-/** The swipe GENERATION delegate's input: the recorded awaiting marker (the
- *  DMT-11 shape, revalidated by the executor before this call — the frozen
- *  target identity's source of truth), the FINAL user-approved instruction
- *  text, the THREAD ROW's own branch scope (never the request), and the
- *  answer turn's cancellation signal. */
-export interface DirectorSwipeGenerationInput {
-  readonly chatId: string;
-  readonly branchId: string;
-  readonly marker: DirectorSwipePermissionMarker;
-  readonly instruction: string;
-  readonly signal?: AbortSignal;
-}
-
-/** The ONE generation an allowed swipe request may run (DMT-23's injected
- *  seam; DMT-24 supplies the real branch-pinned RP generation over the
- *  normal lifecycle). Exactly one call per accepted permission answer — the
- *  mechanism's duplicate-decision guards are the split-turn module's. */
-export type DirectorSwipeGenerationDelegate = (
-  input: DirectorSwipeGenerationInput,
-) => Promise<unknown>;
-
-/**
- * DMT-23 — the granted execution of one allowed `request_message_swipe`
- * (dispatched beside the prompt read in the seams' `runWaitTool`): the
- * recorded awaiting output is revalidated through the DMT-11 marker schema
- * (a corrupted row is refused, never resumed on guessed state — the
- * `runGrantedPromptRead` precedent); the FINAL approved instruction is the
- * user-edited text when the Allow answer carried one and the recorded draft
- * otherwise, trimmed and REQUIRED non-empty (an empty approval generates
- * nothing — refused, the row stays awaiting); the ONE generation runs
- * through the injected delegate (absent → refuse loudly BEFORE any state
- * change); the resolved row stores the granted receipt carrying that final
- * text (the DMT-11 receipt schema — the request-local instruction is never
- * persisted anywhere else). Deny never reaches this executor: the mechanism
- * itself stores `{ status: "denied" }`.
- *
- * @throws {@link validation} when the recorded output is not the marker
- *   shape, when the final instruction is empty, or when no generation
- *   delegate is wired (and whatever the delegate itself throws).
- */
-async function runGrantedMessageSwipe(input: {
-  readonly threadOwner: { readonly chatId: string; readonly branchId: string };
-  readonly continuation: AgentPermissionContinuation;
-  readonly signal?: AbortSignal;
-  readonly buildSwipeGenerationDelegate?: () => Promise<DirectorSwipeGenerationDelegate | undefined>;
-}): Promise<DirectorSwipeGrantedReceipt> {
-  const marker = directorSwipePermissionMarkerSchema.safeParse(input.continuation.awaitingOutput);
-  if (!marker.success) {
-    throw validation(
-      "The recorded request_message_swipe output is not the tool's marker shape — refusing to resume it.",
-    );
-  }
-  const finalInstruction = (input.continuation.instruction ?? marker.data.instruction).trim();
-  if (finalInstruction.length === 0) {
-    throw validation(
-      "The approved swipe instruction is empty — refusing to run the generation without text.",
-    );
-  }
-  const delegate =
-    input.buildSwipeGenerationDelegate === undefined
-      ? undefined
-      : await input.buildSwipeGenerationDelegate();
-  if (delegate === undefined) {
-    throw validation(
-      "request_message_swipe: swipe generation is not configured — the allowance cannot run.",
-    );
-  }
-  await delegate({
-    chatId: input.threadOwner.chatId,
-    branchId: input.threadOwner.branchId,
-    marker: marker.data,
-    instruction: finalInstruction,
-    ...(input.signal !== undefined ? { signal: input.signal } : {}),
-  });
-  const receipt: DirectorSwipeGrantedReceipt = {
-    status: "granted",
-    messageId: marker.data.messageId,
-    variantId: marker.data.variantId,
-    position: marker.data.position,
-    variantNumber: marker.data.variantNumber,
-    replyFirstLine: marker.data.replyFirstLine,
-    instruction: finalInstruction,
-  };
-  return receipt;
-}
+// EXTRACTED to `sidechat-swipe-executor.ts` in DMT-24b (the arch-gate file-size
+// ratchet — the executor is the part that unit changed, imported above); the
+// stream keeps the seam dispatch and owns the outcome frame the executor's
+// result feeds.
 
 // ─── Kind context ────────────────────────────────────────────────────────────
 
@@ -445,6 +373,18 @@ export async function* streamSidechatTurn(
   // held set are the CURRENT turn's, so lore edits show on the next ask).
   let turnBranchView: RpBranchView | null = null;
   let turnHeldLoreEntryIds: ReadonlySet<string> = new Set();
+  // DMT-24b: the granted swipe run's ABSORBED outcome — written by the
+  // runWaitTool seam (the executor reads the delegate result), read after the
+  // loop completes to emit the answer stream's tail frame. Per-turn state of
+  // THIS generator call only (the turnBranchView pattern); a HOLDER OBJECT
+  // because the write happens inside the seam closure and the read at the
+  // generator's top level — a plain `let` would keep its initializer's null
+  // narrowing there. Null = no swipe was allowed this turn, or its outcome
+  // was `completed` (the new swipe in the RP chat is its own surface —
+  // nothing new to report).
+  const turnSwipeState: {
+    runFailure: { toolCallId: string; outcome: DirectorSwipeRunOutcome } | null;
+  } = { runFailure: null };
   const seams: AgentStreamSeams<
     ExperienceCopilotStreamRequest,
     ExperienceCopilotThread,
@@ -711,7 +651,7 @@ export async function* streamSidechatTurn(
     //  at the continuation: a prompt read can never become a swipe because a
     //  client sent the field). The chat/branch pair comes from the loop's
     //  THREAD row — the same row every other seam reads, never the request. ──
-    runWaitTool: (thread, toolName, toolInput, toolCallId, continuation, signal) => {
+    runWaitTool: async (thread, toolName, toolInput, toolCallId, continuation, signal) => {
       if (toolName !== SIDECHAT_PROMPT_READ_TOOL_NAME && toolName !== DIRECTOR_MESSAGE_TOOLS.requestMessageSwipe) {
         throw validation(`The sidechat serves no permission tool '${toolName}'.`);
       }
@@ -723,7 +663,7 @@ export async function* streamSidechatTurn(
       }
       const threadOwner = { chatId: thread.chatId, branchId: thread.branchId };
       if (toolName === DIRECTOR_MESSAGE_TOOLS.requestMessageSwipe) {
-        return runGrantedMessageSwipe({
+        const applied = await runGrantedMessageSwipe({
           threadOwner,
           continuation,
           ...(signal !== undefined ? { signal } : {}),
@@ -731,6 +671,13 @@ export async function* streamSidechatTurn(
             ? { buildSwipeGenerationDelegate: deps.buildSwipeGenerationDelegate }
             : {}),
         });
+        // DMT-24b: keep the absorbed outcome for the stream's tail frame —
+        // the receipt (the split-turn's row write) stays the executor's
+        // return value, so persistence is untouched.
+        if (applied.outcome.status !== "completed") {
+          turnSwipeState.runFailure = { toolCallId, outcome: applied.outcome };
+        }
+        return applied.receipt;
       }
       return runGrantedPromptRead(
         { messages: deps.context.messages, traces: deps.context.traces },
@@ -747,4 +694,27 @@ export async function* streamSidechatTurn(
   const streamDeps = buildSidechatCoreDeps(deps, () => autoCompactPressure);
 
   yield* streamAgentTurn(request, streamDeps, seams, signal);
+
+  // ── DMT-24b: the swipe run's absorbed outcome as the answer stream's tail ──
+  // A provider-grade swipe failure is ABSORBED into the delegate's outcome
+  // (the answer request itself succeeds — the receipt stored, the decision
+  // was accepted), so the failure must reach the user through the
+  // established generation-failure TOAST scheme (owner ruling 2026-11-06:
+  // a failure arrives as a toast, like everywhere else). The frame rides the
+  // same `ExperienceCopilotStreamEvent` vocabulary as every other frame —
+  // recorded and replayable through the run registry like the loop's own
+  // frames — and the web's live answer path toasts it; the permission card
+  // keeps its granted state (the card says "sent to generation", the toast
+  // owns the outcome). Emitted only after the loop COMPLETED: a loop THROW
+  // (the continuation itself failed) skips it — that failure surfaces as the
+  // turn-failure card instead. The frame is non-fatal on the web by
+  // contract: the parser forwards it, the answer turn settles normally.
+  // `completed` outcomes emit nothing (the new swipe is its own surface).
+  if (turnSwipeState.runFailure !== null) {
+    const frame: DirectorSwipeRunOutcomeFrame = {
+      toolCallId: turnSwipeState.runFailure.toolCallId,
+      outcome: turnSwipeState.runFailure.outcome,
+    };
+    yield { event: DIRECTOR_SWIPE_RUN_OUTCOME_SSE_EVENT, data: JSON.stringify(frame) };
+  }
 }

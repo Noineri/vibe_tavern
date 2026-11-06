@@ -16,7 +16,8 @@
  */
 
 import type { DirectorMessageEditorDelegateFn } from "../../domain/agent/kinds/sidechat/sidechat-message-tools.js";
-import type { DirectorSwipeGenerationDelegate, SidechatStreamDeps } from "../../domain/sidechat/sidechat-stream.js";
+import type { SidechatStreamDeps } from "../../domain/sidechat/sidechat-stream.js";
+import type { DirectorSwipeGenerationDelegate } from "../../domain/sidechat/sidechat-swipe-executor.js";
 
 /** The two delegate factories the runtime composition injects (both lazy —
  *  the tracker delegate's seam shape: a turn that never invokes the tool pays

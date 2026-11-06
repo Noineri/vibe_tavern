@@ -3,7 +3,7 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { LanguageModel } from "ai";
-import type { RecordProposal, CopilotTodoItem } from "@vibe-tavern/api-contracts";
+import type { DirectorSwipeRunOutcome, RecordProposal, CopilotTodoItem } from "@vibe-tavern/api-contracts";
 import { DIRECTOR_MESSAGE_TOOLS } from "@vibe-tavern/api-contracts";
 import {
 	createStoreContainer,
@@ -1618,7 +1618,8 @@ describe("streamSidechatTurn request_message_swipe permission split-turn (DMT-23
 	}
 
 	/** deps with a RECORDING swipe generation delegate (the DMT-23 injected
-	 *  seam; the real RP generation is DMT-24's). */
+	 *  seam; the real RP generation is DMT-24's). The fake reports the full
+	 *  `completed` outcome — the DMT-24b seam contract the executor reads. */
 	async function swipeDepsWithDelegate(
 		calls: Array<{ chatId: string; branchId: string; messageId: string; variantId: string; instruction: string; signal: AbortSignal | undefined }>,
 	): Promise<SidechatStreamDeps> {
@@ -1633,8 +1634,23 @@ describe("streamSidechatTurn request_message_swipe permission split-turn (DMT-23
 					instruction: input.instruction,
 					signal: input.signal,
 				});
-				return { status: "completed" };
+				return {
+					status: "completed",
+					messageId: input.marker.messageId,
+					variantId: input.marker.variantId,
+					traceId: null,
+				};
 			},
+		};
+	}
+
+	/** deps with a swipe generation delegate that resolves to the GIVEN
+	 *  outcome (DMT-24b: the absorbed provider-grade failures the real
+	 *  branch-pinned run reports). */
+	async function swipeDepsWithOutcome(outcome: DirectorSwipeRunOutcome): Promise<SidechatStreamDeps> {
+		return {
+			...(await swipeOnlyDeps()),
+			buildSwipeGenerationDelegate: async () => async () => outcome,
 		};
 	}
 
@@ -1882,6 +1898,106 @@ describe("streamSidechatTurn request_message_swipe permission split-turn (DMT-23
 		expect(String((threw as { message?: string }).message)).toContain("swipe generation is not configured");
 		const row = await storedToolRow(threadId, "tc_sw_stream");
 		expect(row!.output.status).toBe("awaiting_permission");
+	});
+
+	// ── DMT-24b: the absorbed run outcome rides the answer stream's tail ──
+
+	it("DMT-24b: a FAILED swipe outcome surfaces the outcome frame AND the receipt still stores AND the turn completes", async () => {
+		const { threadId } = await makeSidechatThread("The failed-generation reply.");
+		await pauseOnSwipeMarker(threadId);
+		const answerChunks = await drainAnswerTurn(
+			threadId,
+			{ toolCallId: "tc_sw_stream", decision: "allow", instruction: "doomed generation" },
+			await swipeDepsWithOutcome({ status: "failed", reason: "Provider 502: upstream exploded" }),
+		);
+		// The answer turn itself SUCCEEDS — the decision was accepted, only the
+		// generation failed. No thrown executor error, normal finish.
+		expect(answerChunks.map((c) => c.event)).toContain("finish");
+		expect(answerChunks.map((c) => c.event)).not.toContain("error");
+		// The outcome frame rides the stream as the NON-FATAL tail event (after
+		// the loop's own frames — its payload is the shared contract shape).
+		const events = answerChunks.map((c) => c.event);
+		const frameIndex = events.indexOf("swipe-run-outcome");
+		expect(frameIndex).toBeGreaterThan(events.indexOf("finish"));
+		expect(JSON.parse(answerChunks[frameIndex]!.data)).toEqual({
+			toolCallId: "tc_sw_stream",
+			outcome: { status: "failed", reason: "Provider 502: upstream exploded" },
+		});
+		// Exactly one frame — a failed swipe reports once.
+		expect(events.filter((e) => e === "swipe-run-outcome")).toHaveLength(1);
+		// The durable decision: the granted receipt stored with the final
+		// approved instruction despite the provider failure.
+		const row = await storedToolRow(threadId, "tc_sw_stream");
+		expect(row!.output.status).toBe("granted");
+		expect(row!.output.instruction).toBe("doomed generation");
+	});
+
+	it("DMT-24b: a NO_OUTPUT outcome maps to the outcome frame and the receipt still stores", async () => {
+		const { threadId } = await makeSidechatThread("The empty-generation reply.");
+		await pauseOnSwipeMarker(threadId);
+		const marker = (await storedToolRow(threadId, "tc_sw_stream"))!.output;
+		const answerChunks = await drainAnswerTurn(
+			threadId,
+			{ toolCallId: "tc_sw_stream", decision: "allow" },
+			await swipeDepsWithOutcome({ status: "no_output", messageId: String(marker.messageId) }),
+		);
+		expect(answerChunks.map((c) => c.event)).toContain("finish");
+		const frame = answerChunks.find((c) => c.event === "swipe-run-outcome");
+		expect(frame).toBeTruthy();
+		expect(JSON.parse(frame!.data)).toEqual({
+			toolCallId: "tc_sw_stream",
+			outcome: { status: "no_output", messageId: String(marker.messageId) },
+		});
+		const row = await storedToolRow(threadId, "tc_sw_stream");
+		expect(row!.output.status).toBe("granted");
+	});
+
+	it("DMT-24b: a CANCELLED outcome maps to the outcome frame and the receipt still stores (the web owns the cancel toast)", async () => {
+		const { threadId } = await makeSidechatThread("The stopped-generation reply.");
+		await pauseOnSwipeMarker(threadId);
+		const answerChunks = await drainAnswerTurn(
+			threadId,
+			{ toolCallId: "tc_sw_stream", decision: "allow" },
+			await swipeDepsWithOutcome({ status: "cancelled" }),
+		);
+		expect(answerChunks.map((c) => c.event)).toContain("finish");
+		const frame = answerChunks.find((c) => c.event === "swipe-run-outcome");
+		expect(frame).toBeTruthy();
+		expect(JSON.parse(frame!.data)).toEqual({
+			toolCallId: "tc_sw_stream",
+			outcome: { status: "cancelled" },
+		});
+		const row = await storedToolRow(threadId, "tc_sw_stream");
+		expect(row!.output.status).toBe("granted");
+	});
+
+	it("DMT-24b: a COMPLETED outcome emits NO outcome frame (the new swipe is its own surface)", async () => {
+		const { threadId } = await makeSidechatThread("The successful-generation reply.");
+		await pauseOnSwipeMarker(threadId);
+		const calls: Array<{ instruction: string }> = [];
+		const answerChunks = await drainAnswerTurn(
+			threadId,
+			{ toolCallId: "tc_sw_stream", decision: "allow" },
+			await swipeDepsWithDelegate(calls),
+		);
+		expect(answerChunks.map((c) => c.event)).toContain("finish");
+		expect(answerChunks.map((c) => c.event)).not.toContain("swipe-run-outcome");
+		const row = await storedToolRow(threadId, "tc_sw_stream");
+		expect(row!.output.status).toBe("granted");
+	});
+
+	it("DMT-24b: a content turn (no answer) and a DENY answer never emit the outcome frame", async () => {
+		const { threadId } = await makeSidechatThread("The quiet reply.");
+		const contentChunks = await drainTurn(threadId, "Just talking.");
+		expect(contentChunks.map((c) => c.event)).not.toContain("swipe-run-outcome");
+		await pauseOnSwipeMarker(threadId);
+		const denyChunks = await drainAnswerTurn(
+			threadId,
+			{ toolCallId: "tc_sw_stream", decision: "deny" },
+			await swipeDepsWithOutcome({ status: "failed", reason: "never runs — deny" }),
+		);
+		expect(denyChunks.map((c) => c.event)).toContain("finish");
+		expect(denyChunks.map((c) => c.event)).not.toContain("swipe-run-outcome");
 	});
 });
 

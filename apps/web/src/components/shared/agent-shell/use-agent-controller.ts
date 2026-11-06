@@ -567,6 +567,29 @@ export function useAgentController(
           {
             signal: controller.signal,
             ...buildStreamCallbacks(threadId, sawStreamEvent),
+            // DMT-24b (owner ruling 2026-11-06): an allowed swipe's absorbed
+            // run failure arrives as the ESTABLISHED generation-failure toast
+            // — the answer request itself succeeded (the receipt stored, the
+            // card keeps its granted state, no optimistic rollback), so the
+            // failure owns no card; the toast is its only surface. Wired on
+            // the LIVE answer path only — the shared callback builder stays
+            // toast-free so a BR-3a run replay never re-fires it. Mapping:
+            // failed → the swipe-failed key with the provider reason as the
+            // description; no_output → the no-output key; cancelled → NO
+            // toast here (pinned: every reachable cancelled frame already
+            // has the established cancel toast — the RP chat's attached-run
+            // Stop toasts `generation_cancelled` at use-chat-controller, and
+            // cancelling the answer turn itself aborts the stream before the
+            // tail frame can parse); completed is never emitted.
+            onSwipeRunOutcome: ({ outcome }) => {
+              if (outcome.status === "failed") {
+                toast.error(getT()("copilot_permission_swipe_run_failed"), { description: outcome.reason });
+                return;
+              }
+              if (outcome.status === "no_output") {
+                toast.error(getT()("copilot_permission_swipe_run_no_output"));
+              }
+            },
           },
         );
       };

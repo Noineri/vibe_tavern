@@ -443,6 +443,9 @@ export {
   directorSwipeGrantedReceiptSchema,
   directorSwipeDeniedReceiptSchema,
   directorSwipeToolOutputSchema,
+  directorSwipeRunOutcomeSchema,
+  DIRECTOR_SWIPE_RUN_OUTCOME_SSE_EVENT,
+  directorSwipeRunOutcomeFrameSchema,
 } from "./director-message-tools-schema.js";
 export type {
   DirectorMessageToolName,
@@ -457,6 +460,8 @@ export type {
   DirectorSwipeGrantedReceipt,
   DirectorSwipeDeniedReceipt,
   DirectorSwipeToolOutput,
+  DirectorSwipeRunOutcome,
+  DirectorSwipeRunOutcomeFrame,
 } from "./director-message-tools-schema.js";
 
 export { experienceTestDiscoverRequestSchema } from "./experience-test-discover-schema.js";

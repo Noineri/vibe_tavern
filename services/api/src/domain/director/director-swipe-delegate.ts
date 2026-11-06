@@ -36,7 +36,8 @@
  */
 
 import type { MessageStore } from "@vibe-tavern/db";
-import type { DirectorSwipeGenerationDelegate, DirectorSwipeGenerationInput } from "../sidechat/sidechat-stream.js";
+import type { DirectorSwipeRunOutcome } from "@vibe-tavern/api-contracts";
+import type { DirectorSwipeGenerationDelegate, DirectorSwipeGenerationInput } from "../sidechat/sidechat-swipe-executor.js";
 import { validation } from "../../shared/errors.js";
 
 // ─── The narrow generation-service interface (implemented by the adapter) ────
@@ -57,12 +58,12 @@ export interface DirectorSwipeRunRequest {
 /** The canonical outcome of the ONE approved regeneration — what an ordinary
  *  branch-pinned regeneration produces, never a custom payload: the appended
  *  variant identity plus its linked prompt trace (a provider that produced no
- *  text appends nothing), or the absorbed provider-grade failure. */
-export type DirectorSwipeRunOutcome =
-	| { readonly status: "completed"; readonly messageId: string; readonly variantId: string; readonly traceId: string | null }
-	| { readonly status: "no_output"; readonly messageId: string }
-	| { readonly status: "cancelled" }
-	| { readonly status: "failed"; readonly reason: string };
+ *  text appends nothing), or the absorbed provider-grade failure. The shape is
+ *  THE ONE shared contract (`directorSwipeRunOutcomeSchema`,
+ *  `@vibe-tavern/api-contracts` — DMT-24b re-derives it here instead of a
+ *  second hand-written union: the answer stream's outcome frame validates the
+ *  same shape on the web). */
+export type { DirectorSwipeRunOutcome };
 
 /** The NARROW generation-service seam the chat adapter implements: reserve the
  *  normal `chat:<chatId>` run for the TARGET THREAD's branch and run exactly

@@ -1,6 +1,13 @@
 import { createParser, type EventSourceMessage } from "eventsource-parser";
 import type { ChatGenerationStatus } from "../api/types.js";
-import { chatGenerationContextSchema, type ChatGenerationContext, type ProviderErrorCategory } from "@vibe-tavern/api-contracts";
+import {
+  chatGenerationContextSchema,
+  DIRECTOR_SWIPE_RUN_OUTCOME_SSE_EVENT,
+  directorSwipeRunOutcomeFrameSchema,
+  type ChatGenerationContext,
+  type DirectorSwipeRunOutcome,
+  type ProviderErrorCategory,
+} from "@vibe-tavern/api-contracts";
 import { ProviderStreamError } from "../api/provider-stream-error.js";
 import type { GenerationMetadata } from "./generation-metadata.js";
 
@@ -22,6 +29,11 @@ export interface ParseSSEStreamOptions {
   onGenerationMetadata?: (info: GenerationMetadata) => void;
   onGenerationContext?: (info: ChatGenerationContext) => void;
   onUserMessageSaved?: (info: { messageId: string }) => void;
+  /** DMT-24b: the sidechat answer stream's non-fatal tail frame — an allowed
+   *  swipe's absorbed run outcome (failed / no_output / cancelled). Never
+   *  fails the stream: the decision was accepted; the consumer decides the
+   *  surface (the established generation-failure toast). */
+  onSwipeRunOutcome?: (info: { toolCallId: string; outcome: DirectorSwipeRunOutcome }) => void;
   /** Server-owned chat Stop settles only after producer exhaustion/EOF. */
   waitForStreamEnd?: boolean;
 }
@@ -204,6 +216,14 @@ export async function parseSSEStream(opts: ParseSSEStreamOptions): Promise<{
             presetName: typeof parsed.presetName === "string" ? parsed.presetName : null,
           });
         }
+      } else if (ev.event === DIRECTOR_SWIPE_RUN_OUTCOME_SSE_EVENT) {
+        // DMT-24b: the sidechat answer stream's swipe-run outcome tail —
+        // decoded through THE ONE shared contract schema (the api-contracts
+        // decoder convention). Malformed payloads are dropped (the
+        // swallow-malformed convention for non-error events) — the frame
+        // must never fail the answer turn that already succeeded.
+        const frame = directorSwipeRunOutcomeFrameSchema.safeParse(parsed);
+        if (frame.success) opts.onSwipeRunOutcome?.(frame.data);
       } else {
         // Default text-delta (no `event:` field) or any unrecognised event
         // (including `finish`).

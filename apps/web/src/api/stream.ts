@@ -14,6 +14,10 @@ import type { GenerationMetadata } from "../lib/generation-metadata.js";
 export interface StreamOpts {
   onGenerationContext?: ParseSSEStreamOptions["onGenerationContext"];
   onUserMessageSaved?: ParseSSEStreamOptions["onUserMessageSaved"];
+  /** DMT-24b: the sidechat answer stream's swipe-run outcome tail frame
+   *  (see sse-parser). The live answer path wires it; the send/regenerate/
+   *  replay paths leave it unset (no toast on replay). */
+  onSwipeRunOutcome?: ParseSSEStreamOptions["onSwipeRunOutcome"];
   waitForStreamEnd?: boolean;
   signal?: AbortSignal;
   onEventId?: (id: string) => boolean | void;
@@ -100,6 +104,7 @@ export async function streamChatEndpoint(
     onGenerationMetadata: opts.onGenerationMetadata,
     onGenerationContext: opts.onGenerationContext,
     onUserMessageSaved: opts.onUserMessageSaved,
+    onSwipeRunOutcome: opts.onSwipeRunOutcome,
     waitForStreamEnd: opts.waitForStreamEnd,
   });
 }
