@@ -11,6 +11,7 @@ import type { AgentPendingAskAnswer, AgentPendingPermissionAnswer } from "./use-
 import {
   type AgentKind,
   type RecordProposalCardProps,
+  agentThreadKey,
   getAgentHost,
 } from "../../../lib/agent-host-registry.js";
 import { parseAgentToolOutput } from "../../../lib/agent-tool-output.js";
@@ -81,6 +82,15 @@ export interface AgentAnchorContext {
 // non-permission activities). The optimistic override resolves the card
 // immediately; the RESOLVED states read the rewritten row (granted →
 // allowed, denied → denied), never local state alone.
+//
+// DMT-32: the swipe family rides the SAME slot and eligibility rules —
+// the card additionally gets the request's draft identity (thread key +
+// tool call id, for `stores/director-swipe-draft-store.ts`), the
+// in-flight override echo (the send-failure rollback detection) and the
+// PERSISTED row's status (the draft lifecycle keys off the persisted
+// resolve, never off the optimistic flip). The allow decision forwards
+// the exact field text as `instruction` (the wire refuses it on deny;
+// a prompt-read allow never produces one).
 export function renderPermissionActivity(activity: AgentToolActivity, ctx: AgentAnchorContext): ReactNode {
   const permission = activity.permission!;
   const resolved: AgentPermissionState =
@@ -90,6 +100,11 @@ export function renderPermissionActivity(activity: AgentToolActivity, ctx: Agent
           status: ctx.pendingPermissionAnswer.decision === "allow" ? "granted" : "denied",
         }
       : permission;
+  const isSwipe = permission.kind === "swipe";
+  const pendingDecision =
+    ctx.pendingPermissionAnswer?.toolCallId === activity.toolCallId
+      ? ctx.pendingPermissionAnswer.decision
+      : null;
   return (
     <AgentPermissionCard
       key={activity.toolCallId}
@@ -100,7 +115,23 @@ export function renderPermissionActivity(activity: AgentToolActivity, ctx: Agent
         !ctx.isSending &&
         ctx.onAnswer !== undefined
       }
-      onDecision={ctx.onAnswer ? (decision) => ctx.onAnswer!(activity.toolCallId, { decision }) : undefined}
+      onDecision={
+        ctx.onAnswer
+          ? (decision, instruction) =>
+              ctx.onAnswer!(
+                activity.toolCallId,
+                decision === "allow" && instruction !== undefined ? { decision, instruction } : { decision },
+              )
+          : undefined
+      }
+      {...(isSwipe
+        ? {
+            draftThreadKey: agentThreadKey(ctx.kind, ctx.threadId),
+            draftToolCallId: activity.toolCallId,
+            pendingDecision,
+            persistedStatus: permission.status,
+          }
+        : {})}
     />
   );
 }

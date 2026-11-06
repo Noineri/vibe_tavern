@@ -4,12 +4,19 @@
  * (never inside the turn's tool accordion), each button sends its decision
  * through the shared answer path, and the resolved states read the rewritten
  * row. The ask card's boundary is pinned untouched (coexistence case).
+ * DMT-32 — the `request_message_swipe` family rides the SAME chronological
+ * slot and eligibility rules: the instruction is editable inline, the draft
+ * survives feed virtualization/remounts, an old request renders
+ * non-interactive, the optimistic override flips and rolls back (the draft
+ * kept), a deleted request's draft is pruned, and the exact edited text
+ * rides the allow answer while deny sends only the decision.
  */
 import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import type { ReactNode } from "react";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import type { ExperienceCopilotMessageWire } from "@vibe-tavern/api-contracts";
 import { useAgentTurnStore } from "../../../stores/agent-turn-store.js";
+import { useDirectorSwipeDraftStore } from "../../../stores/director-swipe-draft-store.js";
 
 useDomEnv();
 
@@ -83,6 +90,7 @@ function permToolRow(output: unknown): ExperienceCopilotMessageWire {
 
 beforeEach(() => {
   useAgentTurnStore.setState({ turnsByThread: {}, feedByThread: {} });
+  useDirectorSwipeDraftStore.setState({ draftsByThread: {} });
 });
 
 describe("ExperienceCopilotMessageList — permission card (SC-23f)", () => {
@@ -305,5 +313,310 @@ describe("ExperienceCopilotMessageList — permission card (SC-23f)", () => {
     expect(getByTestId("copilot-ask-card").getAttribute("data-state")).toBe("expired");
     fireEvent.click(getByTestId("copilot-permission-deny"));
     expect(answers).toEqual([["tc-perm", { decision: "deny" }]]);
+  });
+});
+
+// ─── Director swipe requests (DMT-32, DIRECTOR_MESSAGE_TOOLS_PLAN) ───────
+// The `request_message_swipe` family rides the SAME chronological permission
+// slot and interactive eligibility rules; the card additionally exposes the
+// editable instruction whose unsubmitted edit lives in the draft store.
+const SWIPE_ARGS = { messageId: "msg-1", variantId: "var-2", position: 7 };
+
+function swipeCarrier(id: string): ExperienceCopilotMessageWire {
+  return message({
+    id,
+    role: "assistant",
+    content: "",
+    toolCallsJson: JSON.stringify([
+      { type: "tool-call", toolCallId: "tc-swipe", toolName: "request_message_swipe", input: SWIPE_ARGS },
+    ]),
+  });
+}
+
+const SWIPE_MARKER = {
+  status: "awaiting_permission",
+  messageId: "msg-1",
+  variantId: "var-2",
+  position: 7,
+  variantNumber: 2,
+  replyFirstLine: "First line of the swipe",
+  instruction: "Rewrite it spicier",
+};
+
+function swipeToolRow(output: unknown): ExperienceCopilotMessageWire {
+  return message({
+    id: `row-swipe-${Math.random().toString(36).slice(2)}`,
+    role: "tool",
+    content: JSON.stringify({ toolName: "request_message_swipe", output }),
+    toolCallId: "tc-swipe",
+  });
+}
+
+describe("ExperienceCopilotMessageList — director swipe permission (DMT-32)", () => {
+  it("renders a persisted awaiting swipe request as the interactive card at its chronological slot, outside any accordion", () => {
+    const answers: [string, unknown][] = [];
+    const { getByTestId, queryByTestId } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={[message({ id: "u1", role: "user", content: "make it spicier" }), swipeCarrier("a1"), swipeToolRow(SWIPE_MARKER)]}
+        pendingUserContent=""
+        onAnswer={(id, a) => answers.push([id, a])}
+      />,
+    );
+
+    const card = getByTestId("copilot-permission-card");
+    expect(card.getAttribute("data-state")).toBe("awaiting");
+    expect(card.textContent).toContain("copilot_permission_swipe_title");
+    expect(card.textContent).toContain("First line of the swipe");
+    expect(queryByTestId("copilot-tool-accordion")).toBeNull();
+    // The full instruction is editable INLINE; the exact edited text rides
+    // the SAME answer path as every other permission decision.
+    const field = getByTestId("copilot-permission-swipe-instruction") as HTMLTextAreaElement;
+    expect(field.value).toBe("Rewrite it spicier");
+    fireEvent.change(field, { target: { value: "Make it spicier, keep the accent" } });
+    fireEvent.click(getByTestId("copilot-permission-swipe-allow"));
+    expect(answers).toEqual([["tc-swipe", { decision: "allow", instruction: "Make it spicier, keep the accent" }]]);
+  });
+
+  it("deny sends ONLY the decision — no instruction rides it", () => {
+    const answers: [string, unknown][] = [];
+    const { getByTestId } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={[message({ id: "u1", role: "user", content: "make it spicier" }), swipeCarrier("a1"), swipeToolRow(SWIPE_MARKER)]}
+        pendingUserContent=""
+        onAnswer={(id, a) => answers.push([id, a])}
+      />,
+    );
+
+    fireEvent.change(getByTestId("copilot-permission-swipe-instruction"), {
+      target: { value: "an edit that must not be saved" },
+    });
+    fireEvent.click(getByTestId("copilot-permission-swipe-reject"));
+    expect(answers).toEqual([["tc-swipe", { decision: "deny" }]]);
+  });
+
+  it("the unsubmitted edit survives a remount (feed virtualization)", () => {
+    const first = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={[message({ id: "u1", role: "user", content: "make it spicier" }), swipeCarrier("a1"), swipeToolRow(SWIPE_MARKER)]}
+        pendingUserContent=""
+        onAnswer={() => {}}
+      />,
+    );
+    fireEvent.change(first.getByTestId("copilot-permission-swipe-instruction"), {
+      target: { value: "my half-typed correction" },
+    });
+    first.unmount();
+    // The feed remounts (thread switch back / virtualization): the card
+    // re-reads the retained edit from the draft store.
+    const second = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={[message({ id: "u1", role: "user", content: "make it spicier" }), swipeCarrier("a1"), swipeToolRow(SWIPE_MARKER)]}
+        pendingUserContent=""
+        onAnswer={() => {}}
+      />,
+    );
+    expect((second.getByTestId("copilot-permission-swipe-instruction") as HTMLTextAreaElement).value).toBe(
+      "my half-typed correction",
+    );
+  });
+
+  it("a real thread switch keeps drafts namespaced (the other thread's draft is untouched)", () => {
+    useDirectorSwipeDraftStore.setState({
+      draftsByThread: { "thread-2": { "tc-swipe": "the other thread's edit" } },
+    });
+    const view = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={[message({ id: "u1", role: "user", content: "make it spicier" }), swipeCarrier("a1"), swipeToolRow(SWIPE_MARKER)]}
+        pendingUserContent=""
+        onAnswer={() => {}}
+      />,
+    );
+    fireEvent.change(view.getByTestId("copilot-permission-swipe-instruction"), {
+      target: { value: "thread-1 edit" },
+    });
+    expect(useDirectorSwipeDraftStore.getState().draftsByThread).toEqual({
+      "thread-1": { "tc-swipe": "thread-1 edit" },
+      "thread-2": { "tc-swipe": "the other thread's edit" },
+    });
+  });
+
+  it("a later turn's activity expires the undecided swipe request (read-only, no field)", () => {
+    const { getByTestId, queryByTestId } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={[
+          message({ id: "u1", role: "user", content: "make it spicier" }),
+          swipeCarrier("a1"),
+          swipeToolRow(SWIPE_MARKER),
+          message({ id: "u2", role: "user", content: "never mind" }),
+          message({
+            id: "a2",
+            role: "assistant",
+            content: "",
+            toolCallsJson: JSON.stringify([
+              { type: "tool-call", toolCallId: "tc-todo", toolName: "todo", input: [{ title: "step", status: "active" }] },
+            ]),
+          }),
+          message({
+            id: "t2",
+            role: "tool",
+            content: JSON.stringify({
+              toolName: "todo",
+              output: { ok: true, items: [{ title: "step", status: "active" }], remaining: 1, activeTitle: "step" },
+            }),
+            toolCallId: "tc-todo",
+          }),
+        ]}
+        pendingUserContent=""
+        onAnswer={() => {}}
+      />,
+    );
+
+    const card = getByTestId("copilot-permission-card");
+    expect(card.getAttribute("data-state")).toBe("expired");
+    expect(card.textContent).toContain("copilot_permission_swipe_expired");
+    expect(queryByTestId("copilot-permission-swipe-instruction")).toBeNull();
+    expect(queryByTestId("copilot-permission-swipe-allow")).toBeNull();
+    expect(queryByTestId("copilot-permission-swipe-reject")).toBeNull();
+  });
+
+  it("the optimistic override flips the swipe card, and its rollback returns the awaiting card with the send-failed line and the kept draft", () => {
+    const view = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={[message({ id: "u1", role: "user", content: "make it spicier" }), swipeCarrier("a1"), swipeToolRow(SWIPE_MARKER)]}
+        pendingUserContent=""
+        onAnswer={() => {}}
+      />,
+    );
+    fireEvent.change(view.getByTestId("copilot-permission-swipe-instruction"), {
+      target: { value: "my kept edit" },
+    });
+    // The user decides (the controller would now start the flight).
+    fireEvent.click(view.getByTestId("copilot-permission-swipe-allow"));
+    // The optimistic flight arrives through the anchor's override: the card
+    // flips to the granted receipt.
+    view.rerender(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={[message({ id: "u1", role: "user", content: "make it spicier" }), swipeCarrier("a1"), swipeToolRow(SWIPE_MARKER)]}
+        pendingUserContent=""
+        pendingPermissionAnswer={{ toolCallId: "tc-swipe", decision: "allow" }}
+        onAnswer={() => {}}
+      />,
+    );
+    expect(view.getByTestId("copilot-permission-card").getAttribute("data-state")).toBe("allowed");
+    // The refusal: the override rolls back — awaiting again, the draft kept.
+    view.rerender(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={[message({ id: "u1", role: "user", content: "make it spicier" }), swipeCarrier("a1"), swipeToolRow(SWIPE_MARKER)]}
+        pendingUserContent=""
+        onAnswer={() => {}}
+      />,
+    );
+    const card = view.getByTestId("copilot-permission-card");
+    expect(card.getAttribute("data-state")).toBe("awaiting");
+    expect(view.getByTestId("copilot-permission-swipe-send-failed").textContent).toBe(
+      "copilot_permission_swipe_send_failed",
+    );
+    expect((view.getByTestId("copilot-permission-swipe-instruction") as HTMLTextAreaElement).value).toBe(
+      "my kept edit",
+    );
+    // The card is actionable again: the retry re-sends the kept edit.
+    fireEvent.click(view.getByTestId("copilot-permission-swipe-allow"));
+    expect(view.getByTestId("copilot-permission-card").getAttribute("data-state")).toBe("awaiting");
+  });
+
+  it("deleting the request prunes its transient draft", () => {
+    const view = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={[message({ id: "u1", role: "user", content: "make it spicier" }), swipeCarrier("a1"), swipeToolRow(SWIPE_MARKER)]}
+        pendingUserContent=""
+        onAnswer={() => {}}
+      />,
+    );
+    fireEvent.change(view.getByTestId("copilot-permission-swipe-instruction"), {
+      target: { value: "an edit on a living request" },
+    });
+    expect(useDirectorSwipeDraftStore.getState().draftsByThread["thread-1"]?.["tc-swipe"]).toBe(
+      "an edit on a living request",
+    );
+    // The request is deleted (its carrier/tool rows leave the feed).
+    view.rerender(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={[message({ id: "u1", role: "user", content: "make it spicier" })]}
+        pendingUserContent=""
+        onAnswer={() => {}}
+      />,
+    );
+    expect(useDirectorSwipeDraftStore.getState().draftsByThread["thread-1"]).toBeUndefined();
+  });
+
+  it("a granted swipe rewrite renders the approved-text receipt (the final text, never the reset draft)", () => {
+    const { getByTestId } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={[
+          message({ id: "u1", role: "user", content: "make it spicier" }),
+          swipeCarrier("a1"),
+          swipeToolRow({
+            status: "granted",
+            messageId: "msg-1",
+            variantId: "var-2",
+            position: 7,
+            variantNumber: 2,
+            replyFirstLine: "First line of the swipe",
+            instruction: "the final approved text",
+          }),
+        ]}
+        pendingUserContent=""
+        onAnswer={() => {}}
+      />,
+    );
+    const card = getByTestId("copilot-permission-card");
+    expect(card.getAttribute("data-state")).toBe("allowed");
+    expect(getByTestId("copilot-permission-swipe-approved-text").textContent).toBe("the final approved text");
+    expect(card.textContent).toContain("copilot_permission_swipe_allowed_receipt");
+  });
+
+  it("renders a live-feed awaiting swipe request as the interactive card", () => {
+    useAgentTurnStore.getState().upsertActivity("experience", "thread-1", {
+      toolCallId: "tc-live-swipe",
+      toolName: "request_message_swipe",
+      status: "done",
+      permission: {
+        status: "awaiting_permission",
+        kind: "swipe",
+        position: 3,
+        variantNumber: 1,
+        replyFirstLine: "Live swipe line",
+        messageId: "msg-9",
+        variantId: "var-1",
+        instruction: "Live instruction",
+      },
+    });
+    useAgentTurnStore.getState().appendActivityRef("experience", "thread-1", "tc-live-swipe");
+
+    const { getByTestId } = render(
+      <AgentMessageList
+        kind="experience" threadId="thread-1"
+        messages={[message({ id: "u1", role: "user", content: "make it spicier" })]}
+        pendingUserContent=""
+        onAnswer={() => {}}
+      />,
+    );
+
+    expect(getByTestId("copilot-permission-card").getAttribute("data-state")).toBe("awaiting");
+    expect((getByTestId("copilot-permission-swipe-instruction") as HTMLTextAreaElement).value).toBe(
+      "Live instruction",
+    );
   });
 });

@@ -4,6 +4,7 @@ import type { AgentFeedEventSummary, AgentThreadEventWire, ExperienceCopilotMess
 import type { AgentFeedWindow } from "./agent-feed-reconcile.js";
 import type { Attachment } from "@vibe-tavern/domain";
 import { useAgentTurnStore, type AgentFeedEntry, type AgentToolActivity } from "../../../stores/agent-turn-store.js";
+import { useDirectorSwipeDraftStore } from "../../../stores/director-swipe-draft-store.js";
 import { agentLiveReasoningOf, agentLiveTextOf, useAgentLiveStreamStore } from "../../../stores/agent-live-stream-store.js";
 import { selectAgentLiveAsk } from "../../../stores/agent-live-ask.js";
 import type { CopilotAnswerInput } from "../../../api/experience-copilot-api.js";
@@ -161,6 +162,27 @@ export function AgentMessageList({
     if (unit.kind === "message") return unit.message.content.trim().length > 0 || (unit.message.attachments?.length ?? 0) > 0;
     return true;
   }), [model, hiddenIds, hideActive, hostTitle !== null]);
+  // DMT-32: every permission request this thread currently renders anywhere —
+  // persisted history units plus live turn activities. The transient swipe
+  // instruction drafts prune against THIS set: feed windows keep their rows
+  // (they only grow/coalesce; rows leave on a local delete), so a draft whose
+  // id is absent means the request was DELETED (turn cleared / row removed)
+  // and its edit is unreachable garbage. A real thread switch namespaces
+  // drafts per thread and this effect only ever prunes the CURRENT thread's
+  // keys, so switching away and back keeps an undecided request's draft.
+  const swipePermissionIds = useMemo(() => {
+    const ids: string[] = [];
+    for (const unit of historyUnits) {
+      if ("item" in unit && unit.item.kind === "permission") ids.push(unit.item.activity.toolCallId);
+    }
+    for (const activity of activities) {
+      if (activity.permission) ids.push(activity.toolCallId);
+    }
+    return ids;
+  }, [historyUnits, activities]);
+  useEffect(() => {
+    useDirectorSwipeDraftStore.getState().pruneMissing(sessionKey, swipePermissionIds);
+  }, [sessionKey, swipePermissionIds]);
   const historyNodes = useMemo(() => {
     const nodes = new Map<string, ReactNode>();
     const visibleIndexes = new Map(visibleMessages.map((entry, index) => [entry.message.id, index]));
