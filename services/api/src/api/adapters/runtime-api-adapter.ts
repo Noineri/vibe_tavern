@@ -52,6 +52,9 @@ import { ExperienceAdapter } from "./experience-adapter.js";
 import { ExperienceCopilotAdapter } from "./experience-copilot-adapter.js";
 import { AgentThreadProposalAdapter } from "./agent-thread-proposal-adapter.js";
 import { AgentFeedAdapter } from "./agent-feed-adapter.js";
+import { runDirectorMessageEditorDelegate } from "../../domain/director/director-message-editor-delegate.js";
+import { createDirectorSwipeGenerationDelegate } from "../../domain/director/director-swipe-delegate.js";
+import { createAiAssistantDeps } from "../../domain/ai-assistant/ai-assistant-deps.js";
 import { brandId, type ChatBranchId, type ChatId } from "@vibe-tavern/domain";
 import { notFound } from "../../shared/errors.js";
 import type { SkillLibraryService } from "../../domain/coauthor/skills/skill-library.js";
@@ -271,5 +274,47 @@ export class RuntimeApiAdapter implements RuntimeApi {
 				sessionRuntime.chatApp.editMessage(messageId, content, expectedVariantId, expectedBaseContent),
 			addEditorVariant: (messageId, input) => sessionRuntime.chatApp.addEditorVariant(messageId, input),
 		});
+		// DMT-24: the Director message-tool delegates — the ONE composition of
+		// the editor task and the branch-pinned swipe regeneration over THIS
+		// adapter graph, injected into the copilot adapter's delegate slot
+		// (post-construction: the chat adapter needs the copilot's shared run
+		// registry). Exported below so tests wire the identical closures.
+		wireDirectorMessageDelegates({ stores, sessionRuntime, chat: this.chat, experienceCopilot: this.experienceCopilot });
 	}
+}
+
+/**
+ * DMT-24 (DIRECTOR_MESSAGE_TOOLS_PLAN): wire the Director message-tool
+ * delegates into the experience-copilot adapter's slot — the runtime
+ * composition the production server AND the permission tests both call, so
+ * the tested closures are byte-identical to the served ones.
+ *
+ * - The EDITOR delegate runs the DMT-14 `runDirectorMessageEditorDelegate`
+ *   over the ordinary assistant deps (`createAiAssistantDeps` — the same
+ *   seams the public editor request path uses; one derivation) and the saved
+ *   editor settings (`getUiSettings` — the shared pair rule). Built lazily
+ *   per tool call, so a turn that never edits pays nothing.
+ * - The SWIPE delegate is the DMT-24 domain module bound over the real
+ *   message store and the chat adapter's `runBranchPinnedRegeneration` (the
+ *   normal `chat:<chatId>` reservation, the thread's branch, the ordinary
+ *   streaming regenerate with the DMT-13 `requestInstruction`). Resolved
+ *   lazily per allowed request (the DMT-23 seam's contract).
+ */
+export function wireDirectorMessageDelegates(deps: {
+	readonly stores: StoreContainer;
+	readonly sessionRuntime: SessionRuntime;
+	readonly chat: ChatAdapter;
+	readonly experienceCopilot: ExperienceCopilotAdapter;
+}): void {
+	deps.experienceCopilot.configureDirectorMessageDelegates({
+		buildMessageEditorDelegate: async () => {
+			const editorDeps = {
+				...createAiAssistantDeps(deps.stores, deps.sessionRuntime),
+				getUiSettings: () => deps.stores.uiSettings.get(),
+			};
+			return (input) => runDirectorMessageEditorDelegate(input, editorDeps);
+		},
+		buildSwipeGenerationDelegate: async () =>
+			createDirectorSwipeGenerationDelegate({ messages: deps.stores.messages, generation: deps.chat }),
+	});
 }

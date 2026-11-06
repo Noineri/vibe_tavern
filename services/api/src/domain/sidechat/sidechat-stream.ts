@@ -141,6 +141,7 @@ import {
 } from "../agent/kinds/sidechat/sidechat-director-tools.js";
 import {
   buildSidechatMessageTools,
+  type DirectorMessageEditorDelegateFn,
 } from "../agent/kinds/sidechat/sidechat-message-tools.js";
 import { createAskUserTool, AGENT_ASK_USER_TOOL_NAME } from "../agent/agent-ask-user-tool.js";
 import type { TrackerDelegate } from "../coauthor/tracker/tracker-delegate.js";
@@ -260,6 +261,14 @@ export interface SidechatStreamDeps {
    *  loudly at allow time (the DMT-14 delegate-seam pattern): the awaiting
    *  row stays awaiting, nothing is stored, no generation is faked. */
   readonly buildSwipeGenerationDelegate?: () => Promise<DirectorSwipeGenerationDelegate | undefined>;
+  /** DMT-24: build the message-EDITOR delegate an invoked
+   *  `propose_message_edit` generates through — resolved lazily PER CALL (the
+   *  tracker/swipe seam family's shape; the ordinary `message_edit` task with
+   *  the Director as the instruction author — DMT-14's delegate, wired by the
+   *  runtime composition). Absent (tests, legacy harnesses, pre-DMT-24
+   *  wiring) → the edit tool serves but refuses loudly at call time (the
+   *  DMT-21 seam contract — a wiring gap, not a user state). */
+  readonly buildMessageEditorDelegate?: () => Promise<DirectorMessageEditorDelegateFn | undefined>;
   /** SC-8c: the kind's own compaction service — present → the stream wires
    *  the loop's autoCompact hook to the sidechat rule (the discussion
    *  against the room left after the static context and the RP layer).
@@ -643,10 +652,25 @@ export async function* streamSidechatTurn(
       // until DMT-34, so the tools stay dormant here; the edit tool's
       // generation delegate is DMT-24's adapter wiring (absent → the tool
       // refuses loudly at call time — the tracker delegate's seam shape).
+      const buildMessageEditorDelegate = deps.buildMessageEditorDelegate;
       const messageTools = buildSidechatMessageTools({
         toolSet: agentProfile.toolSet,
         owner: threadOwner,
         messages: deps.context.messages,
+        // DMT-24: the injected editor delegate, resolved lazily PER CALL (the
+        // tracker delegate's seam shape) — absent → the tool's own loud
+        // refusal fires at call time.
+        ...(buildMessageEditorDelegate !== undefined
+          ? {
+              editorDelegate: async (input) => {
+                const delegate = await buildMessageEditorDelegate();
+                if (delegate === undefined) {
+                  throw new Error("propose_message_edit: message editor generation is not configured");
+                }
+                return delegate(input);
+              },
+            }
+          : {}),
       });
       return {
         ...search,

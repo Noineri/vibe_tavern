@@ -56,7 +56,6 @@ import { readContextLinks, replaceContextLinks } from "./experience-copilot-cont
 import { readCopilotContextState, patchCopilotContextState } from "./experience-copilot-context-state.js";
 import { deleteCopilotTurnWire, makeRegenerateDeleteTurn } from "./experience-copilot-turn-delete.js";
 import { editCopilotMessageWire } from "./experience-copilot-message-edit.js";
-import { resolveScriptAgentContextCards } from "./experience-copilot-script-cards.js";
 import type { AgentCompactionService } from "../../domain/agent/agent-compaction.js";
 import { getCopilotContextItems } from "../../domain/agent/agent-context.js";
 import type { CopilotContextItem } from "../../domain/agent/agent-context.js";
@@ -75,6 +74,11 @@ import type { ProviderProfileService } from "../../domain/providers/provider-pro
 import type { AttachmentAssetLoader } from "../../infrastructure/ai/vision-gate.js";
 import { ExperienceCopilotRunAdapter, describeCopilotRun } from "./experience-copilot-run-adapter.js";
 import { AgentReviewService } from "../../domain/agent/agent-review-service.js";
+import { buildScriptAgentStreamDeps } from "./experience-copilot-script-deps.js";
+import {
+  createDirectorDelegateSlot,
+  type DirectorMessageDelegateFactories,
+} from "./experience-copilot-director-delegates.js";
 
 type StreamBody = Parameters<ExperienceCopilotRuntimeApi["experienceCopilotStream"]>[1];
 
@@ -125,6 +129,22 @@ export class ExperienceCopilotAdapter extends ExperienceCopilotRunAdapter implem
   /** SC-0f (chat, kind) settings pair — extracted module (arch-gate size
    *  cap, DR-12); the two delegating members below are its only consumers. */
   private readonly chatSettingsPair: ChatSettingsPair;
+  /** DMT-24: the Director message-tool delegate slot (extracted module —
+   *  experience-copilot-director-delegates.ts, the size cap). The composition
+   *  root configures it AFTER construction (the chat adapter owns the shared
+   *  run registry, so it cannot be a constructor dependency); the sidechat
+   *  stream deps below spread it at stream time. Unconfigured (lifecycle-only
+   *  harnesses, pre-wiring) → the absent-seam refusals stay armed. Readonly
+   *  public: the permission tests spread the SAME configured factories into
+   *  their stream deps (one composition — wireDirectorMessageDelegates). */
+  readonly directorDelegates = createDirectorDelegateSlot();
+
+  /** DMT-24: the composition root injects the REAL chat-runtime delegates
+   *  (runtime-api-adapter's wireDirectorMessageDelegates — the editor task
+   *  and the branch-pinned RP regeneration over the shared stores). */
+  configureDirectorMessageDelegates = (delegates: DirectorMessageDelegateFactories): void => {
+    this.directorDelegates.configure(delegates);
+  };
 
   constructor(
     private readonly stores: StoreContainer,
@@ -325,52 +345,20 @@ export class ExperienceCopilotAdapter extends ExperienceCopilotRunAdapter implem
     };
   }
 
-  /** AS-8b: the `script` kind's stream deps — the same store/provider seams
-   *  the experience wiring uses, with the script-owned context (owner names
-   *  + full cards, trust), the shared kind-agnostic pinned-context loader
-   *  over the SCRIPT skill library (AS-8e1 — a skill pinned in a script
-   *  session resolves from the script library, never the experience one),
-   *  and the script kind's own auto-compaction (script-authoring summarizer). */
+  /** AS-8b: the `script` kind's stream deps — thin seams over the extracted
+   *  sibling (experience-copilot-script-deps.ts, the arch-gate size cap): the
+   *  built deps are byte-identical to the pre-extraction method's return; the
+   *  pinned-context resolver below stays this adapter's ONE derivation. */
   private buildScriptAgentStreamDeps(): ScriptAgentStreamDeps {
-    const contextItemsResolver = this.buildContextItemsResolver(this.scriptSkillService);
-    return {
-      store: this.stores.experienceCopilot,
-      reviews: new AgentReviewService(this.stores),
-      agentPlans: this.stores.agentPlans,
-      getScript: (scriptId: string) => this.stores.scripts.getById(scriptId),
-      getContextCards: (input: {
-        scriptId: string | null;
-        contextCharacterId?: string;
-        contextPersonaId?: string;
-      }) => resolveScriptAgentContextCards(this.stores, input),
-      ...this.providerDeps,
-      // Kind-aware fallback (AS-8b): prompt/dice scripts seed the `script`
-      // kind's builtin, interactive scripts the experience one.
-      resolveProfile: (scriptId) => this.profileResolver.resolveForScript(scriptId),
-      // SC-0f: a chat-owned thread's profile chain (the chat's own choice →
-      // the kind default → the kind's built-in) — the stream consults it only
-      // when the thread's owner columns say chat-owned.
-      resolveProfileForChat: (thread) =>
-        this.profileResolver.resolveForChat(thread.chatId, thread.agentKind),
-      // Two-root catalog user root for the SCRIPT kind (AS-8d1 — the script
-      // service's own root, never the experience copilot one): absent →
-      // built-in root only.
-      ...(this.scriptSkillService !== undefined
-        ? { skillUserRoot: this.scriptSkillService.roots().userRoot }
-        : {}),
-      db: this.stores.db,
-      // Same kind-agnostic pinned-context loader as the experience wiring —
-      // only wired when the skill library is present.
-      ...(contextItemsResolver !== undefined ? { resolveContextItems: contextItemsResolver } : {}),
-      // CM-6: fire-and-forget auto-compaction through the SCRIPT service
-      // (absent when the adapter has no provider profile service).
-      ...(this.scriptCompaction !== null
-        ? { autoCompact: (threadId: string) => this.scriptCompaction!.autoCompactAfterTurn(threadId) }
-        : {}),
-      // AP-9 regenerate row-deletion seam (the shared AP-8 store sibling).
-      deleteTurn: this.deleteTurnForRegenerate,
+    return buildScriptAgentStreamDeps({
       stores: this.stores,
-    };
+      providerDeps: this.providerDeps,
+      profileResolver: this.profileResolver,
+      scriptSkillService: this.scriptSkillService,
+      contextItemsResolver: this.buildContextItemsResolver(this.scriptSkillService),
+      scriptCompaction: this.scriptCompaction,
+      deleteTurn: this.deleteTurnForRegenerate,
+    });
   }
 
   // ─── Sidechat-OOC stream wiring (SIDECHAT_PLAN SC-4b) ─────────────────────
@@ -467,6 +455,10 @@ export class ExperienceCopilotAdapter extends ExperienceCopilotRunAdapter implem
       ...(this.sidechatCompaction !== null ? { compaction: this.sidechatCompaction } : {}),
       // AP-9 regenerate row-deletion seam (the shared AP-8 store sibling).
       deleteTurn: this.deleteTurnForRegenerate,
+      // DMT-24: the Director message-tool delegates the composition root
+      //  injected (the editor + swipe generation factories) — absent until
+      //  configured, which keeps the loud refusals armed.
+      ...this.directorDelegates.sidechatStreamEntries(),
     };
   }
 
