@@ -1,10 +1,12 @@
 import type { ChatBranchId, ChatId, ChatMode, MessageId, MessageVariantId, ObjectiveMode, ObjectiveTaskStatus, SceneTrackerConfig } from "@vibe-tavern/domain";
-import { brandId } from "@vibe-tavern/domain";
+import { brandId, parseStoredAttachments } from "@vibe-tavern/domain";
+import type { SidechatProposalMessageCompanion } from "../../api/agent-thread-proposals-api.js";
 import type { AppMode } from "../../components/layout/app-shell-types.js";
 import { createMessageVariant, setVariantTtsAnnotation, updateChatDynamicPrompt, type CreateMessageVariantInput, type WireAttachment } from "../../api/chat-api.js";
 import type { DiceSendCommitIntent, ExperienceSendCommitIntent } from "../../api/types.js";
 import { activateBranch, createChat, deleteBranch, renameBranch, deleteChat, clearChat, deleteChatMessage, deleteMessageVariant, editChatMessage, fetchChat, forkBranch, generateReply, generateChatSummary, listChatSummaries, reorderChatSummaries, createChatSummary, updateChatSummary, deleteChatSummary, updateMemorySettings, updateInsightsConfig, generateObjectiveTasks, checkObjectiveCompletion, addObjectiveTask, updateObjectiveTask, reorderObjectiveTasks, deleteObjectiveTask, setObjectiveDescription, setObjectiveMode, updateObjectiveLongTermGoal, addObjectiveShortTermGoal, updateObjectiveShortTermGoal, deleteObjectiveShortTermGoal, selectObjectiveShortTermGoal, updateObjectiveConfig, previewScene, generateScene, editScene, deleteScene, cancelScene, getSceneStatus, startSceneBackfill, getSceneBackfillStatus, cancelSceneBackfill, retrySceneBackfill, saveChatSummary, summarizeChat, regenerateChatMessage, continueChatMessage, continueChatMessageStream, renameChat, setGreetingIndex, setCoauthorContextLinks, setCoauthorModule, selectMessageVariant, sendChatMessage, setChatPersona } from "../../api/chat-api.js";
 import { listCoauthorModules, createCoauthorModule, updateCoauthorModule, deleteCoauthorModule } from "../../api/coauthor-module-api.js";
+import { countTokens } from "../../utils/tokenizer.js";
 import type { AppSnapshot } from "../../api/types.js";
 import { forkBranchSidechat } from "../../api/agent-chat-api.js";
 import type { AutoSummaryConfig, ChatSummaryRecord, InsightsConfigPatch, ScenePreviewResponse, SceneTargetResponse, SceneStatusResponse, SceneBackfillMode, SceneBackfillStatusResponse } from "../../api/types.js";
@@ -250,6 +252,80 @@ export async function setVariantTtsAnnotationAction(
 ): Promise<void> {
   const snapshot = await setVariantTtsAnnotation(chatId, messageId, variantIndex, text);
   syncSnapshot(snapshot);
+}
+
+/**
+ * DMT-33: ingest the apply/reject resolution's TARGET-SCOPED message companion
+ * (`SidechatProposalMessageCompanion` — the affected message row + its full
+ * variant list post-write, scoped by chat/branch) into the canonical snapshot
+ * cache. ONE message of the already-loaded set is patched — never an unscoped
+ * full snapshot (the store's snapshot `messages` path REPLACES the map
+ * wholesale, so a one-message snapshot would wipe the chat).
+ *
+ * Scope guards, both read fresh (`getState()` — the caller runs after an
+ * await): the companion is merged only when its named conversation IS the open
+ * one (active chat + active branch) and the message row is already loaded.
+ * Otherwise this is a no-op — the write is persisted server-side and the RP
+ * view refetches wholesale on the next chat/branch switch, so skipping can
+ * never lose the accepted result.
+ *
+ * The per-variant merge preserves the loaded row's variant-level extras the
+ * narrowed companion does not carry (attachmentsJson / sceneTracker /
+ * finishReason / tokenCount) for every surviving variant id, then mirrors the
+ * selected variant onto the message (the server DTO's projection rule —
+ * content / modelId / sceneTracker / attachments), exactly like
+ * `mapMessageDto` does server-side.
+ */
+export function ingestMessageCompanionAction(companion: SidechatProposalMessageCompanion): void {
+  const snapshot = useSnapshotStore.getState();
+  if (snapshot.activeChat?.id !== companion.chatId || snapshot.activeBranch?.id !== companion.branchId) return;
+  const existing = snapshot.messagesById[companion.message.id];
+  if (existing === undefined) return;
+  // The companion's variant views are NARROWED (no messageId / finishReason /
+  // createdAt / tokenCount / attachmentsJson / sceneTracker): survivors keep
+  // those fields from the loaded row by id; a NEW variant (a Save's appended,
+  // now-selected swipe) is completed the way the server DTO builds one — no
+  // provenance (a Director save persists none), the row's updatedAt as its
+  // creation fact. tokenCount is recomputed for EVERY merged variant through
+  // the client tokenizer's own layers (the TC-5 server-known map in front, an
+  // LRU behind) — a rewritten variant's stale count would show a wrong badge.
+  const mergedVariants = companion.variants.map((variant) => {
+    const prev = existing.variants.find((candidate) => candidate.id === variant.id);
+    const merged = prev === undefined
+      ? {
+          ...variant,
+          id: brandId<MessageVariantId>(variant.id),
+          messageId: existing.id,
+          finishReason: null,
+          createdAt: companion.message.updatedAt,
+          // A Director-authored save attaches neither a Scene record nor
+          // image attachments — null is the truthful value, and the
+          // attachment projection below falls through to the row set.
+          sceneTracker: null,
+          attachmentsJson: null,
+        }
+      : { ...prev, ...variant, id: brandId<MessageVariantId>(variant.id) };
+    return { ...merged, tokenCount: countTokens(merged.content) };
+  });
+  const selectedIndex = mergedVariants.findIndex((variant) => variant.isSelected);
+  const selected = selectedIndex === -1 ? undefined : mergedVariants[selectedIndex];
+  snapshot.updateMessage(brandId<MessageId>(companion.message.id), {
+    content: companion.message.content,
+    updatedAt: companion.message.updatedAt,
+    variants: mergedVariants,
+    selectedVariantIndex: selectedIndex === -1 ? existing.selectedVariantIndex : selectedIndex,
+    modelId: selected?.modelId ?? null,
+    sceneTracker: selected?.sceneTracker ?? null,
+    // The DTO projection (IG-CF10/IG-18a): the selected variant's own set
+    // wins; without one the row set (the client shadow, else the projected
+    // set) shows.
+    attachments: selected?.attachmentsJson != null
+      ? parseStoredAttachments(selected.attachmentsJson)
+      : existing.messageLevelAttachments ?? existing.attachments,
+  });
+  // A prompt-affecting mutation happened (message text or variant set) — the
+  // same action-boundary duty every mutating action here carries.
+  invalidateActiveContextPreview();
 }
 
 export async function switchChatAction(chatId: ChatId): Promise<void> {

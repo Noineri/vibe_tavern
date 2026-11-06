@@ -56,7 +56,9 @@ import { useSnapshotStore } from "../../../stores/snapshot-store.js";
 import { useBootstrapStore } from "../../../stores/api-actions/bootstrap-actions.js";
 import { selectSidechatServedChatModes, SIDECHAT_AGENT_KIND } from "../../../api/agent-kind-served-modes.js";
 import { selectSidechatOwner } from "./sidechat-host.js";
+import { DIRECTOR_MESSAGE_RECORD_TYPES } from "@vibe-tavern/api-contracts";
 import { ObjectiveProposalCard } from "./ObjectiveProposalCard.js";
+import { DirectorMessageProposalCard } from "./director-message-proposal-card.js";
 import { STORY_PLAN_RECORD_TYPE, StoryPlanProposalCard } from "./StoryPlanProposalCard.js";
 import { TRACKER_SCENE_RECORD_TYPE, TrackerSceneProposalCard } from "./TrackerSceneProposalCard.js";
 
@@ -341,13 +343,27 @@ describe("sidechat-host — registration (SC-13b)", () => {
     // `recordType: "objective"` in place; the story-plan card renders the
     // `propose_plan` tool's record type and the tracker-scene card
     // `propose_tracker_template`'s (the web-side pins of the proposal
-    // domain's constants).
-    expect(Object.keys(host.recordProposalRenderers)).toEqual(["objective", "story-plan", "tracker-scene"]);
+    // domain's constants). DMT-33: ONE card serves BOTH Director message
+    // record types, keyed off the SHARED contract constants (the DMT-11
+    // schema module — the host consumes the keys, never local literals).
+    expect(Object.keys(host.recordProposalRenderers)).toEqual([
+      "objective",
+      "story-plan",
+      "tracker-scene",
+      DIRECTOR_MESSAGE_RECORD_TYPES.messageEdit,
+      DIRECTOR_MESSAGE_RECORD_TYPES.messageVariant,
+    ]);
     expect(host.recordProposalRenderers.objective).toBe(ObjectiveProposalCard);
     expect(host.recordProposalRenderers["story-plan"]).toBe(StoryPlanProposalCard);
     expect(host.recordProposalRenderers["tracker-scene"]).toBe(TrackerSceneProposalCard);
+    expect(host.recordProposalRenderers[DIRECTOR_MESSAGE_RECORD_TYPES.messageEdit]).toBe(DirectorMessageProposalCard);
+    expect(host.recordProposalRenderers[DIRECTOR_MESSAGE_RECORD_TYPES.messageVariant]).toBe(DirectorMessageProposalCard);
     expect(STORY_PLAN_RECORD_TYPE).toBe("story-plan");
     expect(TRACKER_SCENE_RECORD_TYPE).toBe("tracker-scene");
+    // The shared contract's keys ARE the wire spellings (the web-side pin of
+    // the DMT-11 recordType constants).
+    expect(DIRECTOR_MESSAGE_RECORD_TYPES.messageEdit).toBe("message-edit");
+    expect(DIRECTOR_MESSAGE_RECORD_TYPES.messageVariant).toBe("message-variant");
   });
 
   it("carries the branch plan owner and the six meter labels", () => {
