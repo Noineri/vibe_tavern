@@ -16,6 +16,17 @@ export interface LiveChatRegenerateInput extends LiveChatReplyInput {
    * adapter can thread it without a second signature change.
    */
   presetId?: PromptPresetId;
+  /**
+   * DMT-13 (director message tools): the ONE-SHOT request instruction for a
+   * SINGLE directed regeneration (request_message_swipe Allow). Assembled as
+   * a budgeted `user` `in_chat` layer at depth 1 by the pure pipeline (see
+   * PromptAssemblyContext.requestInstruction); absent/null/blank = today's
+   * behavior exactly. INTERNAL per-request input — never a persisted chat
+   * setting, never inherited: the next ordinary generation omits it. Wired
+   * into assemblePromptPreview in DMT-13; the swipe delegate supplies it from
+   * DMT-24. Not on LiveChatReplyInput: send/continue carry no instruction.
+   */
+  requestInstruction?: string | null;
 }
 
 export interface LiveChatContinueInput extends Omit<LiveChatReplyInput, "prefill"> {
