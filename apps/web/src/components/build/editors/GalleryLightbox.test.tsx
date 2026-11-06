@@ -1,3 +1,4 @@
+import type { ReactElement } from "react";
 /**
  * GalleryLightbox scroll chrome + navigation pins (CNR-8k).
  *
@@ -22,11 +23,18 @@ useDomEnv();
 installI18nContextSeam();
 
 let GalleryLightbox: typeof import("./GalleryLightbox.js").GalleryLightbox;
-let render: typeof import("@testing-library/react").render;
+let TooltipProvider: typeof import("../../shared/Tooltip.js").TooltipProvider;
+let rtlRender: typeof import("@testing-library/react").render;
+function render(ui: ReactElement) {
+  return rtlRender(ui, { wrapper: ({ children }) => <TooltipProvider delayDuration={0}>{children}</TooltipProvider> });
+}
 let fireEvent: typeof import("@testing-library/react").fireEvent;
 
 beforeAll(async () => {
-  ({ render, fireEvent } = await import("@testing-library/react"));
+  ({ TooltipProvider } = await import("../../shared/Tooltip.js"));
+  const testing = await import("@testing-library/react");
+  ({ fireEvent } = testing);
+  rtlRender = testing.render;
   ({ GalleryLightbox } = await import("./GalleryLightbox.js"));
 });
 
@@ -104,6 +112,18 @@ describe("GalleryLightbox description stack scroll chrome (CNR-8k)", () => {
     // Image, caption and description all live inside the lane.
     expect(lane.querySelector("img[alt='First shot']")).toBeTruthy();
     expect(content.textContent).toContain("A long description of the first shot");
+  });
+
+  it("exposes the edit and regenerate actions through named themed hints", async () => {
+    const view = render(<GalleryLightbox characterId="char-1" assets={ASSETS} index={0} onIndexChange={() => {}} onClose={() => {}} />);
+    const edit = view.getByLabelText("gallery_edit_description");
+    fireEvent.focus(edit);
+    expect((await view.findByRole("tooltip")).textContent).toContain("gallery_edit_description");
+    fireEvent.click(edit);
+    expect(view.getByPlaceholderText("gallery_add_description…")).toBeTruthy();
+    fireEvent.click(view.getByText("cancel"));
+    fireEvent.click(view.getByLabelText("gallery_regenerate"));
+    expect(useGalleryStore.getState().describe).toHaveBeenCalledWith("char-1", ["gal-1"]);
   });
 
   it("keeps keyboard paging and Escape close outside the lane (untouched by CNR-8k)", () => {

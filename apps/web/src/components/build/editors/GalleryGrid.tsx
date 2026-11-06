@@ -198,9 +198,11 @@ function GalleryTile({
             </span>
           )}
           {asset.includeInPrompt && hasDescription && (
-            <span className="flex items-center justify-center rounded-full bg-black/60 p-0.5 text-success shadow-sm" title={t("gallery_in_prompt")}>
-              <Icons.check className="h-3 w-3" />
-            </span>
+            <CustomTooltip content={t("gallery_in_prompt")}>
+                <span className="pointer-events-auto flex items-center justify-center rounded-full bg-black/60 p-0.5 text-success shadow-sm" onClick={(e) => { e.stopPropagation(); onOpenLightbox(); }}>
+                  <Icons.check className="h-3 w-3" />
+                </span>
+            </CustomTooltip>
           )}
         </div>
 
@@ -223,18 +225,20 @@ function GalleryTile({
         </div>
 
         {/* Expand → floating panel (bottom-left). */}
-        <button
-          type="button"
-          onClick={(e) => { e.stopPropagation(); onOpenPanel(); }}
-          onPointerDown={(e) => e.stopPropagation()}
-          className={cn(
-            "absolute bottom-1.5 left-1.5 z-20 flex h-8 w-8 items-center justify-center rounded-md bg-black/55 text-white backdrop-blur-sm transition-all hover:bg-accent hover:text-on-accent",
-            isMobile ? "opacity-100" : "opacity-0 group-hover:opacity-100",
-          )}
-          title={t("gallery_expand")}
-        >
-          <Icons.expand className="h-4 w-4" />
-        </button>
+        <CustomTooltip content={t("gallery_expand")}>
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onOpenPanel(); }}
+            onPointerDown={(e) => e.stopPropagation()}
+            className={cn(
+              "absolute bottom-1.5 left-1.5 z-20 flex h-8 w-8 items-center justify-center rounded-md bg-black/55 text-white backdrop-blur-sm transition-all hover:bg-accent hover:text-on-accent",
+              isMobile ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+            )}
+            aria-label={t("gallery_expand")}
+          >
+            <Icons.expand className="h-4 w-4" />
+          </button>
+        </CustomTooltip>
 
         {/* ⋯ overflow menu — desktop: Radix Popover; mobile: BottomSheet.
             The content is hybrid (include-toggle + inline caption editor +
@@ -243,15 +247,17 @@ function GalleryTile({
             content; mobile rule: every popover surfaces as a bottom sheet. */}
         {isMobile ? (
           <>
-            <button
-              type="button"
-              onClick={(e) => { e.stopPropagation(); setMenuOpen(true); }}
-              onPointerDown={(e) => e.stopPropagation()}
-              className="absolute bottom-1.5 right-1.5 z-20 flex h-8 w-8 items-center justify-center rounded-md bg-black/55 text-white backdrop-blur-sm transition-all hover:bg-accent hover:text-on-accent"
-              title={t("gallery_more_actions")}
-            >
-              <Icons.ellipsis className="h-4 w-4" />
-            </button>
+            <CustomTooltip content={t("gallery_more_actions")}>
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); setMenuOpen(true); }}
+                onPointerDown={(e) => e.stopPropagation()}
+                className="absolute bottom-1.5 right-1.5 z-20 flex h-8 w-8 items-center justify-center rounded-md bg-black/55 text-white backdrop-blur-sm transition-all hover:bg-accent hover:text-on-accent"
+                aria-label={t("gallery_more_actions")}
+              >
+                <Icons.ellipsis className="h-4 w-4" />
+              </button>
+            </CustomTooltip>
             <BottomSheet open={menuOpen} onClose={closeMenu} title={t("gallery_more_actions")}>
               {/* Include-in-prompt toggle — label left, Toggle pinned right.
                   Mobile has no hover, so the warning surfaces inline (amber)
@@ -343,18 +349,21 @@ function GalleryTile({
           </>
         ) : (
           <Popover.Root open={menuOpen} onOpenChange={(o) => { setMenuOpen(o); if (!o) setEditingCaption(false); }}>
-            <Popover.Trigger asChild>
-              <button
-                type="button"
-                onClick={(e) => e.stopPropagation()}
-                onPointerDown={(e) => e.stopPropagation()}
-                className="absolute bottom-1.5 right-1.5 z-20 flex h-8 w-8 items-center justify-center rounded-md bg-black/55 text-white opacity-0 backdrop-blur-sm transition-all hover:bg-accent hover:text-on-accent group-hover:opacity-100 data-[state=open]:opacity-100"
-                title={t("gallery_more_actions")}
-                aria-haspopup="menu"
-              >
-                <Icons.ellipsis className="h-4 w-4" />
-              </button>
-            </Popover.Trigger>
+            {/* Tooltip and popover share data-state; menuOpen keeps the trigger visible. */}
+            <CustomTooltip content={t("gallery_more_actions")}>
+              <Popover.Trigger asChild>
+                <button
+                  type="button"
+                  onClick={(e) => e.stopPropagation()}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  className={cn("absolute bottom-1.5 right-1.5 z-20 flex h-8 w-8 items-center justify-center rounded-md bg-black/55 text-white backdrop-blur-sm transition-all hover:bg-accent hover:text-on-accent group-hover:opacity-100", menuOpen ? "opacity-100" : "opacity-0")}
+                  aria-label={t("gallery_more_actions")}
+                  aria-haspopup="menu"
+                >
+                  <Icons.ellipsis className="h-4 w-4" />
+                </button>
+              </Popover.Trigger>
+            </CustomTooltip>
             <Popover.Portal container={getModalPortal() ?? document.body}>
               <Popover.Content
                 side="bottom"
@@ -364,24 +373,24 @@ function GalleryTile({
                 className="glass-blur z-[700] w-56 overflow-hidden rounded-lg border border-border bg-glass-bg py-1 shadow-[0_12px_36px_rgba(0,0,0,.45)] data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95"
               >
                 <CustomTooltip content={includeWarns ? t("gallery_include_no_desc_warning") : t("gallery_include_in_prompt_hint")}>
-                  <label
-                    className={cn(
-                      "flex cursor-pointer items-center justify-between gap-3 px-3 py-2 text-[var(--ui-fs)] leading-5 text-t2 hover:bg-s2",
-                      includeWarns && "bg-amber-500/10",
-                    )}
-                    onPointerDown={(e) => e.stopPropagation()}
-                  >
-                    <span className="flex items-center gap-2">
-                      {includeWarns
-                        ? <Icons.alert className="h-3.5 w-3.5 text-amber-500" />
-                        : <Icons.eye className="h-3.5 w-3.5" />}
-                      {t("gallery_include_in_prompt")}
-                    </span>
-                    <Toggle
-                      checked={asset.includeInPrompt}
-                      onChange={(v) => { void setIncludeInPrompt(characterId, id, v); }}
-                    />
-                  </label>
+                    <label
+                      className={cn(
+                        "flex cursor-pointer items-center justify-between gap-3 px-3 py-2 text-[var(--ui-fs)] leading-5 text-t2 hover:bg-s2",
+                        includeWarns && "bg-amber-500/10",
+                      )}
+                      onPointerDown={(e) => e.stopPropagation()}
+                    >
+                      <span className="flex items-center gap-2">
+                        {includeWarns
+                          ? <Icons.alert className="h-3.5 w-3.5 text-amber-500" />
+                          : <Icons.eye className="h-3.5 w-3.5" />}
+                        {t("gallery_include_in_prompt")}
+                      </span>
+                      <Toggle
+                        checked={asset.includeInPrompt}
+                        onChange={(v) => { void setIncludeInPrompt(characterId, id, v); }}
+                      />
+                    </label>
                 </CustomTooltip>
                 {isDescribing ? (
                   <button type="button"

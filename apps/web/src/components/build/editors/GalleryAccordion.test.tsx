@@ -1,3 +1,5 @@
+import type { ReactElement } from "react";
+import type { Window as HappyWindow } from "happy-dom";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
@@ -29,12 +31,19 @@ mock.module("./GalleryViewer.js", () => ({
 let GalleryAccordion: typeof import("./GalleryAccordion.js").GalleryAccordion;
 let FloatingGalleryViewers: typeof import("./FloatingGalleryViewers.js").FloatingGalleryViewers;
 let useFloatingGalleryStore: typeof import("../../../stores/floating-gallery-store.js").useFloatingGalleryStore;
-let render: typeof import("@testing-library/react").render;
+let TooltipProvider: typeof import("../../shared/Tooltip.js").TooltipProvider;
+let rtlRender: typeof import("@testing-library/react").render;
+function render(ui: ReactElement) {
+  return rtlRender(ui, { wrapper: ({ children }) => <TooltipProvider delayDuration={0}>{children}</TooltipProvider> });
+}
 let fireEvent: typeof import("@testing-library/react").fireEvent;
 let waitFor: typeof import("@testing-library/react").waitFor;
 
 beforeAll(async () => {
-  ({ render, fireEvent, waitFor } = await import("@testing-library/react"));
+  ({ TooltipProvider } = await import("../../shared/Tooltip.js"));
+  const testing = await import("@testing-library/react");
+  ({ fireEvent, waitFor } = testing);
+  rtlRender = testing.render;
   ({ GalleryAccordion } = await import("./GalleryAccordion.js"));
   ({ FloatingGalleryViewers } = await import("./FloatingGalleryViewers.js"));
   ({ useFloatingGalleryStore } = await import("../../../stores/floating-gallery-store.js"));
@@ -122,6 +131,46 @@ describe("GalleryAccordion floating viewer across a character switch", () => {
     useFloatingGalleryStore.setState({ viewers: [] });
   });
 
+  it("opens the desktop actions popover from its named tooltip trigger", async () => {
+    const view = render(<GalleryAccordion characterId="char-A" />);
+    fireEvent.click(view.getByText("gallery_title"));
+    const trigger = view.getByLabelText("gallery_more_actions");
+    fireEvent.focus(trigger);
+    await waitFor(() => expect(view.getByRole("tooltip").textContent).toContain("gallery_more_actions"));
+    fireEvent.click(trigger);
+    expect(view.getByText("gallery_set_avatar")).toBeTruthy();
+    expect(trigger.getAttribute("aria-expanded")).toBe("true");
+    expect(trigger.classList.contains("opacity-100")).toBe(true);
+  });
+
+  it("shows the included badge hint without stealing the image open action", async () => {
+    const asset = { ...makeAsset("char-A", "row-a1", "A one"), description: "Description", includeInPrompt: true };
+    useGalleryStore.setState({ byCharacter: { "char-A": [asset] } });
+    const view = render(<GalleryAccordion characterId="char-A" />);
+    fireEvent.click(view.getByText("gallery_title"));
+    const badge = view.container.querySelector<HTMLElement>(".pointer-events-auto")!;
+    fireEvent.pointerMove(badge, { pointerType: "mouse" });
+    expect((await view.findByRole("tooltip")).textContent).toBe("gallery_in_prompt");
+    fireEvent.click(badge);
+    expect(view.getByLabelText("gallery_edit_description")).toBeTruthy();
+  });
+
+  it("opens the mobile sheet and runs its describe action", () => {
+    const browser = window as unknown as HappyWindow;
+    const width = window.innerWidth;
+    browser.happyDOM.setWindowSize({ width: 390 });
+    try {
+      const view = render(<GalleryAccordion characterId="char-A" />);
+      fireEvent.click(view.getByText("gallery_title"));
+      fireEvent.click(view.getByLabelText("gallery_more_actions"));
+      fireEvent.click(view.getByText("gallery_describe"));
+      expect(useGalleryStore.getState().describe).toHaveBeenCalledWith("char-A", ["row-a1"]);
+      view.unmount();
+    } finally {
+      browser.happyDOM.setWindowSize({ width });
+    }
+  });
+
   it("keeps A's image with B's accordion collapsed AND open", async () => {
     const view = render(
       <>
@@ -132,7 +181,7 @@ describe("GalleryAccordion floating viewer across a character switch", () => {
 
     // Open A's accordion and expand its tile → floating viewer appears.
     fireEvent.click(view.getByText("gallery_title"));
-    fireEvent.click(view.getByTitle("gallery_expand"));
+    fireEvent.click(view.getByLabelText("gallery_expand"));
     expect(view.getByTestId("floating-viewer").getAttribute("data-src"))
       .toContain("characters/char-A/assets/row-a1");
 
