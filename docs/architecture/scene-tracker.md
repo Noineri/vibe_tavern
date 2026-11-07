@@ -18,6 +18,20 @@ Keys are validated as non-empty strings that are not reserved/unsafe path segmen
 
 `label` is **presentation-only**: it overrides the key as the human label in the renderer and editor, but is stripped from the identity hash, stripped from the model prompt, and never appears in serialized `data`. Adding or changing a `label` does not invalidate existing records. The schema's identity is its `schemaHash` (a stable hash of the label-stripped structure) plus a config `revision`; a record is *fresh* when its stored `schemaHash`/`revision` match the live config, and *stale* (drift) otherwise.
 
+### The story clock marker
+
+A schema may designate up to three TOP-LEVEL fields as the **story clock** (DIRECTOR_DECK_CALENDAR_PLAN DK-2) — in-story time kept as ordinary field values, so it advances through the tracker's existing per-reply writes with no extra model call.
+The marker is `clock?: "day" | "part" | "label"` on the node (`SCENE_CLOCK_MARKER` in `packages/domain/src/scene-tracker-constants.ts`): `day` is allowed on a number node, `part` and `label` on string nodes.
+It is **semantic, the opposite of `label`**: the whitelist projection (`stripLabels`) keeps `clock` while still stripping `label`/`tone`/`toneBy`, so a marked field counts in `computeSceneSchemaHash` (two schemas differing only in a marker never share a record cache) and the marker reaches the tracking prompt through a hint block.
+The cross-field rules live in the Zod contract's root `superRefine` (`collectClockMarkerIssues` in `packages/api-contracts/src/schemas/tracker-schema.ts`): top-level only, each marker at most once, and a marked `part` without a marked `day` is invalid — every embedder (config, PATCH, template) inherits them.
+The settings editor keeps the marker on save for free: `TrackerConfig` edits the schema as JSON text and the PATCH re-validates through the same contract.
+
+The ONE canonical field set is `STORY_CLOCK_SCENE_FIELDS` (`packages/domain/src/story-clock-scene.ts`): `story_day` (number, `clock: "day"`), `story_time` (string, `clock: "part"`), `story_date` (string, `clock: "label"`), each with a human label; the calendar's enable-time action (`story_cal_enable`) and the director's `withClock` ask embed it through the idempotent `withStoryClockFields` (an existing marked field wins; a user field already occupying a canonical key is skipped — never renamed or retyped).
+The record's clock read is the pure `readStoryClock(dsl, sceneState)` in the same module: only the marked `day` field gates the whole clock (a finite number ≥ 1); the part must be exactly one of the four `STORY_DAY_PART` words — any other spelling reads `part: null` and the raw text stays out; the label is display-only and carried verbatim.
+The clock hint block (`composeStoryClockBlock` in `services/api/src/domain/insights/scene-instruction-hints.ts`) teaches the model these meanings when marked fields exist — the day starts at 1 and grows when a night passes, and the part accepts exactly the four words, rendered from the domain const so hint and reader cannot drift.
+
+Consumers of the read clock — the story plan's due rule, the tracker-write observer that promotes due events, and the web calendar — are documented on the plan side: [backend.md](backend.md#plan-driven-goals-story-plan--tracker-sync) and [frontend.md](frontend.md#agent-plan-mechanic).
+
 ### Canonical example
 
 ```json
@@ -150,5 +164,6 @@ The review card (`CoauthorTrackerTemplateReview.tsx`) shows the schema and goals
 - Prompt assembly + the Scene injection layer — [prompt-pipeline.md](prompt-pipeline.md).
 - API routes + contracts — [api-reference.md](api-reference.md).
 - Domain types — `packages/domain/src/scene-tracker-constants.ts` (`SCENE_AUTO_MODE`, `SCENE_PROMPT_FORMAT`, `SceneTrackerDsl`, `computeSceneSchemaHash`).
+- Story clock fields + the record's clock read — `packages/domain/src/story-clock-scene.ts` (`STORY_CLOCK_SCENE_FIELDS`, `readStoryClock`, `withStoryClockFields`); the clock vocabulary itself — `packages/domain/src/story-clock.ts`.
 - Zod contract — `packages/api-contracts/src/schemas/tracker-schema.ts`.
 - Character tracker template — domain shape + `extensions` accessors: `packages/domain/src/tracker-template.ts`; zod: `packages/api-contracts/src/schemas/tracker-template-schema.ts`.

@@ -1510,6 +1510,18 @@ The stream's model chain with M1, one line: the resolved profile's own model (th
 
 The chat-branch twin of [`GET`/`PUT /api/scripts/:scriptId/agent-plan`](#get-apiscriptsscriptidagent-plan): two `active` tasks are a 422 `agent_plan_multiple_active`, an unusable shape a 422 `agent_plan_invalid`; a missing chat/branch (or a branch of another chat) is a 404. The sidechat kind reads this plan read-only through its `read_plan` tool — no sidechat tool writes the plan directly (the director proposes; Accept applies through the proposals route below). Since DR-3 the PUT routes through the story-plan sync's `applyPlan`: on the chat's ACTIVE branch the save projects the events onto the goal tracker (goals mode, tracker on when events exist); a non-active branch saves without touching the tracker.
 
+### Story deck
+
+The per-branch twist-deck twin of the branch plan (DIRECTOR_DECK_CALENDAR_PLAN): the `story_branch_decks` table (`packages/db/src/db-schema.ts`) holds one row per (chat, branch) — both columns hard FKs with cascade, the deck JSON in `content_json` — and a missing row reads as the empty deck. The domain shape is `StoryDeck`/`StoryCard` (`packages/domain/src/story-deck.ts`: five fixed suits `threat` / `encounter` / `discovery` / `mystery` / `change`); the wire contract is `storyDeckSchema` (`packages/api-contracts/src/schemas/story-deck-schema.ts`). Routes in `services/api/src/api/routes/agent-branch-deck.ts`, the plan routes' shared ownership check (`chat-branch-ownership.ts`) on all three; a missing chat/branch (or a branch of another chat) is a 404.
+
+| Endpoint | Body | Response / behavior |
+|---|---|---|
+| `GET /api/agent/chats/:chatId/branches/:branchId/deck` | — | `{ deck }` — the stored deck, or `{ cards: [] }` when none is stored yet |
+| `PUT /api/agent/chats/:chatId/branches/:branchId/deck` | `{ deck: storyDeckSchema }` (STRICT — a bad shape is a 400, not the plan route's normalize-or-422: no model feeds the deck) | `{ deck }` as saved; the empty deck is a valid write |
+| `POST /api/agent/chats/:chatId/branches/:branchId/deck/:cardId/play` | `{ replaceForeignGoals?: boolean }` (`storyDeckPlaySchema`, STRICT) | `{ deck, event }` — the deck after the card's removal plus the played (promoted) plan event |
+
+The play route (DK-4a) routes through `StoryPlanSync.playCard` (`services/api/src/domain/director/story-plan-sync.ts`): the card leaves the deck exactly once and enters the branch plan as a NEW event that is promoted to the CURRENT event — the interrupted active event turns pending directly after it, so the RP model reads the played card with its next reply; a branch with no plan gets a one-event plan. An unknown `cardId` is a 404 before any write. The typed 409 `story_deck_foreign_goals` (body `details` also carries `foreignGoalCount`) answers a play on a branch with no plan whose goal tracker holds goals not from a plan — the projection would silently replace them; the caller retries the same request with `{ replaceForeignGoals: true }` to accept the replacement. The deck write and the plan write are one transaction (see [backend](./backend.md#plan-driven-goals-story-plan--tracker-sync)).
+
 ### Thread events
 
 `GET /api/agent/threads/:threadId/events` — for a chat-owned thread, its frozen context events in merged-timeline order, each `{ id, kind, payload, beforeMessageId }`.
@@ -1537,11 +1549,12 @@ The additive paged reads the virtualized agent feed rides (AFP, release 1.5.1); 
 | `POST /api/agent/threads/:threadId/proposals/:toolCallId/apply` | Accept a pending sidechat record proposal |
 | `POST /api/agent/threads/:threadId/proposals/:toolCallId/reject` | Reject it (its domain data untouched) |
 
-Five record types resolve today, dispatched through ONE registry by `recordType` (`SIDECHAT_RECORD_PROPOSAL_REGISTRY`, `domain/sidechat/sidechat-objective-proposal.ts`; an unknown `recordType` is the typed 422 `unknown_proposal_record_type`, refused before any write):
+Six record types resolve today, dispatched through ONE registry by `recordType` (`SIDECHAT_RECORD_PROPOSAL_REGISTRY`, `domain/sidechat/sidechat-objective-proposal.ts`; an unknown `recordType` is the typed 422 `unknown_proposal_record_type`, refused before any write):
 
 - `objective` (`propose_objective`) — as before while the active branch has no plan with events: apply reads the tracker at Accept time (tracker off → the 409 `objective_tracker_disabled`; mode `route` adds a task, mode `goals` a short-term goal). Under a plan with events, apply inserts the goal as the NEXT PLAN EVENT instead (right after the current one; never a tracker item) and the response carries the refreshed plan beside the proposal.
 - `story-plan` (`propose_plan`) — apply runs the story-plan sync's `applyPlan` on the proposal's target branch (normalize-or-422, save, ACTIVE-branch projection; response `{ plan }`); an apply body `{ enableAutoCheck: true }` also sets the tracker's auto-check frequency to 1.
-- `tracker-scene` (`propose_tracker_template`) — apply writes the generated scene half with the objective half nulled (response carries the insights patch); goals come from the plan.
+- `tracker-scene` (`propose_tracker_template`) — apply writes the generated scene half with the objective half nulled (response carries the insights patch); goals come from the plan. A payload carrying `withClock: true` (DK-5a) first extends the scene schema with the canonical story-clock fields through the domain's `withStoryClockFields` — never duplicating a marked field the schema already has.
+- `story-deck` (`propose_deck`, DK-5a) — apply validates the payload with the registry's `matches` parse gate and appends the proposed twist cards to the target branch's deck (the payload's `targetId`) with FRESH ids — the model's proposed ids are never reused; suit/title/body ride verbatim. No wire companion (the bare `{ proposal }` response); reject writes only the row's status.
 - `message-edit` (`propose_message_edit`, DMT-22) — apply runs the ordinary guarded chat edit over the proposal's frozen source identity on the thread's own branch: the transactional selected-variant + reviewed-base guards refuse a moved selection, a newer edit to the same swipe, a deleted target or a foreign-chat message (the typed 409s / 404), and nothing is written on such a refusal (the row stays pending).
 - `message-variant` (`propose_message_variant`, DMT-22) — apply appends and selects a separate swipe through the ordinary add-variant path with DIRECTOR authorship (no model/preset provenance, no prompt trace attached), with the same source/ownership refusals; reject writes only the row's status for both message types.
 
@@ -1551,10 +1564,10 @@ Body-less except `story-plan`'s optional `{ enableAutoCheck }`; the proposal pay
 
 | Endpoint | Purpose |
 |---|---|
-| `POST /api/agent/chats/:chatId/branches/:branchId/fork-sidechat` | Copy the branch's ACTIVE sidechat threads + branch plan onto the target branch |
+| `POST /api/agent/chats/:chatId/branches/:branchId/fork-sidechat` | Copy the branch's ACTIVE sidechat threads + branch plan + story deck onto the target branch |
 | `GET /api/agent/chats/:chatId/branches/:branchId/sidechat-summary` | `{ hasSessions, count }` — ACTIVE chat-owned sessions on the branch, for the fork/delete confirms |
 
-**Fork body:** `{ targetBranchId }`. **Response:** `{ copiedThreads: [{ threadId, agentKind }] }` — the kinds the store actually had ACTIVE source threads for. The fork point comes from the target branch row (`parent_branch_id` must name the source): a target that is not a child is the 400 `target_branch_not_child_of_source`, a target that already has an active same-kind thread the 400 `target_branch_thread_active` (nothing is copied, the existing conversation stays). The copy re-keys id references onto the fork's new message ids, so the copy's first RP sync appends nothing for the copied history; frozen text is untouched. A missing chat/branch on either side is a 404.
+**Fork body:** `{ targetBranchId }`. **Response:** `{ copiedThreads: [{ threadId, agentKind }] }` — the kinds the store actually had ACTIVE source threads for. The fork point comes from the target branch row (`parent_branch_id` must name the source): a target that is not a child is the 400 `target_branch_not_child_of_source`, a target that already has an active same-kind thread the 400 `target_branch_thread_active` (nothing is copied, the existing conversation stays). The copy re-keys id references onto the fork's new message ids, so the copy's first RP sync appends nothing for the copied history; frozen text is untouched. The story deck copies under the same rules as the plan (DK-3): a source with no deck row copies nothing, a stored deck — an empty one included — copies verbatim. A missing chat/branch on either side is a 404.
 
 ### Stream field (sidechat threads)
 

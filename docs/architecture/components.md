@@ -1139,17 +1139,67 @@ Owns the 6 px `col-resize` drag line (GalleryViewer mousedown → window mousemo
 - Renders NOTHING while the active branch's plan is empty (without a plan the chat pane is byte-identical); after the last event completes the strip stays with the done label (A8).
 - The row refreshes the plan entry (`refreshAgentPlan`) whenever the chat's objective state changes in the snapshot — the server's follow-back writes completed statuses into the plan, and the re-GET is how the row learns the next event (no second fetch path, no second objective derivation).
 - Passed-check flash (R4): a goal-status transition of the plan's current event IS «the check passed this event» (the projection copies ids 1:1), so the strip shows the passed label on the success tint for ~6 s (`STORY_PLAN_FLASH_MS`), then the next event — no toast.
+- Promotion flash (DK-9, second tone): when the server's clock advance promoted a due dated event, the refreshed plan's new current (dated + due against the strip's own `useStorySceneClock` read) flashes the promotion label (`story_cal_flash_promoted`) on the ACCENT tint for ~6 s; the two tones are mutually exclusive per change — the strip picks one, never both.
+- Since DK-6 the section renders the curtain's second header row (the story tab strip) through the panel's `curtainTabs`/`curtainBody` slots — the tab row lives in `AgentPlanSection`, not here, so the deck and calendar tabs appear on BOTH curtain mounts; the events tab is byte-identical to the DR-11 curtain.
 - The call-director default handler runs the `callDirector` store action (open + optional profile switch + one queued message, DR-12); `onCallDirector` stays an override for tests.
+
+---
+
+## StoryDeckView
+
+**File:** `shared/agent-plan/StoryDeckView.tsx` — the story curtain's DECK tab body (DK-6/DK-7, mounted by `AgentPlanSection` when the tab strip selects it; data layer in [frontend](./frontend.md#agent-plan-mechanic)).
+
+- Header: the cards glyph · the twist-deck title (`story_deck_title`) · the muted N-cards count · the draw-random action (`story_deck_draw_random`) · the refill action — the title group is desktop-only (the phone header is just the buttons; the tab row directly above carries the same count), and the refill label switches to its short key (`story_deck_call_director_short`) on the phone per AD-022 row arithmetic.
+- The grid is a wrap row of `StoryCardFace` (132×184 desktop, two per phone row) joined by the dashed «+ own card» tile; a face click opens the card dialog (`StoryCardDialogRequest { kind: "card", cardId }`), the draw opens it face-down (`kind: "draw"`), the tile opens the new-card editor (`kind: "new"`).
+- Empty deck (both viewports, centered): two tilted `StoryCardBack`s, the title + explanation, the primary assemble-the-deck director call (`callDirector` with the deck's own message key, disabled while a sidechat turn streams) and the add-own-card link — the header and grid are not drawn in the empty state.
+- The streaming `locked` prop disables the refill call and rides into the dialog's writes.
+
+---
+
+## StoryCard
+
+**File:** `shared/agent-plan/StoryCard.tsx` — the twist-card face and back (DK-6, mockup §1/§3).
+
+- `StoryCardFace` renders three sizes from one class table: `grid` 132×184 (the deck grid), `sm` 96×134 (the proposal fan), `big` 300×420 (the dialog's open face); the body clamps to three lines (two on `sm`) — an identification context, the full text one click away in the dialog.
+- `STORY_CARD_SUIT_META` is the ONE suit derivation (mockup ruling K1): suit → i18n label key, glyph and tone classes on the theme's tokens (threat=danger, encounter=info, discovery=success, mystery=warning, change=accent) — every suit consumer (the faces, the dialog's suit control, the proposal fan) reads this map and only renders it; the mockup's hexes are never hardcoded.
+- `StoryCardBack` (`sm`/`big`) is the accent field with the diagonal weave and the cards seal — the empty state's tilted pair and the draw's face-down state.
+- Titles and bodies are model text, so they opt into page translation (`translate="yes"`).
+
+---
+
+## StoryCardDialog
+
+**File:** `shared/agent-plan/StoryCardDialog.tsx` — the twist card's dialog (DK-7, mockup §2/§3/§7): view, edit, draw and play over one body in two shells.
+
+- Responsive dual-mode canon: desktop the shared `Modal` with the canon glass panel (`modalPanelCls`), phone the `BottomSheet` — the phase state lives in the shell so both shells' titles track view→edit (the owner ruling 2026-11-07: the EDIT mode of an existing card carries the visible heading `story_deck_dialog_edit_title`, the same treatment the new-card editor has).
+- View footer (§2): left the remove action (destructive → `DestructiveConfirmModal` — a removed card cannot be restored) + edit, right close + play-now (primary); the footer flex-wraps per the AD-022 row arithmetic, no copy shortened. Draw footer (§3): return · play (primary).
+- Draw: the big face-down `StoryCardBack` flips to the face (`rotateY`, ~450 ms; instant under `prefers-reduced-motion`), then return/play.
+- Play calls `useStoryDeck.play`; the typed 409 (`StoryDeckForeignGoalsError` from `agent-branch-deck-api.ts`) surfaces the calm replace-goals confirm and retries with `{ replaceForeignGoals: true }` — cancel keeps the card; success closes the dialog and switches the curtain to the events tab via the tab store.
+- The streaming `locked` prop disables every deck write (play, remove, edit entry, editor save); view/close stay live.
+
+---
+
+## StoryCalendarView
+
+**File:** `shared/agent-plan/StoryCalendarView.tsx` — the story curtain's CALENDAR tab body (DK-9, mockup §5/§8; the clock read is `use-story-scene-clock.ts`, [frontend](./frontend.md#agent-plan-mechanic)).
+
+- Header: the record's date label rendered VERBATIM in the RP font (display-only per the domain — never client-reformatted), the day line («Day N · part»), and the two clock moves «→ Next» / «+1 day» — both write the latest valid record through the EXISTING scene edit route (`editSceneAction`), the part advancing through the domain's `nextStoryDayPart` (night wraps to the next day's morning) and the day through `addStoryDay`; disabled with a hint while no record exists yet.
+- Grid: one column per story day from day 1 to max(today, the last dated event) + 1 × four part rows with their glyphs; past cells muted, the current cell ringed in accent; dated events render as chips in their (day, part) cell — completed struck through — and a chip opens the plan editor AT that event (the section's `focusTaskId` path; this view never mounts a second editor). Horizontal scroll with today scrolled into view; the phone drops the part glyphs and lets chips wrap inside their cell (user data wraps, never truncates).
+- Assign: an empty open cell shows «+» and opens the undated-pending list — desktop popover, phone `ActionSheet` (dual-mode canon); choosing one writes the event's `at` through the plan hook's save (the SAME write the editor uses), defaulting to the clock's current day with part null.
+- Below the grid: the undated events as «no date — in order» list rows.
+- Off state (no marked day field in the chat's scene schema, mockup §8): the icon + title + explanation + the enable action — adds `STORY_CLOCK_SCENE_FIELDS` to the live schema through the EXISTING tracker config write (`updateInsightsConfigAction`; hash/revision recomputed server-side) and turns the Scene Tracker on when it was off, the cost hint naming the per-reply model call when it did. Scene injection off (`injectLastN === 0`): one muted line under the header.
+- The streaming `locked` prop disables the clock writes and the assign save.
 
 ---
 
 ## Sidechat proposal cards
 
-**Files:** `chat/sidechat/ObjectiveProposalCard.tsx` (source), `StoryPlanProposalCard.tsx` (fork #1, DR-10a), `TrackerSceneProposalCard.tsx` (fork #2, DR-10b) — the review cards for the sidechat's three record proposals, registered in the sidechat host's `recordProposalRenderers` (`objective`, `story-plan`, `tracker-scene`).
+**Files:** `chat/sidechat/ObjectiveProposalCard.tsx` (source), `StoryPlanProposalCard.tsx` (fork #1, DR-10a), `TrackerSceneProposalCard.tsx` (fork #2, DR-10b), `StoryDeckProposalCard.tsx` (fork #4, DK-8) — the review cards for the sidechat's record proposals, registered in the sidechat host's `recordProposalRenderers` (`objective`, `story-plan`, `tracker-scene`, `story-deck`; the Director message pair shares `director-message-proposal-card.tsx`).
 
-- The Objective card is the fork source: it is itself fork #1 of the shell's `RecordProposalFallbackCard`, carries the fork count (`forks: 2`) in its header, and each fork's header carries its own correspondence map (the house fork rule).
+- The Objective card is the fork source: it is itself fork #1 of the shell's `RecordProposalFallbackCard`, carries the fork count (`forks: 4`) in its header, and each fork's header carries its own correspondence map (the house fork rule).
 - The StoryPlan card shows the model's summary, the proposed events as a pure diff by id against the stored branch plan (new / changed / removed markers, the current event's body), the goals-replacement warning only when Accept will replace goals not from the plan, and the auto-check toggle (only while the tracker's frequency is 0, off by default, sent with Accept).
 - The TrackerScene card shows the generated scene half through the shared `TrackerTemplateSchemaPreview` — the objective half never rides it (goals come from the plan).
+- The StoryDeck card (DK-8, mockup §4) shows the model's summary plus the proposed cards as a fan of `StoryCardFace size="sm"` (desktop wraps, the phone scrolls horizontally); Accept resolves through the shared apply route and re-runs the branch's deck GET through `refreshStoryDeck` (no chat refetch — the deck is not chat-row state), Reject writes the status only; the stored status seeds the card, so a reload renders the resolved lines with no fetch.
 - The Objective card itself gained a plan mode (R3): while the active branch plan has events it retitles («New story-plan event», «will go next, after …») and Accept inserts the goal as the next plan event; with no plan events it is exactly the original goal card.
 
 ---
