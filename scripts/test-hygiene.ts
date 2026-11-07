@@ -83,7 +83,12 @@ export const BUDGETS = {
 	// test touches them); minimized to ONE shared `unusedObjectiveDeps` cast
 	// from 4 raw `null as never`s. Lower when the ctor deps become optional
 	// or the DI boundary becomes structural.
-	asNever: 1245,
+	// 1243 (2026-11-07, DK-4a): the suites' ObjectiveService unused-deps casts
+	// consolidated into ONE shared fixture (test/objective-service-fixture.ts —
+	// the guard counts *.test.ts files only); ratchet lowered to match (owner
+	// ruling: a unit that lowers a count locks the lower budget in the same
+	// commit — the DR-3a minimization extended across suites).
+	asNever: 1243,
 	/** Global `screen.` usage in apps/web test files (binds at import time). */
 	// 196 (2026-10-04): ratcheted to the merged tree's count after PR #51
 	// (provider-lists unification removed the forked pickers' screen usage;
