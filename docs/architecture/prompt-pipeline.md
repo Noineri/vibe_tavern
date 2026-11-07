@@ -96,6 +96,7 @@ result.prefill            // string | null — assistant prefill from preset
 | `chat` | `object` | `recentMessages`, `scriptInjections` |
 | `instructions` | `object` | `toolInstructions` text |
 | `config` | `object` | `contextBudget`, `responseReserve`, `model`, `summary` (internal flag selecting the summary layer set) |
+| `requestInstruction` | `string \| null` | One-shot request-local instruction for a SINGLE RP regeneration (Director message tools, DMT-12) — built into the budgeted `user` `in_chat` layer at depth 1 above; never persisted, never inherited by a later assembly (see [Request-local instruction layer](#request-local-instruction-layer-dmt-12)) |
 
 ### Output: `PromptAssemblyResult`
 
@@ -234,6 +235,38 @@ Three built-in layers inject **vision-generated appearance text** — image desc
 | Persona avatar | `persona.avatarDescription` | `persona.includeAvatarInPrompt` + non-empty + canvas slot `personaAvatar` enabled | `[Persona appearance: <desc>]` |
 
 All three route through `resolver.position()` with a `DEFAULT_PROMPT_ORDER` rank `< 100` (before-chat zone), so they behave like every other built-in slot: **canvas-toggleable in advanced mode, always-on in simple mode**, ordered adjacent to the character/persona block. Gating is two-level: the per-entity `includeXInPrompt` toggle + non-empty content, **and** `resolver.enabled(identifier)` (the canvas slot).
+
+### Request-local instruction layer (DMT-12)
+
+The `requestInstruction` input (`context.requestInstruction`, one approved literal
+text or null/undefined/blank) builds the ONE one-shot instruction layer for a
+single RP regeneration — the Director message tool `request_message_swipe`'s
+Allow runs one ordinary regeneration with the user-approved text.
+
+| Property | Value |
+|----------|-------|
+| Layer id | `request_instruction` (`PROMPT_LAYER_ID.requestInstruction`) |
+| Builder | `buildRequestInstructionLayer` (`packages/prompt-pipeline/src/layer-factory.ts`) |
+| Position / role | `in_chat`, `user` |
+| Injection depth | `1` — the last chat slot (or second-to-last when a trailing user turn survives role merging) |
+| Priority | `PROMPT_LAYER_PRIORITY.requestInstruction` (190) |
+| Text | the approved literal — no wrapper label; macros resolve in `applyMacrosToContext` like every other user-authored field |
+| Output message | carries `layerId: "request_instruction"` attribution so consumers can locate it in the payload |
+
+An assembly without the input (null/undefined/blank) emits nothing here — the
+caller's output is unchanged. The layer is an ordinary budgeted `in_chat` layer,
+so the history-compaction planner accounts it, the stored layer trace records
+it, and the ordinary depth rule places it in the final interleave; appending a
+raw provider message after assembly would bypass all three.
+
+**The lifetime is NON-PERSISTENT — assembled per request, never stored.** It is
+an assembly INPUT, not chat state: nothing writes it to a message row, a preset
+or a setting. A later assembly simply omits it, so the next ordinary turn,
+manual swipe or summary never inherits it (the summary entry point filters its
+layers to `SUMMARY_LAYER_IDS` in `assemble.ts`, which never contains this id).
+The approved text is inspectable where the decision lives — the persisted
+permission receipt and the regenerated variant's linked prompt trace — and
+nowhere else.
 
 ---
 
