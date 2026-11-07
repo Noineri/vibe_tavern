@@ -15,10 +15,54 @@
  * the deck after the card's removal plus the promoted plan event; the play
  * body is `{ replaceForeignGoals?: boolean }` (the caller sends `{}` for a
  * plain play — its absence accepts the foreign-goals refusal).
+ *
+ * Typed 409 (DK-7): a play whose branch has no plan while the goal tracker
+ * holds foreign goals refuses with `details.code =
+ * "story_deck_foreign_goals"` — read-once interception (the
+ * `agent-feed-api.ts` unwrapFeedRpc shape) turns it into
+ * {@link StoryDeckForeignGoalsError} so the card dialog can offer the
+ * replace-goals confirm and retry; every other failure rides the shared
+ * `unwrapRpc` mapping.
  */
 import type { AgentPlanTask, StoryDeck } from "@vibe-tavern/api-contracts";
 import { client } from "./client.js";
-import { unwrapRpc } from "./unwrap.js";
+import { errorFromBody, unwrapRpc } from "./unwrap.js";
+import type { RpcBody, RpcErrorBody, RpcResponse } from "./unwrap.js";
+
+/** The server's typed refusal code (story-plan-sync.ts's
+ * `STORY_DECK_FOREIGN_GOALS_CODE` — a string literal here because the web
+ * package cannot import the server's domain module). */
+export const STORY_DECK_FOREIGN_GOALS_CODE = "story_deck_foreign_goals";
+
+/** The play route's typed 409: the branch's goal tracker holds goals not
+ * from a plan, and playing would replace them. The dialog shows the
+ * replace-goals confirm and retries with `{ replaceForeignGoals: true }`. */
+export class StoryDeckForeignGoalsError extends Error {
+	constructor(message: string, readonly foreignGoalCount: number) {
+		super(message);
+		this.name = "StoryDeckForeignGoalsError";
+	}
+}
+
+/** Read-once 409 handling for the play route: the typed foreign-goals
+ * outcome (the body is consumed HERE), everything else falls through to the
+ * shared error mapping over the SAME already-read body — the
+ * `errorFromBody` seam exists for exactly this split. */
+async function unwrapDeckPlayRpc<R extends RpcResponse>(response: R): Promise<RpcBody<R>> {
+	if (!response.ok && response.status === 409) {
+		const body = await response.json().catch(() => null) as RpcErrorBody | null;
+		const error = typeof body?.error === "object" && body.error !== null ? body.error : undefined;
+		const details = error?.details as { code?: unknown; foreignGoalCount?: unknown } | undefined;
+		if (details?.code === STORY_DECK_FOREIGN_GOALS_CODE && typeof details?.foreignGoalCount === "number") {
+			throw new StoryDeckForeignGoalsError(
+				error?.message ?? "Playing this card would replace the goal tracker's goals.",
+				details.foreignGoalCount,
+			);
+		}
+		throw errorFromBody(body, response.status);
+	}
+	return unwrapRpc(response);
+}
 
 /** `GET /api/agent/chats/:chatId/branches/:branchId/deck` — the empty deck when the branch has none stored yet. */
 export async function getAgentBranchDeck(chatId: string, branchId: string): Promise<StoryDeck> {
@@ -50,5 +94,5 @@ export async function playAgentBranchDeckCard(
 		param: { chatId, branchId, cardId },
 		json: options ?? {},
 	});
-	return unwrapRpc(response);
+	return unwrapDeckPlayRpc(response);
 }

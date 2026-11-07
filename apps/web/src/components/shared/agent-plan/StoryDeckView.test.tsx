@@ -1,13 +1,14 @@
 /**
- * StoryDeckView (DIRECTOR_DECK_CALENDAR_PLAN DK-6) — the deck tab body:
+ * StoryDeckView (DIRECTOR_DECK_CALENDAR_PLAN DK-6; the card actions are
+ * live since DK-7) — the deck tab body:
  *
  *  - the grid renders a face per card with the suit derivation (data-suit),
  *    model titles/bodies clamped to three lines in the grid size (two on sm,
  *    none on big — the mockup's identification-context rule) and the
  *    RP-font title (`font-body`);
- *  - the dashed «+ Своя карта» tile renders DISABLED with a title (DK-7's
- *    live action, drawn in the mockup's grid);
- *  - the draw button renders disabled with a title (DK-7's dialog);
+ *  - the dashed «+ Своя карта» tile and the draw button are LIVE since
+ *    DK-7 (they open StoryCardDialog — its suite covers the dialog flows;
+ *    the wiring test here pins the open);
  *  - «Пополнить у режиссёра» is LIVE: it runs the director-call action with
  *    the deck's exact message key (`story_deck_call_director_message`) and
  *    disables while the sidechat streams (the DR-12 rule);
@@ -17,7 +18,8 @@
  *    class strings (happy-dom applies no CSS);
  *  - the empty state (§7): two tilted backs, the title + explanation, the
  *    primary «Попросить режиссёра собрать колоду» (the same director call)
- *    and the muted disabled «+ Своя карта» link — no header, no grid;
+ *    and the muted «+ Своя карта» link (live since DK-7) — no header, no
+ *    grid;
  *  - phone (§7, matchMedia stub): the same pieces render (dual-mode canon —
  *    the phone differences are CSS-only);
  *  - the locale tables carry the mockup's RU verbatim (§1/§4/§7) with the
@@ -156,13 +158,14 @@ describe("StoryDeckView (DK-6)", () => {
     expect(titleEl?.textContent).toBe("Vet visit");
     // The muted count: «N карт» from cards.length.
     expect(view.getByTestId("story-deck-header").textContent).toContain("story_deck_cards_count");
-    // DK-7's live actions: disabled, with the dialog-pending title.
+    // DK-7's live actions: enabled, no placeholder title (the dialog flows
+    // live in StoryCardDialog's suite; the wiring pins are DK-7's).
     const draw = view.getByTestId("story-deck-draw");
-    expect(draw.getAttribute("disabled")).toBe("");
-    expect(draw.getAttribute("title")).toBe("story_deck_dialog_pending");
+    expect(draw.getAttribute("disabled")).toBeNull();
+    expect(draw.getAttribute("title")).toBeNull();
     const tile = view.getByTestId("story-deck-add-card");
-    expect(tile.getAttribute("disabled")).toBe("");
-    expect(tile.getAttribute("title")).toBe("story_deck_dialog_pending");
+    expect(tile.getAttribute("disabled")).toBeNull();
+    expect(tile.getAttribute("title")).toBeNull();
     // The refill action is live (locked=false).
     expect(view.getByTestId("story-deck-call-director").getAttribute("disabled")).toBeNull();
   });
@@ -208,9 +211,10 @@ describe("StoryDeckView (DK-6)", () => {
       "dkv-b4",
       "story_deck_call_director_message",
     ]);
-    // The muted «+ Своя карта» link renders disabled (DK-7's editor).
+    // The muted «+ Своя карта» link is live since DK-7 (opens the editor).
     const add = view.getByTestId("story-deck-empty-add");
-    expect(add.getAttribute("disabled")).toBe("");
+    expect(add.getAttribute("disabled")).toBeNull();
+    expect(add.getAttribute("title")).toBeNull();
     expect(add.textContent).toBe("story_deck_empty_add");
   });
 

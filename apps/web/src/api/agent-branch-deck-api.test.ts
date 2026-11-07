@@ -102,4 +102,36 @@ describe("agent-branch-deck-api — branch-owned deck (DK-6)", () => {
 		await branchDeckApi.playAgentBranchDeckCard("chat-1", "branch-1", "card_1", { replaceForeignGoals: true });
 		expect(JSON.parse(String(capturedInit?.body))).toEqual({ replaceForeignGoals: true });
 	});
+
+	it("a 409 story_deck_foreign_goals body becomes the typed StoryDeckForeignGoalsError (DK-7)", async () => {
+		respondWith(409, {
+			error: {
+				kind: "Conflict",
+				message: "The branch has no plan, and the goal tracker holds goals not from a plan.",
+				details: { code: "story_deck_foreign_goals", foreignGoalCount: 2 },
+			},
+		});
+		let caught: unknown = null;
+		try {
+			await branchDeckApi.playAgentBranchDeckCard("chat-1", "branch-1", "card_1");
+		} catch (error) {
+			caught = error;
+		}
+		expect(caught instanceof branchDeckApi.StoryDeckForeignGoalsError).toBe(true);
+		const typed = caught as InstanceType<typeof branchDeckApi.StoryDeckForeignGoalsError>;
+		expect(typed.foreignGoalCount).toBe(2);
+		expect(typed.message).toContain("goal tracker");
+	});
+
+	it("a 409 with a different typed code stays a plain error (not the foreign-goals type)", async () => {
+		respondWith(409, { error: { kind: "Conflict", message: "Other conflict", details: { code: "something_else" } } });
+		let caught: unknown = null;
+		try {
+			await branchDeckApi.playAgentBranchDeckCard("chat-1", "branch-1", "card_1");
+		} catch (error) {
+			caught = error;
+		}
+		expect(caught instanceof branchDeckApi.StoryDeckForeignGoalsError).toBe(false);
+		expect((caught as Error).message).toBe("Other conflict");
+	});
 });
