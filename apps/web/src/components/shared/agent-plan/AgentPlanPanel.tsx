@@ -44,6 +44,15 @@ export interface AgentPlanPanelProps {
    *  saves the reverted task as the one active event through the plan
    *  hook's `save` — the editor's write. */
   onRevertTask?: (taskId: string) => void;
+  /** DK-6 (mockup §1): the curtain's SECOND header row — the story deck's
+   *  tab strip (events/deck/calendar counts, StoryCurtainTabs).
+   *  Rendered inside the scroll content right after the first header row;
+   *  undefined = nothing rendered (today's curtain, byte-identical). */
+  curtainTabs?: ReactNode;
+  /** DK-6: replaces the curtain's DEFAULT body (the premise line + the
+   *  task list) when set — the deck/calendar tab bodies. Undefined = the
+   *  default body (the events tab, byte-identical). */
+  curtainBody?: ReactNode;
 }
 
 type TaskStatus = AgentPlanTask["status"];
@@ -57,7 +66,10 @@ export function pickCurrent(tasks: AgentPlanTask[]): AgentPlanTask | null {
   return tasks.find((task) => task.status === "active") ?? tasks.find((task) => task.status === "pending") ?? null;
 }
 
-function countRemaining(tasks: AgentPlanTask[]): number {
+/** The plan's remaining (pending + active) task count — the collapsed row's
+ *  number. Exported since DK-6: the story section's tab row passes THE SAME
+ *  derivation as the events tab's muted count (never a second one). */
+export function countRemaining(tasks: AgentPlanTask[]): number {
   return tasks.filter((task) => task.status === "pending" || task.status === "active").length;
 }
 
@@ -114,6 +126,8 @@ export function AgentPlanPanel({
   flashTitle,
   showEditorInCollapsedRow = true,
   onRevertTask,
+  curtainTabs,
+  curtainBody,
 }: AgentPlanPanelProps) {
   const { t } = useT();
   const [open, setOpen] = useState(false);
@@ -316,15 +330,25 @@ export function AgentPlanPanel({
               <Chevron open />
             </button>
           </div>
-          {/* P2 (§5): the premise as one muted line at the top — a reminder
-              for the user; it never reaches the RP model. The goal is model
-              text, so the line opts into page translation. */}
-          {plan.goal !== "" && (
-            <p data-testid="agent-plan-premise" translate="yes" className="my-1 border-l-2 border-border2 py-0.5 pl-2 font-ui text-[calc(var(--ui-fs)-2px)] leading-normal text-t3">
-              {t("agent_plan_story_premise", { premise: plan.goal })}
-            </p>
+          {/* DK-6 (§1): the second header row — the story deck's tab strip
+              (curtain-only; undefined = nothing, today's curtain). */}
+          {curtainTabs}
+          {curtainBody === undefined ? (
+            <>
+              {/* P2 (§5): the premise as one muted line at the top — a
+                  reminder for the user; it never reaches the RP model. The
+                  goal is model text, so the line opts into page translation. */}
+              {plan.goal !== "" && (
+                <p data-testid="agent-plan-premise" translate="yes" className="my-1 border-l-2 border-border2 py-0.5 pl-2 font-ui text-[calc(var(--ui-fs)-2px)] leading-normal text-t3">
+                  {t("agent_plan_story_premise", { premise: plan.goal })}
+                </p>
+              )}
+              {taskList(true)}
+            </>
+          ) : (
+            /* DK-6: the deck/calendar tab body replaces the default body. */
+            curtainBody
           )}
-          {taskList(true)}
         </ScrollArea>
       )}
     </div>

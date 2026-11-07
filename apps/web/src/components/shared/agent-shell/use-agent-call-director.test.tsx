@@ -80,6 +80,18 @@ describe("useAgentCallDirector (DR-12)", () => {
     expect(send).toHaveBeenCalledTimes(1);
   });
 
+  it("DK-6: a queued custom message key is resolved through the shell's t (the deck's refill)", () => {
+    useSidechatCallDirectorStore.setState({
+      pending: { [OWNER_KEY]: true },
+      messages: { [OWNER_KEY]: "story_deck_call_director_message" },
+    });
+    render(React.createElement(Harness, { ownerKey: OWNER_KEY, threadId: "t1", sessionLoading: false, isSending: false, send }));
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0]![0]).toBe("story_deck_call_director_message");
+    // The entry AND its key are consumed together.
+    expect(useSidechatCallDirectorStore.getState().messages[OWNER_KEY]).toBeUndefined();
+  });
+
   it("no pending entry for this owner — byte-identical no-op (every non-sidechat host)", () => {
     render(React.createElement(Harness, { ownerKey: OWNER_KEY, threadId: "t1", sessionLoading: false, isSending: false, send }));
     expect(send).not.toHaveBeenCalled();

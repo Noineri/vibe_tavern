@@ -225,4 +225,24 @@ describe("callDirector (DR-12)", () => {
     expect(useSidechatCallDirectorStore.getState().consume(OWNER_KEY)).toBe(false);
     expect(useSidechatCallDirectorStore.getState().pending[OWNER_KEY]).toBeUndefined();
   });
+
+  test("DK-6: the call's message key rides the queue — the deck's refill passes its own, the default otherwise", async () => {
+    // The deck's refill call: the message key lands on the queue entry.
+    await callDirector(CHAT_ID, BRANCH_ID, "story_deck_call_director_message");
+    expect(useSidechatCallDirectorStore.getState().queuedMessageKey(OWNER_KEY)).toBe(
+      "story_deck_call_director_message",
+    );
+    // The consume takes the entry AND its key (one removal — no stale key).
+    expect(useSidechatCallDirectorStore.getState().consume(OWNER_KEY)).toBe(true);
+    expect(useSidechatCallDirectorStore.getState().messages[OWNER_KEY]).toBeUndefined();
+    expect(useSidechatCallDirectorStore.getState().queuedMessageKey(OWNER_KEY)).toBe(
+      "story_plan_call_director_message",
+    );
+
+    // The plain story-strip call: no key queued, the default reads back.
+    await callDirector(CHAT_ID, BRANCH_ID);
+    expect(useSidechatCallDirectorStore.getState().queuedMessageKey(OWNER_KEY)).toBe(
+      "story_plan_call_director_message",
+    );
+  });
 });

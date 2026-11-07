@@ -13,6 +13,7 @@ import {
   resolveChatEffectiveProfileId,
 } from "../lib/agent-builtin-profiles.js";
 import { agentOwnerKey } from "../lib/agent-host-registry.js";
+import type Resources from "../i18n/resources.js";
 
 /**
  * The director-call action (DIRECTOR_MODE_PLAN DR-12 — the strip button key
@@ -31,8 +32,10 @@ import { agentOwnerKey } from "../lib/agent-host-registry.js";
  *    `profile_changed` separator uniformly for every switch surface).
  * 2. opens the sidechat surface: the ONE open flag (SC-18a) on desktop and
  *    the sidechat tab (SC-15) on mobile.
- * 3. queues the call's message (the i18n key `story_plan_call_director_message`,
- *    resolved by the SHELL at send time so it follows the live language):
+ * 3. queues the call's message (an i18n KEY, resolved by the SHELL at send
+ *    time so it follows the live language; DK-6 generalized the hardcoded
+ *    story-plan key into a parameter — the deck refill action
+ *    passes its own key, absence reads as the story-plan default):
  *    the entry is keyed by the sidechat owner key (chat+branch+kind), so a
  *    repeat call while an entry is pending is a no-op, and the shell's
  *    consume is remove-first — a double click sends exactly ONE message.
@@ -50,30 +53,55 @@ interface SidechatCallDirectorState {
   /** Pending calls keyed by sidechat owner key — presence means "the shell
    *  owes this owner one director call message". */
   pending: Record<string, boolean>;
+  /** DK-6: the queued call's i18n message key per owner key — the deck
+   *  buttons pass their own; the map is DELETED together with the pending
+   *  entry (one consume), so it never outlives its call. Absence reads as
+   *  `DIRECTOR_CALL_DEFAULT_MESSAGE_KEY` through `queuedMessageKey`. */
+  messages: Record<string, DirectorCallMessageKey>;
   /** Queue an owner's call (a no-op while one is already pending — the
-   *  exactly-once guard's first half; the second half is `consume`). */
-  enqueue: (ownerKey: string) => void;
+   *  exactly-once guard's first half; the second half is `consume`). The
+   *  optional message key rides the entry (DK-6's deck call message). */
+  enqueue: (ownerKey: string, messageKey?: DirectorCallMessageKey) => void;
   /** Remove-first consume: true only for the caller that took the entry —
    *  the exactly-once law under double-fire effects (StrictMode, rerender
    *  races): only ONE consume call ever returns true per entry. */
   consume: (ownerKey: string) => boolean;
+  /** DK-6: the message key a taken entry carries — the story-plan default
+   *  when none was queued. Read BEFORE `consume` (consume deletes it). */
+  queuedMessageKey: (ownerKey: string) => DirectorCallMessageKey;
 }
+
+/** An i18n message key the shell resolves at send time (DK-6's generalized
+ *  call message — strict-keyed, so a typo'd key is a compile error). */
+export type DirectorCallMessageKey = keyof Resources["en"];
+
+/** The story strip's call message (DR-12) — the default for entries queued
+ *  without an explicit key (the deck's call passes its own; DK-6). */
+export const DIRECTOR_CALL_DEFAULT_MESSAGE_KEY: DirectorCallMessageKey =
+  "story_plan_call_director_message";
 
 export const useSidechatCallDirectorStore = create<SidechatCallDirectorState>((set, get) => ({
   pending: {},
-  enqueue: (ownerKey) => {
+  messages: {},
+  enqueue: (ownerKey, messageKey) => {
     if (get().pending[ownerKey]) return;
-    set((s) => ({ pending: { ...s.pending, [ownerKey]: true } }));
+    set((s) => ({
+      pending: { ...s.pending, [ownerKey]: true },
+      ...(messageKey === undefined ? {} : { messages: { ...s.messages, [ownerKey]: messageKey } }),
+    }));
   },
   consume: (ownerKey) => {
     if (!get().pending[ownerKey]) return false;
     set((s) => {
       const next = { ...s.pending };
       delete next[ownerKey];
-      return { pending: next };
+      const nextMessages = { ...s.messages };
+      delete nextMessages[ownerKey];
+      return { pending: next, messages: nextMessages };
     });
     return true;
   },
+  queuedMessageKey: (ownerKey) => get().messages[ownerKey] ?? DIRECTOR_CALL_DEFAULT_MESSAGE_KEY,
 }));
 
 /** The sidechat owner key for a (chat, branch) pair — the SAME spelling the
@@ -88,7 +116,13 @@ export function sidechatCallKey(chatId: string, branchId: string): string {
  * and the failure policy; rejects with the underlying error ONLY after the
  * open + queue have happened, so a failed switch never eats the click.
  */
-export async function callDirector(chatId: string, branchId: string): Promise<void> {
+export async function callDirector(
+	chatId: string,
+	branchId: string,
+	// DK-6: the deck's refill action passes its own call message key; the
+	// story strip rides the default (see the store's doc).
+	messageKey?: DirectorCallMessageKey,
+): Promise<void> {
   let failure: unknown = null;
   try {
     // 1) the effective profile through the existing seams — fresh (chat,
@@ -127,7 +161,7 @@ export async function callDirector(chatId: string, branchId: string): Promise<vo
   // 3) open the surface + queue the message — ALWAYS (see the module doc).
   useSidechatOpenStore.getState().setOpen(chatId, true);
   useSidechatMobileStore.getState().setTab("sidechat");
-  useSidechatCallDirectorStore.getState().enqueue(sidechatCallKey(chatId, branchId));
+  useSidechatCallDirectorStore.getState().enqueue(sidechatCallKey(chatId, branchId), messageKey);
   if (failure !== null) throw failure;
 }
 

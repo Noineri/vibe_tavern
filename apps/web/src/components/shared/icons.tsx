@@ -1,5 +1,5 @@
 import React from 'react';
-import { Globe, Brain, Crop, Dices, FileText, Film, Flame, Grip, Images, Repeat, Send, Settings, Sparkles, Star, Volume2, VolumeX, Square, AudioLines, Play, Pause, Folder } from 'lucide-react';
+import { Globe, Brain, Crop, Dices, FileText, Film, Flame, Grip, Images, Repeat, Send, Settings, Sparkles, Star, Volume2, VolumeX, Square, AudioLines, Play, Pause, Folder, Users, CloudLightning, SquareStack, Shuffle } from 'lucide-react';
 
 // Props forwarded so call sites passing `className` (e.g. "h-5 w-5 text-t3")
 // actually apply — the previous `() => <svg/>` no-arg shape silently dropped
@@ -176,6 +176,19 @@ export const Ic = {
   // Lucide `Folder` — «Открыть папку данных» in the About settings section
   // (SM-6); same lucide adoption path as film/play above.
   folder: (props?: { className?: string }) => <Folder size={13} strokeWidth={2} {...props} />,
+  // Lucide `Users` — two people (the mockup's ti-users). The story-deck
+  // encounter suit glyph (DIRECTOR_DECK_CALENDAR_PLAN DK-6, mockup §1's
+  // suit set); same lucide adoption path as film/flame above.
+  users: (props?: { className?: string }) => <Users size={13} strokeWidth={2} {...props} />,
+  // Lucide `CloudLightning` — cloud with a bolt (the mockup's ti-cloud-storm).
+  // The story-deck change suit glyph (DK-6); same adoption path.
+  cloudStorm: (props?: { className?: string }) => <CloudLightning size={13} strokeWidth={2} {...props} />,
+  // Lucide `SquareStack` — two stacked rounded rects (the mockup's ti-cards).
+  // The deck header icon and the card-back seal (DK-6); same adoption path.
+  cards: (props?: { className?: string }) => <SquareStack size={13} strokeWidth={2} {...props} />,
+  // Lucide `Shuffle` — crossing arrows (the mockup's ti-arrows-shuffle).
+  // The deck's draw-random action (DK-6/DK-7); same adoption path.
+  shuffle: (props?: { className?: string }) => <Shuffle size={13} strokeWidth={2} {...props} />,
 };
 
 // Icon props actually used at call sites: `className` (any icon) and `direction`
