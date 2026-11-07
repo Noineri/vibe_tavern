@@ -303,6 +303,16 @@ export async function createRuntimeApp(config: RuntimeAppConfig): Promise<Hono> 
 		storyPlanSync.reconcileActiveBranch(chatId),
 	);
 	const trackerService = new SceneTrackerService(stores, sessionRuntime, providerProfileService);
+	// DK-4b — the Scene clock drives the branch plan: every successful Scene
+	// record write (generate / edit / auto / backfill) nudges the ACTIVE
+	// branch's plan — a dated event whose story time has arrived becomes the
+	// current event, no extra model call. Fire-and-forget from the Scene write
+	// path (the tracker service never awaits it); the chain cannot loop
+	// because advanceByClock writes the plan + goal projection and never a
+	// scene record (pinned in tests).
+	trackerService.registerRecordWrittenObserver((chatId, branchId) =>
+		storyPlanSync.advanceByClock(chatId, branchId),
+	);
 	const liveChatOrchestrator = new LiveChatOrchestrator(
 		sessionRuntime.chatRuntime,
 		sessionRuntime.chatApp,
