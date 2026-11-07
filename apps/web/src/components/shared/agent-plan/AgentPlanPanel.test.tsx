@@ -1,6 +1,7 @@
 import { describe, expect, it, mock } from "bun:test";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import type { AgentPlan } from "@vibe-tavern/api-contracts";
+import type { StoryClock } from "@vibe-tavern/domain";
 
 useDomEnv();
 
@@ -37,7 +38,7 @@ describe("AgentPlanPanel", () => {
     expect(queryByTestId("agent-plan-panel")).toBeNull();
   });
 
-  it("collapses onto the first PENDING task when nothing is active (pickCurrent fallback)", () => {
+  it("collapses onto the first PENDING task when nothing is active (pickCurrentPlanTask clockless fallback)", () => {
     const { getByTestId, getByText } = renderPanel({
       goal: "Ship",
       constraints: [],
@@ -248,5 +249,89 @@ describe("AgentPlanPanel — curtain presentation (DR-9)", () => {
     for (const button of getAllByTestId("agent-plan-open-editor")) {
       expect(button.getAttribute("disabled")).toBe("");
     }
+  });
+});
+
+// ─── DK-10 (mockup §6): dated events — the time chip + the wait mark ──────
+// behavior change: none without a threaded clock (byte-identical default —
+// pinned above and here); with one, dated rows carry the muted time chip
+// (the ONE storyEventTimeLabel derivation) and a PENDING row whose time has
+// not come carries the "awaits" mark (the domain's isStoryEventDue — never
+// a hand-rolled comparison). The current pick migrates to the domain's
+// pickCurrentPlanTask over the SAME threaded clock.
+describe("AgentPlanPanel — dated events (DK-10, mockup §6)", () => {
+  // Clock reads day 4 · day. `future` (day 4 · evening) ranks after it;
+  // `past` (day 2 · morning) is already due; `done` is completed (chip yes,
+  // wait never); `free` is undated (always due).
+  const CLOCK: StoryClock = { day: 4, part: "day", label: null };
+  const DATED_PLAN: AgentPlan = {
+    goal: "Cozy comedy",
+    constraints: [],
+    tasks: [
+      { id: "done", title: "Fridge raid", body: "", status: "completed", at: { day: 1, part: "day" } },
+      { id: "past", title: "Neighbour noticed", body: "", status: "pending", at: { day: 2, part: "morning" } },
+      { id: "future", title: "Vet visit", body: "", status: "pending", at: { day: 4, part: "evening" } },
+      { id: "free", title: "House rules", body: "", status: "pending" },
+    ],
+  };
+
+  function renderDated(plan: AgentPlan = DATED_PLAN, over: Partial<Parameters<typeof AgentPlanPanel>[0]> = {}) {
+    return render(<AgentPlanPanel plan={plan} onOpenEditor={mock()} locked={false} presentation="curtain" storyClock={CLOCK} {...over} />);
+  }
+
+  it("dated rows carry the time chip; completed rows never get the wait mark", () => {
+    const { getByTestId, getAllByTestId } = renderDated();
+    fireEvent.click(getByTestId("agent-plan-toggle"));
+    // Key-echo i18n: the part-bearing label echoes story_event_at_day_part,
+    // the partless one story_event_at_day — the two chip shapes are
+    // distinguishable without a locale.
+    const chips = getAllByTestId("agent-plan-event-time");
+    expect(chips).toHaveLength(3);
+    for (const chip of chips) expect(chip.textContent).toBe("story_event_at_day_part");
+    // Exactly the not-yet-due pending row (day 4 · evening > day 4 · day).
+    expect(getByTestId("agent-plan-event-wait").textContent).toBe("story_event_awaits_time");
+    // The completed dated row carries a chip but no wait mark.
+    const doneRow = getByTestId("agent-plan-task-completed");
+    expect(doneRow.querySelector('[data-testid="agent-plan-event-time"]')).not.toBeNull();
+    expect(doneRow.querySelector('[data-testid="agent-plan-event-wait"]')).toBeNull();
+  });
+
+  it("a pending due-again event and an undated one never wait", () => {
+    const { getByTestId, queryAllByTestId } = renderDated();
+    fireEvent.click(getByTestId("agent-plan-toggle"));
+    // Only one wait mark exists (the future event) — the past-dated and
+    // undated pending rows carry none.
+    expect(queryAllByTestId("agent-plan-event-wait")).toHaveLength(1);
+  });
+
+  it("no chip and no wait mark without a threaded clock (byte-identical default)", () => {
+    const { getByTestId, queryAllByTestId } = render(
+      <AgentPlanPanel plan={DATED_PLAN} onOpenEditor={mock()} locked={false} presentation="curtain" />,
+    );
+    fireEvent.click(getByTestId("agent-plan-toggle"));
+    expect(queryAllByTestId("agent-plan-event-time")).toHaveLength(0);
+    expect(queryAllByTestId("agent-plan-event-wait")).toHaveLength(0);
+  });
+
+  it("the current pick skips a not-yet-due event and equals the old rule when clockless", () => {
+    // The not-yet-due event comes FIRST among the pendings: with the clock
+    // the domain pick skips it for the first due one; without the clock it
+    // wins exactly as the retired local rule did.
+    const plan: AgentPlan = {
+      goal: "Cozy comedy",
+      constraints: [],
+      tasks: [
+        { id: "future", title: "Vet visit", body: "", status: "pending", at: { day: 4, part: "evening" } },
+        { id: "past", title: "Neighbour noticed", body: "", status: "pending", at: { day: 2, part: "morning" } },
+      ],
+    };
+    const withClock = renderDated(plan);
+    expect(withClock.getByTestId("agent-plan-panel").textContent).toContain("Neighbour noticed");
+    withClock.unmount();
+
+    const clockless = render(
+      <AgentPlanPanel plan={plan} onOpenEditor={mock()} locked={false} presentation="curtain" />,
+    );
+    expect(clockless.getByTestId("agent-plan-panel").textContent).toContain("Vet visit");
   });
 });

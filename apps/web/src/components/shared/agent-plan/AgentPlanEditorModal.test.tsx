@@ -1,16 +1,20 @@
 import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import type { AgentPlan } from "@vibe-tavern/api-contracts";
+import type { StoryClock } from "@vibe-tavern/domain";
 
 useDomEnv();
 
-const { act, fireEvent, render, waitFor } = await import("@testing-library/react");
+const { act, fireEvent, render, waitFor, within } = await import("@testing-library/react");
 const { AgentPlanEditorModal } = await import("./AgentPlanEditorModal.js");
 
 const originalFetch = globalThis.fetch;
 let putBody: unknown = null;
 let lastPath = "";
 let rejectPut = false;
+// DK-10: the story GET's canned plan override (null = the shared INITIAL_PLAN,
+// so every pre-existing story test keeps its exact fixture).
+let storyPlanOverride: AgentPlan | null = null;
 
 const INITIAL_PLAN: AgentPlan = {
   goal: "Build the editor",
@@ -37,7 +41,7 @@ const fetchRouter = mock(async (input: RequestInfo | URL, init?: RequestInit): P
   // DR-9: the branch (story-plan) route — same canned payloads, any owner.
   if (/\/api\/agent\/chats\/[^/]+\/branches\/[^/]+\/plan$/.test(path) && method === "GET") {
     lastPath = path;
-    return jsonResponse({ plan: INITIAL_PLAN });
+    return jsonResponse({ plan: storyPlanOverride ?? INITIAL_PLAN });
   }
   if (/\/api\/agent\/chats\/[^/]+\/branches\/[^/]+\/plan$/.test(path) && method === "PUT") {
     lastPath = path;
@@ -51,6 +55,7 @@ beforeEach(() => {
   putBody = null;
   lastPath = "";
   rejectPut = false;
+  storyPlanOverride = null;
   fetchRouter.mockClear();
   globalThis.fetch = fetchRouter as unknown as typeof fetch;
 });
@@ -210,5 +215,183 @@ describe("AgentPlanEditorModal — scroll surface (CNR-8h)", () => {
     });
     await waitFor(() => expect(area.querySelector("[data-scroll-thumb]")).not.toBeNull());
     expect(area.querySelector("[data-scroll-track]")?.getAttribute("data-orientation")).toBe("vertical");
+  });
+});
+
+// ─── DK-10 (mockup §6): the when-row ────────────────────────────────────────
+// Pins the gate (story owner WHILE the clock reads; script plans and a
+// clockless branch render byte-identically — no row at all), the assign
+// default (the clock's day, part null = "any time"), the day+part editing,
+// the part-null write, the day field's commit semantics (the shared
+// NumberInput: non-numeric reverts on blur, sub-1 clamps up, fractional
+// rounds through the glue — an out-of-domain day never persists), and the
+// back-toggle to undated. Key-echo i18n: labels assert their keys; the day
+// field is found by its inputTestId (the primitive carries no aria-label).
+describe("AgentPlanEditorModal — the when-row (DK-10, mockup §6)", () => {
+  const CLOCK: StoryClock = { day: 3, part: "evening", label: null };
+  const DATED_PLAN: AgentPlan = {
+    goal: "Build the editor",
+    constraints: [],
+    tasks: [
+      { id: "task_1", title: "First task", body: "First body", status: "active", at: { day: 4, part: "morning" } },
+      { id: "task_2", title: "Second task", body: "Second body", status: "pending" },
+    ],
+  };
+
+  function renderWhenModal(branchId: string, storyClock: StoryClock | null = CLOCK) {
+    const onClose = mock();
+    const view = render(
+      <AgentPlanEditorModal
+        owner={{ kind: "chatBranch", chatId: "when-chat", branchId }}
+        open
+        onClose={onClose}
+        locked={false}
+        storyClock={storyClock}
+      />,
+    );
+    return { ...view, onClose };
+  }
+
+  async function row(index: number, branchId: string) {
+    const view = renderWhenModal(branchId);
+    const taskRow = await waitFor(() => view.getByTestId(`agent-plan-editor-task-${index}`));
+    return { view, taskRow: within(taskRow) };
+  }
+
+  it("renders the when-row for a story owner while the clock reads; the dated row shows the day fields", async () => {
+    storyPlanOverride = DATED_PLAN;
+    const { view, taskRow } = await row(0, "when-row-gate-1");
+    expect(taskRow.getByText("story_plan_when")).toBeDefined();
+    expect(taskRow.getByRole("radio", { name: "story_plan_when_dated" }).getAttribute("aria-checked")).toBe("true");
+    expect((taskRow.getByTestId("agent-plan-when-day-0") as HTMLInputElement).value).toBe("4");
+    // The five part options — the four story parts + any time; morning is
+    // the stored part.
+    expect(taskRow.getByRole("radio", { name: "story_clock_part_morning" }).getAttribute("aria-checked")).toBe("true");
+    expect(taskRow.getByRole("radio", { name: "story_clock_part_day" })).toBeDefined();
+    expect(taskRow.getByRole("radio", { name: "story_clock_part_evening" })).toBeDefined();
+    expect(taskRow.getByRole("radio", { name: "story_clock_part_night" })).toBeDefined();
+    expect(taskRow.getByRole("radio", { name: "story_plan_when_anytime" })).toBeDefined();
+    // The undated row carries the mode control, no day fields.
+    const undatedRow = within(view.getByTestId("agent-plan-editor-task-1"));
+    expect(undatedRow.getByRole("radio", { name: "story_plan_when_undated" }).getAttribute("aria-checked")).toBe("true");
+    expect(undatedRow.queryByTestId("agent-plan-when-day-1")).toBeNull();
+    view.unmount();
+  });
+
+  it("renders NOTHING when the clock does not read — story owner without a clock (byte-identical)", async () => {
+    const view = renderWhenModal("when-row-gate-2", null);
+    await waitFor(() => expect(view.getByTestId("agent-plan-editor-task-0")).toBeDefined());
+    expect(view.queryByText("story_plan_when")).toBeNull();
+    expect(view.queryByRole("radio", { name: "story_plan_when_dated" })).toBeNull();
+    view.unmount();
+  });
+
+  it("renders NOTHING for a script owner even when a clock is threaded (byte-identical)", async () => {
+    const onClose = mock();
+    const view = render(
+      <AgentPlanEditorModal owner={{ kind: "script", scriptId: "when-script" }} open onClose={onClose} locked={false} storyClock={CLOCK} />,
+    );
+    await waitFor(() => expect(view.getByTestId("agent-plan-editor-task-0")).toBeDefined());
+    expect(view.queryByText("story_plan_when")).toBeNull();
+    view.unmount();
+  });
+
+  it("assigning a day defaults to the clock's day + any time, and part edits write at through the PUT", async () => {
+    const view = renderWhenModal("when-row-assign");
+    const { onClose } = view;
+    const taskRow = within(await waitFor(() => view.getByTestId("agent-plan-editor-task-1")));
+    fireEvent.click(taskRow.getByRole("radio", { name: "story_plan_when_dated" }));
+    // The clock's current day anchors the default; "any time" (part null)
+    // starts selected.
+    const day = taskRow.getByTestId("agent-plan-when-day-1") as HTMLInputElement;
+    expect(day.value).toBe("3");
+    // The compact shape: hideControls — the day field renders no stepper
+    // buttons (the decrease stepper's accessible label is the primitive's
+    // number_decrease key); steppers would clip inside the field's 56px cap.
+    expect(taskRow.queryByRole("button", { name: "number_decrease" })).toBeNull();
+    expect(taskRow.getByRole("radio", { name: "story_plan_when_anytime" }).getAttribute("aria-checked")).toBe("true");
+
+    fireEvent.change(day, { target: { value: "5" } });
+    // NumberInput commits on blur — without it the entry sits uncommitted.
+    fireEvent.blur(day);
+    fireEvent.click(taskRow.getByRole("radio", { name: "story_clock_part_night" }));
+    fireEvent.click(view.getByTestId("agent-plan-save"));
+    await waitFor(() => expect(putBody).not.toBeNull());
+    const saved = (putBody as { plan: AgentPlan }).plan;
+    expect(saved.tasks[1]!.at).toEqual({ day: 5, part: "night" });
+    expect(onClose).toHaveBeenCalledTimes(1);
+    view.unmount();
+  });
+
+  it("part null writes through the any-time segment", async () => {
+    storyPlanOverride = DATED_PLAN;
+    const view = renderWhenModal("when-row-anytime");
+    const { onClose } = view;
+    const taskRow = within(await waitFor(() => view.getByTestId("agent-plan-editor-task-0")));
+    fireEvent.click(taskRow.getByRole("radio", { name: "story_plan_when_anytime" }));
+    fireEvent.click(view.getByTestId("agent-plan-save"));
+    await waitFor(() => expect(putBody).not.toBeNull());
+    expect((putBody as { plan: AgentPlan }).plan.tasks[0]!.at).toEqual({ day: 4, part: null });
+    expect(onClose).toHaveBeenCalledTimes(1);
+    view.unmount();
+  });
+
+  it("a non-numeric day entry reverts on blur and never persists (the NumberInput semantics)", async () => {
+    storyPlanOverride = DATED_PLAN;
+    const view = renderWhenModal("when-row-invalid-non-numeric");
+    const taskRow = within(await waitFor(() => view.getByTestId("agent-plan-editor-task-0")));
+    const day = taskRow.getByTestId("agent-plan-when-day-0") as HTMLInputElement;
+    fireEvent.change(day, { target: { value: "abc" } });
+    // The blur commit: parseFloat("abc") is NaN → the previous day repaints
+    // and no onChange ever fires.
+    fireEvent.blur(day);
+    expect(day.value).toBe("4");
+    fireEvent.click(view.getByTestId("agent-plan-save"));
+    await waitFor(() => expect(putBody).not.toBeNull());
+    expect((putBody as { plan: AgentPlan }).plan.tasks[0]!.at).toEqual({ day: 4, part: "morning" });
+    view.unmount();
+  });
+
+  it("a sub-1 day entry clamps up to 1 on blur", async () => {
+    storyPlanOverride = DATED_PLAN;
+    const view = renderWhenModal("when-row-invalid-sub-one");
+    const taskRow = within(await waitFor(() => view.getByTestId("agent-plan-editor-task-0")));
+    const day = taskRow.getByTestId("agent-plan-when-day-0") as HTMLInputElement;
+    fireEvent.change(day, { target: { value: "0" } });
+    // The blur commit clamps to min={1} — the wire never sees day < 1.
+    fireEvent.blur(day);
+    expect(day.value).toBe("1");
+    fireEvent.click(view.getByTestId("agent-plan-save"));
+    await waitFor(() => expect(putBody).not.toBeNull());
+    expect((putBody as { plan: AgentPlan }).plan.tasks[0]!.at).toEqual({ day: 1, part: "morning" });
+    view.unmount();
+  });
+
+  it("a fractional day entry integer-rounds through the commit glue", async () => {
+    storyPlanOverride = DATED_PLAN;
+    const view = renderWhenModal("when-row-invalid-fractional");
+    const taskRow = within(await waitFor(() => view.getByTestId("agent-plan-editor-task-0")));
+    const day = taskRow.getByTestId("agent-plan-when-day-0") as HTMLInputElement;
+    fireEvent.change(day, { target: { value: "4.5" } });
+    // The blur commit parses 4.5 (min={1} passes it through); the modal's
+    // glue rounds it to the block invariant — an integer day reaches at.
+    fireEvent.blur(day);
+    expect(day.value).toBe("5");
+    fireEvent.click(view.getByTestId("agent-plan-save"));
+    await waitFor(() => expect(putBody).not.toBeNull());
+    expect((putBody as { plan: AgentPlan }).plan.tasks[0]!.at).toEqual({ day: 5, part: "morning" });
+    view.unmount();
+  });
+
+  it("toggling back to undated drops at entirely", async () => {
+    storyPlanOverride = DATED_PLAN;
+    const view = renderWhenModal("when-row-undated");
+    const taskRow = within(await waitFor(() => view.getByTestId("agent-plan-editor-task-0")));
+    fireEvent.click(taskRow.getByRole("radio", { name: "story_plan_when_undated" }));
+    expect(taskRow.queryByTestId("agent-plan-when-day-0")).toBeNull();
+    fireEvent.click(view.getByTestId("agent-plan-save"));
+    await waitFor(() => expect(putBody).not.toBeNull());
+    expect((putBody as { plan: AgentPlan }).plan.tasks[0]!.at).toBeUndefined();
+    view.unmount();
   });
 });

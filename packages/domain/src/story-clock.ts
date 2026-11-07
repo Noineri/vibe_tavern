@@ -4,9 +4,11 @@ import { isRecord } from "./is-record.js";
 /**
  * The story clock (DIRECTOR_DECK_CALENDAR_PLAN DK-1): a coarse in-story
  * calendar — a day number plus a named part of the day — and the ONE pure
- * current-event rule that reads it. The server (`pickCurrentStoryEvent`,
- * DK-4) and the web (`AgentPlanPanel.pickCurrent`, DK-10) migrate to these
- * functions; until they do, their local rules stay the live copies.
+ * current-event rule that reads it. Both consumers read it through here:
+ * the server's `pickCurrentStoryEvent` (story-plan-sync.ts, DK-4) is a thin
+ * named wrapper, and the web migrated in DK-10 (the retired local
+ * `pickCurrent` in AgentPlanPanel.tsx; the cards call
+ * {@link pickCurrentPlanTask} at a null clock).
  *
  * Runtime dependency direction: `agent-plan.ts` imports THIS module (the day
  * parts, the `at` validator); the `AgentPlanTask` reference here is type-only

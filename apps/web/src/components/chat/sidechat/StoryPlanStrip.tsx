@@ -60,14 +60,14 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { brandId, isStoryEventDue, type ChatId } from "@vibe-tavern/domain";
+import { brandId, isStoryEventDue, pickCurrentPlanTask, type ChatId } from "@vibe-tavern/domain";
 import { useSnapshotStore } from "../../../stores/snapshot-store.js";
 import { useAgentStreamingStore } from "../../../stores/agent-streaming-store.js";
 import { checkObjectiveCompletionAction } from "../../../stores/api-actions/chat-actions.js";
 import { readAgentPlan, refreshAgentPlan, subscribeAgentPlan, useAgentPlan } from "../../../hooks/use-agent-plan.js";
 import { useStorySceneClock } from "../../../hooks/use-story-scene-clock.js";
 import { AgentPlanSection } from "../../shared/agent-shell/AgentPlanSection.js";
-import { agentPlanTextButtonCls, pickCurrent } from "../../shared/agent-plan/AgentPlanPanel.js";
+import { agentPlanTextButtonCls } from "../../shared/agent-plan/AgentPlanPanel.js";
 import { selectSidechatOwner } from "./sidechat-host.js";
 import { agentOwnerKey } from "../../../lib/agent-host-registry.js";
 import { callDirector } from "../../../stores/sidechat-call-director-store.js";
@@ -150,7 +150,10 @@ export function StoryPlanStrip({ onCallDirector }: { onCallDirector?: () => void
     refreshAgentPlan(planOwner);
     // The flash: the plan's CURRENT event (the cached plan, pre-refresh)
     // just turned completed in the tracker — goal ids ARE event ids.
-    const current = pickCurrent(planRef.current.tasks);
+    // DK-10: the ONE pick rule (the domain's) over the strip's threaded
+    // clock mirror — the clockless case returns exactly the old local
+    // pickCurrent result.
+    const current = pickCurrentPlanTask(planRef.current.tasks, clockRef.current);
     if (
       current !== null &&
       next.get(current.id) === "completed" &&
@@ -201,7 +204,8 @@ export function StoryPlanStrip({ onCallDirector }: { onCallDirector?: () => void
     lastCurrentIdRef.current = null;
     const onPlanReplaced = () => {
       const nextPlan = readAgentPlan(planOwner);
-      const nextCurrent = pickCurrent(nextPlan.tasks);
+      // DK-10: the ONE pick rule (the domain's) over the same clock mirror.
+      const nextCurrent = pickCurrentPlanTask(nextPlan.tasks, clockRef.current);
       const nextId = nextCurrent?.id ?? null;
       const previousId = lastCurrentIdRef.current;
       lastCurrentIdRef.current = nextId;

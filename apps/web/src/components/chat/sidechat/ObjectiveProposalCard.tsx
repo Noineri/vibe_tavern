@@ -58,14 +58,13 @@
  */
 
 import { useState } from "react";
-import { brandId, type ChatId } from "@vibe-tavern/domain";
+import { brandId, pickCurrentPlanTask, type ChatId } from "@vibe-tavern/domain";
 import type { RecordProposal } from "@vibe-tavern/api-contracts";
 import { toast } from "sonner";
 import type { RecordProposalCardProps } from "../../../lib/agent-host-registry.js";
 import { useSnapshotStore } from "../../../stores/snapshot-store.js";
 import { fetchChatAction } from "../../../stores/api-actions/chat-actions.js";
 import { ingestAgentPlan, useAgentPlan } from "../../../hooks/use-agent-plan.js";
-import { pickCurrent } from "../../shared/agent-plan/AgentPlanPanel.js";
 import {
   applyObjectiveProposal,
   rejectObjectiveProposal,
@@ -140,10 +139,11 @@ export function ObjectiveProposalCard({ proposal, threadId, onResolved }: Record
   // cache never flashes the plan-mode copy over a plan that may not exist.
   const planMode = !isLoading && plan.tasks.length > 0;
   // The current event's title interpolates into the "goes next" line (the
-  // shared `pickCurrent` rule — `pickCurrentStoryEvent`'s web twin). An
+  // ONE domain pick rule; a null clock — this card reads no tracker time —
+  // returns exactly the retired local `pickCurrent` result). An
   // all-completed plan has no current event: the line simply renders nothing
   // (the backend appends at the end — `insertStoryEventAfterCurrent`).
-  const currentEvent = pickCurrent(plan.tasks);
+  const currentEvent = pickCurrentPlanTask(plan.tasks, null);
 
   async function runResolve(decision: "apply" | "reject"): Promise<void> {
     if (busy || status !== "pending") return;

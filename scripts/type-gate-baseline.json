@@ -348,7 +348,7 @@
   "apps/web/src/components/settings/provider/tts/TtsProfileEditor.test.tsx:398:6:unknown-cast",
   "apps/web/src/components/settings/provider/tts/TtsSection.test.tsx:52:10:unknown-cast",
   "apps/web/src/components/settings/sound-alerts-section.test.tsx:42:37:unknown-cast",
-  "apps/web/src/components/shared/agent-plan/AgentPlanEditorModal.test.tsx:55:22:unknown-cast",
+  "apps/web/src/components/shared/agent-plan/AgentPlanEditorModal.test.tsx:60:22:unknown-cast",
   "apps/web/src/components/shared/agent-plan/StoryCalendarView.test.tsx:104:16:unknown-cast",
   "apps/web/src/components/shared/agent-plan/StoryCalendarView.test.tsx:141:29:unknown-cast",
   "apps/web/src/components/shared/agent-plan/StoryCalendarView.test.tsx:144:17:unknown-cast",

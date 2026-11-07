@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { AgentPlan, AgentPlanTask } from "@vibe-tavern/api-contracts";
+import { isStoryEventDue, pickCurrentPlanTask, type StoryClock } from "@vibe-tavern/domain";
 import { cn } from "../../../lib/cn.js";
 import { useT } from "../../../i18n/context.js";
 import { Ic } from "../icons.js";
 import { ScrollArea } from "../scroll-area.js";
+import { storyEventTimeChipCls, storyEventTimeLabel } from "./story-event-time.js";
 
 export interface AgentPlanPanelProps {
   plan: AgentPlan;
@@ -58,18 +60,26 @@ export interface AgentPlanPanelProps {
    *  task list) when set — the deck/calendar tab bodies. Undefined = the
    *  default body (the events tab, byte-identical). */
   curtainBody?: ReactNode;
+  /** DK-10 (mockup §6): the branch story clock, threaded EXPLICITLY by the
+   *  caller that knows it (AgentPlanSection reads `useStorySceneClock` for a
+   *  chatBranch owner; the strip and every other caller pass nothing).
+   *  Null/undefined = no clock: dated rows carry no time chip, no row is
+   *  ever "awaits its time", and the current-event pick is the clockless
+   *  rule — exactly the retired local `pickCurrent` (the domain pins the
+   *  equality). NEVER read `useStorySceneClock` inside this shared panel or
+   *  the shared editor modal: a script plan can render while the active
+   *  branch has a clock, and it must stay byte-identical. */
+  storyClock?: StoryClock | null;
 }
 
 type TaskStatus = AgentPlanTask["status"];
 
-/** The plan's CURRENT task (first `active`, else first `pending`) — the web
- *  twin of the server's `pickCurrentStoryEvent` (story-plan-sync.ts names
- *  this rule G2; later per-event features read ONE derivation). Exported
- *  since DR-10a: the story-plan proposal card picks the event whose body it
- *  shows through the same rule. */
-export function pickCurrent(tasks: AgentPlanTask[]): AgentPlanTask | null {
-  return tasks.find((task) => task.status === "active") ?? tasks.find((task) => task.status === "pending") ?? null;
-}
+// DK-10: the local `pickCurrent` twin is retired — the ONE current-event
+// rule is the domain's `pickCurrentPlanTask` (imported above); with a null
+// clock it returns exactly the old first-active-else-first-pending result
+// (the equality is pinned in the domain's story-clock tests). Callers that
+// have no clock pass null (the objective/story proposal cards); callers that
+// know the branch clock thread it (AgentPlanSection).
 
 /** The plan's remaining (pending + active) task count — the collapsed row's
  *  number. Exported since DK-6: the story section's tab row passes THE SAME
@@ -134,6 +144,7 @@ export function AgentPlanPanel({
   onRevertTask,
   curtainTabs,
   curtainBody,
+  storyClock,
 }: AgentPlanPanelProps) {
   const { t } = useT();
   const [open, setOpen] = useState(false);
@@ -161,7 +172,7 @@ export function AgentPlanPanel({
 
   if (plan.tasks.length === 0 && plan.goal === "" && plan.constraints.length === 0) return null;
 
-  const current = pickCurrent(plan.tasks);
+  const current = pickCurrentPlanTask(plan.tasks, storyClock ?? null);
   const remaining = countRemaining(plan.tasks);
   const summaryStatus: TaskStatus = current?.status ?? "completed";
   // DR-11 (§4): the passed-check flash — curtain-only by contract (the
@@ -196,6 +207,29 @@ export function AgentPlanPanel({
     </button>
   );
 
+  // DK-10 (mockup §6): the dated rows' muted time chip and the not-yet-due
+  // pending rows' "awaits" mark — both only while a readable clock is
+  // THREADED (null/undefined prop = today's rendering, byte-identical). The
+  // wait rule is the domain's `isStoryEventDue` (never a hand-rolled
+  // comparison); the chip label is the ONE `storyEventTimeLabel` derivation.
+  const clock = storyClock ?? null;
+  const timeChip = (task: AgentPlanTask): ReactNode => {
+    if (clock === null || task.at === undefined) return null;
+    return (
+      <span data-testid="agent-plan-event-time" className={storyEventTimeChipCls}>
+        {storyEventTimeLabel(task.at, t)}
+      </span>
+    );
+  };
+  const waitMark = (task: AgentPlanTask): ReactNode => {
+    if (task.status !== "pending" || isStoryEventDue(task, clock)) return null;
+    return (
+      <span data-testid="agent-plan-event-wait" className="mt-px shrink-0 whitespace-nowrap rounded bg-warning-dim px-1.5 py-px font-ui text-[calc(var(--ui-fs)-4px)] text-warning-text">
+        {t("story_event_awaits_time")}
+      </span>
+    );
+  };
+
   const taskList = (withRevert: boolean) => (
     <ol className="flex flex-col">
       {plan.tasks.map((task) => (
@@ -207,6 +241,8 @@ export function AgentPlanPanel({
             <span translate="yes" className={cn("block truncate font-ui text-[calc(var(--ui-fs)-3px)]", task.status === "completed" && "text-success-text line-through", task.status === "abandoned" && "text-t4 line-through", task.status === "active" && "text-t2", task.status === "pending" && "text-t3")}>{task.title}</span>
             {task.status === "active" && task.body && <span translate="yes" className="mt-0.5 block whitespace-pre-wrap font-ui text-[calc(var(--ui-fs)-3px)] text-t4">{task.body}</span>}
           </span>
+          {timeChip(task)}
+          {waitMark(task)}
           {withRevert && task.status === "completed" && onRevertTask !== undefined && revertButton(task)}
         </li>
       ))}

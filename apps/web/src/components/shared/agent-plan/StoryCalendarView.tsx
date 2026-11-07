@@ -29,6 +29,7 @@ import { getModalPortal } from "../modal-helpers.js";
 import { Ic } from "../icons.js";
 import { ScrollArea } from "../scroll-area.js";
 import { NodeGlyph } from "./AgentPlanPanel.js";
+import { PART_LABEL_KEYS } from "./story-event-time.js";
 
 /**
  * StoryCalendarView (DIRECTOR_DECK_CALENDAR_PLAN DK-9, mockup §5/§8) — the
@@ -404,14 +405,9 @@ const PART_ROWS: Array<{
   { part: STORY_DAY_PART.night, Glyph: Ic.moon, labelKey: "story_clock_part_night" },
 ];
 
-/** Localized day-part labels (the story-namespace keys; the stored clock
- *  vocabulary stays the four English STORY_DAY_PART words). */
-const PART_LABEL_KEYS: Record<StoryDayPart, keyof Resources["en"]> = {
-  [STORY_DAY_PART.morning]: "story_clock_part_morning",
-  [STORY_DAY_PART.day]: "story_clock_part_day",
-  [STORY_DAY_PART.evening]: "story_clock_part_evening",
-  [STORY_DAY_PART.night]: "story_clock_part_night",
-};
+/** Localized day-part labels — DK-10 moved the map to story-event-time.ts
+ *  (the chip formatter reads the same ONE derivation). */
+
 
 /** The part rows' label cell — desktop the glyph + the label (§5), phone the
  *  label alone (§8; the glyph does not fit the 52 px column). */

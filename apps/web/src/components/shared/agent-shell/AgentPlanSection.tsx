@@ -3,6 +3,7 @@ import { toast } from "sonner";
 import type { AgentPlanOwner } from "@vibe-tavern/domain";
 import { useT } from "../../../i18n/context.js";
 import { useAgentPlan } from "../../../hooks/use-agent-plan.js";
+import { useStorySceneClock } from "../../../hooks/use-story-scene-clock.js";
 import {
   countRemaining,
   AgentPlanPanel,
@@ -94,6 +95,16 @@ export function AgentPlanSection({
   };
   const story = owner.kind === "chatBranch";
 
+  // DK-10 (mockup §6): the story clock is read HERE — the story-aware
+  // caller — and threaded EXPLICITLY down to the shared panel and editor
+  // modal (they never read the hook themselves: a script plan can render
+  // while the active branch has a readable clock, and it must stay
+  // byte-identical, so a script owner passes null whatever the active
+  // branch reads). The hook call is unconditional (hook rules); its value
+  // is simply not shared with script owners.
+  const { clock: branchClock } = useStorySceneClock();
+  const storyClock = story ? branchClock : null;
+
   // ── DK-6: the story curtain's tabs + bodies (curtain-only) ───────────────
   // The tab choice is remembered per chat in the plain tab store (default
   // events — the events body IS today's curtain). The events tab passes
@@ -166,15 +177,18 @@ export function AgentPlanSection({
         flashTone={flashTone}
         curtainTabs={curtainTabs}
         curtainBody={curtainBody}
+        storyClock={storyClock}
       />
       {/* The editor locks (fields + save) while a turn streams so the model's
-          rewrite and the user's edit can never race. */}
+          rewrite and the user's edit can never race. DK-10: the story clock
+          rides along — the editor's when-row shows only while it reads. */}
       <AgentPlanEditorModal
         owner={owner}
         open={editorOpen}
         onClose={() => setEditorOpen(false)}
         locked={locked}
         focusTaskId={editorFocusTaskId}
+        storyClock={storyClock}
       />
     </>
   );
