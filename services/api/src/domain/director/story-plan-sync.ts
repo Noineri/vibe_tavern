@@ -24,6 +24,9 @@
  *    loses nothing.
  *  - R3: an objective proposal under a plan becomes the next plan event —
  *    `insertNextEvent` inserts it right after the current event.
+ *  - K6/DK-4a: playing a deck card appends it as a NEW event and promotes it
+ *    to the current event (`playCard`); a plan-less branch gets a born
+ *    one-event plan, refusing foreign tracker goals unless overridden.
  *
  * State flow — one direction per write, never a cycle:
  *   plan save (`applyPlan`) ──project──▶ objective state (goals mode)
@@ -53,21 +56,24 @@
 import {
   AGENT_PLAN_TASK_STATUS,
   EMPTY_AGENT_PLAN,
+  EMPTY_STORY_DECK,
   OBJECTIVE_MODE,
   brandId,
   log,
+  promoteStoryEvent,
   type AgentPlan,
   type AgentPlanOwner,
   type AgentPlanTask,
   type ChatBranchId,
   type ChatId,
   type ObjectiveState,
+  type StoryDeck,
 } from "@vibe-tavern/domain";
 import type { StoreContainer } from "@vibe-tavern/db";
 import { requireChatBranch } from "../chat/chat-branch-ownership.js";
 import { normalizePlanForSave } from "../agent-plan/agent-plan-validation.js";
 import type { ObjectiveService } from "../insights/objective-service.js";
-import { unprocessable } from "../../shared/errors.js";
+import { conflict, internal, notFound, unprocessable } from "../../shared/errors.js";
 
 const logger = log.tag("story-plan-sync");
 
@@ -99,6 +105,28 @@ export function storyEventGoalText(task: AgentPlanTask): string {
   const body = task.body.trim();
   return body ? `${task.title}\n${body}` : task.title;
 }
+
+/**
+ * The provenance test the sync already applies everywhere (R2 — statuses live
+ * in the plan): a tracker is plan-driven only when `planProjectedFromBranchId`
+ * names the branch its goals were projected from; null means the plan
+ * machinery never drove it — {@link StoryPlanSync.reconcileActiveBranch}'s
+ * "FOREIGN goals" (left alone unless the plan takes the tracker over) and the
+ * follow-back's no-op gate. Every "is this tracker state plan-owned?" read
+ * goes through THIS predicate — playCard's foreign-goals refusal reuses it
+ * rather than deriving provenance a second time.
+ */
+function isPlanDriven(state: ObjectiveState): boolean {
+  return (state.planProjectedFromBranchId ?? null) !== null;
+}
+
+/**
+ * The play route's 409 code (DK-4a) — the plan routes' `details.code`
+ * convention (agent-plan-validation.ts's two 422 codes): the code is the
+ * routes' public contract and must not drift between the service and the
+ * wire assertions.
+ */
+export const STORY_DECK_FOREIGN_GOALS_CODE = "story_deck_foreign_goals";
 
 /**
  * The projection (pure): `next` — the plan just saved for `branchId` —
@@ -303,6 +331,103 @@ export class StoryPlanSync {
   }
 
   /**
+   * DK-4a: play one deck card into the branch's plan (the deck routes' POST
+   * `deck/:cardId/play`). The card leaves the deck EXACTLY once and enters
+   * the plan as a NEW event — fresh id (insertNextEvent's `task_` + uuid
+   * convention, the web plan editor's), title/body from the card, no `at`
+   * stamp (cards carry no story time) — that {@link promoteStoryEvent}
+   * promotes to the CURRENT event (K3's interrupt: the interrupted active
+   * event turns pending directly after). A branch with no plan yet (no
+   * stored plan, or a stored plan without events — the plan routes'
+   * no-plan-yet convention) gets a born-this-way one-event plan (K6) with
+   * EMPTY_AGENT_PLAN's goal/constraints defaults: the card is the plan's
+   * seed; the owner writes the premise later in the plan editor. BEFORE that
+   * first creation the foreign-goals guard runs: when the chat's tracker
+   * holds goals the plan machinery never drove (`isPlanDriven` false —
+   * reconcileActiveBranch's R2 notion), the projection the play triggers
+   * would silently replace them, so the call refuses with the typed 409
+   * `story_deck_foreign_goals` unless `options.replaceForeignGoals` is set.
+   *
+   * The deck write and the plan write are ONE unit of work: a single
+   * synchronous bun:sqlite transaction over the shared DB handle through the
+   * stores' `saveInTx` cores (the repo's cross-store InTx convention —
+   * db-connection.ts: an `await` inside `db.transaction` suspends past the
+   * commit, so the callback awaits nothing and a synchronous throw rolls both
+   * writes back). The tracker projection runs AFTER the transaction: it is
+   * async through ObjectiveService and cannot join a synchronous transaction,
+   * and a projection failure leaves deck + plan consistent (the next plan
+   * write or branch reconcile re-projects — the module header's one-way
+   * state flow).
+   *
+   * The ACTIVE branch's plan then projects exactly as an ordinary plan PUT —
+   * applyPlan's tail, the shared {@link projectForBranch} entry — passing the
+   * pre-play plan as `previous` so the interrupted event's active→pending
+   * change wins the projection's status precedence in the same write (no
+   * two-active window left to the read-collapse). A non-active branch's plan
+   * is saved but never touches the tracker (applyPlan's documented rule).
+   * Unknown/foreign (chat, branch) pairs 404 through the shared ownership
+   * check; an unknown cardId is the typed 404 with NO write anywhere.
+   */
+  async playCard(
+    chatId: ChatId,
+    branchId: ChatBranchId,
+    cardId: string,
+    options: { replaceForeignGoals?: boolean } = {},
+  ): Promise<{ deck: StoryDeck; event: AgentPlanTask }> {
+    const { chat } = await requireChatBranch(this.stores.chats, chatId, branchId);
+    const deck = (await this.stores.storyDecks.get(chatId, branchId)) ?? EMPTY_STORY_DECK;
+    const card = deck.cards.find((candidate) => candidate.id === cardId);
+    if (!card) {
+      throw notFound("StoryCard", `Story card '${cardId}' is not in branch '${branchId}' deck.`);
+    }
+    const owner: AgentPlanOwner = { kind: "chatBranch", chatId, branchId };
+    const previous = await this.stores.agentPlans.get(owner);
+    if (previous === null || previous.tasks.length === 0) {
+      // K6's born-this-way moment: the first played card founds the plan.
+      // The guard runs BEFORE the creation — the projection it triggers would
+      // replace tracker goals the plan machinery never drove.
+      const state = await this.objectives.getState(chatId);
+      if (
+        !isPlanDriven(state) &&
+        state.shortTermGoals.length > 0 &&
+        options.replaceForeignGoals !== true
+      ) {
+        throw conflict(
+          "The branch has no plan, and the goal tracker holds goals not from a plan; playing a card would replace them.",
+          { code: STORY_DECK_FOREIGN_GOALS_CODE, foreignGoalCount: state.shortTermGoals.length },
+        );
+      }
+    }
+    const event = {
+      // The web plan editor's id convention (`task_` + uuid) — insertNextEvent's.
+      id: `task_${crypto.randomUUID()}`,
+      title: card.title,
+      body: card.body,
+    };
+    const withEvent = insertStoryEventAfterCurrent(previous ?? EMPTY_AGENT_PLAN, event);
+    const nextPlan = normalizePlanForSave(promoteStoryEvent(withEvent, event.id));
+    const nextDeck: StoryDeck = {
+      cards: deck.cards.filter((candidate) => candidate.id !== cardId),
+    };
+    // ONE unit of work — the deck removal and the plan event commit or roll
+    // back together (synchronous callback, no awaits: the InTx convention).
+    this.stores.db.transaction((tx) => {
+      this.stores.storyDecks.saveInTx(tx, chatId, branchId, nextDeck);
+      this.stores.agentPlans.saveInTx(tx, owner, nextPlan);
+    });
+    const played = nextPlan.tasks.find((task) => task.id === event.id);
+    if (played === undefined) {
+      // Unreachable by construction (the event was inserted and the plan is
+      // normalized), but the response contract needs the stored task.
+      throw internal("The played event vanished from the saved plan.");
+    }
+    if (chat.activeBranchId === branchId) {
+      await this.projectForBranch(brandId<ChatId>(chat.id), branchId, previous, nextPlan);
+    }
+    return { deck: nextDeck, event: played };
+  }
+
+  /**
    * R2: re-fill the tracker from the ACTIVE branch's plan. Idempotent — a
    * no-op when the tracker is already projected from the active branch.
    * Switching away from plan-projected goals empties them when the new
@@ -325,7 +450,7 @@ export class StoryPlanSync {
         chatId: chat.id,
         branchId: activeBranchId,
       })) ?? EMPTY_AGENT_PLAN;
-    if (plan.tasks.length === 0 && (state.planProjectedFromBranchId ?? null) === null) return;
+    if (plan.tasks.length === 0 && !isPlanDriven(state)) return;
     await this.projectForBranch(brandId<ChatId>(chat.id), activeBranchId, null, plan);
   }
 
@@ -338,7 +463,7 @@ export class StoryPlanSync {
    * back into.
    */
   onObjectiveStateCommitted(chatId: ChatId, nextState: ObjectiveState): void {
-    if (!(nextState.planProjectedFromBranchId ?? null)) return;
+    if (!isPlanDriven(nextState)) return;
     const key = chatId as string;
     const run = (this.followBackTails.get(key) ?? Promise.resolve())
       .catch(() => undefined)

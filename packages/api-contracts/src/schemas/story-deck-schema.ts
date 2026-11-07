@@ -24,3 +24,17 @@ export const storyDeckSchema = z
   })
   .strict();
 export type StoryDeck = z.infer<typeof storyDeckSchema>;
+
+/**
+ * The play route's request body (DK-4a): the `replaceForeignGoals` override
+ * flag only. STRICT — an unknown key is a wire 400, and a non-boolean flag is
+ * a wire 400 (no loose envelope: the deck routes have no model-tool-shared
+ * normalize path, mirroring the PUT's strictness). The flag's absence (the
+ * caller sends `{}`) means the caller accepts the foreign-goals refusal.
+ */
+export const storyDeckPlaySchema = z
+  .object({
+    replaceForeignGoals: z.boolean().optional(),
+  })
+  .strict();
+export type StoryDeckPlayRequest = z.infer<typeof storyDeckPlaySchema>;

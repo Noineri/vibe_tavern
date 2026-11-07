@@ -149,11 +149,12 @@ export class RuntimeApiAdapter implements RuntimeApi {
 		attachmentAssetLoader: AttachmentAssetLoader = (assetId) => assetService.loadBuffer(assetId),
 		/** DR-3b: the story-plan sync the branch-plan PUT delegates to
 		 * (StoryPlanSync.applyPlan — normalize-or-422 + save + ACTIVE-branch
-		 * projection), and DR-5's proposal apply reuses for the next-event
-		 * insert (insertNextEvent). Optional: harnesses without it keep the
+		 * projection), DR-5's proposal apply reuses for the next-event
+		 * insert (insertNextEvent), and DK-4a's deck play route delegates to
+		 * for playCard. Optional: harnesses without it keep the
 		 * plain store save / the unavailability 404; production
 		 * (server-runtime) always injects the real sync. */
-		storyPlanSync?: Pick<StoryPlanSync, "applyPlan" | "insertNextEvent">,
+		storyPlanSync?: Pick<StoryPlanSync, "applyPlan" | "insertNextEvent" | "playCard">,
 		/** SM-6: the server's data directory for the system adapter's
 		 * open-in-file-manager action. Optional so harnesses can omit it — the
 		 * adapter then answers `{ available: false }`. */
@@ -218,7 +219,7 @@ export class RuntimeApiAdapter implements RuntimeApi {
 		);
 		this.copilotProfiles = new CopilotProfileAdapter(stores);
 		this.agentPlan = new AgentPlanAdapter(stores, storyPlanSync);
-		this.storyDeck = new StoryDeckAdapter(stores);
+		this.storyDeck = new StoryDeckAdapter(stores, storyPlanSync);
 		this.samplerSets = new SamplerSetAdapter(stores);
 		this.formatTemplates = new FormatTemplateAdapter(stores);
 		this.aiInstructionTemplates = new AiInstructionTemplateAdapter(stores);

@@ -1,7 +1,7 @@
 import { and, eq } from 'drizzle-orm';
 import { log, normalizeAgentPlan, type AgentPlan, type AgentPlanOwner } from '@vibe-tavern/domain';
 import { agentBranchPlans, agentPlans } from '../db-schema.js';
-import type { AppDb } from '../db-connection.js';
+import type { AppDb, DbTransaction } from '../db-connection.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
 
 const logger = log.tag('agent-plan-store');
@@ -74,11 +74,28 @@ export class AgentPlanStore {
   /** Full-replace save. Each table's unique index (script_id; the
    *  (chat_id, branch_id) pair) makes this one row per owner. */
   async save(owner: AgentPlanOwner, plan: AgentPlan): Promise<void> {
+    this.upsert(this.db, owner, plan);
+  }
+
+  /** Synchronous core for a caller-owned transaction (DK-4a: the plan write
+   *  joins the deck write in StoryPlanSync.playCard's ONE unit of work).
+   *  Follows the repo's cross-store InTx convention (db-connection.ts): the
+   *  callback of `db.transaction` commits at the end of its synchronous
+   *  prefix, so cross-store atomicity requires synchronous cores with no
+   *  `await` inside — bun-sqlite's `.run()` already is synchronous. */
+  saveInTx(tx: DbTransaction, owner: AgentPlanOwner, plan: AgentPlan): void {
+    this.upsert(tx, owner, plan);
+  }
+
+  /** The one upsert both write paths and both owner arms share (`save`'s
+   *  implicit single-statement transaction and `saveInTx`'s caller-owned one)
+   *  — a second hand-written derivation of the row shapes would be a defect
+   *  from copy #2. */
+  private upsert(db: AppDb | DbTransaction, owner: AgentPlanOwner, plan: AgentPlan): void {
     const now = this.clock.now();
     const contentJson = JSON.stringify(plan);
     if (owner.kind === 'chatBranch') {
-      await this.db
-        .insert(agentBranchPlans)
+      db.insert(agentBranchPlans)
         .values({
           id: this.idGen.next('agent_plan'),
           chatId: owner.chatId,
@@ -97,8 +114,7 @@ export class AgentPlanStore {
         .run();
       return;
     }
-    await this.db
-      .insert(agentPlans)
+    db.insert(agentPlans)
       .values({
         id: this.idGen.next('agent_plan'),
         scriptId: owner.scriptId,

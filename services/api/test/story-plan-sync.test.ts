@@ -30,10 +30,13 @@ import {
   type ChatBranchId,
   type ChatId,
   type ObjectiveState,
+  type StoryCard,
 } from "@vibe-tavern/domain";
 import { createStoreContainer, type StoreContainer } from "@vibe-tavern/db";
 import { ObjectiveService } from "../src/domain/insights/objective-service.js";
+import { unusedObjectiveDeps } from "./objective-service-fixture.js";
 import {
+  STORY_DECK_FOREIGN_GOALS_CODE,
   StoryPlanSync,
   followGoalStatuses,
   insertStoryEventAfterCurrent,
@@ -255,11 +258,6 @@ let stores: StoreContainer;
 let objectiveService: ObjectiveService;
 let storyPlanSync: StoryPlanSync;
 let characterId: string;
-
-/** The two constructor deps (SessionRuntime, ProviderProfileService) no path
- *  under test touches — one shared cast instead of one per construction site
- *  (the objective-service suite's established `null as never` pattern). */
-const unusedObjectiveDeps = null as never;
 
 beforeAll(async () => {
   const dataRoot = await mkdtemp(join(tmpdir(), "vt-story-plan-sync-"));
@@ -569,5 +567,150 @@ describe("loop termination (DR-3a stop-when: projection → observer → plan wr
     await storyPlanSync.waitForFollowBack(chatId);
     expect(await readPlan(chatId, branchA)).toEqual(plan);
     expect(await readState(chatId)).toEqual(state);
+  });
+});
+
+// ─── service: playCard (DK-4a — deck card → plan event) ──────────────────────
+
+/** A twist-card fixture (the suit is irrelevant to the play path — any of the
+ *  five works; `threat` is the first). */
+const card = (id: string, title: string, body = ""): StoryCard => ({ id, suit: "threat", title, body });
+
+async function seedDeck(chatId: ChatId, branchId: ChatBranchId, cards: StoryCard[]): Promise<void> {
+  await stores.storyDecks.save(chatId as string, branchId as string, { cards });
+}
+
+const readDeck = async (chatId: ChatId, branchId: ChatBranchId) =>
+  stores.storyDecks.get(chatId as string, branchId as string);
+
+describe("service: playCard (DK-4a)", () => {
+  test("play with a plan: the card leaves the deck EXACTLY once; the event is appended, promoted current; the interrupted event pending directly after", async () => {
+    const { chatId, branchA } = await makeWorld();
+    await storyPlanSync.applyPlan(chatId, branchA, planOf([
+      task("t1", "Reach the gates", "At dawn.", "active"),
+      task("t2", "Lift the siege", "", "pending"),
+    ]));
+    await seedDeck(chatId, branchA, [card("c1", "The sealed letter", "Who wrote it?"), card("c2", "Ambush", "They know.")]);
+
+    const { deck, event } = await storyPlanSync.playCard(chatId, branchA, "c1");
+
+    // Deck after = deck before minus the card — once (order kept, length -1).
+    expect(deck).toEqual({ cards: [card("c2", "Ambush", "They know.")] });
+    expect((await readDeck(chatId, branchA))?.cards.map((c) => c.id)).toEqual(["c2"]);
+
+    // The played event: the card's text, promoted active, fresh `task_` id, no `at` stamp.
+    expect(event).toEqual({ id: event.id, title: "The sealed letter", body: "Who wrote it?", status: "active" });
+    expect(event.id.startsWith("task_")).toBe(true);
+    expect("at" in event).toBe(false); // cards carry no story time
+
+    // The stored plan: the event took the current event's position; the
+    // interrupted t1 turned pending directly after; exactly ONE copy of the card.
+    await storyPlanSync.waitForFollowBack(chatId);
+    const plan = await readPlan(chatId, branchA);
+    expect(plan.tasks.map((t) => t.id)).toEqual([event.id, "t1", "t2"]);
+    expect(plan.tasks[1]).toEqual({ id: "t1", title: "Reach the gates", body: "At dawn.", status: "pending" });
+    expect(plan.tasks.filter((t) => t.title === "The sealed letter")).toHaveLength(1);
+
+    // The event reached the tracker exactly as a plan event does (the ACTIVE
+    // branch projects): A3 text, the played event is the current goal, the
+    // interrupted event demoted in the SAME write, source recorded.
+    const state = await readState(chatId);
+    expect(state.mode).toBe(OBJECTIVE_MODE.goals);
+    expect(state.planProjectedFromBranchId).toBe(branchA as string);
+    expect(state.shortTermGoals).toEqual([
+      { id: event.id, description: "The sealed letter\nWho wrote it?", status: OBJECTIVE_TASK_STATUS.active },
+      { id: "t1", description: "Reach the gates\nAt dawn.", status: OBJECTIVE_TASK_STATUS.pending },
+      { id: "t2", description: "Lift the siege", status: OBJECTIVE_TASK_STATUS.pending },
+    ]);
+    expect(await readEnabled(chatId)).toBe(true);
+  });
+
+  test("play with NO plan on the ACTIVE branch (K6): the card founds a born one-event plan and the tracker renders it", async () => {
+    const { chatId, branchA } = await makeWorld(); // active branch, never had a plan
+    await seedDeck(chatId, branchA, [card("c9", "A stranger arrives", "At the gates.")]);
+
+    const { deck, event } = await storyPlanSync.playCard(chatId, branchA, "c9");
+
+    expect(deck).toEqual({ cards: [] });
+    // The stored plan shape: EMPTY_AGENT_PLAN's goal/constraints defaults + the one promoted event.
+    await storyPlanSync.waitForFollowBack(chatId);
+    const plan = await readPlan(chatId, branchA);
+    expect(plan.goal).toBe("");
+    expect(plan.constraints).toEqual([]);
+    expect(plan.tasks).toEqual([{ id: event.id, title: "A stranger arrives", body: "At the gates.", status: "active" }]);
+    expect(normalizeAgentPlan(plan)).not.toBeNull(); // the strip can render it
+
+    // The tracker was projected from the one-event plan (goals mode, tracker on).
+    const state = await readState(chatId);
+    expect(state.mode).toBe(OBJECTIVE_MODE.goals);
+    expect(state.shortTermGoals).toEqual([
+      { id: event.id, description: "A stranger arrives\nAt the gates.", status: OBJECTIVE_TASK_STATUS.active },
+    ]);
+    expect(state.planProjectedFromBranchId).toBe(branchA as string);
+    expect(await readEnabled(chatId)).toBe(true);
+  });
+
+  test("unknown cardId → typed 404 and NO write anywhere (deck and plan byte-identical)", async () => {
+    const { chatId, branchA } = await makeWorld();
+    await storyPlanSync.applyPlan(chatId, branchA, planOf([task("t1", "Reach the gates", "", "active")]));
+    await seedDeck(chatId, branchA, [card("c1", "The sealed letter")]);
+    const deckBefore = JSON.stringify(await readDeck(chatId, branchA));
+    const planBefore = JSON.stringify(
+      await stores.agentPlans.get({ kind: "chatBranch", chatId: chatId as string, branchId: branchA as string }),
+    );
+
+    await expectDomainError(storyPlanSync.playCard(chatId, branchA, "card_missing"), "NotFound");
+
+    expect(JSON.stringify(await readDeck(chatId, branchA))).toBe(deckBefore);
+    expect(JSON.stringify(
+      await stores.agentPlans.get({ kind: "chatBranch", chatId: chatId as string, branchId: branchA as string }),
+    )).toBe(planBefore);
+  });
+
+  test("plan-less branch with foreign tracker goals → the typed 409 story_deck_foreign_goals; no write on the refusal; the override plays and replaces", async () => {
+    const { chatId, branchA } = await makeWorld();
+    await objectiveService.setObjectiveMode(chatId, OBJECTIVE_MODE.goals);
+    await objectiveService.addShortTermGoal(chatId, "Foreign goal");
+    await seedDeck(chatId, branchA, [card("c1", "The sealed letter")]);
+    const deckBefore = JSON.stringify(await readDeck(chatId, branchA));
+
+    await expectDomainError(
+      storyPlanSync.playCard(chatId, branchA, "c1"),
+      "Conflict",
+      STORY_DECK_FOREIGN_GOALS_CODE,
+    );
+    // The refusal wrote nothing: the deck keeps the card, no plan row appeared.
+    expect(JSON.stringify(await readDeck(chatId, branchA))).toBe(deckBefore);
+    expect(await readPlan(chatId, branchA)).toEqual(EMPTY_AGENT_PLAN);
+    expect((await readState(chatId)).shortTermGoals.map((g) => g.description)).toEqual(["Foreign goal"]);
+
+    // The override plays: the plan is born, the foreign goals replaced by the projection.
+    const { event } = await storyPlanSync.playCard(chatId, branchA, "c1", { replaceForeignGoals: true });
+    expect(event.status).toBe("active");
+    await storyPlanSync.waitForFollowBack(chatId);
+    expect((await readState(chatId)).shortTermGoals.map((g) => g.description)).toEqual(["The sealed letter"]);
+  });
+
+  test("the guard also holds on a plan-less NON-active branch; the override stores the plan and leaves the tracker untouched", async () => {
+    const { chatId, branchB } = await makeWorld(); // branchA stays active, both plan-less
+    await objectiveService.setObjectiveMode(chatId, OBJECTIVE_MODE.goals);
+    await objectiveService.addShortTermGoal(chatId, "Foreign goal");
+    await seedDeck(chatId, branchB, [card("c1", "The sealed letter")]);
+
+    await expectDomainError(
+      storyPlanSync.playCard(chatId, branchB, "c1"),
+      "Conflict",
+      STORY_DECK_FOREIGN_GOALS_CODE,
+    );
+
+    // The override plays on the side branch: the plan is born there, but the
+    // tracker is the ACTIVE branch's business and stays untouched (foreign,
+    // not plan-driven).
+    const { event } = await storyPlanSync.playCard(chatId, branchB, "c1", { replaceForeignGoals: true });
+    expect(event.status).toBe("active");
+    expect((await readPlan(chatId, branchB)).tasks.map((t) => t.id)).toEqual([event.id]);
+    const state = await readState(chatId);
+    expect(state.planProjectedFromBranchId ?? null).toBeNull();
+    expect(state.shortTermGoals.map((g) => g.description)).toEqual(["Foreign goal"]);
   });
 });

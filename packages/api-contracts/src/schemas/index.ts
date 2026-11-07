@@ -1,8 +1,8 @@
 export { pronounFormsSchema, createPersonaSchema, updatePersonaSchema, setPersonaSchema, personaExportQuerySchema, personaExportBulkQuerySchema, personaExportAvatarSchema, personaExportVtSchema, personaExportVtBulkSchema, stPronounSchema, stPersonaBackupSchema } from "./persona-schema.js";
 export { agentPlanSchema, agentPlanTaskSchema } from "./agent-plan-schema.js";
 export type { AgentPlan, AgentPlanTask } from "./agent-plan-schema.js";
-export { storyDeckSchema, storyCardSchema } from "./story-deck-schema.js";
-export type { StoryDeck, StoryCard } from "./story-deck-schema.js";
+export { storyDeckSchema, storyCardSchema, storyDeckPlaySchema } from "./story-deck-schema.js";
+export type { StoryDeck, StoryCard, StoryDeckPlayRequest } from "./story-deck-schema.js";
 export {
   agentToolStatusSchema, agentTodoActivityResultSchema, agentAskStateSchema,
   agentPermissionStateSchema, agentToolActivitySchema, agentReviewActivitySchema,

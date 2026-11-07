@@ -1,7 +1,7 @@
 import { and, eq } from 'drizzle-orm';
 import { log, normalizeStoryDeck, type StoryDeck } from '@vibe-tavern/domain';
 import { storyBranchDecks } from '../db-schema.js';
-import type { AppDb } from '../db-connection.js';
+import type { AppDb, DbTransaction } from '../db-connection.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
 
 const logger = log.tag('story-deck-store');
@@ -57,10 +57,26 @@ export class StoryDeckStore {
    *  the empty content (the plan store's convention: no special empty case);
    *  GET reads it back as the empty deck, and only a missing row reads null. */
   async save(chatId: string, branchId: string, deck: StoryDeck): Promise<void> {
+    this.upsert(this.db, chatId, branchId, deck);
+  }
+
+  /** Synchronous core for a caller-owned transaction (DK-4a: the deck write
+   *  joins the plan write in StoryPlanSync.playCard's ONE unit of work).
+   *  Follows the repo's cross-store InTx convention (db-connection.ts): the
+   *  callback of `db.transaction` commits at the end of its synchronous
+   *  prefix, so cross-store atomicity requires synchronous cores with no
+   *  `await` inside — bun-sqlite's `.run()` already is synchronous. */
+  saveInTx(tx: DbTransaction, chatId: string, branchId: string, deck: StoryDeck): void {
+    this.upsert(tx, chatId, branchId, deck);
+  }
+
+  /** The one upsert both write paths share (`save`'s implicit single-statement
+   *  transaction and `saveInTx`'s caller-owned one) — a second hand-written
+   *  derivation of the row shape would be a defect from copy #2. */
+  private upsert(db: AppDb | DbTransaction, chatId: string, branchId: string, deck: StoryDeck): void {
     const now = this.clock.now();
     const contentJson = JSON.stringify(deck);
-    await this.db
-      .insert(storyBranchDecks)
+    db.insert(storyBranchDecks)
       .values({
         id: this.idGen.next('story_deck'),
         chatId,
