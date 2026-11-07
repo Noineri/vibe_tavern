@@ -239,6 +239,7 @@ export default interface Resources {
     "agent_tool_edit_script": "Edit the script in parts",
     "agent_tool_failed": "Tool failed",
     "agent_tool_plan": "Keep a step plan",
+    "agent_tool_propose_deck": "Propose a twist deck",
     "agent_tool_propose_message_edit": "Propose reply corrections",
     "agent_tool_propose_message_variant": "Propose an alternative reply",
     "agent_tool_propose_objective": "Propose tracker goals",

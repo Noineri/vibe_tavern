@@ -26,7 +26,10 @@
  *   ordinary guarded edit (with the reviewed base content) and add-variant
  *   path the message-edit / message-variant handlers run through. The RP
  *   message READS need no injection — the stores' `messages` member satisfies
- *   the handlers' narrow read seam directly.
+ *   the handlers' narrow read seam directly. Same for the story-deck handler
+ *   (DK-5a): the pair-check lookup is the stores' `chats` member and the deck
+ *   get/save pair is the stores' `storyDecks` member — store-only, no
+ *   injected service.
  *
  * The branded ids enter at the seam closures the WIRING creates (the
  * `addShortTermGoal` precedent — see runtime-api-adapter.ts).
@@ -101,7 +104,12 @@ export class AgentThreadProposalAdapter implements AgentThreadProposalsRuntimeAp
     const services = this.proposalServices;
     return {
       store: this.stores.experienceCopilot,
+      // The chat store satisfies the widened pair-check lookup (getById +
+      // getBranches — the story-deck handler's requireChatBranch seam), and
+      // the deck pair is the container's storyDecks member directly (the
+      // `messages` precedent — plain store reads need no injection).
       chats: this.stores.chats,
+      storyDecks: this.stores.storyDecks,
       agentPlans: this.stores.agentPlans,
       addObjectiveTask: services.addObjectiveTask,
       addShortTermGoal: services.addShortTermGoal,

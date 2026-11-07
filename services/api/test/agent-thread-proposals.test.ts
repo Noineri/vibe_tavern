@@ -7,6 +7,7 @@ import { createStoreContainer, type StoreContainer, type Chat, type Message as D
 import {
 	brandId,
 	OBJECTIVE_MODE,
+	STORY_CLOCK_SCENE_FIELDS,
 	type ChatBranchId,
 	type ChatId,
 } from "@vibe-tavern/domain";
@@ -29,8 +30,10 @@ import type { SessionRuntime } from "../src/runtime/session/session-runtime.js";
 import { SIDECHAT_RECORD_PROPOSAL_REGISTRY } from "../src/domain/sidechat/sidechat-objective-proposal.js";
 import { createAgentThreadProposalRoutes } from "../src/api/routes/agent-thread-proposals.js";
 import {
+	SIDECHAT_PROPOSE_DECK_TOOL_NAME,
 	SIDECHAT_PROPOSE_PLAN_TOOL_NAME,
 	SIDECHAT_PROPOSE_TRACKER_TEMPLATE_TOOL_NAME,
+	STORY_DECK_RECORD_TYPE,
 } from "../src/domain/agent/kinds/sidechat/sidechat-director-tools.js";
 import { SIDECHAT_OBJECTIVE_TOOL_NAME } from "../src/domain/agent/kinds/sidechat/sidechat-objective-tools.js";
 import { isDomainError, httpStatusForDomainError, domainErrorToJson } from "../src/shared/errors.js";
@@ -214,6 +217,16 @@ async function trackerState(chatId: string) {
 	const chat = await stores.chats.getById(chatId);
 	if (!chat) throw new Error(`fixture: chat ${chatId} vanished`);
 	return chat.insightsObjectiveState;
+}
+
+/** The chat's tracker DSL — a loud fixture error when absent, so the clock
+ *  assertions index a real schema instead of guarding every read. */
+async function trackerSchema(chatId: string) {
+	const chat = await stores.chats.getById(chatId);
+	if (!chat) throw new Error(`fixture: chat ${chatId} vanished`);
+	const schema = chat.insightsConfig.tracker?.schema;
+	if (!schema) throw new Error(`fixture: chat ${chatId} carries no tracker schema`);
+	return schema;
 }
 
 interface ErrorWire {
@@ -609,6 +622,67 @@ describe("POST /api/agent/threads/:threadId/proposals/:toolCallId/{apply,reject}
 		expect(updated?.insightsConfig.objectiveEnabled).toBe(true);
 	});
 
+	test("tracker-scene apply with withClock adds the three canonical clock fields exactly once — never duplicating what the schema already carries (DK-5a)", async () => {
+		const chat = await newTrackerChat(true, "goals");
+		// Case 1 — a bare schema: all three canonical fields land verbatim,
+		// once each, after the scene's own fields.
+		const plain = await seedRecordProposal(
+			chat,
+			SIDECHAT_PROPOSE_TRACKER_TEMPLATE_TOOL_NAME,
+			{
+				...makeTrackerSceneProposal("tc_scene_clock", chat.id, SCENE),
+				payload: { scene: SCENE, withClock: true },
+			},
+		);
+		const plainApply = await post(applyUrl(plain.threadId, plain.toolCallId));
+		expect(plainApply.status).toBe(200);
+		const schema = await trackerSchema(chat.id);
+		expect(Object.keys(schema)).toEqual([
+			"location",
+			STORY_CLOCK_SCENE_FIELDS.day.key,
+			STORY_CLOCK_SCENE_FIELDS.part.key,
+			STORY_CLOCK_SCENE_FIELDS.label.key,
+		]);
+		expect(schema[STORY_CLOCK_SCENE_FIELDS.day.key]).toEqual(STORY_CLOCK_SCENE_FIELDS.day.node);
+		expect(schema[STORY_CLOCK_SCENE_FIELDS.part.key]).toEqual(STORY_CLOCK_SCENE_FIELDS.part.node);
+		expect(schema[STORY_CLOCK_SCENE_FIELDS.label.key]).toEqual(STORY_CLOCK_SCENE_FIELDS.label.node);
+
+		// Case 2 — a scene that ALREADY carries clock-ish fields: a plain user
+		// node on the canonical `story_time` key is never overwritten, and the
+		// adder leaves no duplicate markers behind.
+		const occupiedScene = {
+			enabled: true,
+			config: {
+				schema: {
+					story_time: { $type: "string", label: "Time of day" },
+					mood: { $type: "string" },
+				},
+			},
+		};
+		const occupied = await seedRecordProposal(
+			chat,
+			SIDECHAT_PROPOSE_TRACKER_TEMPLATE_TOOL_NAME,
+			{
+				...makeTrackerSceneProposal("tc_scene_clock_twice", chat.id, occupiedScene),
+				payload: { scene: occupiedScene, withClock: true },
+			},
+		);
+		const occupiedApply = await post(applyUrl(occupied.threadId, occupied.toolCallId));
+		expect(occupiedApply.status).toBe(200);
+		const schemaTwice = await trackerSchema(chat.id);
+		expect(Object.keys(schemaTwice).sort()).toEqual(
+			["mood", "story_date", "story_day", "story_time"].sort(),
+		);
+		// The user's node on the canonical key survived byte-identical.
+		expect(schemaTwice.story_time).toEqual({ $type: "string", label: "Time of day" });
+		// Exactly one node per clock marker — never duplicated (the part
+		// canonical field was skipped: the user's node holds its key).
+		const markers = Object.values(schemaTwice)
+			.map((node) => ("clock" in node ? node.clock : undefined))
+			.filter((clock) => clock !== undefined);
+		expect(markers.sort()).toEqual(["day", "label"]);
+	});
+
 	test("reject writes status only for the new types — the stored plan and the tracker stay untouched", async () => {
 		const chat = await newTrackerChat(true);
 		const branchId = chat.activeBranchId as string;
@@ -728,6 +802,147 @@ describe("POST /api/agent/threads/:threadId/proposals/:toolCallId/{apply,reject}
 	});
 });
 
+// ─── DK-5a — the story-deck resolutions ─────────────────────────────────────
+
+/** The proposed twist cards (the wire card shape; suits typed as their
+ *  literal union). The `id`s are what the MODEL proposed — the apply must
+ *  never reuse them. */
+const PROPOSED_CARDS: Array<{ id: string; suit: "threat" | "mystery"; title: string; body: string }> = [
+	{
+		id: "model_threat",
+		suit: "threat",
+		title: "The harbour watch turns hostile",
+		body: "The guards demand the ledger at dusk.",
+	},
+	{
+		id: "model_mystery",
+		suit: "mystery",
+		title: "A tide map under the floorboards",
+		body: "Marked with the pact seal.",
+	},
+];
+
+function makeDeckProposal(id: string, branchId: string, cards: unknown, summary?: string): RecordProposal {
+	return {
+		kind: "record",
+		id,
+		recordType: STORY_DECK_RECORD_TYPE,
+		op: "update",
+		targetId: branchId,
+		payload: summary === undefined ? { cards } : { cards, summary },
+		status: "pending",
+	};
+}
+
+async function storedDeck(chat: Chat) {
+	return stores.storyDecks.get(chat.id, chat.activeBranchId as string);
+}
+
+describe("story-deck apply — append with fresh ids through the registry (DK-5a)", () => {
+	test("apply appends the proposed cards to the branch deck with FRESH ids — the proposed ids are never reused, the response is the bare proposal", async () => {
+		const chat = await newPlainChat();
+		const branchId = chat.activeBranchId as string;
+		await stores.storyDecks.save(chat.id, branchId, {
+			cards: [{ id: "deck_existing", suit: "discovery", title: "An older card", body: "Drawn long ago." }],
+		});
+		const { threadId, toolCallId } = await seedRecordProposal(
+			chat,
+			SIDECHAT_PROPOSE_DECK_TOOL_NAME,
+			makeDeckProposal("tc_deck_ok", branchId, PROPOSED_CARDS, "Two twists"),
+		);
+
+		const response = await post(applyUrl(threadId, toolCallId));
+		expect(response.status).toBe(200);
+		const body = (await response.json()) as { proposal: RecordProposal };
+		// No companion — the bare `{ proposal }` response (the objective
+		// handler's no-plan convention).
+		expect(body.proposal).toEqual({
+			...makeDeckProposal("tc_deck_ok", branchId, PROPOSED_CARDS, "Two twists"),
+			status: "applied",
+		});
+
+		const deck = await storedDeck(chat);
+		expect(deck?.cards).toHaveLength(3);
+		const appended = deck?.cards.slice(1) ?? [];
+		// Cards keep suit/title/body verbatim, in proposal order.
+		expect(appended.map((card) => [card.suit, card.title, card.body])).toEqual(
+			PROPOSED_CARDS.map((card) => [card.suit, card.title, card.body]),
+		);
+		// FRESH ids only: the model's proposed ids are never reused; every
+		// minted id is the deck twin of the plan event's `task_` convention,
+		// and they are unique.
+		expect(appended.map((card) => card.id)).not.toContain("model_threat");
+		expect(appended.map((card) => card.id)).not.toContain("model_mystery");
+		for (const id of appended.map((card) => card.id)) {
+			expect(id).toMatch(/^card_/);
+		}
+		expect(new Set(appended.map((card) => card.id)).size).toBe(2);
+		// The pre-existing card is untouched — append, never replace.
+		expect(deck?.cards[0]).toEqual({
+			id: "deck_existing",
+			suit: "discovery",
+			title: "An older card",
+			body: "Drawn long ago.",
+		});
+	});
+
+	test("a second apply is refused the standard 409 — the deck gains nothing more", async () => {
+		const chat = await newPlainChat();
+		const branchId = chat.activeBranchId as string;
+		const { threadId, toolCallId } = await seedRecordProposal(
+			chat,
+			SIDECHAT_PROPOSE_DECK_TOOL_NAME,
+			makeDeckProposal("tc_deck_twice", branchId, PROPOSED_CARDS),
+		);
+		const first = await post(applyUrl(threadId, toolCallId));
+		expect(first.status).toBe(200);
+
+		const second = await post(applyUrl(threadId, toolCallId));
+		expect(second.status).toBe(409);
+		expect(((await second.json()) as ErrorWire).error.details?.code).toBe(
+			"objective_proposal_already_resolved",
+		);
+		expect((await storedDeck(chat))?.cards).toHaveLength(2);
+	});
+
+	test("reject leaves the deck unchanged — the status write is the only effect", async () => {
+		const chat = await newPlainChat();
+		const branchId = chat.activeBranchId as string;
+		await stores.storyDecks.save(chat.id, branchId, {
+			cards: [{ id: "deck_existing", suit: "change", title: "A storm rolls in", body: "" }],
+		});
+		const { threadId, toolCallId } = await seedRecordProposal(
+			chat,
+			SIDECHAT_PROPOSE_DECK_TOOL_NAME,
+			makeDeckProposal("tc_deck_rej", branchId, PROPOSED_CARDS),
+		);
+
+		const response = await post(rejectUrl(threadId, toolCallId));
+		expect(response.status).toBe(200);
+		const body = (await response.json()) as { proposal: RecordProposal };
+		expect(body.proposal.status).toBe("rejected");
+		// No deck write, no companion: the stored deck is byte-identical.
+		expect(await storedDeck(chat)).toEqual({
+			cards: [{ id: "deck_existing", suit: "change", title: "A storm rolls in", body: "" }],
+		});
+	});
+
+	test("a foreign target branch is the pair-check 404 — nothing written anywhere", async () => {
+		const chat = await newPlainChat();
+		const foreign = await seedRecordProposal(
+			chat,
+			SIDECHAT_PROPOSE_DECK_TOOL_NAME,
+			makeDeckProposal("tc_deck_foreign", "branch_never_born", PROPOSED_CARDS),
+		);
+		const foreignApply = await post(applyUrl(foreign.threadId, foreign.toolCallId));
+		expect(foreignApply.status).toBe(404);
+		// The row stays pending (nothing resolved) and the branch's deck
+		// (the thread's OWN branch) is untouched.
+		expect(await rowStatus(foreign.threadId, foreign.toolCallId)).toBe("pending");
+		expect((await storedDeck(chat))?.cards ?? []).toEqual([]);
+	});
+});
+
 // ─── DMT-22 — the message-edit / message-variant resolutions ─────────────────
 //
 // The Director's two reviewable tools resolve through the SAME pipeline and
@@ -821,11 +1036,15 @@ async function replyVariants(message: DbMessage): Promise<DbMessageVariant[]> {
 }
 
 describe("the one record-proposal registry (DMT-22 registration)", () => {
-	test("carries exactly the five record types — the two message types included, no parallel table", () => {
+	test("carries exactly the six record types — the two message types and the deck included, no parallel table", () => {
+		// Behavior change (DK-5a): was the five DMT-22 types → now six,
+		// `story-deck` appended (DIRECTOR_DECK_CALENDAR_PLAN DK-5a) — one
+		// dispatch table, still no parallel one.
 		expect(Object.keys(SIDECHAT_RECORD_PROPOSAL_REGISTRY).sort()).toEqual([
 			DIRECTOR_MESSAGE_RECORD_TYPES.messageEdit,
 			DIRECTOR_MESSAGE_RECORD_TYPES.messageVariant,
 			"objective",
+			"story-deck",
 			"story-plan",
 			"tracker-scene",
 		]);
@@ -834,6 +1053,9 @@ describe("the one record-proposal registry (DMT-22 registration)", () => {
 		);
 		expect(SIDECHAT_RECORD_PROPOSAL_REGISTRY[DIRECTOR_MESSAGE_RECORD_TYPES.messageVariant]?.toolName).toBe(
 			DIRECTOR_MESSAGE_TOOLS.proposeMessageVariant,
+		);
+		expect(SIDECHAT_RECORD_PROPOSAL_REGISTRY[STORY_DECK_RECORD_TYPE]?.toolName).toBe(
+			SIDECHAT_PROPOSE_DECK_TOOL_NAME,
 		);
 	});
 });

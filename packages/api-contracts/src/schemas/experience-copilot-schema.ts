@@ -599,12 +599,14 @@ export const SCRIPT_AGENT_TOOL_KEYS = Object.keys(
 /**
  * Which tools a `sidechat-ooc` agent profile may toggle (SIDECHAT_PLAN,
  * Wave 1 / SC-5; widened by DIRECTOR_MODE_PLAN DR-4a + DR-4b's owner
- * ruling B, and by DIRECTOR_MESSAGE_TOOLS_PLAN DMT-34). A PARTIAL record
- * over exactly the 12 toggleable sidechat tools (search_context,
+ * ruling B, by DIRECTOR_MESSAGE_TOOLS_PLAN DMT-34, and by
+ * DIRECTOR_DECK_CALENDAR_PLAN DK-5a). A PARTIAL record
+ * over exactly the 13 toggleable sidechat tools (search_context,
  * read_context_item, propose_objective, todo, read_plan,
  * read_message_prompt, propose_plan, propose_tracker_template, ask_user,
- * propose_message_edit, propose_message_variant, request_message_swipe —
- * the last three ARE the DIRECTOR_MESSAGE_TOOLS wire names
+ * propose_message_edit, propose_message_variant, request_message_swipe,
+ * propose_deck — the three message tools ARE the DIRECTOR_MESSAGE_TOOLS
+ * wire names
  * (director-message-tools-schema.ts; raw literals here, the file's
  * convention for every tool-set key))
  * — the same convention as {@link copilotToolSetSchema} and
@@ -624,7 +626,11 @@ export const SCRIPT_AGENT_TOOL_KEYS = Object.keys(
  * TOGETHER with their finished implementations (the DMT-21 builder was
  * complete and dormant first; DMT-34 enables the keys and turns the
  * `builtin-director` seed's toggles on in the same unit) — the OOC seed and
- * the kind default keep all three off. `.strict()` rejects
+ * the kind default keep all three off. DK-5a's `propose_deck` (the
+ * story-deck proposal) follows that DMT-34 land-together pattern: the key
+ * and its finished implementation land in the same unit, on for the
+ * director seed, off for the OOC seed and the kind default. `.strict()`
+ * rejects
  * any unknown key — including the other kinds' keys — so a profile cannot
  * silently carry another kind's tools on the wire; the adapter additionally
  * re-validates against the kind's REGISTERED schema
@@ -644,6 +650,7 @@ export const sidechatOocToolSetSchema = z
     propose_message_edit: z.boolean().optional(),
     propose_message_variant: z.boolean().optional(),
     request_message_swipe: z.boolean().optional(),
+    propose_deck: z.boolean().optional(),
   })
   .strict();
 

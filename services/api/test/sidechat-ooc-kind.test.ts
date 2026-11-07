@@ -124,7 +124,7 @@ describe("the sidechat-ooc agent kind (SC-4a)", () => {
     expect(kindServesChatMode(kind, CHAT_MODE.coauthor)).toBe(false);
   });
 
-  test("the twelve toggles are known keys; the six landed OOC tools are on, the director keys, ask_user and the three message tools are known-but-off in the default", () => {
+  test("the thirteen toggles are known keys; the six landed OOC tools are on, the director keys, ask_user, the three message tools and propose_deck are known-but-off in the default", () => {
     const kind = getAgentKind("sidechat-ooc");
     // The toggle names are the plan's settled contract, carried by the wire
     // schema (the single source of truth, re-exported for consumers).
@@ -134,6 +134,10 @@ describe("the sidechat-ooc agent kind (SC-4a)", () => {
     // Behavior change (DMT-34): was 9 keys → now 12, the three director
     // message tools appended (DIRECTOR_MESSAGE_TOOLS_PLAN DMT-34) — on in
     // the `builtin-director` seed, off in the OOC default and first seed.
+    // Behavior change (DK-5a): was 12 keys → now 13, `propose_deck`
+    // appended (DIRECTOR_DECK_CALENDAR_PLAN DK-5a, the DMT-34 land-together
+    // pattern) — on in the `builtin-director` seed, off in the OOC default
+    // and first seed.
     expect(SIDECHAT_OOC_TOOL_KEYS).toEqual([
       "search_context",
       "read_context_item",
@@ -147,6 +151,7 @@ describe("the sidechat-ooc agent kind (SC-4a)", () => {
       "propose_message_edit",
       "propose_message_variant",
       "request_message_swipe",
+      "propose_deck",
     ]);
     // The schema accepts each of the keys (either boolean) and the all-off
     // `{}` — tool sets store only enabled keys, so `{}` IS “all nine
@@ -228,7 +233,7 @@ describe("resolveBuiltinCopilotProfile('sidechat-ooc') — the builtin seed", ()
     expect(seed.basePrompt).toBe("CUSTOM SIDECHAT OOC BASE");
   });
 
-  test("the `builtin-director` seed carries the director asset with its own toggles (DR-4b + DMT-34)", async () => {
+  test("the `builtin-director` seed carries the director asset with its own toggles (DR-4b + DMT-34 + DK-5a)", async () => {
     const director = await resolveBuiltinSidechatOocProfile(undefined, "builtin-director");
     expect(director.id).toBe("builtin-director");
     expect(director.name).toBe("Director");
@@ -241,9 +246,10 @@ describe("resolveBuiltinCopilotProfile('sidechat-ooc') — the builtin seed", ()
     expect(director.basePrompt).toBe(assetText);
     expect(director.basePrompt).not.toBe(oocText);
     // The OOC six MINUS propose_objective, PLUS the two DR-4a proposal tools,
-    // ask_user (owner ruling 2026-10-27) and DMT-34's three message tools —
-    // the plan's DR-4 enumeration extended by DIRECTOR_MESSAGE_TOOLS_PLAN
-    // DMT-34.
+    // ask_user (owner ruling 2026-10-27), DMT-34's three message tools and
+    // DK-5a's `propose_deck` — the plan's DR-4 enumeration extended by
+    // DIRECTOR_MESSAGE_TOOLS_PLAN DMT-34 and DIRECTOR_DECK_CALENDAR_PLAN
+    // DK-5a.
     expect(director.toolSet).toEqual({
       search_context: true,
       read_context_item: true,
@@ -256,6 +262,7 @@ describe("resolveBuiltinCopilotProfile('sidechat-ooc') — the builtin seed", ()
       propose_message_edit: true,
       propose_message_variant: true,
       request_message_swipe: true,
+      propose_deck: true,
     });
     expect(copilotProfileSchema.safeParse(director).success).toBe(true);
     // The dispatch reaches the sidechat species' resolver for this seed too.

@@ -2927,6 +2927,7 @@
 	"agent_tool_propose_message_edit": "Предлагать правки ответа",
 	"agent_tool_propose_message_variant": "Предлагать свой ответ",
 	"agent_tool_request_message_swipe": "Запросить новый вариант (с разрешения)",
+	"agent_tool_propose_deck": "Предлагать колоду поворотов",
 	"agent_kind_experience": "Мини-приложения",
 	"agent_kind_script": "Скрипты",
 	"agent_kind_sidechat": "Сайдчат",

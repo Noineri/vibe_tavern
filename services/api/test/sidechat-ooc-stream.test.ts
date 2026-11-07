@@ -2093,12 +2093,14 @@ describe("streamSidechatTurn regenerate (AP-9)", () => {
 
 describe("streamSidechatTurn director profile (DR-4b)", () => {
 	/** The plan's DR-4 enumeration + the 2026-10-27 ruling B, extended by
-	 *  DIRECTOR_MESSAGE_TOOLS_PLAN DMT-34: the OOC six MINUS
-	 *  propose_objective PLUS the two proposal tools, ask_user and the
-	 *  three director message tools. (Sorted — the assertion compares
-	 *  against the captured set's `.sort()`.) */
+	 *  DIRECTOR_MESSAGE_TOOLS_PLAN DMT-34 and DIRECTOR_DECK_CALENDAR_PLAN
+	 *  DK-5a: the OOC six MINUS propose_objective PLUS the two proposal
+	 *  tools, ask_user, the three director message tools and propose_deck.
+	 *  (Sorted — the assertion compares against the captured set's
+	 *  `.sort()`.) */
 	const DIRECTOR_SERVED_SET = [
 		"ask_user",
+		"propose_deck",
 		"propose_message_edit",
 		"propose_message_variant",
 		"propose_plan",

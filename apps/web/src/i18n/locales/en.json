@@ -2877,6 +2877,7 @@
 	"agent_tool_propose_message_edit": "Propose reply corrections",
 	"agent_tool_propose_message_variant": "Propose an alternative reply",
 	"agent_tool_request_message_swipe": "Request a new variant (asks first)",
+	"agent_tool_propose_deck": "Propose a twist deck",
 	"agent_kind_experience": "Mini-apps",
 	"agent_kind_script": "Scripts",
 	"agent_kind_sidechat": "Sidechat",
