@@ -52,7 +52,9 @@ export const SCRIPT_PROFILE_TOOL_LABEL_KEYS: Record<ScriptProfileToolKey, AgentI
  *  director toggles carry the plan's own copy (DIRECTOR_MODE_PLAN DR-10)
  *  — they landed with the keys (DR-4a), known-but-off in the OOC seed.
  *  `ask_user` (DR-4b owner ruling 2026-10-27) shares the cross-kind label
- *  key the experience/script maps already use. */
+ *  key the experience/script maps already use. The three DMT-34 message
+ *  tools reuse the DMT-30 owner-approved locale keys (they landed with the
+ *  keys in DMT-34, on in the director seed). */
 export const SIDECHAT_PROFILE_TOOL_LABEL_KEYS: Record<SidechatProfileToolKey, AgentI18nKey> = {
 	search_context: "agent_tool_search_context",
 	read_context_item: "agent_tool_read_context_item",
@@ -63,6 +65,9 @@ export const SIDECHAT_PROFILE_TOOL_LABEL_KEYS: Record<SidechatProfileToolKey, Ag
 	propose_plan: "agent_tool_propose_plan",
 	propose_tracker_template: "agent_tool_propose_tracker_template",
 	ask_user: "agent_tool_ask_user",
+	propose_message_edit: "agent_tool_propose_message_edit",
+	propose_message_variant: "agent_tool_propose_message_variant",
+	request_message_swipe: "agent_tool_request_message_swipe",
 };
 
 /**

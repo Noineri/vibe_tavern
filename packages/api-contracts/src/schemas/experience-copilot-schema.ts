@@ -599,9 +599,14 @@ export const SCRIPT_AGENT_TOOL_KEYS = Object.keys(
 /**
  * Which tools a `sidechat-ooc` agent profile may toggle (SIDECHAT_PLAN,
  * Wave 1 / SC-5; widened by DIRECTOR_MODE_PLAN DR-4a + DR-4b's owner
- * ruling B). A PARTIAL record over exactly the 9 toggleable sidechat tools
- * (search_context, read_context_item, propose_objective, todo, read_plan,
- * read_message_prompt, propose_plan, propose_tracker_template, ask_user)
+ * ruling B, and by DIRECTOR_MESSAGE_TOOLS_PLAN DMT-34). A PARTIAL record
+ * over exactly the 12 toggleable sidechat tools (search_context,
+ * read_context_item, propose_objective, todo, read_plan,
+ * read_message_prompt, propose_plan, propose_tracker_template, ask_user,
+ * propose_message_edit, propose_message_variant, request_message_swipe —
+ * the last three ARE the DIRECTOR_MESSAGE_TOOLS wire names
+ * (director-message-tools-schema.ts; raw literals here, the file's
+ * convention for every tool-set key))
  * — the same convention as {@link copilotToolSetSchema} and
  * {@link scriptAgentToolSetSchema}: tool sets store only ENABLED keys, so a
  * tool that is not served is simply absent from every set. The keys
@@ -614,7 +619,12 @@ export const SCRIPT_AGENT_TOOL_KEYS = Object.keys(
  * seed and spreads the builder into the stream. `ask_user` (owner ruling
  * 2026-10-27, DIRECTOR_MODE_PLAN DR-4b): the shared factory
  * (`domain/agent/agent-ask-user-tool.ts`) serves it, the director seed
- * enables it, the OOC seed keeps it off. `.strict()` rejects
+ * enables it, the OOC seed keeps it off. DMT-34's three Director message
+ * tools are the TAG-1 exception that proves the pattern: their keys land
+ * TOGETHER with their finished implementations (the DMT-21 builder was
+ * complete and dormant first; DMT-34 enables the keys and turns the
+ * `builtin-director` seed's toggles on in the same unit) — the OOC seed and
+ * the kind default keep all three off. `.strict()` rejects
  * any unknown key — including the other kinds' keys — so a profile cannot
  * silently carry another kind's tools on the wire; the adapter additionally
  * re-validates against the kind's REGISTERED schema
@@ -631,6 +641,9 @@ export const sidechatOocToolSetSchema = z
     propose_plan: z.boolean().optional(),
     propose_tracker_template: z.boolean().optional(),
     ask_user: z.boolean().optional(),
+    propose_message_edit: z.boolean().optional(),
+    propose_message_variant: z.boolean().optional(),
+    request_message_swipe: z.boolean().optional(),
   })
   .strict();
 

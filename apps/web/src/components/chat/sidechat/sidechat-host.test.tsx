@@ -314,7 +314,7 @@ async function flushSessionLoad() {
 // ── Registration + selectors ────────────────────────────────────────────────
 
 describe("sidechat-host — registration (SC-13b)", () => {
-  it("registers the chat-only host with the kind's nine toggles and chat assignment", () => {
+  it("registers the chat-only host with the kind's twelve toggles and chat assignment", () => {
     const host = getAgentHost(SIDECHAT_AGENT_KIND);
     expect(host.kind).toBe("sidechat-ooc");
     // Chat-only: no editor pane (the shell renders its chat pane).
@@ -323,6 +323,10 @@ describe("sidechat-host — registration (SC-13b)", () => {
     // appended (owner ruling 2026-10-27, DIRECTOR_MODE_PLAN DR-4b ruling B —
     // off in the OOC seed, on in the director seed), basis: the wire
     // contract (SIDECHAT_OOC_TOOL_KEYS) gained the key.
+    // Behavior change (DMT-34): was 9 → now 12 — the three director message
+    // tools joined the wire contract (on in the director seed, absent from
+    // the OOC seed and the kind default), basis: SIDECHAT_OOC_TOOL_KEYS
+    // gained the keys.
     expect([...host.toolKeys].sort()).toEqual(
       [
         "propose_objective",
@@ -334,6 +338,9 @@ describe("sidechat-host — registration (SC-13b)", () => {
         "search_context",
         "todo",
         "ask_user",
+        "propose_message_edit",
+        "propose_message_variant",
+        "request_message_swipe",
       ].sort(),
     );
     expect(host.profileAssignment).toEqual({ target: "chat" });

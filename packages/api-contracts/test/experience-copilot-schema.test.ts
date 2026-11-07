@@ -704,12 +704,16 @@ describe("sidechatOocToolSetSchema (SIDECHAT_PLAN SC-5)", () => {
     expect(() => sidechatOocToolSetSchema.parse({ search_contex: true })).toThrow();
   });
 
-  test("SIDECHAT_OOC_TOOL_KEYS lists exactly the 9 toggles in definition order", () => {
+  test("SIDECHAT_OOC_TOOL_KEYS lists exactly the 12 toggles in definition order", () => {
     // Behavior change (DR-4a): was the 6 landed toggles → now 8, the two
     // director proposal tools appended, basis: DIRECTOR_MODE_PLAN DR-4a.
     // Behavior change (DR-4b, owner ruling 2026-10-27): 8 → 9, `ask_user`
     // appended — the shared ask tool serves the sidechat, on for the
     // director seed, off for the OOC seed.
+    // Behavior change (DMT-34): 9 → 12, the three director message tools
+    // appended — this time keys and implementations landed TOGETHER (the
+    // DMT-21 builder was complete and dormant first); on for the director
+    // seed, off for the OOC seed and the kind default.
     expect(SIDECHAT_OOC_TOOL_KEYS).toEqual([
       "search_context",
       "read_context_item",
@@ -720,6 +724,9 @@ describe("sidechatOocToolSetSchema (SIDECHAT_PLAN SC-5)", () => {
       "propose_plan",
       "propose_tracker_template",
       "ask_user",
+      "propose_message_edit",
+      "propose_message_variant",
+      "request_message_swipe",
     ]);
   });
 

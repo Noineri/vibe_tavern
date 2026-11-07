@@ -42,11 +42,13 @@
  * failed) return model-facing TEXT (the `propose_tracker_template`
  * pattern): relay or retry, never a proposal, never a marker.
  *
- * NOT YET SERVED (DMT-21 scope): the stream does not spread this builder —
- * DMT-23 spreads it at the profile-gated build seam beside the stop
- * condition, and the public toggle keys land with DMT-34 (a stored `true`
- * for these keys cannot exist until then — the builder is complete and
- * gated here so that wiring touches no tool logic; the TAG-1 pattern).
+ * SERVED (DMT-23 wired the stream seam, DMT-34 landed the public toggles):
+ * the stream spreads this builder at the profile-gated build seam beside
+ * the stop condition, and DMT-34 added the three toggle keys to the wire
+ * contract with the `builtin-director` seed enabling them (the OOC seed and
+ * the kind default keep the keys off — the builder is complete and gated
+ * here so that wiring touches no tool logic; the TAG-1 pattern, with keys
+ * and implementation landing together).
  */
 
 // fork #1 of sidechat-director-tools.ts

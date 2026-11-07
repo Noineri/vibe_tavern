@@ -15,11 +15,13 @@
  * store reads — it cannot ride this sync descriptor seam) spliced by SC-4b's
  * stream, so `renderContextPackage` renders nothing.
  *
- * The tool set (SC-5, widened by SC-23e, DR-4a and DR-4b): the wire
+ * The tool set (SC-5, widened by SC-23e, DR-4a, DR-4b and DMT-34): the wire
  * contract's toggleable sidechat tools (`search_context`,
  * `read_context_item`, `propose_objective`, `todo`, `read_plan`,
  * `read_message_prompt`, plus the two DR-4a director toggles `propose_plan`
- * / `propose_tracker_template` and DR-4b's `ask_user` —
+ * / `propose_tracker_template`, DR-4b's `ask_user` and DMT-34's three
+ * message tools `propose_message_edit` / `propose_message_variant` /
+ * `request_message_swipe` —
  * {@link sidechatOocToolSetSchema} is the single source for the names)
  * landed as SCHEMA KEYS first; each wave flips a toggle on as its tool
  * lands. SC-10 flipped `search_context` +
@@ -34,6 +36,10 @@
  * AVAILABILITY, never the permission — every call asks). DR-4b turned the
  * two director toggles + `ask_user` on in the `builtin-director` seed and
  * the stream serves them (the director builder + the shared ask factory).
+ * DMT-34 flipped the three Director MESSAGE tools on in the same seed (the
+ * builder `kinds/sidechat/sidechat-message-tools.ts` — its keys landed
+ * together with the finished implementation, unlike the TAG-1 keys that
+ * landed ahead of their tools).
  * Tool sets store only enabled keys, so each seed carries exactly its own
  * enabled tools, and the stream serves no tool whose toggle is off. The
  * strict schema still rejects every foreign key, so no profile can smuggle
@@ -66,7 +72,7 @@ import { registerAgentKind } from "../agent-kind-registry.js";
 // ─── Descriptor ──────────────────────────────────────────────────────────────
 
 /**
- * The kind's declarative tool set — WHICH of the nine wire-contract toggles
+ * The kind's declarative tool set — WHICH of the twelve wire-contract toggles
  * (SIDECHAT_OOC_TOOL_KEYS) the species enables, the sidechat twin of the
  * script kind's `SCRIPT_AGENT_MODULE.toolSet` (the kind module is this
  * species' module home). Every entry starts `false` and each unit flips
@@ -77,9 +83,10 @@ import { registerAgentKind } from "../agent-kind-registry.js";
  * profile enables its key. DR-4a declared the two DIRECTOR toggles
  * known-but-off; DR-4b turned them on in the `builtin-director` seed below
  * and the stream now spreads the director builder, so this FIRST seed's set
- * is the OOC profile's own: the two director toggles and `ask_user` (owner
- * ruling 2026-10-27, DIRECTOR_MODE_PLAN DR-4b ruling B) stay OFF here — the
- * OOC profile keeps exactly its six tools.
+ * is the OOC profile's own: the two director toggles, `ask_user` (owner
+ * ruling 2026-10-27, DIRECTOR_MODE_PLAN DR-4b ruling B) and DMT-34's three
+ * message-tool keys stay OFF here — the OOC profile keeps exactly its six
+ * tools.
  */
 const SIDECHAT_OOC_TOOL_SET: Record<string, boolean> = {
   search_context: true,
@@ -95,10 +102,12 @@ const SIDECHAT_OOC_TOOL_SET: Record<string, boolean> = {
 
 /**
  * The DIRECTOR seed's declarative tool set (DIRECTOR_MODE_PLAN DR-4b + the
- * 2026-10-27 ruling B): the OOC six MINUS `propose_objective` (while a plan
- * drives the chat, the plan's events ARE the tracker's goals — the director
- * proposes goals only through `propose_plan`) PLUS the two DR-4a proposal
- * tools and `ask_user` (session zero asks through it, with option chips).
+ * 2026-10-27 ruling B + DIRECTOR_MESSAGE_TOOLS_PLAN DMT-34): the OOC six
+ * MINUS `propose_objective` (while a plan drives the chat, the plan's events
+ * ARE the tracker's goals — the director proposes goals only through
+ * `propose_plan`) PLUS the two DR-4a proposal tools, `ask_user` (session
+ * zero asks through it, with option chips) and the three DMT-34 message
+ * tools (edit, variant, swipe — the Director's reply-fixing family).
  * Declared beside the OOC set it derives from — one module, one source for
  * both seeds' sets.
  */
@@ -108,15 +117,18 @@ const SIDECHAT_DIRECTOR_TOOL_SET: Record<string, boolean> = {
   propose_plan: true,
   propose_tracker_template: true,
   ask_user: true,
+  propose_message_edit: true,
+  propose_message_variant: true,
+  request_message_swipe: true,
 };
 
 // Project the declarative set through the wire-contract tool keys (the same
 // projection the other kinds use) so the contract stays the single source of
 // truth for toggleable-tool names: the defaultToolSet carries exactly the
 // contract's keys that the species enables — the six OOC tools today (the
-// two director keys and `ask_user` are declared false above, so they stay
-// off in the kind DEFAULT and the first seed; only the `builtin-director`
-// seed enables them).
+// two director keys, `ask_user` and the three DMT-34 message keys are
+// declared false above, so they stay off in the kind DEFAULT and the first
+// seed; only the `builtin-director` seed enables them).
 const defaultToolSet: Record<string, boolean> = {};
 for (const key of SIDECHAT_OOC_TOOL_KEYS) {
   if (SIDECHAT_OOC_TOOL_SET[key] === true) defaultToolSet[key] = true;
@@ -140,7 +152,9 @@ export const SIDECHAT_OOC_SEED_NAME = "Sidechat OOC";
  * base prompt (`agent-sidechat/director.md` via the `sidechat_director_base`
  * service prompt) and its own tool toggles (the OOC six minus
  * `propose_objective`, plus `propose_plan` + `propose_tracker_template` +
- * `ask_user`).
+ * `ask_user`, and since DMT-34 the three message tools
+ * `propose_message_edit` + `propose_message_variant` +
+ * `request_message_swipe`).
  */
 export const SIDECHAT_DIRECTOR_SEED_NAME = "Director";
 
@@ -235,7 +249,8 @@ export function resolveSidechatUserSkillsRoot(dataDir: string): string {
  * through {@link SIDECHAT_OOC_TOOL_KEYS} from that seed's declarative set —
  * the first seed the six OOC tools, the director seed its own set (the OOC
  * six minus `propose_objective`, plus `propose_plan` +
- * `propose_tracker_template` + `ask_user`, DR-4b).
+ * `propose_tracker_template` + `ask_user`, DR-4b, and since DMT-34 the
+ * three message tools).
  * `profileId` picks the seed (DR-1) — `"builtin"` (the first seed) by
  * default, `"builtin-director"` for the Director. The non-empty asset bases
  * are what make every seed pass the wire profile schema — the generic kind
