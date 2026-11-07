@@ -232,13 +232,16 @@ export function MobileMessageActions(props: {
   // at most three 44px buttons — branch / narrate / AI editor / annotate /
   // discuss move to the "..." sheet, continue joins the row from the sheet.
   // User rows keep their existing controls untouched.
+  // The right group carries pr-4 so its buttons clear the mobile rail's 24px
+  // edge handle lane (scroll-rail.tsx: right-0 w-6) — without it the lane
+  // swallows the right ~12px of «регенерация» taps (owner report 2026-11-06).
   if (!isUser) {
     return (
       <div className="mt-2 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
         <div className="flex min-w-0 justify-start">
           {!isGreeting && canSwitchVariant && variantControls}
         </div>
-        <div className="flex justify-end gap-1">
+        <div className="flex justify-end gap-1 pr-4">
           {/* IG-16: image generation menu (icon button + sheet; Stop while running). */}
           {imageMenu}
           {canContinue && onContinue && (
@@ -274,7 +277,8 @@ export function MobileMessageActions(props: {
       <div className="flex min-w-0 justify-center">
         {!isUser && !isGreeting && canSwitchVariant && variantControls}
       </div>
-      <div className="flex justify-end gap-1">
+      {/* Same rail-lane clearance pr-4 as the assistant row above. */}
+      <div className="flex justify-end gap-1 pr-4">
         {/* IG-16: image generation menu (icon button + sheet; Stop while running). */}
         {imageMenu}
         {onNarrate && (

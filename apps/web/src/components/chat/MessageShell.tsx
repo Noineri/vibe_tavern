@@ -734,7 +734,9 @@ function MobileSlotMessageActions(props: {
       <div className="flex min-w-0 justify-center">
         {canSwitchVariant && variantControls}
       </div>
-      <div className="flex justify-end gap-1">{children}</div>
+      {/* Same rail-lane clearance pr-4 as message-shell-actions' rows — the
+          slot row's controls must clear the mobile rail's 24px edge handle. */}
+      <div className="flex justify-end gap-1 pr-4">{children}</div>
     </div>
   );
 }

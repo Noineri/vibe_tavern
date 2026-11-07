@@ -199,6 +199,30 @@ describe("SC-18c mobile assistant row — switcher + images + continue + regener
     cleanup();
   });
 
+  test("the right group clears the mobile rail's edge handle lane", () => {
+    // The rail's grab handle owns the first 24px of the transcript's right
+    // edge (scroll-rail.tsx: right-0 w-6). The row sits inside px-3 (12px),
+    // so without pr-4 on the right cell the buttons' last ~12px fall under
+    // the handle and taps meant for «регенерация» start a scrub instead
+    // (owner report 2026-11-06). The budget assertion is the composition.
+    const rightCell = (view: ReturnType<typeof renderWithTooltip>): HTMLElement => {
+      const grid = rowGrid(view.container);
+      return grid.children[grid.children.length - 1] as HTMLElement;
+    };
+    const assistant = renderWithTooltip(React.createElement(MessageShell, fullAssistantProps()));
+    expect(rightCell(assistant).className, "assistant right group keeps the pr-4 lane clearance").toContain("pr-4");
+    cleanup();
+
+    const user = renderWithTooltip(React.createElement(MessageShell, makeProps({
+      role: "user",
+      isUser: true,
+      canBranch: true,
+      canResend: true,
+    })));
+    expect(rightCell(user).className, "user right group keeps the same clearance").toContain("pr-4");
+    cleanup();
+  });
+
   test("continue fires from the row; busy disables it", () => {
     let clicked = 0;
     const view = renderWithTooltip(React.createElement(MessageShell, fullAssistantProps({
