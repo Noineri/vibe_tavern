@@ -8,6 +8,7 @@ import type {
   MobileAccessRuntimeApi, InsightsRuntimeApi, DiceRuntimeApi, ExperienceRuntimeApi,
   ExperienceCopilotRuntimeApi, AgentThreadProposalsRuntimeApi, CopilotProfileRuntimeApi,
   AgentPlanRuntimeApi, SamplerSetRuntimeApi, FormatTemplateRuntimeApi, AiInstructionTemplateRuntimeApi,
+  StoryDeckRuntimeApi,
 } from "./runtime-api.js";
 import type { TrackerTemplateApi } from "./tracker-template-api.js";
 import type { AgentFeedRuntimeApi } from "./agent-feed-api.js";
@@ -56,6 +57,9 @@ export interface RuntimeApi extends TrackerTemplateApi {
   agentFeed: AgentFeedRuntimeApi;
   copilotProfiles: CopilotProfileRuntimeApi;
   agentPlan: AgentPlanRuntimeApi;
+  /** The per-branch story deck pair (DK-3) — its own adapter, like every
+   *  sub-interface. */
+  storyDeck: StoryDeckRuntimeApi;
   samplerSets: SamplerSetRuntimeApi;
   formatTemplates: FormatTemplateRuntimeApi;
   aiInstructionTemplates: AiInstructionTemplateRuntimeApi;

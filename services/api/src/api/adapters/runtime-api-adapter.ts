@@ -41,6 +41,7 @@ import { COAUTHOR_SKILL_LIBRARY } from "../contract/skill-contracts.js";
 import type { AgentKindId } from "../../domain/agent/agent-kind.js";
 import { CopilotProfileAdapter } from "./copilot-profile-adapter.js";
 import { AgentPlanAdapter } from "./agent-plan-adapter.js";
+import { StoryDeckAdapter } from "./story-deck-adapter.js";
 import type { StoryPlanSync } from "../../domain/director/story-plan-sync.js";
 import { SamplerSetAdapter } from "./sampler-set-adapter.js";
 import { FormatTemplateAdapter } from "./format-template-adapter.js";
@@ -103,6 +104,7 @@ export class RuntimeApiAdapter implements RuntimeApi {
 	readonly copilotSkills: CopilotSkillsByKindRuntimeApi;
 	readonly copilotProfiles: CopilotProfileAdapter;
 	readonly agentPlan: AgentPlanAdapter;
+	readonly storyDeck: StoryDeckAdapter;
 	readonly samplerSets: SamplerSetAdapter;
 	readonly formatTemplates: FormatTemplateAdapter;
 	readonly aiInstructionTemplates: AiInstructionTemplateAdapter;
@@ -216,6 +218,7 @@ export class RuntimeApiAdapter implements RuntimeApi {
 		);
 		this.copilotProfiles = new CopilotProfileAdapter(stores);
 		this.agentPlan = new AgentPlanAdapter(stores, storyPlanSync);
+		this.storyDeck = new StoryDeckAdapter(stores);
 		this.samplerSets = new SamplerSetAdapter(stores);
 		this.formatTemplates = new FormatTemplateAdapter(stores);
 		this.aiInstructionTemplates = new AiInstructionTemplateAdapter(stores);

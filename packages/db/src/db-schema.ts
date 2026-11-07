@@ -2151,6 +2151,23 @@ export const agentBranchPlans = sqliteTable('agent_branch_plans', {
   chatBranchUnique: uniqueIndex('idx_agent_branch_plans_chat_branch').on(table.chatId, table.branchId),
 }));
 
+// ─── storyBranchDecks (DIRECTOR_DECK_CALENDAR_PLAN DK-3) ─────────────────────
+// One persisted story deck belongs to each (chat, branch) pair — the
+// deck-storage twin of agent_branch_plans above. Both columns are HARD FKs
+// with CASCADE (a branch's deck must not outlive the branch, the same
+// convention as every chat-owned table here); the unique index makes it one
+// row per pair; the deck JSON lives in content_json.
+export const storyBranchDecks = sqliteTable('story_branch_decks', {
+  id: text('id').primaryKey(),
+  chatId: text('chat_id').notNull().references(() => chats.id, { onDelete: 'cascade' }),
+  branchId: text('branch_id').notNull().references(() => chatBranches.id, { onDelete: 'cascade' }),
+  contentJson: text('content_json').notNull(),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+}, (table) => ({
+  chatBranchUnique: uniqueIndex('idx_story_branch_decks_chat_branch').on(table.chatId, table.branchId),
+}));
+
 // ─── agentKindSettings (SIDECHAT_PLAN SC-0d) ────────────────────────────────
 // Per-agent-kind model binding + profile default: one row per kind id, the
 // UI default a kind's shell boots with (the stream still takes its actual

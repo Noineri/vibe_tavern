@@ -52,6 +52,7 @@ export * from "./scene-tracker-constants.js";
 export * from "./service-prompts.js";
 export * from "./story-clock.js";
 export * from "./story-clock-scene.js";
+export * from "./story-deck.js";
 export * from "./text-exact-edit.js";
 export * from "./tracker-template.js";
 export * from "./tts-server-discovery.js";

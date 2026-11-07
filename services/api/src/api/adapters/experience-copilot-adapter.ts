@@ -676,6 +676,7 @@ export class ExperienceCopilotAdapter extends ExperienceCopilotRunAdapter implem
       messages: this.stores.messages,
       experienceCopilot: this.stores.experienceCopilot,
       plans: this.stores.agentPlans,
+      decks: this.stores.storyDecks,
     };
   }
 

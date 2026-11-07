@@ -47,6 +47,8 @@ import type { LorebookRuntimeApi, ScriptRuntimeApi } from "./lorebook-script-con
 export type { LorebookRuntimeApi, ScriptRuntimeApi };
 import type { AgentPlanRuntimeApi } from "./agent-plan-contracts.js";
 export type { AgentPlanRuntimeApi };
+import type { StoryDeckRuntimeApi } from "./story-deck-contracts.js";
+export type { StoryDeckRuntimeApi };
 import type { CopilotProfileRuntimeApi } from "./copilot-profile-contracts.js";
 export type { CopilotProfileRuntimeApi };
 import type { ChatMessageRuntimeApi } from "./chat-runtime-contracts.js";

@@ -63,6 +63,7 @@ beforeAll(async () => {
 		messages: stores.messages,
 		experienceCopilot: stores.experienceCopilot,
 		plans: stores.agentPlans,
+		decks: stores.storyDecks,
 	};
 	syncDeps = {
 		chats: stores.chats,
@@ -533,5 +534,74 @@ describe("forkBranchSidechat (SC-20)", () => {
 		expect(await stores.agentPlans.get({ kind: "chatBranch", chatId, branchId: sourceBranchId })).toEqual(
 			sourcePlanBefore,
 		);
+	});
+});
+
+describe("forkBranchSidechat — the story deck copy (DK-3)", () => {
+	const SOURCE_DECK = {
+		cards: [
+			{ id: "card_1", suit: "threat", title: "The door won't hold", body: "Something pushes back." },
+			{ id: "card_2", suit: "discovery", title: "A hidden ledger", body: "" },
+		],
+	};
+
+	it("the fork copies the source branch's deck onto the target; the source keeps its own", async () => {
+		const { chatId, sourceBranchId } = await makeChat();
+		const m1 = await stores.messages.addMessage({
+			chatId,
+			branchId: sourceBranchId,
+			role: "user",
+			authorType: "user",
+			content: "seed",
+		});
+		await stores.storyDecks.save(chatId, sourceBranchId, SOURCE_DECK);
+		const target = await stores.chats.forkBranch(chatId, m1.id);
+
+		await forkBranchSidechat(forkDeps, chatId, sourceBranchId, target.id);
+
+		expect(await stores.storyDecks.get(chatId, target.id)).toEqual(SOURCE_DECK);
+		expect(await stores.storyDecks.get(chatId, sourceBranchId)).toEqual(SOURCE_DECK);
+	});
+
+	it("a stored deck copies verbatim — an empty deck copies as the empty deck", async () => {
+		const { chatId, sourceBranchId } = await makeChat();
+		const m1 = await stores.messages.addMessage({
+			chatId,
+			branchId: sourceBranchId,
+			role: "user",
+			authorType: "user",
+			content: "seed",
+		});
+		await stores.storyDecks.save(chatId, sourceBranchId, { cards: [] });
+		const target = await stores.chats.forkBranch(chatId, m1.id);
+
+		await forkBranchSidechat(forkDeps, chatId, sourceBranchId, target.id);
+
+		expect(await stores.storyDecks.get(chatId, target.id)).toEqual({ cards: [] });
+	});
+
+	it("a source with NO deck row copies nothing — the target keeps whatever deck it already has", async () => {
+		const { chatId, sourceBranchId } = await makeChat();
+		const m1 = await stores.messages.addMessage({
+			chatId,
+			branchId: sourceBranchId,
+			role: "user",
+			authorType: "user",
+			content: "seed",
+		});
+		const target = await stores.chats.forkBranch(chatId, m1.id);
+		// The target already carries its own deck (it is never clobbered by an
+		// absent source).
+		const targetDeck = {
+			cards: [{ id: "card_t", suit: "change", title: "Target's own card", body: "" }],
+		};
+		await stores.storyDecks.save(chatId, target.id, targetDeck);
+
+		await forkBranchSidechat(forkDeps, chatId, sourceBranchId, target.id);
+
+		// Named semantics (DK-3): no source row → no copy — the target's row
+		// stays untouched; a fresh target would keep having NO row (which the
+		// deck routes read as the empty deck).
+		expect(await stores.storyDecks.get(chatId, target.id)).toEqual(targetDeck);
 	});
 });
