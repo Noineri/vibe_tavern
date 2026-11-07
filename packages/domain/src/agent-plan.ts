@@ -1,4 +1,5 @@
 import { isRecord } from "./is-record.js";
+import { isStoryEventTime, type StoryEventTime } from "./story-clock.js";
 
 /** Statuses shared by the copilot todo and persisted agent plan tasks. */
 export const AGENT_PLAN_TASK_STATUS = {
@@ -15,6 +16,9 @@ export interface AgentPlanTask {
   title: string;
   body: string;
   status: AgentPlanTaskStatus;
+  /** Optional story-time stamp (DK-1). Absent = undated; an invalid stamp is
+   * dropped by normalizeAgentPlan while the task itself survives. */
+  at?: StoryEventTime;
 }
 
 export interface AgentPlan {
@@ -63,12 +67,16 @@ export function normalizeAgentPlan(raw: unknown): AgentPlan | null {
       ? candidate.status
       : AGENT_PLAN_TASK_STATUS.pending;
     if (status === AGENT_PLAN_TASK_STATUS.active) activeCount += 1;
-    tasks.push({
+    const task: AgentPlanTask = {
       id,
       title,
       body: typeof candidate.body === "string" ? candidate.body : "",
       status,
-    });
+    };
+    // DK-1: a valid story-time stamp rides along; an invalid one is dropped
+    // (key stays absent) while the task itself survives.
+    if (isStoryEventTime(candidate.at)) task.at = candidate.at;
+    tasks.push(task);
   }
 
   if (activeCount > 1) return null;
