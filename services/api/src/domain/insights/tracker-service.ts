@@ -45,7 +45,7 @@ import type {
 	SceneTrackerRecord,
 	Timestamp,
 } from "@vibe-tavern/domain";
-import { brandId, computeSceneSourceHash, normalizeSceneTrackerConfig, stripLabels, SCENE_BACKFILL_MODE } from "@vibe-tavern/domain";
+import { brandId, computeSceneSourceHash, normalizeSceneTrackerConfig, SCENE_BACKFILL_MODE } from "@vibe-tavern/domain";
 import type { SceneBackfillMode } from "@vibe-tavern/domain";
 import type { SceneBackfillStatus } from "@vibe-tavern/api-contracts";
 import type { SceneBackfillRun } from "@vibe-tavern/db";
@@ -56,7 +56,6 @@ import { buildSceneDataSchema, validateSceneData } from "@vibe-tavern/api-contra
 import { nonstreamingProviderExecute } from "../../infrastructure/ai/nonstreaming-provider-executor.js";
 import type { ProviderExecutionInput } from "../../infrastructure/ai/provider-execution-types.js";
 import { INSIGHTS_FIELD_MAP, resolveInsightsPrompt } from "./insights-prompts.js";
-import { collectLabelHints, composeToneVocabularyBlock } from "./scene-instruction-hints.js";
 import { resolveServicePromptText } from "../service-prompts/service-prompt-resolver.js";
 import { insightsAssemblyToPromptResponse } from "./objective-service.js";
 import type { SessionRuntime } from "../../runtime/session/session-runtime.js";
@@ -83,11 +82,11 @@ export interface SceneAutoGenerateTrigger {
 	messageId: string;
 }
 
-/** One prior valid selected-variant record fed to the model as continuity input. */
-export interface SceneContinuityRecord {
-	variantId: MessageVariantId;
-	sceneState: Record<string, unknown>;
-}
+import { composeSceneInstruction, type SceneContinuityRecord } from "./scene-instruction.js";
+/** Instruction composition + the continuity record type moved to scene-instruction.ts
+ *  (file-size ratchet extraction, DK-2); re-exported so the module's public surface is unchanged. */
+export { composeSceneInstruction };
+export type { SceneContinuityRecord };
 
 /** One frozen manifest item in a Scene history-backfill run (SCN-14): a selected
  *  assistant variant captured oldest-to-newest at run start, with its then-
@@ -154,39 +153,6 @@ export class SceneTargetGoneError extends Error {
 		super(`Scene target variant '${target.variantId}' no longer exists.`);
 		this.name = "SceneTargetGoneError";
 	}
-}
-
-/**
- * Compose the final Scene instruction: override-or-default base + the bounded
- * schema descriptor (so the model knows exactly which fields to fill) + the
- * continuity window (prior states to evolve from). The base is `scene-generate.md`
- * unless a per-chat override is set; this function only appends dynamic context.
- */
-export function composeSceneInstruction(
-	base: string,
-	schema: SceneTrackerDsl,
-	continuity: readonly SceneContinuityRecord[],
-	rulesPrompt = "",
-): string {
-	const schemaJson = JSON.stringify(stripLabels(schema));
-	const continuityJson =
-		continuity.length > 0 ? JSON.stringify(continuity.map((record) => record.sceneState)) : "[]";
-	const labelHints = collectLabelHints(schema);
-	const labelBlock = labelHints.length > 0
-		? `\n\nField labels (human names for the schema keys; they do NOT add, rename, or remove any field — output the machine keys exactly as in the schema): ${JSON.stringify(labelHints)}`
-		: "";
-	const trimmedRules = rulesPrompt.trim();
-	const rulesBlock = trimmedRules.length > 0
-		? `\n\nScene tracker rules for this chat (author-specified; these OVERRIDE the base defaults — obey the formulas, per-turn deltas, bounds/gates, and starting values below):\n${trimmedRules}`
-		: "";
-	return (
-		`${base}${rulesBlock}\n\n` +
-		`Scene schema (produce one JSON object with exactly these fields, no extras): ${schemaJson}\n\n` +
-		`Recent scene continuity (prior states — evolve them to match the current scene): ${continuityJson}` +
-		labelBlock +
-		composeToneVocabularyBlock(schema) +
-		`\n\nRequired output: one JSON object matching the schema exactly.`
-	);
 }
 
 /** Forward an external AbortSignal onto a service-owned controller (one-shot). */

@@ -141,6 +141,30 @@ describe("stripLabels", () => {
     expect(dsl.gate.tone).toBe("danger");
     expect(dsl.gate.toneBy).toEqual({ Ruined: "danger" });
   });
+
+  it("keeps the semantic clock marker on marked string and number nodes (DK-2)", () => {
+    const dsl: SceneTrackerDsl = {
+      story_day: { $type: "number", min: 1, max: 999, clock: "day", label: "Story day" },
+      story_time: { $type: "string", clock: "part", tone: "accent" },
+      caption: { $type: "string", clock: "label" },
+    };
+    expect(stripLabels(dsl)).toEqual({
+      story_day: { $type: "number", min: 1, max: 999, clock: "day" },
+      story_time: { $type: "string", clock: "part" },
+      caption: { $type: "string", clock: "label" },
+    });
+  });
+
+  it("projects an unmarked schema exactly as before (the marker is additive, not a reshuffle)", () => {
+    const dsl: SceneTrackerDsl = {
+      mood: { $type: "string" },
+      hp: { $type: "number", min: 0, max: 100, label: "HP" },
+    };
+    expect(stripLabels(dsl)).toEqual({
+      mood: { $type: "string" },
+      hp: { $type: "number", min: 0, max: 100 },
+    });
+  });
 });
 
 describe("computeSceneSchemaHash (label invariance)", () => {
@@ -201,6 +225,45 @@ describe("computeSceneSchemaHash (tone invariance)", () => {
     const bare = computeSceneSchemaHash({ gate: { $type: "string" } });
     expect(computeSceneSchemaHash({ gate: { $type: "string", tone: "danger", toneBy: { Ruined: "danger" } } })).toBe(bare);
     expect(computeSceneSchemaHash({ gate: { $type: "string", tone: "success", toneBy: { Ruined: "warning" } } })).toBe(bare);
+  });
+
+  it("is unchanged when a label is added to a clock-marked node (presentation still never dims records)", () => {
+    const marked: SceneTrackerDsl = { story_day: { $type: "number", clock: "day" } };
+    const markedWithLabel: SceneTrackerDsl = { story_day: { $type: "number", clock: "day", label: "Story day" } };
+    expect(computeSceneSchemaHash(markedWithLabel)).toBe(computeSceneSchemaHash(marked));
+  });
+});
+
+describe("computeSceneSchemaHash (clock marker sensitivity, DK-2)", () => {
+  it("changes when a clock marker is added — the marker is semantic, not presentation", () => {
+    const unmarked = computeSceneSchemaHash({ story_day: { $type: "number" } });
+    expect(computeSceneSchemaHash({ story_day: { $type: "number", clock: "day" } })).not.toBe(unmarked);
+  });
+
+  it("changes when a marker moves between fields or changes value", () => {
+    const onDay = computeSceneSchemaHash({
+      a: { $type: "number", clock: "day" },
+      b: { $type: "string" },
+    });
+    const onB = computeSceneSchemaHash({
+      a: { $type: "number" },
+      b: { $type: "string", clock: "day" },
+    });
+    expect(onB).not.toBe(onDay);
+    expect(computeSceneSchemaHash({ a: { $type: "string", clock: "part" } })).not.toBe(
+      computeSceneSchemaHash({ a: { $type: "string", clock: "label" } }),
+    );
+  });
+
+  it("never collides with the unmarked schema's hash (no shared record cache for semantically different schemas)", () => {
+    const schemas = [
+      { a: { $type: "number" } },
+      { a: { $type: "number", clock: "day" } },
+      { a: { $type: "string", clock: "part" } },
+      { a: { $type: "string", clock: "label" } },
+    ] as const;
+    const hashes = new Set(schemas.map((schema) => computeSceneSchemaHash(schema)));
+    expect(hashes.size).toBe(schemas.length);
   });
 });
 

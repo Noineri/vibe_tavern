@@ -264,6 +264,146 @@ describe("tone DSL (semantic color tokens)", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Clock marker DSL (DK-2 — semantic story clock marks)
+// ---------------------------------------------------------------------------
+
+describe("clock marker DSL (semantic story clock marks)", () => {
+  it("accepts `clock: \"day\"` on a number node and round-trips it", () => {
+    const node: SceneTrackerSchemaNode = { $type: "number", min: 1, max: 999, clock: "day" };
+    expect(sceneTrackerNodeSchema.parse(node)).toEqual(node);
+    expect(sceneTrackerNodeSchema.safeParse({ $type: "number" }).success).toBe(true); // unmarked stays valid
+  });
+
+  it("accepts `clock: \"part\"` and `clock: \"label\"` on string nodes and round-trips them", () => {
+    const part: SceneTrackerSchemaNode = { $type: "string", clock: "part" };
+    const label: SceneTrackerSchemaNode = { $type: "string", clock: "label" };
+    expect(sceneTrackerNodeSchema.parse(part)).toEqual(part);
+    expect(sceneTrackerNodeSchema.parse(label)).toEqual(label);
+  });
+
+  it("rejects `clock: \"day\"` on a string node and `clock: \"part\"/\"label\"` on a number node, naming the allowed marker", () => {
+    const wrongString = sceneTrackerNodeSchema.safeParse({ $type: "string", clock: "day" });
+    expect(wrongString.success).toBe(false);
+    if (!wrongString.success) expect(JSON.stringify(wrongString.error.issues)).toContain("marks a number field");
+    for (const bad of ["part", "label"]) {
+      const wrongNumber = sceneTrackerNodeSchema.safeParse({ $type: "number", clock: bad });
+      expect(wrongNumber.success).toBe(false);
+      if (!wrongNumber.success) expect(JSON.stringify(wrongNumber.error.issues)).toContain("mark string fields");
+    }
+  });
+
+  it("rejects a clock marker on boolean, object, and array nodes (strict unknown key)", () => {
+    const offenders = [
+      { $type: "boolean", clock: "day" },
+      { $type: "boolean", clock: "part" },
+      { $type: "object", properties: {}, clock: "label" },
+      { $type: "array", items: { $type: "string" }, clock: "day" },
+    ];
+    for (const node of offenders) {
+      const result = sceneTrackerNodeSchema.safeParse(node);
+      expect(result.success).toBe(false);
+      if (!result.success) expect(JSON.stringify(result.error.issues)).toContain("clock");
+    }
+  });
+
+  it("rejects an unknown marker word on any node", () => {
+    expect(sceneTrackerNodeSchema.safeParse({ $type: "string", clock: "date" }).success).toBe(false);
+    expect(sceneTrackerNodeSchema.safeParse({ $type: "number", clock: "year" }).success).toBe(false);
+  });
+
+  it("accepts a fully marked schema at the DSL root and round-trips every marker", () => {
+    const schema: SceneTrackerDsl = {
+      story_day: { $type: "number", min: 1, max: 999, clock: "day", label: "Story day" },
+      story_time: { $type: "string", clock: "part", label: "Part of day" },
+      story_date: { $type: "string", clock: "label", label: "Date label" },
+      mood: { $type: "string" },
+    };
+    expect(sceneTrackerDslSchema.parse(schema)).toEqual(schema);
+  });
+
+  it("accepts a schema with a marked day but no part/label, and vice versa for label-only", () => {
+    expect(sceneTrackerDslSchema.safeParse({ story_day: { $type: "number", clock: "day" } }).success).toBe(true);
+    expect(sceneTrackerDslSchema.safeParse({ story_date: { $type: "string", clock: "label" } }).success).toBe(true);
+    expect(
+      sceneTrackerDslSchema.safeParse({ story_day: { $type: "number", clock: "day" }, story_date: { $type: "string", clock: "label" } })
+        .success,
+    ).toBe(true);
+  });
+
+  it("rejects a schema with a marked part but no marked day (a part without a day is meaningless)", () => {
+    const result = sceneTrackerDslSchema.safeParse({ story_time: { $type: "string", clock: "part" } });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(JSON.stringify(result.error.issues)).toContain("part");
+      expect(JSON.stringify(result.error.issues)).toContain("day");
+    }
+  });
+
+  it("rejects a marker inside an object property or an array item (top-level only)", () => {
+    const nestedObject = {
+      box: { $type: "object", properties: { day: { $type: "number", clock: "day" } } },
+    } as unknown as SceneTrackerDsl;
+    const nestedArray = {
+      list: { $type: "array", items: { $type: "string", clock: "part" } },
+    } as unknown as SceneTrackerDsl;
+    for (const dsl of [nestedObject, nestedArray]) {
+      const result = sceneTrackerDslSchema.safeParse(dsl);
+      expect(result.success).toBe(false);
+      if (!result.success) expect(JSON.stringify(result.error.issues)).toContain("top-level");
+    }
+  });
+
+  it("rejects two fields carrying the same marker (each marker at most once)", () => {
+    const dsl: SceneTrackerDsl = {
+      story_day: { $type: "number", clock: "day" },
+      chapter: { $type: "number", clock: "day" },
+    };
+    const result = sceneTrackerDslSchema.safeParse(dsl);
+    expect(result.success).toBe(false);
+    if (!result.success) expect(JSON.stringify(result.error.issues)).toContain("at most once");
+  });
+
+  it("rejects duplicate non-day markers too (three part fields)", () => {
+    const dsl: SceneTrackerDsl = {
+      a: { $type: "string", clock: "part" },
+      b: { $type: "string", clock: "part" },
+      story_day: { $type: "number", clock: "day" },
+    };
+    expect(sceneTrackerDslSchema.safeParse(dsl).success).toBe(false);
+  });
+
+  it("round-trips a marked schema through the config schema and the PATCH schema (marker survives save-path validation)", () => {
+    const schema: SceneTrackerDsl = {
+      story_day: { $type: "number", min: 1, max: 999, clock: "day" },
+      story_time: { $type: "string", clock: "part" },
+    };
+    const config = sceneTrackerConfigSchema.parse({ schema });
+    expect(config.schema).toEqual(schema); // marker not stripped at the config boundary
+    expect(config.schemaHash).toBe(computeSceneSchemaHash(schema));
+    expect(updateTrackerConfigSchema.parse({ schema })).toEqual({ schema });
+  });
+
+  it("marks the hash: two schemas differing only in a clock marker hash differently", () => {
+    const unmarked = computeSceneSchemaHash({ story_day: { $type: "number" } });
+    const marked = computeSceneSchemaHash({ story_day: { $type: "number", clock: "day" } });
+    expect(marked).not.toBe(unmarked);
+  });
+
+  it("carries clock markers through the tracker template schema (portable semantic metadata)", () => {
+    const schema: SceneTrackerDsl = {
+      story_day: { $type: "number", clock: "day" },
+      story_time: { $type: "string", clock: "part" },
+    };
+    const template = trackerTemplateSchema.parse({
+      version: 1,
+      scene: { enabled: true, config: { schema } },
+      objective: null,
+    });
+    expect(template.scene?.config.schema).toEqual(schema);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Generated-data validator
 // ---------------------------------------------------------------------------
 

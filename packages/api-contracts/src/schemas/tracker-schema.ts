@@ -1,5 +1,6 @@
 import {
   SCENE_AUTO_MODE,
+  SCENE_CLOCK_MARKER,
   SCENE_PROMPT_FORMAT,
   SCENE_RESERVED_SEGMENTS,
   SCENE_TONE,
@@ -11,7 +12,7 @@ import {
   isReservedSceneSegment,
   sceneSchemaDepth,
 } from "@vibe-tavern/domain";
-import type { SceneTrackerDsl, SceneTrackerSchemaNode } from "@vibe-tavern/domain";
+import type { SceneClockMarker, SceneTrackerDsl, SceneTrackerSchemaNode } from "@vibe-tavern/domain";
 import { z } from "zod";
 
 /**
@@ -66,6 +67,27 @@ const sceneNodeToneSchema = z.enum(
 /** String value → tone map, e.g. `{ "Ruined": "danger", "Repaired": "success" }`. */
 const sceneNodeToneBySchema = z.record(z.string(), sceneNodeToneSchema);
 
+/**
+ * Scene clock marker on a STRING node (DK-2): `"part"` (named part of the day)
+ * or `"label"` (free-form date label). `"day"` is number-only, so it is
+ * rejected here — the semantic marker must sit on a field whose value type can
+ * carry it.
+ */
+const sceneNodeStringClockSchema = z.enum([SCENE_CLOCK_MARKER.part, SCENE_CLOCK_MARKER.label], {
+  error: () =>
+    `Clock marker must be "${SCENE_CLOCK_MARKER.part}" or "${SCENE_CLOCK_MARKER.label}" ("${SCENE_CLOCK_MARKER.day}" marks a number field).`,
+});
+
+/**
+ * Scene clock marker on a NUMBER node (DK-2): only `"day"` (the 1-based story
+ * day counter). The string-node markers are rejected here for the same
+ * node-type reason.
+ */
+const sceneNodeNumberClockSchema = z.literal(SCENE_CLOCK_MARKER.day, {
+  error: () =>
+    `Clock marker must be "${SCENE_CLOCK_MARKER.day}" ("${SCENE_CLOCK_MARKER.part}" and "${SCENE_CLOCK_MARKER.label}" mark string fields).`,
+});
+
 const sceneNodeStringSchema = z
   .object({
     $type: z.literal("string"),
@@ -74,6 +96,8 @@ const sceneNodeStringSchema = z
     tone: sceneNodeToneSchema.optional(),
     /** Value → tone map; string nodes only, since only string values can be keyed exactly. */
     toneBy: sceneNodeToneBySchema.optional(),
+    /** Semantic scene clock marker (KEPT by the strip projection; rides the schema hash). */
+    clock: sceneNodeStringClockSchema.optional(),
   })
   .strict();
 const sceneNodeBooleanSchema = z.object({
@@ -94,6 +118,8 @@ const sceneNodeNumberSchema = z
     label: sceneNodeLabelSchema.optional(),
     /** Node-level semantic color token (presentation-only; stripped from the hash + model prompt). */
     tone: sceneNodeToneSchema.optional(),
+    /** Semantic scene clock marker (KEPT by the strip projection; rides the schema hash). */
+    clock: sceneNodeNumberClockSchema.optional(),
   })
   .strict();
 
@@ -211,10 +237,67 @@ export const sceneTrackerNodeSchema: z.ZodType<SceneTrackerSchemaNode> = z.lazy(
 );
 
 /**
+ * Cross-field clock marker rules (DK-2), enforced at the DSL root because a
+ * single node cannot see them:
+ *
+ * 1. Top-level only — a marker inside an object property or an array item is
+ *    rejected (the clock is one flat triple of fields, not a per-branch one).
+ * 2. Each marker value at most once per schema (two "day" fields is not A day).
+ * 3. A marked `part` requires a marked `day` — a part of the day without a day
+ *    counter is meaningless (the node-type rules themselves live in the
+ *    per-node schemas: `day` on numbers, `part`/`label` on strings only).
+ *
+ * Returns plain `{ path, message }` issues for the root schema's superRefine to
+ * add; pure, never throws.
+ */
+function collectClockMarkerIssues(dsl: SceneTrackerDsl): Array<{ path: string[]; message: string }> {
+  const issues: Array<{ path: string[]; message: string }> = [];
+  const seen = new Set<SceneClockMarker>();
+  let hasDay = false;
+  let hasPart = false;
+  const walk = (node: SceneTrackerSchemaNode, path: string[], topLevel: boolean): void => {
+    // Only the string/number members carry `clock`; the other kinds cannot.
+    const clock = node.$type === "string" || node.$type === "number" ? node.clock : undefined;
+    if (clock !== undefined) {
+      if (!topLevel) {
+        issues.push({
+          path,
+          message: `Clock marker "${clock}" is allowed only on a top-level field (not inside objects or arrays).`,
+        });
+      } else if (seen.has(clock)) {
+        issues.push({
+          path,
+          message: `Clock marker "${clock}" marks more than one field; each marker may be used at most once.`,
+        });
+      } else {
+        seen.add(clock);
+        if (clock === SCENE_CLOCK_MARKER.day) hasDay = true;
+        if (clock === SCENE_CLOCK_MARKER.part) hasPart = true;
+      }
+    }
+    if (node.$type === "object") {
+      for (const [key, child] of Object.entries(node.properties)) walk(child, [...path, key], false);
+    } else if (node.$type === "array") {
+      walk(node.items, path, false);
+    }
+  };
+  for (const [key, node] of Object.entries(dsl)) walk(node, [key], true);
+  if (hasPart && !hasDay) {
+    issues.push({
+      path: [],
+      message: `A schema with a clock "${SCENE_CLOCK_MARKER.part}" field requires a clock "${SCENE_CLOCK_MARKER.day}" field (a part of the day without a day counter is meaningless).`,
+    });
+  }
+  return issues;
+}
+
+/**
  * The root Scene schema: a fields map (implicit root object) — the natural
  * shape a user authors. Enforces reserved root keys, the root key cap, the
  * total-node limit, and the depth limit at the top level so every limit check
- * shares one source of truth.
+ * shares one source of truth. The superRefine also enforces the cross-field
+ * clock marker rules (top-level only, each marker at most once, part implies
+ * day) over the whole tree.
  */
 export const sceneTrackerDslSchema = sceneFieldRecord(sceneTrackerNodeSchema)
   .superRefine((dsl, ctx) => {
@@ -237,6 +320,13 @@ export const sceneTrackerDslSchema = sceneFieldRecord(sceneTrackerNodeSchema)
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: `Schema exceeds max depth ${SCENE_TRACKER_LIMITS.maxDepth} (${depth}).`,
+      });
+    }
+    for (const issue of collectClockMarkerIssues(dsl)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: issue.path,
+        message: issue.message,
       });
     }
   });

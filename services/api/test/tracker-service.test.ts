@@ -299,6 +299,89 @@ describe("composeSceneInstruction (SCN-5)", () => {
 				"\n\nRequired output: one JSON object matching the schema exactly.",
 		);
 	});
+
+	// ── DK-2: the story clock hint block ────────────────────────────────────────
+
+	const CLOCK_SCHEMA = {
+		story_day: { $type: "number", min: 1, max: 999, clock: "day", label: "Story day" },
+		story_time: { $type: "string", clock: "part", label: "Part of day" },
+		story_date: { $type: "string", clock: "label", label: "Date label" },
+		mood: { $type: "string" },
+	} as const;
+
+	it("adds ONE story clock block for a marked schema: day rule, the four closed part words, the label field", () => {
+		const instruction = composeSceneInstruction("BASE", CLOCK_SCHEMA, []);
+		expect(instruction).toContain("Story clock (the schema marks these fields as the story clock)");
+		expect(instruction).toContain('the story day field "story_day" is the 1-based day counter: it starts at 1 and grows by 1 when the night passes');
+		expect(instruction).toContain('the part-of-day field "story_time" accepts exactly one of these four words');
+		expect(instruction).toContain('"morning", "day", "evening", "night"');
+		expect(instruction).toContain("closed set");
+		expect(instruction).toContain('the date-label field "story_date" carries a free-form display label');
+		// ONE block, not one per field.
+		expect(instruction.split("Story clock (the schema marks these fields").length - 1).toBe(1);
+	});
+
+	it("teaches the part words as a CLOSED rule (unlike the toneBy preference list)", () => {
+		const instruction = composeSceneInstruction("BASE", { story_time: { $type: "string", clock: "part" } }, []);
+		expect(instruction).toContain("closed set");
+		expect(instruction).toContain("no other word is valid there");
+		// The toneBy phrasing ("a preference, not a closed enum") never leaks into the clock block.
+		expect(instruction).not.toContain("preference");
+	});
+
+	it("mentions only the fields the schema actually marks (day-only and label-only schemas)", () => {
+		const dayOnly = composeSceneInstruction("BASE", { story_day: { $type: "number", clock: "day" } }, []);
+		expect(dayOnly).toContain('the story day field "story_day"');
+		expect(dayOnly).not.toContain("part-of-day field");
+		expect(dayOnly).not.toContain("date-label field");
+
+		const labelOnly = composeSceneInstruction("BASE", { caption: { $type: "string", clock: "label" } }, []);
+		expect(labelOnly).toContain('the date-label field "caption"');
+		expect(labelOnly).not.toContain("story day field");
+	});
+
+	it("places the clock block after the vocabulary block and before the required-output line", () => {
+		const schema = {
+			timeOfDay: { $type: "string", clock: "part", toneBy: { Night: "danger" } },
+			story_day: { $type: "number", clock: "day" },
+		} as const;
+		const instruction = composeSceneInstruction("BASE", schema, []);
+		const labels = instruction.indexOf("Field labels");
+		const vocabulary = instruction.indexOf(VOCABULARY_PHRASE);
+		const clock = instruction.indexOf("Story clock (");
+		const required = instruction.indexOf("Required output: one JSON object");
+		expect(vocabulary).toBeGreaterThan(labels);
+		expect(clock).toBeGreaterThan(vocabulary);
+		expect(required).toBeGreaterThan(clock);
+	});
+
+	it("adds no clock block without a marked field — an unmarked schema keeps the byte-identical instruction", () => {
+		const schema = {
+			story_day: { $type: "number", min: 1, max: 999 },
+			story_time: { $type: "string" },
+		} as const;
+		const instruction = composeSceneInstruction("BASE", schema, []);
+		expect(instruction).not.toContain("Story clock (");
+		expect(instruction).toBe(
+			"BASE\n\n" +
+				'Scene schema (produce one JSON object with exactly these fields, no extras): {"story_day":{"$type":"number","min":1,"max":999},"story_time":{"$type":"string"}}\n\n' +
+				"Recent scene continuity (prior states — evolve them to match the current scene): []" +
+				"\n\nRequired output: one JSON object matching the schema exactly.",
+		);
+	});
+
+	it("keeps the clock marker visible in the schema JSON (semantic — the marker rides the strip projection) while presentation stays out", () => {
+		const instruction = composeSceneInstruction("BASE", CLOCK_SCHEMA, []);
+		const schemaPart = instruction.slice(
+			instruction.indexOf("Scene schema ("),
+			instruction.indexOf("Recent scene continuity"),
+		);
+		expect(schemaPart).toContain('"clock":"day"');
+		expect(schemaPart).toContain('"clock":"part"');
+		expect(schemaPart).toContain('"clock":"label"');
+		expect(schemaPart).not.toMatch(/"label"\s*:/);
+		expect(schemaPart).not.toContain("toneBy");
+	});
 });
 
 // ─── service (DI execute + resolvePrompt) ───────────────────────────────────

@@ -51,7 +51,7 @@
     "services/api/src/api/adapters/image-gen-adapter.ts": 1477,
     "services/api/src/domain/chat/live-chat-orchestrator.ts": 929,
     "services/api/src/domain/insights/objective-service.ts": 827,
-    "services/api/src/domain/insights/tracker-service.ts": 1153,
+    "services/api/src/domain/insights/tracker-service.ts": 1119,
     "services/api/src/domain/interactive/experience-playground.ts": 1319,
     "services/api/src/domain/interactive/experience-service.ts": 1437,
     "services/api/src/domain/prompt/lore-activation-engine.ts": 1282,
