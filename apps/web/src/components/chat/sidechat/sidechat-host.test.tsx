@@ -61,6 +61,7 @@ import { ObjectiveProposalCard } from "./ObjectiveProposalCard.js";
 import { DirectorMessageProposalCard } from "./director-message-proposal-card.js";
 import { STORY_PLAN_RECORD_TYPE, StoryPlanProposalCard } from "./StoryPlanProposalCard.js";
 import { TRACKER_SCENE_RECORD_TYPE, TrackerSceneProposalCard } from "./TrackerSceneProposalCard.js";
+import { STORY_DECK_RECORD_TYPE, StoryDeckProposalCard } from "./StoryDeckProposalCard.js";
 
 useDomEnv();
 
@@ -358,19 +359,23 @@ describe("sidechat-host — registration (SC-13b)", () => {
     // domain's constants). DMT-33: ONE card serves BOTH Director message
     // record types, keyed off the SHARED contract constants (the DMT-11
     // schema module — the host consumes the keys, never local literals).
+    // DK-8: the story-deck card renders `propose_deck`'s record type.
     expect(Object.keys(host.recordProposalRenderers)).toEqual([
       "objective",
       "story-plan",
       "tracker-scene",
       DIRECTOR_MESSAGE_RECORD_TYPES.messageEdit,
       DIRECTOR_MESSAGE_RECORD_TYPES.messageVariant,
+      "story-deck",
     ]);
     expect(host.recordProposalRenderers.objective).toBe(ObjectiveProposalCard);
     expect(host.recordProposalRenderers["story-plan"]).toBe(StoryPlanProposalCard);
     expect(host.recordProposalRenderers["tracker-scene"]).toBe(TrackerSceneProposalCard);
     expect(host.recordProposalRenderers[DIRECTOR_MESSAGE_RECORD_TYPES.messageEdit]).toBe(DirectorMessageProposalCard);
     expect(host.recordProposalRenderers[DIRECTOR_MESSAGE_RECORD_TYPES.messageVariant]).toBe(DirectorMessageProposalCard);
+    expect(host.recordProposalRenderers[STORY_DECK_RECORD_TYPE]).toBe(StoryDeckProposalCard);
     expect(STORY_PLAN_RECORD_TYPE).toBe("story-plan");
+    expect(STORY_DECK_RECORD_TYPE).toBe("story-deck");
     expect(TRACKER_SCENE_RECORD_TYPE).toBe("tracker-scene");
     // The shared contract's keys ARE the wire spellings (the web-side pin of
     // the DMT-11 recordType constants).

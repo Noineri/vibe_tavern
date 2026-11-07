@@ -3,10 +3,11 @@
  * sidechat `propose_objective` record proposal (`recordType: "objective"`),
  * registered as `recordProposalRenderers.objective` in the sidechat host.
  *
- * forks: 3 — StoryPlanProposalCard.tsx (DR-10a's sanctioned fork on this
- * skeleton), TrackerSceneProposalCard.tsx (DR-10b), and
+ * forks: 4 — StoryPlanProposalCard.tsx (DR-10a's sanctioned fork on this
+ * skeleton), TrackerSceneProposalCard.tsx (DR-10b),
  * DirectorMessageProposalCard.tsx (DMT-33 — one card for both Director
- * message record types); each copy's header carries its own correspondence
+ * message record types), and StoryDeckProposalCard.tsx (DK-8 — the deck
+ * proposal card, mock §4); each copy's header carries its own correspondence
  * map.
  *
  * DR-10b (R3): while the ACTIVE branch plan has events, the same objective

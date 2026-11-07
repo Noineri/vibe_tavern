@@ -59,6 +59,7 @@ import { ObjectiveProposalCard } from "./ObjectiveProposalCard.js";
 import { DirectorMessageProposalCard } from "./director-message-proposal-card.js";
 import { STORY_PLAN_RECORD_TYPE, StoryPlanProposalCard } from "./StoryPlanProposalCard.js";
 import { TRACKER_SCENE_RECORD_TYPE, TrackerSceneProposalCard } from "./TrackerSceneProposalCard.js";
+import { STORY_DECK_RECORD_TYPE, StoryDeckProposalCard } from "./StoryDeckProposalCard.js";
 import { SidechatVariantChips } from "./SidechatVariantChips.js";
 
 /**
@@ -288,14 +289,15 @@ registerAgentHost({
   // proposal domain — the card modules pin the web-side spellings). DMT-33
   // adds ONE card for BOTH Director message record types, keyed off the
   // SHARED contract constants (the DMT-11 schema module — the one source,
-  // no local literals). Every other recordType still falls back to the AS-5
-  // card.
+  // no local literals). DK-8 adds the story-deck card for `propose_deck`'s
+  // record type. Every other recordType still falls back to the AS-5 card.
   recordProposalRenderers: {
     objective: ObjectiveProposalCard,
     [STORY_PLAN_RECORD_TYPE]: StoryPlanProposalCard,
     [TRACKER_SCENE_RECORD_TYPE]: TrackerSceneProposalCard,
     [DIRECTOR_MESSAGE_RECORD_TYPES.messageEdit]: DirectorMessageProposalCard,
     [DIRECTOR_MESSAGE_RECORD_TYPES.messageVariant]: DirectorMessageProposalCard,
+    [STORY_DECK_RECORD_TYPE]: StoryDeckProposalCard,
   },
   // AP-2: RP colors without RP sizes for the sidechat's bubbles.
   messageMarkup: "rp-colors",
