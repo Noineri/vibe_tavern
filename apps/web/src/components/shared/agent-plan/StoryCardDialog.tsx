@@ -55,6 +55,13 @@ import { STORY_CARD_SUIT_META, StoryCardBack, StoryCardFace, type StoryCardSuitN
  * answer §6 gives the plan editor's when-row (the dated-events row); no
  * copy is ever shortened). The suit control rides `wrap mobileFill` (§2's
  * note) for the same reason.
+ *
+ * Owner ruling 2026-11-07: the EDIT mode of an EXISTING card carries the
+ * visible heading `story_deck_dialog_edit_title` (EN "Edit card") — the
+ * same heading treatment the new-card editor has — in BOTH shells (the
+ * desktop Modal header and the phone sheet title). The title is
+ * phase-aware: the phase state lives in the shell (lifted from the body
+ * through `onPhaseChange`) so both shells' titles track view→edit.
  */
 
 /** What opened the dialog — a deck card (view/edit), a random draw, or the
@@ -119,6 +126,19 @@ function pickRandomCardId(deck: StoryDeck): string | null {
   return deck.cards[Math.floor(Math.random() * deck.cards.length)]!.id;
 }
 
+/** The shell title for the current request + phase. Phase-aware (owner
+ *  ruling 2026-11-07): the EDIT mode of an EXISTING card carries the visible
+ *  heading `story_deck_dialog_edit_title` (EN "Edit card") — the same
+ *  heading treatment the new-card editor has — in both shells; the new-card
+ *  editor keeps `story_deck_own_card`; view/draw keep their titles (the
+ *  deck title on desktop, none on the phone sheet). */
+function shellTitleKeyFor(request: StoryCardDialogRequest | null, phase: DialogPhase): "story_deck_own_card" | "story_deck_dialog_edit_title" | "story_deck_title" | null {
+  if (request === null) return null;
+  if (request.kind === "new") return "story_deck_own_card";
+  if (request.kind === "card" && phase === "edit") return "story_deck_dialog_edit_title";
+  return "story_deck_title";
+}
+
 /** The dialog's shells (desktop `Modal` / phone `BottomSheet`). The body
  *  renders from the LAST request through the close so the shells' exit
  *  animation keeps its content; a new request re-keys the body (fresh state
@@ -142,14 +162,19 @@ export function StoryCardDialog({
   const isMobile = useIsMobile();
   const [lastRequest, setLastRequest] = useState<StoryCardDialogRequest | null>(request);
   const [session, setSession] = useState(0);
+  // The phase lives HERE (the shell) so both shells' titles are phase-aware
+  // (the owner ruling): the body lifts its transitions through
+  // `onPhaseChange`. Reset per session with the same render-phase adjustment.
+  const [phase, setPhase] = useState<DialogPhase>(() => (lastRequest !== null ? phaseFor(lastRequest) : "view"));
   if (request !== lastRequest && request !== null) {
     // React's "adjust state when a prop changes" pattern — applied during
     // render so the reopened dialog never paints the previous session.
     setLastRequest(request);
+    setPhase(phaseFor(request));
     setSession((current) => current + 1);
   }
   const open = request !== null;
-  const titleKey = lastRequest?.kind === "new" ? "story_deck_own_card" : "story_deck_title";
+  const titleKey = shellTitleKeyFor(lastRequest, phase);
   const body =
     lastRequest !== null ? (
       <StoryCardBody
@@ -160,26 +185,34 @@ export function StoryCardDialog({
         mobile={isMobile}
         newCard={lastRequest.kind === "new"}
         request={lastRequest}
+        phase={phase}
+        onPhaseChange={setPhase}
         onClose={onClose}
       />
     ) : null;
 
   if (isMobile) {
     return (
-      <BottomSheet open={open} onClose={onClose} title={lastRequest?.kind === "new" ? t("story_deck_own_card") : undefined}>
+      <BottomSheet
+        open={open}
+        onClose={onClose}
+        title={titleKey !== null && (titleKey === "story_deck_own_card" || titleKey === "story_deck_dialog_edit_title") ? t(titleKey) : undefined}
+      >
         {body}
       </BottomSheet>
     );
   }
   return (
-    <Modal open={open} onClose={onClose} title={t(titleKey)} description={t(titleKey)}>
+    <Modal open={open} onClose={onClose} title={titleKey !== null ? t(titleKey) : ""} description={titleKey !== null ? t(titleKey) : ""}>
       {body}
     </Modal>
   );
 }
 
 /** One open session's content — state initializes from the request (the
- *  parent re-keys per session), so no reset effects exist. */
+ *  parent re-keys per session), so no reset effects exist. The phase is
+ *  OWNED by the shell (lifted through `onPhaseChange`) so both shells'
+ *  titles are phase-aware (the owner ruling); this body only transitions it. */
 function StoryCardBody({
   chatId,
   branchId,
@@ -187,6 +220,8 @@ function StoryCardBody({
   mobile,
   newCard,
   request,
+  phase,
+  onPhaseChange,
   onClose,
 }: {
   chatId: string;
@@ -198,11 +233,15 @@ function StoryCardBody({
    *  (the flow's purpose fulfilled; the grid shows the created card). */
   newCard: boolean;
   request: StoryCardDialogRequest;
+  /** The lifted phase (the shell's title derives from it). */
+  phase: DialogPhase;
+  /** The phase transitions (view → edit, edit-save → view). */
+  onPhaseChange: (phase: DialogPhase) => void;
   onClose: () => void;
 }) {
   const { t } = useT();
   const { deck, save, play } = useStoryDeck(chatId, branchId);
-  const [phase, setPhase] = useState<DialogPhase>(() => phaseFor(request));
+  const setPhase = onPhaseChange;
   // The editor's edits overlay the SOURCE card (never a copy taken at open
   // time): the deck GET resolves after the dialog mounts (the shared cache
   // starts at the empty deck), so a draft snapshot taken at mount would
@@ -428,7 +467,9 @@ function StoryCardBody({
     return (
       <div data-testid="story-card-dialog" className={cn(modalPanelCls, "flex max-h-[calc(100vh-60px)] w-[620px] max-w-[calc(100vw-32px)] flex-col")}>
         <div className="flex shrink-0 items-center gap-2 border-b border-border px-[18px] pb-3 pt-4">
-          <h2 className="font-ui text-[calc(var(--ui-fs)+2px)] font-medium text-t1">{t("story_deck_own_card")}</h2>
+          <h2 className="font-ui text-[calc(var(--ui-fs)+2px)] font-medium text-t1">
+            {newCard ? t("story_deck_own_card") : t("story_deck_dialog_edit_title")}
+          </h2>
           <button
             type="button"
             data-testid="story-card-dialog-editor-close"

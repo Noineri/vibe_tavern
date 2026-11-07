@@ -373,6 +373,58 @@ describe("StoryCardDialog — edit", () => {
   });
 });
 
+// ── The edit heading (owner ruling 2026-11-07) ─────────────────────────────
+
+describe("StoryCardDialog — the edit heading (phase-aware title)", () => {
+  it("desktop: editing an EXISTING card carries the «Изменить карту» heading — the shell's accessible title AND the panel's visible h2 both switch to story_deck_dialog_edit_title; view stays story_deck_title; the new-card editor keeps its own heading", async () => {
+    decksByBranch.set("dkd-b9", DECK);
+    const view = render(<DialogHarness chatId="dkd-chat-9" branchId="dkd-b9" locked={false} request={{ kind: "card", cardId: "c1" }} />);
+    await waitFor(() => expect(view.getByTestId("story-card").getAttribute("data-card-id")).toBe("c1"));
+    // View phase: the shell title is the deck title (the accessible Modal
+    // title + its description twin; the view body carries no heading).
+    expect(view.getAllByText("story_deck_title")).toHaveLength(2);
+    expect(view.queryByText("story_deck_dialog_edit_title")).toBeNull();
+
+    // The edit phase of an EXISTING card: the heading treatment the
+    // new-card editor has — the shell title AND the panel's visible h2.
+    fireEvent.click(view.getByTestId("story-card-dialog-edit"));
+    const headings = await waitFor(() => view.getAllByText("story_deck_dialog_edit_title"));
+    expect(headings.length).toBe(3);
+    // The visible one is the panel's h2 (the same treatment as new-card).
+    const h2 = headings.find((node) => node.tagName === "H2");
+    expect(h2).toBeDefined();
+    expect(view.queryByText("story_deck_own_card")).toBeNull();
+    view.unmount();
+
+    // The new-card editor keeps the own-card heading in BOTH layers.
+    const view2 = render(<DialogHarness chatId="dkd-chat-9" branchId="dkd-b9" locked={false} request={{ kind: "new" }} />);
+    const dialog2 = await waitFor(() => view2.getByTestId("story-card-dialog"));
+    expect(within(dialog2).getByText("story_deck_own_card")).toBeDefined();
+    expect(view2.queryByText("story_deck_dialog_edit_title")).toBeNull();
+  });
+
+  it("phone: the sheet title follows the phase — «Изменить карту» in the existing card's edit, none in view", async () => {
+    stubMedia({ mobile: true });
+    decksByBranch.set("dkd-b10", DECK);
+    const view = render(<DialogHarness chatId="dkd-chat-10" branchId="dkd-b10" locked={false} request={{ kind: "card", cardId: "c2" }} />);
+    const dialog = await waitFor(() => view.getByTestId("story-card-dialog"));
+    // View phase on the phone: no sheet title (today's drawing — the face
+    // + the stacked actions).
+    expect(within(dialog).queryByText("story_deck_dialog_edit_title")).toBeNull();
+    expect(document.body.textContent).not.toContain("story_deck_dialog_edit_title");
+
+    // The edit phase: the sheet title IS the edit heading.
+    fireEvent.click(within(dialog).getByTestId("story-card-dialog-edit"));
+    const sheet = await waitFor(() => {
+      const el = document.querySelector<HTMLElement>(".glass-blur");
+      expect(el).not.toBeNull();
+      return el as HTMLElement;
+    });
+    expect(sheet.textContent).toContain("story_deck_dialog_edit_title");
+    expect(sheet.textContent).not.toContain("story_deck_own_card");
+  });
+});
+
 // ── New card (the tile's editor) ─────────────────────────────────────────────
 
 describe("StoryCardDialog — new card", () => {

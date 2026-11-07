@@ -19,6 +19,10 @@ export interface AgentPlanEditorModalProps {
   open: boolean;
   onClose: () => void;
   locked: boolean;
+  /** DK-9: the calendar chip's open — the editor scrolls to and rings that
+   *  event's row while set (the section clears it for the plain editor
+   *  button). Null = no focus. */
+  focusTaskId?: string | null;
 }
 
 const STATUS_OPTIONS: Array<{ id: AgentPlanTaskStatus; labelKey: "agent_plan_status_pending" | "agent_plan_status_active" | "agent_plan_status_completed" | "agent_plan_status_abandoned" }> = [
@@ -37,7 +41,7 @@ function newTask(): AgentPlanTask {
 }
 
 /** Full-screen mobile / wide desktop editor for a script-owned or branch-owned agent plan. */
-export function AgentPlanEditorModal({ owner, open, onClose, locked }: AgentPlanEditorModalProps) {
+export function AgentPlanEditorModal({ owner, open, onClose, locked, focusTaskId = null }: AgentPlanEditorModalProps) {
   const { t } = useT();
   const isMobile = useIsMobile();
   const { plan, isLoading, save } = useAgentPlan(owner);
@@ -53,6 +57,16 @@ export function AgentPlanEditorModal({ owner, open, onClose, locked }: AgentPlan
       setSaveError(null);
     }
   }, [open, plan]);
+
+  // DK-9: the calendar chip's open — scroll the focused event's row into
+  // view and ring it (the row is found by id through the plan's task order,
+  // the same `agent-plan-editor-task-<index>` testid the rows carry).
+  const focusIndex = focusTaskId !== null ? draft.tasks.findIndex((task) => task.id === focusTaskId) : -1;
+  useEffect(() => {
+    if (!open || focusIndex < 0) return;
+    const row = document.querySelector<HTMLElement>(`[data-testid="agent-plan-editor-task-${focusIndex}"]`);
+    row?.scrollIntoView({ block: "center" });
+  }, [open, focusIndex]);
 
   const updateTask = (index: number, patch: Partial<AgentPlanTask>) => {
     setDraft((current) => ({
@@ -133,7 +147,7 @@ export function AgentPlanEditorModal({ owner, open, onClose, locked }: AgentPlan
                 <span className={lblCls}>{t(labels.tasks)}</span>
                 <div className="flex flex-col gap-3">
                   {draft.tasks.map((task, index) => (
-                    <div key={task.id} data-testid={`agent-plan-editor-task-${index}`} className="rounded-[6px] border border-border bg-s2 p-3">
+                    <div key={task.id} data-testid={`agent-plan-editor-task-${index}`} className={cn("rounded-[6px] border bg-s2 p-3", index === focusIndex ? "border-accent" : "border-border")}>
                       <div className="flex flex-wrap items-center gap-2">
                         <DropdownSelect value={task.status} options={STATUS_OPTIONS.map((option) => ({ id: option.id, label: t(option.labelKey) }))} onChange={(status) => updateTask(index, { status: status as AgentPlanTaskStatus })} disabled={locked} searchable={false} triggerTestId={`agent-plan-status-${index}`} triggerClassName="flex h-9 w-full items-center justify-between rounded-[6px] border border-border bg-s2 px-3 font-ui text-[calc(var(--ui-fs)-2px)] text-t1 hover:border-accent sm:w-[150px]" />
                         <TextInput aria-label={`${t("agent_plan_task_title")} ${index + 1}`} value={task.title} disabled={locked} onChange={(event) => updateTask(index, { title: event.target.value })} className="min-w-[180px] flex-1" />

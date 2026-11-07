@@ -1,13 +1,13 @@
 /**
- * StoryCurtainTabs (DIRECTOR_DECK_CALENDAR_PLAN DK-6) — the curtain's
- * second header row:
+ * StoryCurtainTabs (DIRECTOR_DECK_CALENDAR_PLAN DK-6, calendar live since
+ * DK-9) — the curtain's second header row:
  *
  *  - the SegmentedControl carries the three tabs with muted counts
  *    («События <remaining> · Колода <cards> · Календарь» — calendar none);
- *  - the calendar segment is the DISABLED muted placeholder (DK-9 owns the
- *    body) — it cannot be clicked;
- *  - clicking «Колода» switches the choice (the body swap is the section's,
- *    pinned in AgentPlanSection.story-curtain.test.tsx);
+ *  - all three segments are clickable (the calendar segment lost its
+ *    disabled placeholder in DK-9 — the body is the section's, pinned in
+ *    AgentPlanSection.story-curtain.test.tsx);
+ *  - clicking «Колода» (and «Календарь») switches the choice;
  *  - the choice is remembered PER CHAT (the plain tab store): another chat
  *    reads the default «События», the first chat keeps «Колода» on remount.
  *
@@ -78,7 +78,7 @@ function activeLabel(view: ReturnType<typeof render>): string {
 }
 
 describe("StoryCurtainTabs (DK-6)", () => {
-  it("renders the three tabs with muted counts; the events count rides the header's remaining, the deck count the cards; the calendar segment is disabled", async () => {
+  it("renders the three tabs with muted counts; the events count rides the header's remaining, the deck count the cards; every segment is enabled (the calendar lost its DK-6 placeholder in DK-9)", async () => {
     decksByBranch.set("sct-b1", DECK);
     const view = render(<StoryCurtainTabs chatId="sct-chat-1" branchId="sct-b1" eventsCount={3} />);
     const row = await waitFor(() => view.getByTestId("story-curtain-tabs"));
@@ -90,11 +90,17 @@ describe("StoryCurtainTabs (DK-6)", () => {
     expect(row.textContent).toContain("story_deck_tab_calendar");
     // The default tab is «События» (§1).
     expect(activeLabel(view)).toContain("story_deck_tab_events");
-    // The calendar segment is disabled (the muted placeholder — DK-9 owns it).
+    // All three segments enabled (DK-9 filled the calendar body).
     const segments = [...row.querySelectorAll<HTMLButtonElement>("button[role='radio']")];
     expect(segments.length).toBe(3);
-    const calendar = segments.find((segment) => segment.textContent?.includes("story_deck_tab_calendar"));
-    expect(calendar?.getAttribute("disabled")).toBe("");
+    for (const segment of segments) {
+      expect(segment.getAttribute("disabled")).toBeNull();
+    }
+    // Clicking «Календарь» switches the choice (the body swap is the section's).
+    const calendar = segments.find((segment) => segment.textContent?.includes("story_deck_tab_calendar"))!;
+    fireEvent.click(calendar);
+    expect(activeLabel(view)).toContain("story_deck_tab_calendar");
+    expect(useStoryCurtainTabStore.getState().tabsByChat["sct-chat-1"]).toBe("calendar");
   });
 
   it("clicking «Колода» switches the choice; remembered per chat — another chat reads the default, the first keeps its tab", async () => {

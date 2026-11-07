@@ -66,7 +66,7 @@ export function StoryCurtainTabs({
               </>
             ),
           },
-          { value: STORY_CURTAIN_TABS.calendar, label: t("story_deck_tab_calendar"), disabled: true },
+          { value: STORY_CURTAIN_TABS.calendar, label: t("story_deck_tab_calendar") },
         ]}
       />
     </div>

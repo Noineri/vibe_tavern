@@ -26,8 +26,16 @@
  * Runner: bun:test with scoped happy-dom.
  */
 import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
-import { CHAT_MODE } from "@vibe-tavern/domain";
+import {
+  CHAT_MODE,
+  CHAT_STATUS,
+  createDefaultSceneTrackerConfig,
+  defaultObjectiveState,
+  normalizeAutoSummaryConfig,
+  normalizeInsightsConfig,
+} from "@vibe-tavern/domain";
 import type { AgentKindSettingsWire } from "@vibe-tavern/api-contracts";
+import type { ChatBranchId, ChatId, CharacterId } from "@vibe-tavern/domain";
 import { useDomEnv } from "../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 import { wireUiSettings } from "../../../test/wire-fixtures.js";
@@ -136,8 +144,63 @@ beforeAll(async () => {
 type ActiveChat = NonNullable<ReturnType<typeof useSnapshotStore.getState>["activeChat"]>;
 type ActiveBranch = NonNullable<ReturnType<typeof useSnapshotStore.getState>["activeBranch"]>;
 
-const CHAT_A = { id: "chat-a", mode: "rp" } as unknown as ActiveChat;
-const BRANCH_A = { id: "branch-a", chatId: "chat-a", label: "main" } as unknown as ActiveBranch;
+// Branded-id cast helpers (the snapshot-store.test.ts convention — the one
+// place a plain string may become a branded id; the builder literals below
+// stay cast-free so the compiler enumerates every required field).
+const asChatId = (id: string): ChatId => id as ChatId;
+const asCharacterId = (id: string): CharacterId => id as CharacterId;
+const asBranchId = (id: string): ChatBranchId => id as ChatBranchId;
+
+const EPOCH = "2026-01-01T00:00:00.000Z";
+
+/**
+ * Compiler-checked ActiveChat fixture (the wire ChatDto). The defaults are the
+ * domain's own read normalizers / default creators — the same one derivation
+ * the server normalizes a chat row through — so the shape cannot drift from
+ * the schema. A previous two-field literal silenced the compiler on the
+ * missing required `insightsConfig`, and the DK-9 clock hook's non-optional
+ * `insightsConfig.tracker` read crashed on it at runtime.
+ */
+function makeActiveChat(id: string, over: Partial<ActiveChat> = {}): ActiveChat {
+  return {
+    id: asChatId(id),
+    characterId: asCharacterId(`char-${id}`),
+    personaId: null,
+    title: `Chat ${id}`,
+    status: CHAT_STATUS.active,
+    mode: CHAT_MODE.rp,
+    activeBranchId: asBranchId(`${id}-branch`),
+    promptPresetId: null,
+    selectedGreetingIndex: 0,
+    coauthorContextLinks: [],
+    coauthorModuleId: null,
+    dynamicPrompt: "",
+    createdAt: EPOCH,
+    updatedAt: EPOCH,
+    summary: "",
+    messageHistoryLimit: 0,
+    autoSummaryConfig: normalizeAutoSummaryConfig({}),
+    insightsConfig: { ...normalizeInsightsConfig({}), tracker: createDefaultSceneTrackerConfig() },
+    insightsObjectiveState: defaultObjectiveState(),
+    ...over,
+  };
+}
+
+/** Compiler-checked ActiveBranch fixture; the id derives from the owner chat id. */
+function makeActiveBranch(chatId: string, over: Partial<ActiveBranch> = {}): ActiveBranch {
+  return {
+    id: asBranchId(`${chatId}-branch`),
+    chatId: asChatId(chatId),
+    parentBranchId: null,
+    forkedFromMessageId: null,
+    label: "main",
+    createdAt: EPOCH,
+    ...over,
+  };
+}
+
+const CHAT_A = makeActiveChat("chat-a");
+const BRANCH_A = makeActiveBranch("chat-a");
 
 function kindEntry(kind: string, servesChatModes: string[]): AgentKindSettingsWire {
   return {
@@ -321,8 +384,8 @@ describe("PlayMode mobile sidechat — pane state survives tab switches (SC-15)"
 describe("PlayMode mobile sidechat — gates (SC-15)", () => {
   it("a co-author chat sees no tabs and no handle", () => {
     seedChat(
-      { id: "chat-co", mode: "coauthor" } as unknown as ActiveChat,
-      { id: "branch-co", chatId: "chat-co", label: "main" } as unknown as ActiveBranch,
+      makeActiveChat("chat-co", { mode: CHAT_MODE.coauthor }),
+      makeActiveBranch("chat-co"),
     );
     const { queryByRole, queryByTestId, getByTestId } = render(<PlayMode />);
     expect(queryByRole("tablist")).toBeNull();

@@ -179,7 +179,9 @@ export function StoryDeckView({
 }
 
 /** The deck header's compact button — the canon compact action shape at
- *  34 px on the phone (the mockup §7's drawn height), inline on desktop. */
+ *  34 px on the phone (the mockup §7's drawn height), inline on desktop.
+ *  forks: 1 — StoryCalendarView.tsx (cellButtonCls, the calendar tab's
+ *  clock-move buttons). */
 const deckButtonCls = cn(
   "flex h-7 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-md border border-border bg-s3 px-2.5",
   "font-ui text-[calc(var(--ui-fs)-3px)] text-t2 transition-all hover:bg-s2 hover:text-t1",

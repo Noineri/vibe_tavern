@@ -36,6 +36,11 @@ export interface AgentPlanPanelProps {
    *  ~6 s after the tracker's check completes the current event; the count
    *  and chevron stay live (the refreshed plan drives them). */
   flashTitle?: string | null;
+  /** DK-9 (mockup §6): the flash's tone — "success" (the DR-11 default, the
+   *  completed glyph) or "accent" (the clock-promotion flash
+   *  `story_cal_flash_promoted`: the accent tint + the clock glyph). One
+   *  tone live per change — the strip decides, never both at once. */
+  flashTone?: "success" | "accent";
   /** DR-9: default true — today's editor button in the collapsed row (the
    *  expanded header always carries the button, whatever this says). */
   showEditorInCollapsedRow?: boolean;
@@ -124,6 +129,7 @@ export function AgentPlanPanel({
   actions,
   headerActionsBefore,
   flashTitle,
+  flashTone = "success",
   showEditorInCollapsedRow = true,
   onRevertTask,
   curtainTabs,
@@ -159,8 +165,11 @@ export function AgentPlanPanel({
   const remaining = countRemaining(plan.tasks);
   const summaryStatus: TaskStatus = current?.status ?? "completed";
   // DR-11 (§4): the passed-check flash — curtain-only by contract (the
-  // story strip is its only driver).
+  // story strip is its only driver). DK-9 (§6): the same mechanism's second
+  // tone — the clock-promotion flash on the accent tint with the clock
+  // glyph (mutually exclusive per change: the strip picks the tone).
   const flashing = curtain && typeof flashTitle === "string" && flashTitle !== "";
+  const accentFlash = flashing && flashTone === "accent";
   const editorButton = (
     <button
       type="button"
@@ -256,10 +265,11 @@ export function AgentPlanPanel({
       <div
         className={cn(
           "flex w-full min-w-0 items-center gap-1.5 border-b border-border px-2 py-1 text-[calc(var(--ui-fs)-3px)] font-medium text-t3",
-          // §4's flash row: the SUCCESS TINT replaces the surface background
-          // (never stacked — bg utilities resolve by stylesheet order, not
-          // class-string order; the ternary keeps exactly one live).
-          flashing ? "bg-success-dim" : "bg-surface",
+          // §4's flash row: the SUCCESS or ACCENT tint replaces the surface
+          // background (never stacked — bg utilities resolve by stylesheet
+          // order, not class-string order; the ternary keeps exactly one
+          // live).
+          flashing ? (accentFlash ? "bg-accent-dim" : "bg-success-dim") : "bg-surface",
         )}
       >
         <button
@@ -269,19 +279,25 @@ export function AgentPlanPanel({
           aria-label={open ? t("agent_plan_collapse") : t("agent_plan_expand")}
           className="group flex min-w-0 flex-1 items-center gap-1.5 text-left transition-colors hover:text-t2"
         >
-          <NodeGlyph status={flashing ? "completed" : summaryStatus} />
+          {accentFlash
+            ? <span className="shrink-0 text-accent"><Ic.clock /></span>
+            : <NodeGlyph status={flashing ? "completed" : summaryStatus} />}
           {/* The current task is the MODEL's plan title — page-translatable
               (owner follow-up 2026-10-24); the count beside it is chrome.
               DR-11: the flash label interpolates that same model title, so it
               opts in with the span; the all-done line is the story label
               (§4 story-done label `agent_plan_story_done` — the curtain is the story
-              presentation, like the header's story title since DR-9). */}
-          <span translate="yes" className={cn("min-w-0 flex-1 truncate", flashing && "text-success-text")}>
-            {flashing
-              ? t("agent_plan_story_flash_done", { title: flashTitle })
-              : current
-                ? current.title
-                : t(curtain ? "agent_plan_story_done" : "agent_plan_done")}
+              presentation, like the header's story title since DR-9). DK-9
+              (§6): the accent tone interpolates the promoted event the same
+              way (`story_cal_flash_promoted`). */}
+          <span translate="yes" className={cn("min-w-0 flex-1 truncate", flashing && !accentFlash && "text-success-text", accentFlash && "text-accent-t")}>
+            {accentFlash
+              ? t("story_cal_flash_promoted", { event: flashTitle })
+              : flashing
+                ? t("agent_plan_story_flash_done", { title: flashTitle })
+                : current
+                  ? current.title
+                  : t(curtain ? "agent_plan_story_done" : "agent_plan_done")}
           </span>
           <span className="shrink-0 tabular-nums text-t4">· {remaining} {t("agent_plan_remaining")}</span>
           <Chevron open={open} />

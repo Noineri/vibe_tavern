@@ -10,6 +10,7 @@ import {
 import { AgentPlanEditorModal } from "../agent-plan/AgentPlanEditorModal.js";
 import { StoryCurtainTabs } from "../agent-plan/StoryCurtainTabs.js";
 import { StoryDeckView } from "../agent-plan/StoryDeckView.js";
+import { StoryCalendarView } from "../agent-plan/StoryCalendarView.js";
 import {
   DEFAULT_STORY_CURTAIN_TAB,
   STORY_CURTAIN_TABS,
@@ -43,11 +44,12 @@ import {
  * tab strip (events/deck/calendar with muted counts, remembered per chat,
  * default events) — and the per-tab bodies: the events tab keeps the
  * default body (the premise + the task list, byte-identical), the deck tab
- * renders `StoryDeckView`, the calendar tab a disabled placeholder (DK-9
- * fills it). The tab row lives HERE (not in the strip) because the curtain
- * has TWO mounts — the strip (desktop + the mobile Chat pane) and this
- * section's AgentChatPane mount (the mobile sidechat pane) — and the deck
- * renders on BOTH (responsive dual-mode canon).
+ * renders `StoryDeckView`, the calendar tab `StoryCalendarView` (DK-9; its
+ * chips open the editor here, focused on the clicked event). The tab row
+ * lives HERE (not in the strip) because the curtain has TWO mounts — the
+ * strip (desktop + the mobile Chat pane) and this section's AgentChatPane
+ * mount (the mobile sidechat pane) — and the deck renders on BOTH
+ * (responsive dual-mode canon).
  */
 export function AgentPlanSection({
   owner,
@@ -56,6 +58,7 @@ export function AgentPlanSection({
   headerActionsBefore,
   showEditorInCollapsedRow,
   flashTitle,
+  flashTone,
 }: {
   owner: AgentPlanOwner;
   locked: boolean;
@@ -74,10 +77,21 @@ export function AgentPlanSection({
   /** DR-11: forwarded — the passed-check flash (§4, `agent_plan_story_flash_done`)
    *  on the success tint while set (curtain presentation only). */
   flashTitle?: string | null;
+  /** DK-9: forwarded — the flash's tone (§6's accent promotion tone; the
+   *  success tone is the default). */
+  flashTone?: "success" | "accent";
 }) {
   const { t } = useT();
   const { plan, save } = useAgentPlan(owner);
   const [editorOpen, setEditorOpen] = useState(false);
+  // DK-9: a calendar CHIP opens the editor AT that event — the focus rides
+  // into the editor modal (scroll + accent ring on the row); the plain
+  // editor button clears it.
+  const [editorFocusTaskId, setEditorFocusTaskId] = useState<string | null>(null);
+  const openEventAt = (taskId: string) => {
+    setEditorFocusTaskId(taskId);
+    setEditorOpen(true);
+  };
   const story = owner.kind === "chatBranch";
 
   // ── DK-6: the story curtain's tabs + bodies (curtain-only) ───────────────
@@ -103,12 +117,12 @@ export function AgentPlanSection({
         ? <StoryDeckView chatId={chatId} branchId={branchId} locked={locked} />
         : tab === STORY_CURTAIN_TABS.calendar
           ? (
-            <div
-              data-testid="story-curtain-calendar-placeholder"
-              className="px-1 py-3 text-center text-[calc(var(--ui-fs)-1px)] text-t3"
-            >
-              {t("story_deck_calendar_placeholder")}
-            </div>
+            <StoryCalendarView
+              chatId={chatId}
+              branchId={branchId}
+              locked={locked}
+              onOpenEvent={openEventAt}
+            />
           )
           : undefined;
 
@@ -138,7 +152,10 @@ export function AgentPlanSection({
     <>
       <AgentPlanPanel
         plan={plan}
-        onOpenEditor={() => setEditorOpen(true)}
+        onOpenEditor={() => {
+          setEditorFocusTaskId(null);
+          setEditorOpen(true);
+        }}
         locked={locked}
         presentation={story ? "curtain" : undefined}
         onRevertTask={revertTask}
@@ -146,12 +163,19 @@ export function AgentPlanSection({
         headerActionsBefore={headerActionsBefore}
         showEditorInCollapsedRow={showEditorInCollapsedRow}
         flashTitle={flashTitle}
+        flashTone={flashTone}
         curtainTabs={curtainTabs}
         curtainBody={curtainBody}
       />
       {/* The editor locks (fields + save) while a turn streams so the model's
           rewrite and the user's edit can never race. */}
-      <AgentPlanEditorModal owner={owner} open={editorOpen} onClose={() => setEditorOpen(false)} locked={locked} />
+      <AgentPlanEditorModal
+        owner={owner}
+        open={editorOpen}
+        onClose={() => setEditorOpen(false)}
+        locked={locked}
+        focusTaskId={editorFocusTaskId}
+      />
     </>
   );
 }

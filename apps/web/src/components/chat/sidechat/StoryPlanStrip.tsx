@@ -32,6 +32,16 @@
  *   the plan's CURRENT event IS "the check passed this event" — the strip
  *   shows the passed-check flash (`agent_plan_story_flash_done`) on the success tint for ~6 s, then the
  *   refreshed plan's next event. No toast (§4).
+ * - promotion flash (DK-9, mockup §6): the SAME mechanism's second tone —
+ *   when the server's clock advance (advanceByClock via the scene-record
+ *   observer) promoted a due dated event to the current one, the refreshed
+ *   plan's new current (dated + due, no live success flash) flashes
+ *   `story_cal_flash_promoted` ("It is time: <event>") on the ACCENT tint
+ *   for ~6 s (the parked-timer pattern; instant under reduced motion — the
+ *   tone swap is a plain class change). The two tones are mutually
+ *   exclusive per change: the success tone is decided first (the objective
+ *   revision precedes the refresh GET that delivers a promotion) and the
+ *   promotion listener skips while any flash is live.
  * - streaming: the sidechat turn's `isSending` is controller-local state;
  *   the shell's controller mirrors it (keyed by owner) into
  *   `useAgentStreamingStore` — a one-way derived view; the strip subscribes
@@ -50,11 +60,12 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { brandId, type ChatId } from "@vibe-tavern/domain";
+import { brandId, isStoryEventDue, type ChatId } from "@vibe-tavern/domain";
 import { useSnapshotStore } from "../../../stores/snapshot-store.js";
 import { useAgentStreamingStore } from "../../../stores/agent-streaming-store.js";
 import { checkObjectiveCompletionAction } from "../../../stores/api-actions/chat-actions.js";
-import { refreshAgentPlan, useAgentPlan } from "../../../hooks/use-agent-plan.js";
+import { readAgentPlan, refreshAgentPlan, subscribeAgentPlan, useAgentPlan } from "../../../hooks/use-agent-plan.js";
+import { useStorySceneClock } from "../../../hooks/use-story-scene-clock.js";
 import { AgentPlanSection } from "../../shared/agent-shell/AgentPlanSection.js";
 import { agentPlanTextButtonCls, pickCurrent } from "../../shared/agent-plan/AgentPlanPanel.js";
 import { selectSidechatOwner } from "./sidechat-host.js";
@@ -105,8 +116,16 @@ export function StoryPlanStrip({ onCallDirector }: { onCallDirector?: () => void
     [objectiveState],
   );
   const [flashTitle, setFlashTitle] = useState<string | null>(null);
+  // DK-9 (§6): the flash's tone — the R4 mechanism's second tone. One tone
+  // live per change: the success flash (the completed event) and the accent
+  // promotion flash (the clock promoted a new current event) are mutually
+  // exclusive — the wiring below: the success tone is decided FIRST (the
+  // objective revision precedes the refresh GET that delivers a promotion),
+  // and the promotion listener skips while a flash of either tone is live.
+  const [flashTone, setFlashTone] = useState<"success" | "accent">("success");
   const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const goalStatusesRef = useRef<ReadonlyMap<string, string>>(new Map());
+  const flashToneRef = useRef<"success" | "accent">("success");
 
   const stopFlash = useCallback(() => {
     if (flashTimerRef.current !== null) {
@@ -138,6 +157,8 @@ export function StoryPlanStrip({ onCallDirector }: { onCallDirector?: () => void
       previous.get(current.id) !== "completed"
     ) {
       stopFlash();
+      setFlashTone("success");
+      flashToneRef.current = "success";
       setFlashTitle(current.title);
       flashTimerRef.current = setTimeout(() => {
         flashTimerRef.current = null;
@@ -148,6 +169,58 @@ export function StoryPlanStrip({ onCallDirector }: { onCallDirector?: () => void
     // refs (plan, owner literal) always carry the current render's values.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [goalRevision]);
+
+  // ── The promotion flash (DK-9, mockup §6) ────────────────────────────────
+  // The server's clock advance (advanceByClock via the scene-record
+  // observer) promotes a due dated pending event to the current one; the
+  // projection's goal write reaches this strip as an objective revision, and
+  // the refresh GET delivers the promoted plan. This listener — the SAME
+  // subscription the hook consumers use — compares the current event across
+  // a plan replace: when the current event CHANGED to a DUE DATED event
+  // without a live flash, the clock moved and promoted it → the row shows
+  // "It is time: <event>" (`story_cal_flash_promoted`) on the accent tint
+  // for ~6 s (the parked-timer
+  // pattern; instant under reduced motion — the tone swap is a plain class
+  // change, no transition to disable).
+  // Completion changes keep the SUCCESS tone: the objective effect above
+  // decides it first, and while ANY flash is live the listener skips — the
+  // two tones never stack.
+  const clockState = useStorySceneClock();
+  const clockRef = useRef(clockState.clock);
+  clockRef.current = clockState.clock;
+  const lastCurrentIdRef = useRef<string | null>(null);
+  // The listener is registered once per chat/branch — it reads the flash's
+  // liveness through this render-scope mirror (the planRef idiom).
+  const flashTitleRef = useRef<string | null>(null);
+  flashTitleRef.current = flashTitle;
+
+  useEffect(() => {
+    if (planOwner === undefined) return;
+    // A chat/branch switch drops the old conversation's promotion context —
+    // the first replace of the new owner only records its current event.
+    lastCurrentIdRef.current = null;
+    const onPlanReplaced = () => {
+      const nextPlan = readAgentPlan(planOwner);
+      const nextCurrent = pickCurrent(nextPlan.tasks);
+      const nextId = nextCurrent?.id ?? null;
+      const previousId = lastCurrentIdRef.current;
+      lastCurrentIdRef.current = nextId;
+      if (previousId === null || nextId === null || nextId === previousId) return;
+      if (flashTitleRef.current !== null) return;
+      if (nextCurrent === null || nextCurrent.at === undefined) return;
+      if (!isStoryEventDue(nextCurrent, clockRef.current)) return;
+      stopFlash();
+      setFlashTone("accent");
+      flashToneRef.current = "accent";
+      setFlashTitle(nextCurrent.title);
+      flashTimerRef.current = setTimeout(() => {
+        flashTimerRef.current = null;
+        setFlashTitle(null);
+      }, STORY_PLAN_FLASH_MS);
+    };
+    return subscribeAgentPlan(planOwner, onPlanReplaced);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chatId, branchId]);
 
   // A chat/branch switch (or unmount) drops any live flash — it belongs to
   // the switched-away conversation's event.
@@ -241,6 +314,7 @@ export function StoryPlanStrip({ onCallDirector }: { onCallDirector?: () => void
       headerActionsBefore={checkNowButton}
       actions={callDirectorButton}
       flashTitle={flashTitle}
+      flashTone={flashTone}
     />
   );
 }

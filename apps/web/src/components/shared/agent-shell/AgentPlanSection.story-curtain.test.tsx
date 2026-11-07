@@ -8,8 +8,9 @@
  *  - «Колода» swaps the body: the premise/tasks are gone, the deck body
  *    shows (the grid, or the empty state when the branch deck is empty);
  *  - «События» swaps back — the default body, byte-identical content;
- *  - the calendar body (reached by setting the store — the segment itself
- *    is the disabled placeholder) shows the DK-9 placeholder line;
+ *  - the calendar body (DK-9): the segment is enabled and the body is the
+ *    `StoryCalendarView` mount — here the §8 off state (the test's snapshot
+ *    seed carries no tracker config, so the clock is unmarked);
  *  - the choice is remembered per chat: the same chat remounts onto
  *    «Колода», a different chat onto «События»;
  *  - the deck's «Пополнить у режиссёра» runs the director call with the
@@ -141,9 +142,10 @@ describe("AgentPlanSection — the story curtain's tabs (DK-6)", () => {
     expect(segments.length).toBe(3);
     const deckSegment = segments.find((s) => s.textContent?.includes("story_deck_tab_deck"))!;
     expect(deckSegment.textContent).toContain("0");
-    // The calendar segment is the disabled placeholder.
+    // The calendar segment is enabled (the DK-6 disabled placeholder is
+    // gone since DK-9).
     const calendarSegment = segments.find((s) => s.textContent?.includes("story_deck_tab_calendar"))!;
-    expect(calendarSegment.getAttribute("disabled")).toBe("");
+    expect(calendarSegment.getAttribute("disabled")).toBeNull();
     // No deck body while the events tab is active.
     expect(view.queryByTestId("story-deck-empty")).toBeNull();
     expect(view.queryByTestId("story-deck-grid")).toBeNull();
@@ -196,11 +198,16 @@ describe("AgentPlanSection — the story curtain's tabs (DK-6)", () => {
     locked.unmount();
   });
 
-  it("the calendar body is the DK-9 placeholder (the segment itself is disabled — the store drives the body)", async () => {
+  it("the calendar body renders the DK-9 calendar (with no tracker config in the snapshot: the §8 off state); the segment itself is enabled and drives the body", async () => {
     const view = await mountOpen("scu-chat-5", "scu-b5");
-    useStoryCurtainTabStore.setState({ tabsByChat: { "scu-chat-5": "calendar" } });
-    const placeholder = await waitFor(() => view.getByTestId("story-curtain-calendar-placeholder"));
-    expect(placeholder.textContent).toContain("story_deck_calendar_placeholder");
+    // The segment is enabled (the DK-6 placeholder is gone).
+    const calendarSegment = radioButtons(view).find((s) => s.textContent?.includes("story_deck_tab_calendar"))!;
+    expect(calendarSegment.getAttribute("disabled")).toBeNull();
+    fireEvent.click(calendarSegment);
+    // The body is the calendar view — the §8 off state (the section test's
+    // snapshot seed carries no insightsConfig, so the clock is unmarked).
+    const off = await waitFor(() => view.getByTestId("story-cal-off"));
+    expect(off.textContent).toContain("story_cal_off_title");
     expect(view.queryByTestId("agent-plan-premise")).toBeNull();
     view.unmount();
   });
