@@ -355,6 +355,32 @@ export function advancePlanToClock(plan: AgentPlan, clock: StoryClock): AgentPla
 }
 
 /**
+ * The ONE branch story-clock read composition (DK-4b; extracted to an export
+ * by DK-5b): the chat's tracker schema — where the DK-2 clock markers live —
+ * over the branch's latest valid scene record through the ONE existing
+ * reader (`MessageStore.getCurrentSceneTarget`), read through the domain's
+ * {@link readStoryClock}. Null without a marked schema, a readable latest
+ * record or a valid day; every consumer treats null as "no clock". The
+ * `tracker` parameter is the chat row's raw `insightsConfig.tracker` value;
+ * the reader is injected as a plain function so the caller controls the
+ * `this` binding (the sync's store method and the sidechat context loader's
+ * Pick both satisfy it). Consumers: `StoryPlanSync.readBranchClock` (the
+ * projection/advancement gate) and the sidechat context loader's
+ * `<story_time>` line (DK-5b) — a second hand-written derivation anywhere
+ * else is a §3 defect.
+ */
+export async function readBranchStoryClock(
+  tracker: unknown,
+  branchId: string,
+  getCurrentSceneTarget: (branchId: string) => Promise<{ record: { sceneState: unknown } } | null>,
+): Promise<StoryClock | null> {
+  const config = normalizeSceneTrackerConfig(tracker);
+  const target = await getCurrentSceneTarget(branchId);
+  if (!target) return null;
+  return readStoryClock(config.schema, target.record.sceneState);
+}
+
+/**
  * The service half of the sync. Constructed once at wiring
  * (server/server-runtime.ts, next to ObjectiveService); two observers are
  * registered there: the ObjectiveService state observer as
@@ -609,13 +635,19 @@ export class StoryPlanSync {
    * {@link readStoryClock}. Null without a marked schema, a readable latest
    * record or a valid day — and every consumer treats null as "no clock":
    * the pre-clock rules apply unchanged. The clock is never stored anywhere;
-   * each projection reads it fresh at the moment of the write.
+   * each projection reads it fresh at the moment of the write. DK-5b: the
+   * body moved into the exported {@link readBranchStoryClock} so the sidechat
+   * context loader threads the SAME composition (no second hand-written
+   * derivation); this method only closes over the stores.
    */
   private async readBranchClock(chat: ChatRecord, branchId: string): Promise<StoryClock | null> {
-    const config = normalizeSceneTrackerConfig(chat.insightsConfig.tracker);
-    const target = await this.stores.messages.getCurrentSceneTarget(branchId as string);
-    if (!target) return null;
-    return readStoryClock(config.schema, target.record.sceneState);
+    // Arrow-wrapped: a detached store method would lose its `this` (the
+    // reader calls this.getMessages internally).
+    return readBranchStoryClock(
+      chat.insightsConfig.tracker,
+      branchId,
+      (branchId) => this.stores.messages.getCurrentSceneTarget(branchId),
+    );
   }
 
   /**

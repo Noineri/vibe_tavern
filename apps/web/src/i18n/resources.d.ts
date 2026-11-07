@@ -213,6 +213,7 @@ export default interface Resources {
     "agent_simulate_failed": "Simulation: failed",
     "agent_simulate_ok": "Simulation: passed",
     "agent_starter_director_character_card": "Propose a plan from the character card",
+    "agent_starter_director_deck": "Assemble a twist deck for this branch",
     "agent_starter_director_plan": "Plan the story from scratch",
     "agent_starter_director_recap": "Review what has already happened in the game",
     "agent_starter_director_scene_tracker": "Do we need a scene tracker?",

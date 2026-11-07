@@ -492,10 +492,12 @@ describe("AgentShell sidechat empty state (DR-7)", () => {
 		// Terminal state: the chip proves the effective read landed (the raw
 		// wire name — a user profile never localizes, even with a source).
 		await waitFor(() => expect(getByTestId("agent-profile-chip").textContent).toContain("My director copy"));
-		// STARTERS are the one thing a duplicate inherits: the director's four.
+		// STARTERS are the one thing a duplicate inherits: the director's own
+		// list — since DK-5b FIVE chips (the twist-deck starter appended).
 		await waitFor(() => expect(getByTestId("agent-starter-0").textContent).toBe("agent_starter_director_plan"));
 		expect(getByTestId("agent-starter-3").textContent).toBe("agent_starter_director_recap");
-		expect(queryByTestId("agent-starter-4")).toBeNull();
+		expect(getByTestId("agent-starter-4").textContent).toBe("agent_starter_director_deck");
+		expect(queryByTestId("agent-starter-5")).toBeNull();
 		// The PRESENTATION stays built-in-only: the host's own title renders
 		// (the kind label — its empty-state title), never the director's
 		// localized name or its empty-state line.

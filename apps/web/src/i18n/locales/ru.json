@@ -2948,6 +2948,7 @@
 	"agent_starter_director_character_card": "Предложи план по карточке персонажа",
 	"agent_starter_director_scene_tracker": "Нужен ли нам трекер сцены?",
 	"agent_starter_director_recap": "Разбери, что уже случилось в игре",
+	"agent_starter_director_deck": "Собери колоду поворотов",
 	"sidechat_director_row": "Спланировать сюжет с режиссёром",
 	"sidechat_input_placeholder": "Спросите о сюжете…",
 	"sidechat_empty_hint": "Спросите о сюжете, персонажах или вариантах ответа.",

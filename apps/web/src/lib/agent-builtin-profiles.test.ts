@@ -36,7 +36,7 @@ function keyEchoT(key: string): string {
 }
 
 describe("agent-builtin-profiles (DR-7)", () => {
-	it("the director presentation carries its four starters and the director title/subtitle keys", () => {
+	it("the director presentation carries its starters (DK-5b: the twist-deck starter appended) and the director title/subtitle keys", () => {
 		const presentation = builtinProfilePresentation("sidechat-ooc", BUILTIN_DIRECTOR_PROFILE_ID);
 		expect(presentation).toBeDefined();
 		expect(presentation?.starterKeys).toEqual([
@@ -44,9 +44,24 @@ describe("agent-builtin-profiles (DR-7)", () => {
 			"agent_starter_director_character_card",
 			"agent_starter_director_scene_tracker",
 			"agent_starter_director_recap",
+			// DK-5b: the twist-deck starter, appended after the original four;
+			// the hand-off row keeps pinning the FIRST key as its prefill.
+			"agent_starter_director_deck",
 		]);
 		expect(presentation?.titleKey).toBe("agent_profile_name_builtin_director");
 		expect(presentation?.subKey).toBe("agent_director_empty_sub");
+	});
+
+	it("DK-5b: the starter list widening is generic — the OOC built-in's starters stay the host's own, untouched", () => {
+		// The OOC seed has no presentation of its own: its empty state IS the
+		// host's `starterPromptKeys`, and the widening added nothing for it.
+		expect(builtinProfilePresentation("sidechat-ooc", BUILTIN_PROFILE_ID)).toBeUndefined();
+		expect(effectiveProfileStarterKeys("sidechat-ooc", BUILTIN_PROFILE_ID, undefined)).toBeUndefined();
+		// The director's list is a plain list now — the hand-off prefill still
+		// resolves the FIRST key, unchanged by the append.
+		expect(builtinProfileHandoff("sidechat-ooc", BUILTIN_PROFILE_ID)?.prefillKey).toBe(
+			"agent_starter_director_plan",
+		);
 	});
 
 	it("no presentation for the first built-in, user profiles, or other kinds — the host's own stays the fallback", () => {

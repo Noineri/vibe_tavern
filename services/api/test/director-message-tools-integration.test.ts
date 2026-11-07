@@ -363,6 +363,8 @@ beforeAll(async () => {
 			chatSummaries: stores.chatSummaries,
 			experienceCopilot: stores.experienceCopilot,
 			agentPlans: stores.agentPlans,
+			// DK-5b: the branch-deck read for the <story_deck> section.
+			storyDecks: stores.storyDecks,
 			presets: stores.presets,
 			assembly,
 		},

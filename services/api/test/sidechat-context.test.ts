@@ -14,6 +14,7 @@ import {
 	normalizeInsightsConfig,
 	OBJECTIVE_MODE,
 	OBJECTIVE_TASK_STATUS,
+	withStoryClockFields,
 	type AgentPlan,
 	type AgentThreadContextEventId,
 	type ChatBranchId,
@@ -85,6 +86,8 @@ beforeAll(async () => {
 		experienceCopilot: stores.experienceCopilot,
 		// DR-4b: the branch-plan read for the <story_plan> section.
 		agentPlans: stores.agentPlans,
+		// DK-5b: the branch-deck read for the <story_deck> section.
+		storyDecks: stores.storyDecks,
 		presets: stores.presets,
 		assembly,
 	};
@@ -853,5 +856,175 @@ describe("loadSidechatContext story plan (DR-4b)", () => {
 		expect(pkg.staticPackage).toContain(
 			"Tracker facts: goal tracker on (manual check only); Scene Tracker on (no schema yet).",
 		);
+	});
+});
+
+// ─── DK-5b: the twist-deck section + the story-time line ────────────────────
+
+describe("loadSidechatContext twist deck + story clock (DK-5b)", () => {
+	/** The unit's plan (distinct from the DR-4b suite's) — the seat-order test
+	 *  renders the plan, the deck and the clock together. */
+	const PLAN: AgentPlan = {
+		goal: "DK5B the lantern pact",
+		constraints: ["No lies after dusk"],
+		tasks: [
+			{ id: "e1", title: "The meeting", body: "The pact is sealed at the tide bell.", status: "active" },
+		],
+	};
+
+	/** The unit's deck: one card with a body, one without (the renderer must
+	 *  carry a body-less title line as-is), in stored (play) order. */
+	const DECK = {
+		cards: [
+			{
+				id: "card_1",
+				suit: "threat" as const,
+				title: "The cellar door",
+				body: "Something behind the cellar door scratches to get out; playing it brings the thing into the open.",
+			},
+			{ id: "card_2", suit: "encounter" as const, title: "A vagrant fiddler", body: "" },
+		],
+	};
+
+	/** The section's exact rendered text — the pin for the shape and the order. */
+	const DECK_SECTION = [
+		"<story_deck>",
+		"- [threat] The cellar door",
+		"  Something behind the cellar door scratches to get out; playing it brings the thing into the open.",
+		"- [encounter] A vagrant fiddler",
+		"</story_deck>",
+	].join("\n");
+
+	/** The clock-enabled tracker config: a plain place field plus the THREE
+	 *  canonical clock fields (the DK-2 adder — never hand-marked nodes). */
+	function clockTrackerConfig(): InsightsConfig {
+		return normalizeInsightsConfig({
+			trackerEnabled: true,
+			tracker: {
+				schema: withStoryClockFields({ place: { $type: "string", label: "Place" } }),
+			},
+		});
+	}
+
+	/** A scene record whose state reads as a valid clock: day 2, evening,
+	 *  date label "the masquerade" (the canonical keys the marked schema
+	 *  fields carry). */
+	function clockedSceneRecord(variantId: string): MessageVariantSceneRecord {
+		return {
+			variantId,
+			schemaHash: "dk5b-schema-hash",
+			configRevision: 1,
+			sourceHash: "dk5b-source-hash",
+			promptFormat: "json",
+			sceneState: {
+				place: "the masquerade hall",
+				story_day: 2,
+				story_time: "evening",
+				story_date: "the masquerade",
+			},
+			modelId: null,
+			generatedAt: "2026-10-19T00:00:00.000Z",
+		};
+	}
+
+	it("renders the <story_deck> section (suit-tagged lines, bodies indented, stored order) only when the deck holds cards", async () => {
+		const { threadId, chatId, branchId } = await makeSidechatFixture();
+		// An EMPTY deck row renders nothing — the deck is never rendered empty.
+		await stores.storyDecks.save(chatId, branchId, { cards: [] });
+		const emptyPkg = await loadSidechatContext(contextDeps, threadId);
+		expect(emptyPkg.storyDeckSection).toBeNull();
+		expect(emptyPkg.staticPackage).not.toContain("<story_deck>");
+
+		await stores.storyDecks.save(chatId, branchId, DECK);
+		const pkg = await loadSidechatContext(contextDeps, threadId);
+		expect(pkg.storyDeckSection).toBe(DECK_SECTION);
+		// The section rides the static package verbatim.
+		expect(pkg.staticPackage).toContain(pkg.storyDeckSection!);
+	});
+
+	it("no deck row → no section, and the package is byte-identical to the empty-deck one (the OOC context stays unchanged)", async () => {
+		// Two threads of the SAME OOC kind on two fresh branches: one with no
+		// deck row, one with an explicitly empty deck. The packages must be
+		// EQUAL strings — the DK-5b pieces are present-only, so an absent deck
+		// (and absent clock) leaves every profile's context byte-identical to
+		// the pre-DK-5b package.
+		const bare = await makeSidechatFixture();
+		const empty = await makeSidechatFixture();
+		await stores.storyDecks.save(empty.chatId, empty.branchId, { cards: [] });
+
+		const barePkg = await loadSidechatContext(contextDeps, bare.threadId);
+		const emptyPkg = await loadSidechatContext(contextDeps, empty.threadId);
+		expect(barePkg.storyDeckSection).toBeNull();
+		expect(emptyPkg.storyDeckSection).toBeNull();
+		expect(barePkg.staticPackage).not.toContain("<story_deck>");
+		expect(barePkg.staticPackage).not.toContain("<story_time");
+		expect(emptyPkg.staticPackage).toBe(barePkg.staticPackage);
+	});
+
+	it("deck + clock + plan render together: deck seats after the plan, the time line seats before the current scene", async () => {
+		const { threadId, chatId, branchId } = await makeSidechatFixture();
+		await stores.agentPlans.save({ kind: "chatBranch", chatId, branchId }, PLAN);
+		await stores.storyDecks.save(chatId, branchId, DECK);
+		await stores.chats.replaceTrackerSetup(chatId, clockTrackerConfig(), defaultObjectiveState());
+		const reply = await stores.messages.addMessage({
+			chatId,
+			branchId,
+			role: "assistant",
+			authorType: "assistant",
+			content: "The ball opens.",
+		});
+		await stores.messages.setSceneRecord(await selectedVariantOf(reply.id), clockedSceneRecord(reply.id));
+
+		const pkg = await loadSidechatContext(contextDeps, threadId);
+		// The clock line — the packet's exact shape (day, named part, label).
+		expect(pkg.staticPackage).toContain("<story_time>Story time: day 2, evening, the masquerade.</story_time>");
+		// The plan and the deck both render; every section is present.
+		expect(pkg.staticPackage).toContain("<story_plan>");
+		expect(pkg.storyDeckSection).toBe(DECK_SECTION);
+		expect(pkg.staticPackage).toContain("<current_scene>");
+		// Seat order: plan → deck → time → scene (story-direction material
+		// grouped, then the time stamp above the scene it stamps).
+		const order = ["<story_plan>", "<story_deck>", "<story_time>", "<current_scene>"].map((marker) =>
+			pkg.staticPackage.indexOf(marker),
+		);
+		expect(order.every((index) => index >= 0)).toBe(true);
+		expect([...order].sort((a, b) => a - b)).toEqual(order);
+	});
+
+	it("the time line renders only when the clock READS: a marked schema without a readable day, and no schema at all, both render nothing", async () => {
+		// A: the schema carries the clock markers, but the branch's latest
+		// scene record has no readable day — no line.
+		const dayless = await makeSidechatFixture();
+		await stores.chats.replaceTrackerSetup(dayless.chatId, clockTrackerConfig(), defaultObjectiveState());
+		const daylessReply = await stores.messages.addMessage({
+			chatId: dayless.chatId,
+			branchId: dayless.branchId,
+			role: "assistant",
+			authorType: "assistant",
+			content: "The archive is quiet.",
+		});
+		await stores.messages.setSceneRecord(
+			await selectedVariantOf(daylessReply.id),
+			sceneRecord(daylessReply.id, "the quiet archive"),
+		);
+		const daylessPkg = await loadSidechatContext(contextDeps, dayless.threadId);
+		expect(daylessPkg.staticPackage).not.toContain("<story_time");
+
+		// B: no tracker schema at all (the clock markers cannot live anywhere) —
+		// no line, whatever the record carries.
+		const noSchema = await makeSidechatFixture();
+		const noSchemaReply = await stores.messages.addMessage({
+			chatId: noSchema.chatId,
+			branchId: noSchema.branchId,
+			role: "assistant",
+			authorType: "assistant",
+			content: "The road forks.",
+		});
+		await stores.messages.setSceneRecord(
+			await selectedVariantOf(noSchemaReply.id),
+			clockedSceneRecord(noSchemaReply.id),
+		);
+		const noSchemaPkg = await loadSidechatContext(contextDeps, noSchema.threadId);
+		expect(noSchemaPkg.staticPackage).not.toContain("<story_time");
 	});
 });

@@ -156,11 +156,11 @@ function buildSidechatMessageFlow(
  *  tokens riding the digest segment (the shell's accounting). The result
  *  also carries the kind's auto-compaction pressure (SC-8c): the discussion
  *  (digest + OOC rows) against the room left after the static context and
- *  the RP layer, and since SC-9 the kind's FIVE meter segments in
- *  `tokenAccounting.segments` (`context` / `rp_summaries` / `rp_messages` /
- *  `digest` / `discussion`), measured on this same accounting pass — the
- *  single place all five numbers exist (no second tokenizer pass anywhere
- *  else). The pinned-context block +
+ *  the RP layer, and since SC-9/DR-4b the kind's SIX meter segments in
+ *  `tokenAccounting.segments` (`context` / `story_plan` / `rp_summaries` /
+ *  `rp_messages` / `digest` / `discussion`), measured on this same accounting
+ *  pass — the single place all six numbers exist (no second tokenizer pass
+ *  anywhere else). The pinned-context block +
  *  the kind's recency anchor inject as trailing user messages (the CX-3
  *  pattern the other kinds' assemblers use). Pure — every input is a
  *  parameter; exported so the trim's flow semantics are testable directly. */
@@ -221,8 +221,14 @@ export function assembleSidechatPrompt(input: {
   // `context` segment takes the REMAINDER (the same reconstruction discipline
   // as the discussion remainder below: the segments always sum to the metered
   // total exactly, and tokenizer join-boundary tokens land in the remainder).
+  // DK-5b: the twist-deck section's tokens meter into the SAME `story_plan`
+  // segment (the owner-sanctioned fold — the deck is story-direction
+  // material); the one-line `<story_time>` section stays in the remainder.
   const storyPlanTokens = input.context.storyPlanSection !== null
     ? estimateTokens(input.context.storyPlanSection)
+    : 0;
+  const storyDeckTokens = input.context.storyDeckSection !== null
+    ? estimateTokens(input.context.storyDeckSection)
     : 0;
 
   // ── SC-6 overflow: the shell's existing budget trim over the MERGED flow.
@@ -313,17 +319,18 @@ export function assembleSidechatPrompt(input: {
   }
 
   // SC-9 + DR-4b: the kind's six meter segments, keyed by the ONE key list —
-  // `context` folds the system message minus the story-plan section (base
-  // prompt + the rest of the static package) and the attached block (`@`
-  // links + anchor) into the single "everything constant" bucket;
-  // `story_plan` carries the plan section the loader rendered; the three
+  // `context` folds the system message minus the story-plan AND twist-deck
+  // sections (base prompt + the rest of the static package, the one-line
+  // `<story_time>` included, DK-5b) and the attached block (`@` links +
+  // anchor) into the single "everything constant" bucket; `story_plan`
+  // carries the plan + deck sections the loader rendered; the three
   // history-segment values and the digest come from the measurements above.
   // Sum == the assembler's total by construction (the two remainder closes —
   // story_plan out of context, discussion out of history — keep the
   // arithmetic exact).
   const meterSegmentTokens: Record<SidechatOocMeterSegmentKey, number> = {
-    context: systemTokens + attachedTokens - storyPlanTokens,
-    story_plan: storyPlanTokens,
+    context: systemTokens + attachedTokens - storyPlanTokens - storyDeckTokens,
+    story_plan: storyPlanTokens + storyDeckTokens,
     rp_summaries: rpSummariesTokens,
     rp_messages: rpMessagesTokens,
     digest: digestTokens,

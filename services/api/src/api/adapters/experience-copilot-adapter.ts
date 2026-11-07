@@ -415,6 +415,8 @@ export class ExperienceCopilotAdapter extends ExperienceCopilotRunAdapter implem
         experienceCopilot: this.stores.experienceCopilot,
         // DR-4b: the branch-plan read for the <story_plan> context section.
         agentPlans: this.stores.agentPlans,
+        // DK-5b: the branch-deck read for the <story_deck> context section.
+        storyDecks: this.stores.storyDecks,
         // SC-23c: pinned-preset existence for the RP prompt view arm.
         presets: this.stores.presets,
         assembly,

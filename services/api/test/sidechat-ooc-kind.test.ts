@@ -410,6 +410,43 @@ describe("the sidechat_director_base asset — DR-4b pin", () => {
     expect(fixing).toContain("Never claim a variant was saved when it was not.");
   });
 
+  // DK-5b: the asset teaches the twist deck (the five suits, what a card is,
+  // the propose_deck flow) and the story calendar (dated beats only, the
+  // withClock ask, the tracker moves time). The context-side twins are the
+  // `<story_deck>` section and the `Story time:` line.
+  test("teaches the twist deck and the story calendar (DK-5b)", async () => {
+    const text = await loadPromptAsset(getServicePromptAssetFile("sidechat_director_base"));
+    const deck = mdSection(text, "The twist deck");
+    // The `<story_deck>` context block is named, and each of the five suits
+    // carries its own one-line meaning the model can choose by.
+    expect(deck).toContain("the `<story_deck>` block lists the cards the branch holds.");
+    for (const suit of ["threat", "encounter", "discovery", "mystery", "change"]) {
+      expect(deck).toContain(`- ${suit} — `);
+    }
+    // A card body is a direction for the RP model, exactly like an event body.
+    expect(deck).toContain("A card body is a direction for the roleplay model, exactly like an event body.");
+    // A HANDFUL of cards that fit the premise and the story rules — never
+    // cards that resolve the story.
+    expect(deck).toContain("Propose a handful of cards that fit the premise and the story rules, with `propose_deck`.");
+    expect(deck).toContain("the story stays open.");
+    // Add when asked or when the user wonders; the cards land as a review
+    // proposal the user adds — never the director directly.
+    expect(deck).toContain("Add cards when the user asks for them, or when the user wonders what could happen.");
+    expect(deck).toContain("The cards land as a review proposal — the user adds them to the deck, never you directly.");
+
+    const calendar = mdSection(text, "The story calendar");
+    // The `Story time:` context line is named.
+    expect(calendar).toContain("The `Story time:` line in the context");
+    // Date ONLY timed beats — never every event; undated events keep today's order.
+    expect(calendar).toContain("Date an event only when the story has a timed beat");
+    expect(calendar).toContain("never date every event.");
+    expect(calendar).toContain("Undated events keep today's order.");
+    // The withClock ask on the tracker template proposal; the tracker moves
+    // time itself — no model call.
+    expect(calendar).toContain("propose the setup with `propose_tracker_template` and ask for the clock with `withClock`");
+    expect(calendar).toContain("you never need a model call for it.");
+  });
+
   test("the OOC asset's RP-sync rules are copied in VERBATIM (the whole Reading the RP material section)", async () => {
     const director = await loadPromptAsset(getServicePromptAssetFile("sidechat_director_base"));
     const ooc = await loadPromptAsset(getServicePromptAssetFile("sidechat_ooc_base"));

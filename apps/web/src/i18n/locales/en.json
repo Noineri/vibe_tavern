@@ -2898,6 +2898,7 @@
 	"agent_starter_director_character_card": "Propose a plan from the character card",
 	"agent_starter_director_scene_tracker": "Do we need a scene tracker?",
 	"agent_starter_director_recap": "Review what has already happened in the game",
+	"agent_starter_director_deck": "Assemble a twist deck for this branch",
 	"sidechat_director_row": "Plan the story with the director",
 	"sidechat_input_placeholder": "Ask about the story…",
 	"sidechat_empty_hint": "Ask about the plot, characters, or reply options.",

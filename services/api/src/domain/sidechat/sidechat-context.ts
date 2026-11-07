@@ -6,6 +6,8 @@ import {
 	type ChatId,
 	type ExperienceCopilotThreadId,
 	type PromptPresetId,
+	type StoryClock,
+	type StoryDeck,
 	isRecord,
 	normalizeSceneTrackerConfig,
 	SCENE_PROMPT_FORMAT,
@@ -56,6 +58,7 @@ import {
 	type LoreEntryInput,
 } from "./sidechat-xml.js";
 import { renderAgentPlanSection } from "../agent-plan/agent-plan-prompt.js";
+import { readBranchStoryClock } from "../director/story-plan-sync.js";
 
 /**
  * The sidechat context loader (SIDECHAT_PLAN SC-3b, reshaped by SC-4d): loads
@@ -157,6 +160,22 @@ import { renderAgentPlanSection } from "../agent-plan/agent-plan-prompt.js";
  * assembly can meter it into its own `story_plan` segment. Nothing renders
  * when the plan is empty — the section, the package field and the meter
  * segment are all absent/zero.
+ *
+ * DK-5b (DIRECTOR_DECK_CALENDAR_PLAN): the package gains TWO more
+ * present-only pieces, seated between the plan and the current scene —
+ * `<story_deck>` (the branch's twist cards, one suit-tagged line per card,
+ * read through the story-deck store's read seam) and the ONE `<story_time>`
+ * line (`Story time: day N, part, label`) read through the ONE clock-read
+ * composition (`readBranchStoryClock` — the same
+ * schema-over-latest-record composition the plan sync's projection gate
+ * runs). Each renders ONLY when its material exists: an empty deck and a
+ * null clock leave the package byte-identical to the pre-DK-5b one (pinned).
+ * The deck section rides the package (`storyDeckSection`) so the assembly
+ * meters its tokens into the SAME `story_plan` segment (the owner-sanctioned
+ * fold — the deck is story-direction material); the clock line is one line
+ * and rides the `context` remainder. The director asset
+ * (`agent-sidechat/director.md`) teaches both; these sections only carry
+ * the branch's data.
  */
 
 /** The stores/services this loader reads — `Pick`s so tests and callers can
@@ -180,6 +199,10 @@ export interface SidechatContextDeps {
 	/** DR-4b: the shared agent-plan store's READ seam — the thread's branch
 	 *  plan for the `<story_plan>` section (the sidechat never writes it). */
 	agentPlans: { get(owner: AgentPlanOwner): Promise<AgentPlan | null> };
+	/** DK-5b: the story-deck store's READ seam — the thread's branch deck for
+	 *  the `<story_deck>` section (the sidechat never writes it; the cards
+	 *  land through the proposal apply, DK-5a). */
+	storyDecks: { get(chatId: string, branchId: string): Promise<StoryDeck | null> };
 	/** SC-23c: pinned-preset existence — a dangling id skips the pin, exactly
 	 *  like every other dangling context-link target. */
 	presets: Pick<PresetStore, "getById">;
@@ -222,7 +245,10 @@ export interface SidechatEventMessage {
  *  wrong label (owner decision 3, SIDECHAT_PLAN SC-9, 2026-10-20).
  *  `story_plan` (DR-4b) = the `<story_plan>` section the loader renders when
  *  the thread's branch plan is non-empty — its own bucket so the meter shows
- *  the plan's cost separately from the rest of the constant context. */
+ *  the plan's cost separately from the rest of the constant context. Since
+ *  DK-5b it also carries the `<story_deck>` section's tokens (the
+ *  owner-sanctioned fold: the deck is story-direction material, its own
+ *  segment key would fork the meter's key list for one more bucket). */
 export const SIDECHAT_OOC_METER_SEGMENT_KEYS = [
 	"context",
 	"story_plan",
@@ -261,6 +287,12 @@ export interface SidechatContextPackage {
 	 *  the stream's assembly meters its tokens into the `story_plan` segment
 	 *  without a second derivation of what the section is. */
 	readonly storyPlanSection: string | null;
+	/** DK-5b: the thread's branch twist-deck section (`<story_deck>` — one
+	 *  suit-tagged line per card) or null when the branch deck has no cards.
+	 *  Already joined into `staticPackage`; carried separately so the
+	 *  assembly meters its tokens into the SAME `story_plan` segment (the
+	 *  deck is story-direction material — the owner-sanctioned fold). */
+	readonly storyDeckSection: string | null;
 	/** The frozen events, in merged-timeline order (SC-4d placement counts). */
 	readonly eventMessages: readonly SidechatEventMessage[];
 	/** The merged timeline's MESSAGE row count — the flow builder's alignment
@@ -357,6 +389,22 @@ export async function loadSidechatContext(
 	const branchPlan = await deps.agentPlans.get({ kind: "chatBranch", chatId, branchId });
 	const storyPlanSection = renderStoryPlanSection(branchPlan, chat);
 
+	// DK-5b: the branch's twist deck and story clock — both PRESENT-ONLY.
+	// The deck renders when the branch holds cards (the deck read is the
+	// story-deck store's read seam, the play route's own read); the clock
+	// line renders when the ONE clock-read composition resolves (the same
+	// composition the plan sync's projection gate runs — readBranchStoryClock).
+	// Empty deck / no clock renders nothing: the package stays byte-identical
+	// to the pre-DK-5b one (pinned by the context suite).
+	const branchDeck = await deps.storyDecks.get(chatId, branchId);
+	const storyDeckSection = renderStoryDeckSection(branchDeck);
+	const storyClock = await readBranchStoryClock(
+		chat.insightsConfig.tracker,
+		branchId as string,
+		(readBranchId) => deps.messages.getCurrentSceneTarget(readBranchId),
+	);
+	const storyTimeLine = storyClock === null ? null : renderStoryTimeLine(storyClock);
+
 	const sceneSection = renderCurrentSceneSection(await loadCurrentSceneText(deps, chat, branchId));
 
 	// SC-23c: the pinned-preset RP prompt views — one trailing section per
@@ -372,13 +420,18 @@ export async function loadSidechatContext(
 
 	// Static package (SC-4d): the five settled sections (+ any pinned-preset
 	// RP prompt views, SC-23c) only — no timeline section exists anymore; the
-	// timeline walk below feeds the MESSAGE FLOW.
+	// timeline walk below feeds the MESSAGE FLOW. DK-5b seats the twist deck
+	// right after the plan (story-direction material grouped, mirroring
+	// DR-4b's seating rule) and the `<story_time>` line between the deck and
+	// the current scene — the time stamps the scene that follows it.
 	const sections = [
 		characterSection,
 		personaSection,
 		loreSection,
 		objectivesSection,
 		storyPlanSection,
+		storyDeckSection,
+		storyTimeLine,
 		sceneSection,
 		...presetViews,
 	];
@@ -436,7 +489,7 @@ export async function loadSidechatContext(
 		});
 	}
 
-	return { staticPackage, storyPlanSection, eventMessages, messageCount, heldLoreEntryIds };
+	return { staticPackage, storyPlanSection, storyDeckSection, eventMessages, messageCount, heldLoreEntryIds };
 }
 
 // ─── Active lore (the branch's latest prompt trace) ──────────────────────────
@@ -635,6 +688,42 @@ function renderStoryPlanSection(plan: AgentPlan | null, chat: ChatRow): string |
 	const rendered = renderAgentPlanSection(plan);
 	if (rendered === "") return null;
 	return ["<story_plan>", rendered, "", renderStoryPlanTrackerFactsLine(chat), "</story_plan>"].join("\n");
+}
+
+// ─── Twist deck + story clock (DIRECTOR_DECK_CALENDAR_PLAN DK-5b) ──────
+
+/** Render the `<story_deck>` section (DK-5b): one suit-tagged line per card
+ *  in the deck's stored (play) order, each card's body indented under its
+ *  title line — the same `[tag] title` convention the plan section's task
+ *  list uses, with the suit where the plan puts the status. Null when the
+ *  deck is null (no row) or holds no cards — an empty deck renders NOTHING
+ *  (the byte-identical-when-absent rule; the deck is never rendered empty).
+ *  The director asset (`agent-sidechat/director.md`) teaches what the suits
+ *  and cards mean; this section only lists them. Pure. */
+function renderStoryDeckSection(deck: StoryDeck | null): string | null {
+	if (deck === null || deck.cards.length === 0) return null;
+	const lines: string[] = [];
+	for (const card of deck.cards) {
+		lines.push(`- [${card.suit}] ${card.title}`);
+		const bodyLines = card.body.split("\n");
+		if (card.body.trim() !== "") {
+			for (const bodyLine of bodyLines) lines.push(`  ${bodyLine}`);
+		}
+	}
+	return ["<story_deck>", ...lines, "</story_deck>"].join("\n");
+}
+
+/** Render the ONE `<story_time>` line (DK-5b): `Story time: day N`, plus the
+ *  named part of the day when the clock carries one, plus the free-form date
+ *  label when present — the packet's exact line shape. The section tag keeps
+ *  the package's grammar (every section is tagged); the wording is the
+ *  loader's own, like the tracker-facts line above. Pure. */
+function renderStoryTimeLine(clock: StoryClock): string {
+	const parts = [`day ${clock.day}`];
+	if (clock.part !== null) parts.push(clock.part);
+	const label = clock.label?.trim();
+	if (label !== undefined && label !== "") parts.push(label);
+	return `<story_time>Story time: ${parts.join(", ")}.</story_time>`;
 }
 
 // ─── Objectives (the chat row's state, via the RP path's own derivation) ─────

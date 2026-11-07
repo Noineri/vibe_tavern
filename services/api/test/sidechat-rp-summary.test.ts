@@ -74,6 +74,8 @@ beforeAll(async () => {
 		// the plan stays EMPTY throughout, so the section stays null exactly
 		// as this suite's assertions always pinned).
 		agentPlans: stores.agentPlans,
+		// DK-5b: the branch-deck read for the <story_deck> section.
+		storyDecks: stores.storyDecks,
 		presets: stores.presets,
 		assembly,
 	};

@@ -134,6 +134,8 @@ beforeAll(async () => {
 			experienceCopilot: stores.experienceCopilot,
 			// DR-4b: the branch-plan read for the <story_plan> section.
 			agentPlans: stores.agentPlans,
+			// DK-5b: the branch-deck read for the <story_deck> section.
+			storyDecks: stores.storyDecks,
 			presets: stores.presets,
 			assembly,
 		},
