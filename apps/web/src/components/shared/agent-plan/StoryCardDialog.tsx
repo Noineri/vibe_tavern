@@ -474,7 +474,6 @@ function StoryCardBody({
             type="button"
             data-testid="story-card-dialog-editor-close"
             aria-label={t("story_deck_dialog_close")}
-            title={t("story_deck_dialog_close")}
             onClick={onClose}
             className="ml-auto flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded text-t4 transition-colors hover:bg-s2 hover:text-t1"
           >
