@@ -185,6 +185,36 @@ describe("lightbox full-message write characterization (CA-1e)", () => {
 });
 
 describe("sent file chips and media-only navigation (CA-1e)", () => {
+  test("lightbox escapes isolated/transformed feed ancestors and uses the shared thin scroll lane", async () => {
+    const view = render(<div data-testid="isolated-feed" style={{ isolation: "isolate", transform: "translateX(0)", overflow: "hidden" }}>
+      <AttachmentGrid attachments={[{ ...image, description: "A tall portrait" }]} />
+    </div>);
+    fireEvent.click(view.getByAltText(image.name));
+    const close = view.getByRole("button", { name: "close" });
+    const overlay = close.closest<HTMLElement>(".fixed")!;
+    expect(overlay.parentElement).toBe(document.body);
+    expect(view.getByTestId("isolated-feed").contains(overlay)).toBe(false);
+    const scroll = overlay.querySelector<HTMLElement>('[data-scroll-area="thin"]')!;
+    expect(scroll).not.toBeNull();
+    const viewport = scroll.querySelector<HTMLElement>("[data-scroll-viewport]")!;
+    expect(viewport.classList.contains("scrollbar-hide")).toBe(true);
+    expect(scroll.querySelector("[data-scroll-content]")!.textContent).toContain("A tall portrait");
+    Object.defineProperties(viewport, {
+      clientHeight: { value: 100 }, scrollHeight: { value: 1000 },
+      clientWidth: { value: 200 }, scrollWidth: { value: 200 },
+    });
+    await act(async () => { viewport.scrollTop = 200; fireEvent.scroll(viewport); });
+    await waitFor(() => expect(scroll.querySelector("[data-scroll-thumb]")).not.toBeNull());
+    // Content clicks stay inside the viewer; backdrop and Close still dismiss.
+    fireEvent.click(scroll.querySelector("img")!);
+    expect(overlay.isConnected).toBe(true);
+    fireEvent.click(overlay);
+    expect(overlay.isConnected).toBe(false);
+    fireEvent.click(view.getByAltText(image.name));
+    fireEvent.click(view.getByRole("button", { name: "close" }));
+    expect(view.queryByRole("button", { name: "close" })).toBeNull();
+  });
+
   test("sent markdown is a read-only counted file chip, never an image", () => {
     const view = render(<AttachmentGrid attachments={[textFile]} />);
     const chip = view.getByTestId("file-attachment-chip");

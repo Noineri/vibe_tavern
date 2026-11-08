@@ -286,7 +286,9 @@ export function AgentPlanPanel({
         <ScrollArea
           scrollbarSize="thin"
           data-testid="agent-plan-curtain"
-          className="absolute left-0 right-0 top-full z-30 max-h-[60vh] border-b border-border bg-surface shadow-[var(--shadow-md)]"
+          // Base UI's inline position:relative beats positioning utilities.
+          style={{ position: "absolute" }}
+          className="left-0 right-0 top-full z-30 max-h-[60vh] border-b border-border bg-surface shadow-[var(--shadow-md)]"
           contentClassName="flex flex-col gap-1 px-2 py-1.5"
         >
           <div className={cn("flex items-center gap-1.5", headerActionsBefore !== undefined && "flex-wrap")}>

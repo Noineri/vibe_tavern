@@ -224,7 +224,9 @@ describe("StoryPlanStrip (DR-11)", () => {
     const panel = view.getByTestId("agent-plan-panel");
     expect(panel.className).toContain("relative");
     const curtain = view.getByTestId("agent-plan-curtain");
-    expect(curtain.className).toContain("absolute");
+    // The override must beat Base UI's inline position:relative, not just
+    // advertise an absolute utility that loses in the browser cascade.
+    expect(curtain.style.position).toBe("absolute");
     expect(curtain.className).toContain("left-0 right-0 top-full");
     // The in-flow row STAYS (constant height) while the overlay is open.
     expect(view.getByTestId("agent-plan-toggle")).toBeDefined();

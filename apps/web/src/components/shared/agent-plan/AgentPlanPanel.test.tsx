@@ -140,7 +140,8 @@ describe("AgentPlanPanel — curtain presentation (DR-9)", () => {
     expect(getByTestId("agent-plan-toggle")).toBeDefined();
     expect(panel.className).toContain("relative");
     const curtain = getByTestId("agent-plan-curtain");
-    expect(curtain.className).toContain("absolute");
+    // Base UI sets position:relative inline; an absolute utility alone loses.
+    expect(curtain.style.position).toBe("absolute");
     expect(curtain.className).toContain("left-0 right-0 top-full");
     expect(curtain.className).toContain("max-h-[60vh]");
     expect(curtain.className).toContain("shadow-[var(--shadow-md)]");
