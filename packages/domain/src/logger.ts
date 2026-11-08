@@ -43,7 +43,7 @@ function resolveMinLevel(): LogLevel {
   // backend LOG_LEVEL gate. localStorage can throw in private mode → guarded.
   let browser: string | undefined;
   try {
-    const g = globalThis as unknown as BrowserLogEnv;
+    const g: BrowserLogEnv = globalThis;
     const fromUrl = g.location?.hash?.match(/log=(\w+)/)?.[1]?.toLowerCase();
     const fromLs = g.localStorage?.getItem("vt:log-level")?.toLowerCase();
     browser = fromUrl ?? fromLs;

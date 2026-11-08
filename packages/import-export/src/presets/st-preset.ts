@@ -1,5 +1,6 @@
 import type {
   CustomInjection,
+  GenerationFormat,
   PromptOrderEntry,
   PromptPresetDto,
   PromptSlot,
@@ -210,13 +211,33 @@ function extractPresetRegexScripts(data: StPresetJson): RegexScriptImportDraft[]
   return drafts;
 }
 
+/** Defensively read one string field: the typed value when the key carries a
+ *  string, the fallback otherwise. */
+function readExtensionString(obj: Record<string, unknown>, key: string, fallback: string): string {
+  const value = obj[key];
+  return typeof value === "string" ? value : fallback;
+}
+
+/** Mirror of preset-store's `generation_format_json` validation: an object
+ *  whose `mode` is one of the two GENERATION_FORMAT_MODE values; the manual
+ *  sequence fields pass through unvalidated (only serializeStPreset writes
+ *  them). */
+function readGenerationFormat(value: unknown): GenerationFormat | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const { mode } = value as { mode?: unknown };
+  if (mode !== "auto" && mode !== "manual") return undefined;
+  return value as GenerationFormat;
+}
+
 /**
  * Defensively read the `_vibe_tavern` extension. Returns `undefined` when
  * absent or malformed (non-object, or missing the structural arrays). A valid
  * extension must at least carry `customInjections` and `promptOrder` arrays —
- * the fields the import side consumes wholesale. The remaining scalar fields
- * are read defensively by the import consumer (it falls back to ST-projected
- * values per-field when an expected key is absent).
+ * the fields the import side consumes wholesale; they pass through untouched.
+ * The scalar fields are read defensively here, per-field, with the defaults
+ * the create/store path uses for absent fields (preset-store create +
+ * `vtImportDraft`'s `?? false` / `?? null` fallbacks). Valid VT exports carry
+ * every scalar, so the defaults only replace mangled or missing values.
  */
 function readVibeTavernExtension(raw: unknown): VibeTavernPresetExtension | undefined {
   if (!raw || typeof raw !== "object") return undefined;
@@ -224,7 +245,32 @@ function readVibeTavernExtension(raw: unknown): VibeTavernPresetExtension | unde
   if (!Array.isArray(obj.customInjections) || !Array.isArray(obj.promptOrder)) {
     return undefined;
   }
-  return obj as unknown as VibeTavernPresetExtension;
+  const generationFormat = readGenerationFormat(obj.generationFormat);
+  return {
+    name: readExtensionString(obj, "name", ""),
+    system: readExtensionString(obj, "system", ""),
+    jailbreak: readExtensionString(obj, "jailbreak", ""),
+    prefill: readExtensionString(obj, "prefill", ""),
+    authorsNote: readExtensionString(obj, "authorsNote", ""),
+    authorsNoteDepth: typeof obj.authorsNoteDepth === "number" ? obj.authorsNoteDepth : 4,
+    authorsNotePosition:
+      obj.authorsNotePosition === "in_prompt" || obj.authorsNotePosition === "in_chat" || obj.authorsNotePosition === "after_chat"
+        ? obj.authorsNotePosition
+        : "in_chat",
+    authorsNoteRole: obj.authorsNoteRole === "user" || obj.authorsNoteRole === "assistant" ? obj.authorsNoteRole : "system",
+    summary: readExtensionString(obj, "summary", ""),
+    tools: readExtensionString(obj, "tools", ""),
+    nsfw: readExtensionString(obj, "nsfw", ""),
+    enhanceDefinitions: readExtensionString(obj, "enhanceDefinitions", ""),
+    customInjections: obj.customInjections,
+    promptOrder: obj.promptOrder,
+    advancedMode: obj.advancedMode === true,
+    mergeConsecutiveRoles: obj.mergeConsecutiveRoles === true,
+    perSendPrefillEnabled: obj.perSendPrefillEnabled === true,
+    scriptAiSystemPrompt: readExtensionString(obj, "scriptAiSystemPrompt", ""),
+    aiAssistantPrompts: readExtensionString(obj, "aiAssistantPrompts", "{}"),
+    ...(generationFormat ? { generationFormat } : {}),
+  };
 }
 
 function mergeXmlWrappers(
