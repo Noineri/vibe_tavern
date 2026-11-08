@@ -18,13 +18,17 @@ import { setTokenCountFn } from "@vibe-tavern/prompt-pipeline";
 import { createDb, ServicePromptProfileStore, UiSettingsStore } from "@vibe-tavern/db";
 import type {
   ExperienceCopilotMessage,
-  ExperienceCopilotStore,
   ExperienceCopilotThread,
   ScriptRow,
-  StoreContainer,
 } from "@vibe-tavern/db";
+import {
+  brandId,
+  type AssemblePromptResponse,
+  type ExperienceCopilotMessageId,
+  type ExperienceCopilotThreadId,
+} from "@vibe-tavern/domain";
 import type { ProviderProfileService } from "../src/domain/providers/provider-profile-service.js";
-import type { nonstreamingProviderExecute } from "../src/infrastructure/ai/nonstreaming-provider-executor.js";
+import type { ProviderExecutionInput, GenerationResult } from "../src/infrastructure/ai/provider-execution-types.js";
 import { ExperienceCopilotAdapter } from "../src/api/adapters/experience-copilot-adapter.js";
 import { ScriptAgentCompactionService } from "../src/domain/agent/script-agent/script-agent-compaction.js";
 import { ExperienceCopilotCompactionService } from "../src/domain/interactive/copilot/experience-copilot-compaction.js";
@@ -34,6 +38,13 @@ import {
   COPILOT_COMPACT_MAX_OUTPUT_TOKENS,
   COPILOT_COMPACT_TEMPERATURE,
 } from "../src/domain/interactive/copilot/copilot-limits.js";
+import {
+  makeExperienceCopilotStore,
+  makeCopilotStores,
+  makeProviderProfileRow,
+  makeProviderProfilesFixture,
+  makeScriptRow,
+} from "./copilot-test-builders.js";
 // Side-effect imports: register the built-in agent kinds so the adapter's
 // thread-kind resolution holds regardless of which test file the shared
 // process loaded first.
@@ -44,13 +55,11 @@ import "../src/domain/agent/kinds/script-kind.js";
 const SCRIPT_PROMPT_MARKER = "run_script_test";
 const EXPERIENCE_PROMPT_MARKER = "interactive experiences";
 
-type Executor = typeof nonstreamingProviderExecute;
-
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
 function makeThread(scriptId: string | null): ExperienceCopilotThread {
   return {
-    id: "thread_1",
+    id: brandId<ExperienceCopilotThreadId>("thread_1"),
     scriptId,
     draftSessionId: null,
     // SC-0a chat-owner triple: null on script-owned/draft threads (this
@@ -73,12 +82,15 @@ function makeThread(scriptId: string | null): ExperienceCopilotThread {
 
 function makeMessage(id: string, role: string): ExperienceCopilotMessage {
   return {
-    id,
-    threadId: "thread_1",
+    id: brandId<ExperienceCopilotMessageId>(id),
+    threadId: brandId<ExperienceCopilotThreadId>("thread_1"),
     role,
     content: `${role} ${id}`,
     toolCallsJson: null,
     toolCallId: null,
+    reasoning: null,
+    reasoningDurationMs: null,
+    seq: null,
     createdAt: "2025-01-01T00:00:00.000Z",
   };
 }
@@ -93,7 +105,7 @@ function makeTurnSequence(count: number): ExperienceCopilotMessage[] {
 function makeStore(thread: ExperienceCopilotThread, initial: ExperienceCopilotMessage[]) {
   const messages = [...initial];
   const appended: ExperienceCopilotMessage[] = [];
-  const store = {
+  const store = makeExperienceCopilotStore({
     async getById() { return thread; },
     async listMessages() { return [...messages]; },
     async appendMessage(_threadId: string, input: { role: string; content?: string; toolCallId?: string | null }) {
@@ -109,104 +121,38 @@ function makeStore(thread: ExperienceCopilotThread, initial: ExperienceCopilotMe
     async updateContextMetrics() {},
     async getAutoCompact() { return thread.autoCompact; },
     async setAutoCompact() {},
-  } as unknown as ExperienceCopilotStore;
+  }, "ExperienceCopilotStore (script compaction)");
   return { store, appended };
 }
 
-/** Full provider profile (the real executor reads sampler fields) with
- *  `bindPerModel:false` so the summary-profile resolution stays on the
- *  identity path. */
-function makeProviderProfile(endpoint: string) {
-  return {
-    id: "prov_1",
-    name: "Test",
-    providerPreset: "openai",
-    coauthorTransport: "chatCompletions",
-    endpoint,
-    apiKey: "sk-test",
-    defaultModel: "model_1",
-    contextBudget: null,
-    pinContextBudget: false,
-    bindPerModel: false,
-    modelFreeOnly: false,
-    modelGroupByOwner: false,
-    maxTokens: 2000,
-    temperature: 0.3,
-    topP: 1,
-    topK: 0,
-    minP: 0,
-    topA: 0,
-    typicalP: 1,
-    tfsZ: 1,
-    repeatLastN: 0,
-    mirostat: 0,
-    mirostatTau: 5,
-    mirostatEta: 0.1,
-    dryMultiplier: 0,
-    dryBase: 1.75,
-    dryAllowedLength: 2,
-    drySequenceBreakers: null,
-    xtcThreshold: 0.1,
-    xtcProbability: 0,
-    frequencyPenalty: 0,
-    presencePenalty: 0,
-    repetitionPenalty: 1,
-    stopSequences: [],
-    logitBias: null,
-    seed: null,
-    reasoningEffort: "auto",
-    showReasoning: false,
-    streamResponse: true,
-    customSamplers: false,
-    proxyMode: "inherit",
-    proxyId: null,
-    isActive: true,
-    visionModel: null,
-    createdAt: "2025-01-01T00:00:00.000Z",
-    updatedAt: "2025-01-01T00:00:00.000Z",
-  };
-}
-
-function makeProviderProfiles(endpoint = "http://127.0.0.1:1/v1") {
-  const profile = makeProviderProfile(endpoint);
-  return {
-    getProviderProfile: async () => profile,
-    getProviderModelSettings: async () => null,
-  };
-}
-
-function makeScriptRow(scriptKind: string): ScriptRow {
-  return {
-    id: "script_1",
-    name: "Compaction script",
-    description: "",
-    code: "",
-    enabled: true,
-    scriptKind,
-    origin: "in_app",
-    firstEnabledAt: null,
-    creationIntentId: null,
-    scopeType: "global",
-    sortOrder: 0,
-    characterId: null,
-    personaId: null,
-    chatId: null,
-    defaultVisualId: null,
-    copilotProfileId: null,
-    extensions: {},
-    createdAt: "2025-01-01T00:00:00.000Z",
-    updatedAt: "2025-01-01T00:00:00.000Z",
-  } as ScriptRow;
+/** The provider-profiles double with the identity-resolution profile
+ *  (`bindPerModel:false` via the builder's defaults), pointed at `endpoint` —
+ *  the real executor in the adapter-level pins reads endpoint/apiKey/
+ *  defaultModel and the sampler fields. The row is built through the shared
+ *  builder: complete stored shape, real `chat_completions` transport (the old
+ *  erased literal carried the invalid "chatCompletions" spelling — the runtime
+ *  never read it on these paths, the type did). */
+function makeProviderProfiles(endpoint = "http://127.0.0.1:1/v1"): ProviderProfileService {
+  return makeProviderProfilesFixture({
+    getProviderProfile: async () =>
+      makeProviderProfileRow({
+        id: "prov_1",
+        name: "Test",
+        endpoint,
+        apiKey: "sk-test",
+        defaultModel: "model_1",
+      }),
+  });
 }
 
 /** Every message of the summarizer payload as one string. */
-function transcriptOf(prompt: Record<string, unknown>): string {
+function transcriptOf(prompt: AssemblePromptResponse): string {
   const payload = prompt.finalPayload as { messages: Array<{ content: string }> };
   return payload.messages.map((m) => m.content).join("\n");
 }
 
 /** The system message of a captured summarizer call (the resolved prompt). */
-function systemMessageOf(prompt: Record<string, unknown>): string {
+function systemMessageOf(prompt: AssemblePromptResponse): string {
   const payload = prompt.finalPayload as { messages: Array<{ content: string }> };
   return payload.messages[0].content;
 }
@@ -220,17 +166,17 @@ beforeEach(() => {
 describe("ScriptAgentCompactionService - summarizer call", () => {
   it("carries the script-authoring prompt (not the experience one) and the shared samplers", async () => {
     const { store, appended } = makeStore(makeThread("script_1"), makeTurnSequence(20));
-    const calls: Array<Record<string, unknown>> = [];
-    const execute = async (input: Record<string, unknown>) => {
+    const calls: ProviderExecutionInput[] = [];
+    const execute = async (input: ProviderExecutionInput): Promise<GenerationResult> => {
       calls.push(input);
-      return { text: "script summary", providerResponse: {} };
+      return { text: "script summary", providerResponse: { mode: "nonstream", steps: [] } };
     };
-    const service = new ScriptAgentCompactionService(store, makeProviderProfiles() as unknown as ProviderProfileService, execute as unknown as Executor);
+    const service = new ScriptAgentCompactionService(store, makeProviderProfiles(), execute);
 
     await service.compact({ threadId: "thread_1" });
 
     expect(calls).toHaveLength(1);
-    const transcript = transcriptOf(calls[0].prompt as Record<string, unknown>);
+    const transcript = transcriptOf(calls[0].prompt);
     expect(transcript).toContain(SCRIPT_PROMPT_MARKER);
     expect(transcript).not.toContain(EXPERIENCE_PROMPT_MARKER);
     expect(calls[0].overrideTemperature).toBe(COPILOT_COMPACT_TEMPERATURE);
@@ -244,27 +190,27 @@ describe("ScriptAgentCompactionService - summarizer call", () => {
 
   it("the experience service keeps its own prompt (the two services are distinct)", async () => {
     const { store } = makeStore(makeThread("script_1"), makeTurnSequence(20));
-    const calls: Array<Record<string, unknown>> = [];
-    const execute = async (input: Record<string, unknown>) => {
+    const calls: ProviderExecutionInput[] = [];
+    const execute = async (input: ProviderExecutionInput): Promise<GenerationResult> => {
       calls.push(input);
-      return { text: "experience summary", providerResponse: {} };
+      return { text: "experience summary", providerResponse: { mode: "nonstream", steps: [] } };
     };
-    const service = new ExperienceCopilotCompactionService(store, makeProviderProfiles() as unknown as ProviderProfileService, execute as unknown as Executor);
+    const service = new ExperienceCopilotCompactionService(store, makeProviderProfiles(), execute);
 
     await service.compact({ threadId: "thread_1" });
 
-    const transcript = transcriptOf(calls[0].prompt as Record<string, unknown>);
+    const transcript = transcriptOf(calls[0].prompt);
     expect(transcript).toContain(EXPERIENCE_PROMPT_MARKER);
     expect(transcript).not.toContain(SCRIPT_PROMPT_MARKER);
   });
 
   it("a missing thread is reported with the script thread label", async () => {
-    const store = {
+    const store = makeExperienceCopilotStore({
       async getById() { return null; },
-    } as unknown as ExperienceCopilotStore;
-    const service = new ScriptAgentCompactionService(store, makeProviderProfiles() as unknown as ProviderProfileService, (async () => {
+    }, "ExperienceCopilotStore (missing thread)");
+    const service = new ScriptAgentCompactionService(store, makeProviderProfiles(), async () => {
       throw new Error("executor must not run");
-    }) as unknown as Executor);
+    });
 
     const error = await service.compact({ threadId: "thread_gone" }).then(
       () => null,
@@ -297,35 +243,35 @@ describe("ScriptAgentCompactionService - summarizer call", () => {
     // `SCRIPT_AGENT_COMPACTION_SYSTEM_PROMPT` constant, so the system message
     // must equal the loaded asset exactly (no trim, no trailing delta).
     const { store } = makeStore(makeThread("script_1"), makeTurnSequence(20));
-    const calls: Array<Record<string, unknown>> = [];
-    const execute = async (input: Record<string, unknown>) => {
+    const calls: ProviderExecutionInput[] = [];
+    const execute = async (input: ProviderExecutionInput): Promise<GenerationResult> => {
       calls.push(input);
-      return { text: "script summary", providerResponse: {} };
+      return { text: "script summary", providerResponse: { mode: "nonstream", steps: [] } };
     };
-    const service = new ScriptAgentCompactionService(store, makeProviderProfiles() as unknown as ProviderProfileService, execute as unknown as Executor);
+    const service = new ScriptAgentCompactionService(store, makeProviderProfiles(), execute);
 
     await service.compact({ threadId: "thread_1" });
 
     expect(getServicePromptAssetFile("script_agent_compaction")).toBe("agent-script/compaction.md");
     const asset = await loadPromptAsset(getServicePromptAssetFile("script_agent_compaction"));
     expect(asset.length).toBeGreaterThan(0);
-    expect(systemMessageOf(calls[0].prompt as Record<string, unknown>)).toBe(asset);
-    expect(systemMessageOf(calls[0].prompt as Record<string, unknown>)).toContain(SCRIPT_PROMPT_MARKER);
+    expect(systemMessageOf(calls[0].prompt)).toBe(asset);
+    expect(systemMessageOf(calls[0].prompt)).toContain(SCRIPT_PROMPT_MARKER);
   });
 
   it("with a db and no override the resolver serves the same asset (SC-8a)", async () => {
     const db = await setupDb();
     const { store } = makeStore(makeThread("script_1"), makeTurnSequence(20));
-    const calls: Array<Record<string, unknown>> = [];
-    const execute = async (input: Record<string, unknown>) => {
+    const calls: ProviderExecutionInput[] = [];
+    const execute = async (input: ProviderExecutionInput): Promise<GenerationResult> => {
       calls.push(input);
-      return { text: "script summary", providerResponse: {} };
+      return { text: "script summary", providerResponse: { mode: "nonstream", steps: [] } };
     };
-    const service = new ScriptAgentCompactionService(store, makeProviderProfiles() as unknown as ProviderProfileService, execute as unknown as Executor, db);
+    const service = new ScriptAgentCompactionService(store, makeProviderProfiles(), execute, db);
 
     await service.compact({ threadId: "thread_1" });
 
-    expect(systemMessageOf(calls[0].prompt as Record<string, unknown>)).toBe(
+    expect(systemMessageOf(calls[0].prompt)).toBe(
       await loadPromptAsset(getServicePromptAssetFile("script_agent_compaction")),
     );
   });
@@ -333,16 +279,16 @@ describe("ScriptAgentCompactionService - summarizer call", () => {
   it("an active-profile `script_agent_compaction` override replaces the summarizer prompt (SC-8a)", async () => {
     const db = await setupDb({ script_agent_compaction: "CUSTOM SCRIPT COMPACTION PROMPT" });
     const { store } = makeStore(makeThread("script_1"), makeTurnSequence(20));
-    const calls: Array<Record<string, unknown>> = [];
-    const execute = async (input: Record<string, unknown>) => {
+    const calls: ProviderExecutionInput[] = [];
+    const execute = async (input: ProviderExecutionInput): Promise<GenerationResult> => {
       calls.push(input);
-      return { text: "script summary", providerResponse: {} };
+      return { text: "script summary", providerResponse: { mode: "nonstream", steps: [] } };
     };
-    const service = new ScriptAgentCompactionService(store, makeProviderProfiles() as unknown as ProviderProfileService, execute as unknown as Executor, db);
+    const service = new ScriptAgentCompactionService(store, makeProviderProfiles(), execute, db);
 
     await service.compact({ threadId: "thread_1" });
 
-    expect(systemMessageOf(calls[0].prompt as Record<string, unknown>)).toBe("CUSTOM SCRIPT COMPACTION PROMPT");
+    expect(systemMessageOf(calls[0].prompt)).toBe("CUSTOM SCRIPT COMPACTION PROMPT");
   });
 });
 
@@ -373,16 +319,16 @@ afterAll(async () => {
 
 function makeAdapter(thread: ExperienceCopilotThread, script: ScriptRow | null) {
   const { store } = makeStore(thread, makeTurnSequence(20));
-  const stores = {
+  const stores = makeCopilotStores({
     experienceCopilot: store,
     scripts: {
       async getById(scriptId: string) {
         return script && script.id === scriptId ? script : null;
       },
     },
-  } as unknown as StoreContainer;
+  });
   const providerProfiles = makeProviderProfiles(`http://127.0.0.1:${providerServer.port}/v1`);
-  return new ExperienceCopilotAdapter(stores, providerProfiles as unknown as ProviderProfileService);
+  return new ExperienceCopilotAdapter(stores, providerProfiles);
 }
 
 describe("ExperienceCopilotAdapter.experienceCopilotCompact - dispatch by thread kind", () => {
@@ -393,7 +339,7 @@ describe("ExperienceCopilotAdapter.experienceCopilotCompact - dispatch by thread
   it("a prompt/dice script thread compacts through the SCRIPT service", async () => {
     for (const scriptKind of ["prompt", "dice"]) {
       requestBodies.length = 0;
-      const adapter = makeAdapter(makeThread("script_1"), makeScriptRow(scriptKind));
+      const adapter = makeAdapter(makeThread("script_1"), makeScriptRow(scriptKind, "script_1"));
 
       const result = await adapter.experienceCopilotCompact("thread_1", {});
 
@@ -405,7 +351,7 @@ describe("ExperienceCopilotAdapter.experienceCopilotCompact - dispatch by thread
   });
 
   it("an interactive thread and a draft thread compact through the EXPERIENCE service", async () => {
-    const interactive = makeAdapter(makeThread("script_1"), makeScriptRow("interactive"));
+    const interactive = makeAdapter(makeThread("script_1"), makeScriptRow("interactive", "script_1"));
     await interactive.experienceCopilotCompact("thread_1", {});
     expect(requestBodies).toHaveLength(1);
     expect(requestBodies[0]).toContain(EXPERIENCE_PROMPT_MARKER);

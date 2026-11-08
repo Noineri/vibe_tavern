@@ -31,9 +31,11 @@ import {
 	defaultObjectiveState,
 	normalizeAutoSummaryConfig,
 	normalizeInsightsConfig,
+	normalizeObjectiveState,
 	type ChatBranchId,
 	type ChatId,
 	type MessageVariantId,
+	type ObjectiveState,
 	type SceneTrackerRecord,
 } from "@vibe-tavern/domain";
 import type { PromptAssemblyContext } from "@vibe-tavern/prompt-pipeline";
@@ -327,4 +329,68 @@ export function makeInsightsRuntime(
 	provided: PartialMembers<InsightsRuntimeApi>,
 ): InsightsRuntimeApi {
 	return strictTestDouble<InsightsRuntimeApi>(provided, "InsightsRuntimeApi");
+}
+
+// ─── Objective-service cluster (objective-service.test.ts) ───────────────────
+
+/**
+ * A complete chat row for the objective-suite fixtures. The service reads
+ * `insightsObjectiveState` on EVERY path and `id`/`activeBranchId` +
+ * `insightsConfig.objectiveEnabled` on the auto-check path (INS-4) — those are
+ * the only overrides the builder exposes; everything else rides the
+ * {@link makeChatRow} inert defaults. The state goes in through the domain's
+ * ONE persisted-column seam: `normalizeObjectiveState(raw: unknown)` is what
+ * production feeds the stored JSON blob to, and the suite's corrupt-legacy
+ * fixtures (invalid statuses, whitespace descriptions, duplicate actives) are
+ * deliberately outside `ObjectiveState` — they are the data that seam exists
+ * to heal.
+ */
+export function makeObjectiveChatRow(
+	insightsObjectiveState: unknown,
+	over: { id?: string; activeBranchId?: string; objectiveEnabled?: boolean } = {},
+): Chat {
+	return makeChatRow({
+		id: over.id ?? "chat_1",
+		activeBranchId: over.activeBranchId ?? "branch_1",
+		insightsObjectiveState: normalizeObjectiveState(insightsObjectiveState),
+		insightsConfig: {
+			...normalizeInsightsConfig({}),
+			tracker: createDefaultSceneTrackerConfig(),
+			...(over.objectiveEnabled !== undefined ? { objectiveEnabled: over.objectiveEnabled } : {}),
+		},
+	});
+}
+
+/** The `StoreContainer` double for `ObjectiveService`: the service touches
+ *  `chats.getById` + `chats.updateInsightsObjectiveState` (and never the
+ *  messages store on current paths — `getMessages` stays provided where a
+ *  fixture had it, inert). Replaces the `as unknown as StoreContainer`
+ *  literals; an unprovided top-level store throws on access. */
+export interface ObjectiveStoresFixture {
+	chats?: {
+		getById: () => Promise<Chat>;
+		updateInsightsObjectiveState?: ChatStore["updateInsightsObjectiveState"];
+	};
+	messages?: { getMessages: () => Promise<Message[]> };
+}
+
+export function makeObjectiveStores(fixture: ObjectiveStoresFixture = {}): StoreContainer {
+	return strictTestDouble<StoreContainer>(
+		{
+			...(fixture.chats
+				? {
+						chats: {
+							getById: fixture.chats.getById,
+							...(fixture.chats.updateInsightsObjectiveState
+								? { updateInsightsObjectiveState: fixture.chats.updateInsightsObjectiveState }
+								: {}),
+						},
+					}
+				: {}),
+			...(fixture.messages
+				? { messages: { getMessages: fixture.messages.getMessages } }
+				: {}),
+		},
+		"ObjectiveService stores",
+	);
 }

@@ -30,6 +30,7 @@ import {
   advanceAfterCompletion,
 } from "../src/domain/insights/objective-service.js";
 import type { ProviderExecutionInput } from "../src/infrastructure/ai/provider-execution-types.js";
+import { makeMessageRow, makeObjectiveChatRow, makeObjectiveStores } from "./insights-test-builders.js";
 
 // ─── pure helpers ───────────────────────────────────────────────────────────
 
@@ -101,24 +102,28 @@ describe("selectActiveTask + advanceAfterCompletion (INS-3b)", () => {
 
 // ─── service (DI execute + resolvePrompt) ───────────────────────────────────
 
-function makeMockStores(initial: Record<string, unknown> | null = null): { stores: StoreContainer; readState: () => Record<string, unknown> } {
-  let state: Record<string, unknown> = initial ?? {};
-  const stores = {
+function makeMockStores(initial: unknown = {}): { stores: StoreContainer; readState: () => ObjectiveState } {
+  // `initial` is the stored insights_objective_state JSON blob — the domain's
+  // own parse seam takes it as `unknown` (normalizeObjectiveState) because
+  // legacy/corrupt fixtures (invalid statuses, duplicate actives) are
+  // deliberately outside ObjectiveState. Normalized once here; every later
+  // write is a service-produced ObjectiveState.
+  let state: ObjectiveState = normalizeObjectiveState(initial);
+  const stores = makeObjectiveStores({
     chats: {
-      // Mirrors the ChatStore contract: the JSON column is normalized on read.
-      getById: async () => ({ insightsObjectiveState: normalizeObjectiveState(state) }),
-      updateInsightsObjectiveState: async (_id: string, input: { insightsObjectiveState?: ObjectiveState }) => {
+      getById: async () => makeObjectiveChatRow(state),
+      updateInsightsObjectiveState: async (_id, input) => {
         if (input.insightsObjectiveState !== undefined) state = { ...input.insightsObjectiveState };
-        return { insightsObjectiveState: normalizeObjectiveState(state) };
+        return makeObjectiveChatRow(state);
       },
     },
-  } as unknown as StoreContainer;
+  });
   return { stores, readState: () => state };
 }
 
 // Variant of makeMockStores that takes a typed ObjectiveState (non-null).
 function makeMockStates(initial: ObjectiveState): { stores: StoreContainer } {
-  return { stores: makeMockStores(initial as unknown as Record<string, unknown>).stores };
+  return { stores: makeMockStores(initial).stores };
 }
 
 const context: PromptAssemblyContext = {
@@ -171,7 +176,7 @@ describe("ObjectiveService (INS-3b logic + INS-3c assembler wiring)", () => {
     expect((await service.getActiveTask("chat_1" as never))?.description).toBe("Reach the city gates");
 
     // Persisted: readState reflects the saved tasks with the same activation.
-    const persisted = (readState() as ObjectiveState).tasks;
+    const persisted = readState().tasks;
     expect(persisted).toHaveLength(3);
     expect(persisted[0].status).toBe(OBJECTIVE_TASK_STATUS.active);
     expect(persisted[1].status).toBe(OBJECTIVE_TASK_STATUS.pending);
@@ -183,10 +188,10 @@ describe("ObjectiveService (INS-3b logic + INS-3c assembler wiring)", () => {
       objectiveDescription: "Escape",
       tasks: [{ id: "t1", description: "Keep this route", status: OBJECTIVE_TASK_STATUS.pending }],
     };
-    const { stores, readState } = makeMockStores(initial as unknown as Record<string, unknown>);
+    const { stores, readState } = makeMockStores(initial);
     const { service } = serviceWith(stores, "I cannot help with that.");
     await expect(service.generateTasks({ chatId: "chat_1" as never, profile, model: "m", context })).rejects.toThrow();
-    expect((readState() as ObjectiveState).tasks).toEqual(initial.tasks);
+    expect(readState().tasks).toEqual(initial.tasks);
   });
 
   it("does not persist a generation result when cancellation wins after the LLM await", async () => {
@@ -195,7 +200,7 @@ describe("ObjectiveService (INS-3b logic + INS-3c assembler wiring)", () => {
       objectiveDescription: "Escape",
       tasks: [{ id: "t1", description: "Keep this route", status: OBJECTIVE_TASK_STATUS.pending }],
     };
-    const { stores, readState } = makeMockStores(initial as unknown as Record<string, unknown>);
+    const { stores, readState } = makeMockStores(initial);
     let releaseExecute: ((value: { text: string }) => void) | undefined;
     let markStarted: (() => void) | undefined;
     const started = new Promise<void>((resolve) => { markStarted = resolve; });
@@ -212,7 +217,7 @@ describe("ObjectiveService (INS-3b logic + INS-3c assembler wiring)", () => {
     releaseExecute?.({ text: '{"tasks":[{"description":"Overwrite"}]}' });
 
     await expect(pending).rejects.toThrow();
-    expect((readState() as ObjectiveState).tasks).toEqual(initial.tasks);
+    expect(readState().tasks).toEqual(initial.tasks);
   });
 
   it("does not overwrite a task edit made while generation is in flight", async () => {
@@ -221,7 +226,7 @@ describe("ObjectiveService (INS-3b logic + INS-3c assembler wiring)", () => {
       objectiveDescription: "Escape",
       tasks: [{ id: "t1", description: "Original route", status: OBJECTIVE_TASK_STATUS.pending }],
     };
-    const { stores, readState } = makeMockStores(initial as unknown as Record<string, unknown>);
+    const { stores, readState } = makeMockStores(initial);
     let releaseExecute: ((value: { text: string }) => void) | undefined;
     let markStarted: (() => void) | undefined;
     const started = new Promise<void>((resolve) => { markStarted = resolve; });
@@ -238,7 +243,7 @@ describe("ObjectiveService (INS-3b logic + INS-3c assembler wiring)", () => {
 
     const result = await pending;
     expect(result.tasks[0].description).toBe("User-edited route");
-    expect((readState() as ObjectiveState).tasks[0].description).toBe("User-edited route");
+    expect(readState().tasks[0].description).toBe("User-edited route");
   });
 
   it("merges generated tasks into fresh config changed during the LLM await", async () => {
@@ -248,7 +253,7 @@ describe("ObjectiveService (INS-3b logic + INS-3c assembler wiring)", () => {
       tasks: [{ id: "t1", description: "Original route", status: OBJECTIVE_TASK_STATUS.pending }],
       injectionDepth: 1,
     };
-    const { stores, readState } = makeMockStores(initial as unknown as Record<string, unknown>);
+    const { stores, readState } = makeMockStores(initial);
     let releaseExecute: ((value: { text: string }) => void) | undefined;
     let markStarted: (() => void) | undefined;
     const started = new Promise<void>((resolve) => { markStarted = resolve; });
@@ -266,7 +271,7 @@ describe("ObjectiveService (INS-3b logic + INS-3c assembler wiring)", () => {
     const result = await pending;
     expect(result.tasks[0].description).toBe("Fresh generated route");
     expect(result.injectionDepth).toBe(7);
-    expect((readState() as ObjectiveState).injectionDepth).toBe(7);
+    expect(readState().injectionDepth).toBe(7);
   });
 
   it("does not lose a config write started after the generation commit read", async () => {
@@ -280,21 +285,21 @@ describe("ObjectiveService (INS-3b logic + INS-3c assembler wiring)", () => {
     let releaseFirstSave: (() => void) | undefined;
     let markFirstSaveStarted: (() => void) | undefined;
     const firstSaveStarted = new Promise<void>((resolve) => { markFirstSaveStarted = resolve; });
-    const stores = {
+    const stores = makeObjectiveStores({
       chats: {
-        getById: async () => ({ insightsObjectiveState: normalizeObjectiveState(state) }),
-        updateInsightsObjectiveState: async (_id: string, input: { insightsObjectiveState?: ObjectiveState }) => {
+        getById: async () => makeObjectiveChatRow(state),
+        updateInsightsObjectiveState: async (_id, input) => {
           updateCalls += 1;
           const next = input.insightsObjectiveState;
           if (updateCalls === 1) {
             markFirstSaveStarted?.();
             await new Promise<void>((resolve) => { releaseFirstSave = resolve; });
           }
-          state = next;
-          return { insightsObjectiveState: state };
+          if (next !== undefined) state = next;
+          return makeObjectiveChatRow(state);
         },
       },
-    } as unknown as StoreContainer;
+    });
     const service = new ObjectiveService(
       stores,
       null as never,
@@ -321,7 +326,7 @@ describe("ObjectiveService (INS-3b logic + INS-3c assembler wiring)", () => {
       objectiveDescription: "Escape",
       tasks: [{ id: "t1", description: "Wait", status: OBJECTIVE_TASK_STATUS.pending }],
     };
-    const { stores } = makeMockStores(initial as unknown as Record<string, unknown>);
+    const { stores } = makeMockStores(initial);
     const releases: Array<(value: { text: string }) => void> = [];
     let executeCalls = 0;
     let activeExecutions = 0;
@@ -378,7 +383,7 @@ describe("ObjectiveService (INS-3b logic + INS-3c assembler wiring)", () => {
       objectiveDescription: "Escape",
       tasks: [{ id: "t1", description: "Pick the lock", status: OBJECTIVE_TASK_STATUS.pending }],
     };
-    const { stores, readState } = makeMockStores(initial as unknown as Record<string, unknown>);
+    const { stores, readState } = makeMockStores(initial);
     let releaseExecute: ((value: { text: string }) => void) | undefined;
     let markStarted: (() => void) | undefined;
     const started = new Promise<void>((resolve) => { markStarted = resolve; });
@@ -395,7 +400,7 @@ describe("ObjectiveService (INS-3b logic + INS-3c assembler wiring)", () => {
 
     const result = await pending;
     expect(result.tasks[0]).toEqual({ id: "t1", description: "Find another exit", status: OBJECTIVE_TASK_STATUS.pending });
-    expect((readState() as ObjectiveState).tasks[0].status).toBe(OBJECTIVE_TASK_STATUS.pending);
+    expect(readState().tasks[0].status).toBe(OBJECTIVE_TASK_STATUS.pending);
   });
 
   it("checkCompletion is a no-op when the LLM says PENDING", async () => {
@@ -417,7 +422,7 @@ describe("ObjectiveService (INS-3b logic + INS-3c assembler wiring)", () => {
       objectiveDescription: "Escape",
       tasks: [{ id: "t1", description: "Wait", status: OBJECTIVE_TASK_STATUS.pending }],
     };
-    const { stores, readState } = makeMockStores(initial as unknown as Record<string, unknown>);
+    const { stores, readState } = makeMockStores(initial);
     let releaseExecute: ((value: { text: string }) => void) | undefined;
     let markStarted: (() => void) | undefined;
     const started = new Promise<void>((resolve) => { markStarted = resolve; });
@@ -434,7 +439,7 @@ describe("ObjectiveService (INS-3b logic + INS-3c assembler wiring)", () => {
     releaseExecute?.({ text: '{"completed":true}' });
 
     await expect(pending).rejects.toThrow();
-    expect((readState() as ObjectiveState).tasks[0].status).toBe(OBJECTIVE_TASK_STATUS.pending);
+    expect(readState().tasks[0].status).toBe(OBJECTIVE_TASK_STATUS.pending);
   });
 
   it("CRUD: addTask appends pending; updateTask patches; deleteTask removes; unknown id throws", async () => {
@@ -633,21 +638,22 @@ describe("ObjectiveService.triggerAutoCheck (INS-4 orchestration)", () => {
       checkPrompt: "",
       injectPrompt: "",
     } satisfies Omit<ObjectiveState, "autoCheckEventCount" | "useChatModel" | "providerProfileId" | "model">;
-    let state: Record<string, unknown> = baseState as unknown as Record<string, unknown>;
-    const messages = Array.from({ length: assistantCount }, (_, i) => ({ id: `a${i}`, role: "assistant", position: i, content: `legacy msg ${i}` }));
+    let state: Partial<ObjectiveState> = baseState;
+    // Legacy assistant rows deliberately remain available so cadence tests
+    // prove that seed/imported history no longer influences auto-checking.
+    const messages = Array.from({ length: assistantCount }, (_, i) =>
+      makeMessageRow({ id: `a${i}`, role: "assistant", position: i, content: `legacy msg ${i}` }));
     const contextBranchIds: string[] = [];
-    const stores = {
+    const stores = makeObjectiveStores({
       chats: {
-        getById: async () => ({ id: "chat_1", activeBranchId: "branch_1", insightsConfig: { objectiveEnabled }, insightsObjectiveState: normalizeObjectiveState(state) }),
-        updateInsightsObjectiveState: async (_id: string, input: { insightsObjectiveState?: ObjectiveState }) => {
+        getById: async () => makeObjectiveChatRow(state, { objectiveEnabled }),
+        updateInsightsObjectiveState: async (_id, input) => {
           if (input.insightsObjectiveState !== undefined) state = { ...input.insightsObjectiveState };
-          return { insightsObjectiveState: state };
+          return makeObjectiveChatRow(state, { objectiveEnabled });
         },
       },
-      // Legacy assistant rows deliberately remain available so cadence tests
-      // prove that seed/imported history no longer influences auto-checking.
       messages: { getMessages: async () => messages },
-    } as unknown as StoreContainer;
+    });
     let buildCalls = 0;
     let recentMessageLimit: number | undefined;
     let executeCalls = 0;
@@ -676,7 +682,11 @@ describe("ObjectiveService.triggerAutoCheck (INS-4 orchestration)", () => {
       getRecentMessageLimit: () => recentMessageLimit,
       getExecuteCalls: () => executeCalls,
       getContextBranchIds: () => contextBranchIds,
-      readState: () => state as unknown as ObjectiveState,
+      // The state the service persists is the full normalized ObjectiveState;
+      // every readState() assertion reads either a baseState field or a
+      // post-commit field — the downcast only widens the fixture's honest
+      // Partial back to the domain type (no erasure: same reference).
+      readState: () => state as ObjectiveState,
     };
   }
 
@@ -898,16 +908,16 @@ describe("ObjectiveService.triggerAutoCheck (INS-4 orchestration)", () => {
       autoCheckFrequency: 1,
       tasks: [{ id: "t1", description: "Wait", status: OBJECTIVE_TASK_STATUS.pending }],
     };
-    const stores = {
+    const stores = makeObjectiveStores({
       chats: {
-        getById: async () => ({ id: "chat_1", activeBranchId: "branch_1", insightsConfig: { objectiveEnabled: true }, insightsObjectiveState: state }),
-        updateInsightsObjectiveState: async (_id: string, input: { insightsObjectiveState?: ObjectiveState }) => {
+        getById: async () => makeObjectiveChatRow(state, { objectiveEnabled: true }),
+        updateInsightsObjectiveState: async (_id, input) => {
           if (input.insightsObjectiveState) state = input.insightsObjectiveState;
-          return { insightsObjectiveState: state };
+          return makeObjectiveChatRow(state, { objectiveEnabled: true });
         },
       },
-      messages: { getMessages: async () => [{ id: "message_1", role: "assistant", position: 0, content: "reply" }] },
-    } as unknown as StoreContainer;
+      messages: { getMessages: async () => [makeMessageRow({ id: "message_1", role: "assistant", position: 0, content: "reply" })] },
+    });
     const sessionRuntime = { chatLifecycle: { buildPipelineContext: async () => ({ context }) } } as never;
     const providerProfiles = { resolveActiveProviderProfile: async () => ({ id: "profile_1", defaultModel: "model_1" }) } as never;
     let executeCalls = 0;
@@ -951,18 +961,18 @@ describe("ObjectiveService.triggerAutoCheck (INS-4 orchestration)", () => {
       tasks: [{ id: "t1", description: "Wait", status: OBJECTIVE_TASK_STATUS.pending }],
     };
     const contextBranchIds: string[] = [];
-    const stores = {
+    const stores = makeObjectiveStores({
       chats: {
         // Simulate the UI switching elsewhere while the committed event still
         // identifies the branch whose assistant message caused the trigger.
-        getById: async () => ({ id: "chat_1", activeBranchId: "branch_switched", insightsConfig: { objectiveEnabled: true }, insightsObjectiveState: state }),
-        updateInsightsObjectiveState: async (_id: string, input: { insightsObjectiveState?: ObjectiveState }) => {
+        getById: async () => makeObjectiveChatRow(state, { activeBranchId: "branch_switched", objectiveEnabled: true }),
+        updateInsightsObjectiveState: async (_id, input) => {
           if (input.insightsObjectiveState) state = input.insightsObjectiveState;
-          return { insightsObjectiveState: state };
+          return makeObjectiveChatRow(state, { activeBranchId: "branch_switched", objectiveEnabled: true });
         },
       },
       messages: { getMessages: async () => [] },
-    } as unknown as StoreContainer;
+    });
     const sessionRuntime = {
       chatLifecycle: {
         buildPipelineContext: async (input: { branchId: string }) => {
@@ -1118,7 +1128,7 @@ describe("ObjectiveService — goals mode (OGM)", () => {
       longTermGoal: { description: "Keep", status: OBJECTIVE_TASK_STATUS.pending },
       shortTermGoals: [{ id: "g1", description: "Old", status: OBJECTIVE_TASK_STATUS.pending }],
     };
-    const { stores, readState } = makeMockStores(initial as unknown as Record<string, unknown>);
+    const { stores, readState } = makeMockStores(initial);
     let releaseExecute: ((value: { text: string }) => void) | undefined;
     let markStarted: (() => void) | undefined;
     const started = new Promise<void>((resolve) => { markStarted = resolve; });
@@ -1134,7 +1144,7 @@ describe("ObjectiveService — goals mode (OGM)", () => {
     // Stale generation discarded (goalsRevision changed); the user's edit survives.
     expect(result.shortTermGoals.some((g) => g.description === "User-added goal")).toBe(true);
     expect(result.longTermGoal?.description).toBe("Keep");
-    expect((readState() as ObjectiveState).shortTermGoals).toHaveLength(2);
+    expect(readState().shortTermGoals).toHaveLength(2);
   });
 
   it("checkCompletion (goals) completes the selected short-term; the long-term is never auto-checked", async () => {

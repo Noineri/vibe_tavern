@@ -25,20 +25,31 @@ import { describe, expect, it, beforeEach, afterAll } from "bun:test";
 import { setTokenCountFn } from "@vibe-tavern/prompt-pipeline";
 import { createDb, ServicePromptProfileStore, UiSettingsStore } from "@vibe-tavern/db";
 import type {
+	AgentThreadTimelineEntry,
 	ExperienceCopilotMessage,
-	ExperienceCopilotStore,
 	ExperienceCopilotThread,
-	StoreContainer,
 } from "@vibe-tavern/db";
+import {
+	brandId,
+	type AssemblePromptResponse,
+	type AgentThreadContextEventId,
+	type ExperienceCopilotMessageId,
+	type ExperienceCopilotThreadId,
+} from "@vibe-tavern/domain";
 import type { ProviderProfileService } from "../src/domain/providers/provider-profile-service.js";
-import type { nonstreamingProviderExecute } from "../src/infrastructure/ai/nonstreaming-provider-executor.js";
-import type { AgentThreadTimelineEntry } from "@vibe-tavern/db";
+import type { ProviderExecutionInput, GenerationResult } from "../src/infrastructure/ai/provider-execution-types.js";
 import { ExperienceCopilotAdapter } from "../src/api/adapters/experience-copilot-adapter.js";
 import { AUTO_COMPACT_THRESHOLD } from "../src/domain/agent/agent-compaction.js";
 import { SidechatOocCompactionService } from "../src/domain/sidechat/sidechat-compaction.js";
 import { getServicePromptAssetFile } from "../src/domain/service-prompts/service-prompt-registry.js";
 import { loadPromptAsset } from "../src/shared/prompt-asset-loader.js";
 import { COPILOT_COMPACT_MAX_OUTPUT_TOKENS, COPILOT_COMPACT_TEMPERATURE } from "../src/domain/interactive/copilot/copilot-limits.js";
+import {
+	makeExperienceCopilotStore,
+	makeProviderProfileRow,
+	makeProviderProfilesFixture,
+	makeCopilotStores,
+} from "./copilot-test-builders.js";
 // Side-effect imports: register the built-in agent kinds so the adapter's
 // thread-kind resolution holds regardless of which test file the shared
 // process loaded first.
@@ -50,13 +61,15 @@ import "../src/domain/agent/kinds/sidechat-ooc-kind.js";
 const SIDECHAT_PROMPT_MARKER = "You write the digest of a sidechat";
 const SCRIPT_PROMPT_MARKER = "run_script_test";
 
-type Executor = typeof nonstreamingProviderExecute;
-
 // ─── Fixtures ────────────────────────────────────────────────────────────────
+
+/** The merged timeline's event row shape (SC-1) — the sidechat fixtures only
+ *  ever append event rows (message rows come from the message list). */
+type TimelineEvent = Extract<AgentThreadTimelineEntry, { rowType: "event" }>;
 
 function makeThread(): ExperienceCopilotThread {
 	return {
-		id: "thread_1",
+		id: brandId<ExperienceCopilotThreadId>("thread_1"),
 		scriptId: null,
 		draftSessionId: null,
 		// A chat-owned sidechat thread (SC-0a owner triple).
@@ -78,15 +91,17 @@ function makeThread(): ExperienceCopilotThread {
 
 function makeMessage(id: string, role: string, seq: number): ExperienceCopilotMessage {
 	return {
-		id,
-		threadId: "thread_1",
+		id: brandId<ExperienceCopilotMessageId>(id),
+		threadId: brandId<ExperienceCopilotThreadId>("thread_1"),
 		role,
 		content: `${role === "user" ? "Question" : "Answer"} ${id}`,
 		toolCallsJson: null,
 		toolCallId: null,
+		reasoning: null,
+		reasoningDurationMs: null,
 		seq,
 		createdAt: "2025-01-01T00:00:00.000Z",
-	} as ExperienceCopilotMessage;
+	};
 }
 
 /** A plain user/assistant alternation of `count` messages (ids m1..mN);
@@ -100,12 +115,12 @@ function makeTurnSequence(count: number): ExperienceCopilotMessage[] {
 /** One frozen `rp_sync` event row (SC-1 store shape) whose payload carries
  *  exactly one RP message with the given marker text — the rendered event
  *  then contains `<rp_message …>MARKER</rp_message>`. */
-function makeRpSyncEvent(id: string, seq: number, marker: string) {
+function makeRpSyncEvent(id: string, seq: number, marker: string): TimelineEvent {
 	return {
-		id,
-		threadId: "thread_1",
+		id: brandId<AgentThreadContextEventId>(id),
+		threadId: brandId<ExperienceCopilotThreadId>("thread_1"),
 		seq,
-		kind: "rp_sync" as const,
+		kind: "rp_sync",
 		payload: {
 			fromPosition: 0,
 			toPosition: 0,
@@ -114,35 +129,41 @@ function makeRpSyncEvent(id: string, seq: number, marker: string) {
 			],
 		},
 		createdAt: "2025-01-01T00:00:00.000Z",
-		rowType: "event" as const,
+		rowType: "event",
 	};
 }
 
 function makeStore(
 	thread: ExperienceCopilotThread,
 	initial: ExperienceCopilotMessage[],
-	events: Array<ReturnType<typeof makeRpSyncEvent>> = [],
+	events: TimelineEvent[] = [],
 ) {
 	const messages = [...initial];
 	const appended: ExperienceCopilotMessage[] = [];
-	const store = {
+	// The re-compaction pin swaps what listMessages returns WITHOUT touching the
+	// merged timeline (the span semantics are read off the timeline, so growing
+	// only the message list is the exercised behavior). The old fixture did this
+	// by cast-mutating the store's method; the typed knob makes the split
+	// explicit instead.
+	let listedOverride: ExperienceCopilotMessage[] | null = null;
+	const store = makeExperienceCopilotStore({
 		async getById() { return thread; },
-		async listMessages() { return [...messages]; },
+		async listMessages() { return [...(listedOverride ?? messages)]; },
 		async listTimeline() {
 			// The merged timeline (SC-1): message + event rows interleaved by
 			// seq ascending. Digest rows the service appends join as message
 			// rows exactly as the real store's listTimeline does.
-			const entries: Array<Record<string, unknown>> = [
-				...messages.map((m) => ({ rowType: "message", ...m })),
+			const entries: AgentThreadTimelineEntry[] = [
+				...messages.map((m): AgentThreadTimelineEntry => ({ rowType: "message", ...m })),
 				...events,
 			];
 			entries.sort((a, b) => {
-				const sa = (a.seq as number | null) ?? -Infinity;
-				const sb = (b.seq as number | null) ?? -Infinity;
+				const sa = a.seq ?? -Infinity;
+				const sb = b.seq ?? -Infinity;
 				if (sa !== sb) return sa - sb;
 				return String(a.id) < String(b.id) ? -1 : 1;
 			});
-			return entries as unknown as AgentThreadTimelineEntry[];
+			return entries;
 		},
 		async appendMessage(_threadId: string, input: { role: string; content?: string; toolCallId?: string | null }) {
 			const m = {
@@ -157,90 +178,50 @@ function makeStore(
 		async updateContextMetrics() {},
 		async getAutoCompact() { return thread.autoCompact; },
 		async setAutoCompact() {},
-	} as unknown as ExperienceCopilotStore;
-	return { store, appended };
+	}, "ExperienceCopilotStore (sidechat compaction)");
+	return { store, appended, setListedMessages(next: ExperienceCopilotMessage[]) { listedOverride = next; } };
 }
 
-/** Full provider profile (the real executor reads sampler fields) with
- *  `bindPerModel:false` so the summary-profile resolution stays on the
- *  identity path. */
-function makeProviderProfile(endpoint: string) {
-	return {
-		id: "prov_1",
-		name: "Test",
-		providerPreset: "openai",
-		coauthorTransport: "chatCompletions",
-		endpoint,
-		apiKey: "sk-test",
-		defaultModel: "model_1",
-		contextBudget: null,
-		pinContextBudget: false,
-		bindPerModel: false,
-		modelFreeOnly: false,
-		modelGroupByOwner: false,
-		maxTokens: 2000,
-		temperature: 0.3,
-		topP: 1,
-		topK: 0,
-		minP: 0,
-		topA: 0,
-		typicalP: 1,
-		tfsZ: 1,
-		repeatLastN: 0,
-		mirostat: 0,
-		mirostatTau: 5,
-		mirostatEta: 0.1,
-		dryMultiplier: 0,
-		dryBase: 1.75,
-		dryAllowedLength: 2,
-		drySequenceBreakers: null,
-		xtcThreshold: 0.1,
-		xtcProbability: 0,
-		frequencyPenalty: 0,
-		presencePenalty: 0,
-		repetitionPenalty: 1,
-		stopSequences: [],
-		logitBias: null,
-		seed: null,
-		reasoningEffort: "auto",
-		showReasoning: false,
-		streamResponse: true,
-		customSamplers: false,
-		proxyMode: "inherit",
-		proxyId: null,
-		isActive: true,
-		visionModel: null,
-		createdAt: "2025-01-01T00:00:00.000Z",
-		updatedAt: "2025-01-01T00:00:00.000Z",
-	};
+/** The provider-profiles double with the identity-resolution profile
+ *  (`bindPerModel:false` via the builder's defaults so the summary-profile
+ *  resolution stays on the identity path), pointed at `endpoint` — the real
+ *  executor in the adapter-level pin reads endpoint/apiKey/defaultModel and
+ *  the sampler fields. The row is built through the shared builder: complete
+ *  stored shape, real `chat_completions` transport (the old erased literal
+ *  carried the invalid "chatCompletions" spelling — the runtime never read it
+ *  on these paths, the type did). */
+function makeProviderProfiles(endpoint = "http://127.0.0.1:1/v1"): ProviderProfileService {
+	return makeProviderProfilesFixture({
+		getProviderProfile: async () =>
+			makeProviderProfileRow({
+				id: "prov_1",
+				name: "Test",
+				endpoint,
+				apiKey: "sk-test",
+				defaultModel: "model_1",
+			}),
+	});
 }
 
-function makeProviderProfiles(endpoint = "http://127.0.0.1:1/v1") {
-	const profile = makeProviderProfile(endpoint);
-	return {
-		getProviderProfile: async () => profile,
-		getProviderModelSettings: async () => null,
-	};
-}
-
-/** A capturing fake executor: records each call, answers with fixed text. */
+/** A capturing fake executor: records each call, answers with fixed text.
+ *  Typed to the REAL executor seam the service injects. */
 function makeExecutor(text = "sidechat digest summary") {
-	const calls: Array<Record<string, unknown>> = [];
-	const execute = async (input: Record<string, unknown>) => {
+	const calls: ProviderExecutionInput[] = [];
+	const execute = async (input: ProviderExecutionInput): Promise<GenerationResult> => {
 		calls.push(input);
-		return { text, providerResponse: {} };
+		return { text, providerResponse: { mode: "nonstream", steps: [] } };
 	};
-	return { calls, execute: execute as unknown as Executor };
+	return { calls, execute };
 }
 
 /** Every message of the summarizer payload as one string. */
-function transcriptOf(prompt: Record<string, unknown>): string {
+function transcriptOf(prompt: AssemblePromptResponse): string {
 	const payload = prompt.finalPayload as { messages: Array<{ content: string }> };
 	return payload.messages.map((m) => m.content).join("\n");
 }
 
 /** The system message of a captured summarizer call (the resolved prompt). */
-function systemMessageOf(prompt: Record<string, unknown>): string {
+function systemMessageOf(prompt: AssemblePromptResponse): string {
 	const payload = prompt.finalPayload as { messages: Array<{ content: string }> };
 	return payload.messages[0].content;
 }
@@ -274,12 +255,12 @@ describe("SidechatOocCompactionService - summarizer call", () => {
 	it("carries the sidechat digest prompt (not the script one) and the shared samplers", async () => {
 		const { store, appended } = makeStore(makeThread(), makeTurnSequence(20));
 		const executor = makeExecutor();
-		const service = new SidechatOocCompactionService(store, makeProviderProfiles() as unknown as ProviderProfileService, executor.execute);
+		const service = new SidechatOocCompactionService(store, makeProviderProfiles(), executor.execute);
 
 		await service.compact({ threadId: "thread_1" });
 
 		expect(executor.calls).toHaveLength(1);
-		const transcript = transcriptOf(executor.calls[0].prompt as Record<string, unknown>);
+		const transcript = transcriptOf(executor.calls[0].prompt);
 		expect(transcript).toContain(SIDECHAT_PROMPT_MARKER);
 		expect(transcript).not.toContain(SCRIPT_PROMPT_MARKER);
 		expect(executor.calls[0].overrideTemperature).toBe(COPILOT_COMPACT_TEMPERATURE);
@@ -293,25 +274,25 @@ describe("SidechatOocCompactionService - summarizer call", () => {
 	it("without a db handle the summarizer prompt is the bundled asset, byte-identical (SC-8a ladder)", async () => {
 		const { store } = makeStore(makeThread(), makeTurnSequence(20));
 		const executor = makeExecutor();
-		const service = new SidechatOocCompactionService(store, makeProviderProfiles() as unknown as ProviderProfileService, executor.execute);
+		const service = new SidechatOocCompactionService(store, makeProviderProfiles(), executor.execute);
 
 		await service.compact({ threadId: "thread_1" });
 
 		expect(getServicePromptAssetFile("sidechat_ooc_digest")).toBe("agent-sidechat/ooc-digest.md");
 		const asset = await loadPromptAsset(getServicePromptAssetFile("sidechat_ooc_digest"));
 		expect(asset.length).toBeGreaterThan(0);
-		expect(systemMessageOf(executor.calls[0].prompt as Record<string, unknown>)).toBe(asset);
+		expect(systemMessageOf(executor.calls[0].prompt)).toBe(asset);
 	});
 
 	it("an active-profile `sidechat_ooc_digest` override replaces the summarizer prompt (SC-8a ladder)", async () => {
 		const db = await setupDb({ sidechat_ooc_digest: "CUSTOM SIDECHAT DIGEST PROMPT" });
 		const { store } = makeStore(makeThread(), makeTurnSequence(20));
 		const executor = makeExecutor();
-		const service = new SidechatOocCompactionService(store, makeProviderProfiles() as unknown as ProviderProfileService, executor.execute, db);
+		const service = new SidechatOocCompactionService(store, makeProviderProfiles(), executor.execute, db);
 
 		await service.compact({ threadId: "thread_1" });
 
-		expect(systemMessageOf(executor.calls[0].prompt as Record<string, unknown>)).toBe("CUSTOM SIDECHAT DIGEST PROMPT");
+		expect(systemMessageOf(executor.calls[0].prompt)).toBe("CUSTOM SIDECHAT DIGEST PROMPT");
 	});
 });
 
@@ -325,7 +306,7 @@ describe("SidechatOocCompactionService - the keep boundary", () => {
 		// back to m13, a user row, so the pair is kept together.
 		const { store, appended } = makeStore(makeThread(), makeTurnSequence(21));
 		const executor = makeExecutor();
-		const service = new SidechatOocCompactionService(store, makeProviderProfiles() as unknown as ProviderProfileService, executor.execute);
+		const service = new SidechatOocCompactionService(store, makeProviderProfiles(), executor.execute);
 
 		await service.compact({ threadId: "thread_1" });
 
@@ -334,7 +315,7 @@ describe("SidechatOocCompactionService - the keep boundary", () => {
 		// The summarized prefix is a whole question/answer run: m1..m12
 		// (6 pairs, ending on m12's ANSWER), never m13's question without
 		// its answer.
-		const transcript = transcriptOf(executor.calls[0].prompt as Record<string, unknown>);
+		const transcript = transcriptOf(executor.calls[0].prompt);
 		expect(transcript).toContain("Question m11");
 		expect(transcript).toContain("Answer m12");
 		expect(transcript).not.toContain("Question m13");
@@ -356,11 +337,11 @@ describe("SidechatOocCompactionService - the transcript carries the span's RP ev
 		];
 		const { store } = makeStore(makeThread(), makeTurnSequence(20), events);
 		const executor = makeExecutor();
-		const service = new SidechatOocCompactionService(store, makeProviderProfiles() as unknown as ProviderProfileService, executor.execute);
+		const service = new SidechatOocCompactionService(store, makeProviderProfiles(), executor.execute);
 
 		await service.compact({ threadId: "thread_1" });
 
-		const transcript = transcriptOf(executor.calls[0].prompt as Record<string, unknown>);
+		const transcript = transcriptOf(executor.calls[0].prompt);
 		// The span's events ride as REFERENCE rows, marked and rendered as
 		// their frozen XML.
 		expect(transcript).toContain("[rp-reference] <rp_sync from=");
@@ -392,8 +373,8 @@ describe("SidechatOocCompactionService - the transcript carries the span's RP ev
 		const events = [
 			makeRpSyncEvent("evt_a", 5, "RP-EVENT-A-MARKER"),
 			{
-				id: "evt_profile",
-				threadId: "thread_1",
+				id: brandId<AgentThreadContextEventId>("evt_profile"),
+				threadId: brandId<ExperienceCopilotThreadId>("thread_1"),
 				seq: 100,
 				kind: "profile_changed" as const,
 				payload: {
@@ -406,11 +387,11 @@ describe("SidechatOocCompactionService - the transcript carries the span's RP ev
 		];
 		const { store } = makeStore(makeThread(), makeTurnSequence(20), events);
 		const executor = makeExecutor();
-		const service = new SidechatOocCompactionService(store, makeProviderProfiles() as unknown as ProviderProfileService, executor.execute);
+		const service = new SidechatOocCompactionService(store, makeProviderProfiles(), executor.execute);
 
 		await service.compact({ threadId: "thread_1" });
 
-		const transcript = transcriptOf(executor.calls[0].prompt as Record<string, unknown>);
+		const transcript = transcriptOf(executor.calls[0].prompt);
 		expect(transcript).toContain("RP-EVENT-A-MARKER");
 		expect(transcript).not.toContain("Sidechat Director");
 		expect(transcript).not.toContain("profile_changed");
@@ -421,31 +402,27 @@ describe("SidechatOocCompactionService - the transcript carries the span's RP ev
 		// [timeline start, m13). The re-compaction's span starts at its
 		// to-summarize head (the prior anchor) — evt_A is NOT repeated.
 		const events = [makeRpSyncEvent("evt_a", 5, "RP-EVENT-A-MARKER")];
-		const { store } = makeStore(makeThread(), makeTurnSequence(20), events);
+		const { store, setListedMessages } = makeStore(makeThread(), makeTurnSequence(20), events);
 		const executor = makeExecutor("first digest");
-		const service = new SidechatOocCompactionService(store, makeProviderProfiles() as unknown as ProviderProfileService, executor.execute);
+		const service = new SidechatOocCompactionService(store, makeProviderProfiles(), executor.execute);
 
 		await service.compact({ threadId: "thread_1" });
-		expect(transcriptOf(executor.calls[0].prompt as Record<string, unknown>)).toContain("RP-EVENT-A-MARKER");
+		expect(transcriptOf(executor.calls[0].prompt)).toContain("RP-EVENT-A-MARKER");
 
 		// Grow the thread past the keep window again, then re-compact: the
 		// prior digest's text rides the «Prior compacted context» section and
 		// evt_A (already folded as reference) is not re-fed.
-		const store2 = store as unknown as {
-			listMessages: () => Promise<ExperienceCopilotMessage[]>;
-		};
-		const grown = [...await store2.listMessages()];
+		const grown = [...await store.listMessages("thread_1")];
 		for (let i = 21; i <= 30; i++) {
 			grown.push(makeMessage(`m${i}`, i % 2 === 1 ? "user" : "assistant", i * 10));
 		}
-		(store as unknown as { listMessages: () => Promise<ExperienceCopilotMessage[]> }).listMessages =
-			async () => [...grown];
+		setListedMessages(grown);
 		const executor2 = makeExecutor("second digest");
-		const service2 = new SidechatOocCompactionService(store, makeProviderProfiles() as unknown as ProviderProfileService, executor2.execute);
+		const service2 = new SidechatOocCompactionService(store, makeProviderProfiles(), executor2.execute);
 
 		await service2.compact({ threadId: "thread_1" });
 
-		const transcript = transcriptOf(executor2.calls[0].prompt as Record<string, unknown>);
+		const transcript = transcriptOf(executor2.calls[0].prompt);
 		expect(transcript).toContain("first digest");
 		expect(transcript).toContain("# Prior compacted context");
 		expect(transcript).not.toContain("RP-EVENT-A-MARKER");
@@ -463,7 +440,7 @@ describe("SidechatOocCompactionService - auto-compaction rule (SC-8c)", () => {
 		// measures the discussion against the room it has and skips.
 		const { store } = makeStore(makeThread(), makeTurnSequence(20));
 		const executor = makeExecutor();
-		const service = new SidechatOocCompactionService(store, makeProviderProfiles() as unknown as ProviderProfileService, executor.execute);
+		const service = new SidechatOocCompactionService(store, makeProviderProfiles(), executor.execute);
 
 		await service.autoCompactAfterSidechatTurn("thread_1", { discussionTokens: 30, roomTokens: 100 });
 
@@ -473,7 +450,7 @@ describe("SidechatOocCompactionService - auto-compaction rule (SC-8c)", () => {
 	it("fires when the discussion reaches the shell's threshold of its room", async () => {
 		const { store, appended } = makeStore(makeThread(), makeTurnSequence(20));
 		const executor = makeExecutor();
-		const service = new SidechatOocCompactionService(store, makeProviderProfiles() as unknown as ProviderProfileService, executor.execute);
+		const service = new SidechatOocCompactionService(store, makeProviderProfiles(), executor.execute);
 
 		// Exactly AUTO_COMPACT_THRESHOLD × room (the shell's own number,
 		// imported — the test never re-declares 0.8 either): >= fires.
@@ -490,7 +467,7 @@ describe("SidechatOocCompactionService - auto-compaction rule (SC-8c)", () => {
 	it("skips when no room is left (static + RP layer fill the budget) — the every-turn paid-call loop", async () => {
 		const { store } = makeStore(makeThread(), makeTurnSequence(20));
 		const executor = makeExecutor();
-		const service = new SidechatOocCompactionService(store, makeProviderProfiles() as unknown as ProviderProfileService, executor.execute);
+		const service = new SidechatOocCompactionService(store, makeProviderProfiles(), executor.execute);
 
 		await service.autoCompactAfterSidechatTurn("thread_1", { discussionTokens: 50, roomTokens: 0 });
 		await service.autoCompactAfterSidechatTurn("thread_1", { discussionTokens: 50, roomTokens: -10 });
@@ -505,7 +482,7 @@ describe("SidechatOocCompactionService - auto-compaction rule (SC-8c)", () => {
 			thread.autoCompact = false;
 			const { store } = makeStore(thread, makeTurnSequence(20));
 			const executor = makeExecutor();
-			const service = new SidechatOocCompactionService(store, makeProviderProfiles() as unknown as ProviderProfileService, executor.execute);
+			const service = new SidechatOocCompactionService(store, makeProviderProfiles(), executor.execute);
 			await service.autoCompactAfterSidechatTurn("thread_1", { discussionTokens: 90, roomTokens: 100 });
 			expect(executor.calls).toHaveLength(0);
 		}
@@ -516,7 +493,7 @@ describe("SidechatOocCompactionService - auto-compaction rule (SC-8c)", () => {
 			thread.lastModel = null;
 			const { store } = makeStore(thread, makeTurnSequence(20));
 			const executor = makeExecutor();
-			const service = new SidechatOocCompactionService(store, makeProviderProfiles() as unknown as ProviderProfileService, executor.execute);
+			const service = new SidechatOocCompactionService(store, makeProviderProfiles(), executor.execute);
 			await service.autoCompactAfterSidechatTurn("thread_1", { discussionTokens: 90, roomTokens: 100 });
 			expect(executor.calls).toHaveLength(0);
 		}
@@ -555,9 +532,9 @@ describe("ExperienceCopilotAdapter.experienceCopilotCompact - a sidechat thread 
 		// Now the table carries the sidechat service and the manual «Сжать»
 		// works for the kind.
 		const { store } = makeStore(makeThread(), makeTurnSequence(20));
-		const stores = { experienceCopilot: store } as unknown as StoreContainer;
+		const stores = makeCopilotStores({ experienceCopilot: store });
 		const providerProfiles = makeProviderProfiles(`http://127.0.0.1:${providerServer.port}/v1`);
-		const adapter = new ExperienceCopilotAdapter(stores, providerProfiles as unknown as ProviderProfileService);
+		const adapter = new ExperienceCopilotAdapter(stores, providerProfiles);
 
 		const result = await adapter.experienceCopilotCompact("thread_1", {});
 
