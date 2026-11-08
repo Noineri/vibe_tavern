@@ -35,6 +35,7 @@
  * afterAll (the use-agent-controller.test.ts precedent).
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
+import { testFetch } from "@vibe-tavern/test-fetch";
 import type { ReactNode } from "react";
 import { createInstance } from "i18next";
 import { I18nextProvider } from "react-i18next";
@@ -386,7 +387,7 @@ function seedStores(presets: PromptPresetDto[] = []): void {
 
 beforeEach(() => {
   mobileOverride = false;
-  globalThis.fetch = fetchRouter as unknown as typeof fetch;
+  globalThis.fetch = testFetch(fetchRouter);
   useAgentTurnStore.setState({ turnsByThread: {}, todoByThread: {}, feedByThread: {} });
   useSnapshotStore.setState({ allCharacters: [] });
   useDirectorSwipeDraftStore.setState({ draftsByThread: {} });

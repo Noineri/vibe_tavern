@@ -9,6 +9,7 @@
  */
 
 import { afterAll, describe, expect, it } from "bun:test";
+import { testFetch } from "./test-fetch-seam.js";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -1878,7 +1879,7 @@ describe("comfyui registry registration", () => {
     const { createImageGenBackend } = await import("../src/domain/imagegen/imagegen-registry.js");
     const backend = createImageGenBackend(IMAGE_GEN_BACKENDS.ComfyUI, {
       endpoint: ENDPOINT,
-      fetch: (() => new Response()) as unknown as typeof fetch,
+      fetch: testFetch(() => new Response()),
     });
     expect(typeof backend.generate).toBe("function");
   });

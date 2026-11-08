@@ -24,6 +24,7 @@
  * and deck caches are module-global).
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { testFetch } from "@vibe-tavern/test-fetch";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 import type { AgentPlan } from "@vibe-tavern/api-contracts";
@@ -73,7 +74,7 @@ beforeEach(() => {
   plansByBranch.clear();
   decksByBranch.clear();
   useStoryCurtainTabStore.setState({ tabsByChat: {} });
-  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+  globalThis.fetch = testFetch(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const path = new URL(String(input), "http://gateway.test").pathname;
     const method = (init?.method ?? "GET").toUpperCase();
     if (/\/deck$/.test(path)) {
@@ -91,7 +92,7 @@ beforeEach(() => {
       });
     }
     return new Response(JSON.stringify({ error: { message: `unrouted ${method} ${path}` } }), { status: 404 });
-  }) as unknown as typeof fetch;
+  });
   mocks.callDirector.mockReset();
   mocks.callDirector.mockResolvedValue(undefined);
 });

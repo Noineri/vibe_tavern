@@ -25,6 +25,7 @@
  * Runner: bun:test with scoped happy-dom.
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { testFetch } from "@vibe-tavern/test-fetch";
 import type { ReactNode } from "react";
 import { createInstance } from "i18next";
 import { I18nextProvider } from "react-i18next";
@@ -225,7 +226,7 @@ function seedChat(chat: ActiveChat, branch: ActiveBranch): void {
 
 beforeEach(() => {
   mobileOverride = false;
-  globalThis.fetch = fetchRouter as unknown as typeof fetch;
+  globalThis.fetch = testFetch(fetchRouter);
   useAgentTurnStore.setState({ turnsByThread: {}, todoByThread: {} });
   useAgentReviewRoundStore.setState({ roundsByThread: {} });
   localStorage.clear();

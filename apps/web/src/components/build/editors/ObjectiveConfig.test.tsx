@@ -11,6 +11,7 @@
  * Runner: bun:test + happy-dom.
  */
 import { afterEach, afterAll, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { testFetch } from "@vibe-tavern/test-fetch";
 import { brandId, type ChatId } from "@vibe-tavern/domain";
 import { act } from "react";
 import { useDomEnv } from "../../../../test/dom-env.js";
@@ -462,7 +463,7 @@ beforeEach(() => {
   planGetUrls.length = 0;
   holdPlanGets = false;
   heldPlanGets.length = 0;
-  globalThis.fetch = (async (input: RequestInfo | URL): Promise<Response> => {
+  globalThis.fetch = testFetch(async (input: RequestInfo | URL): Promise<Response> => {
     const url = String(input);
     if (!url.includes("/plan")) {
       return new Response(JSON.stringify({}), { status: 200, headers: { "content-type": "application/json" } });
@@ -479,7 +480,7 @@ beforeEach(() => {
       JSON.stringify({ plan: plansByBranch.get(branchId) ?? planOf([]) }),
       { status: 200, headers: { "content-type": "application/json" } },
     );
-  }) as unknown as typeof fetch;
+  });
 });
 
 afterAll(() => {

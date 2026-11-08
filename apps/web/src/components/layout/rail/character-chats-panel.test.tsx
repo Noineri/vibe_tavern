@@ -24,6 +24,7 @@
  * happy-dom), so the nested ⋮ sheets are exercised as nested drawers.
  */
 import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { testFetch } from "@vibe-tavern/test-fetch";
 import { brandId, type ChatBranch, type ChatBranchId, type ChatId } from "@vibe-tavern/domain";
 import type { ChatListItem } from "@vibe-tavern/api-contracts";
 import type { CharacterControllerActions } from "../../../hooks/use-character-controller.js";
@@ -62,9 +63,9 @@ const { CharacterChatsSheet } = await import("./CharacterChatsSheet.js");
 const originalFetch = globalThis.fetch;
 
 function respondSummary(body: unknown): void {
-	globalThis.fetch = mock(async () =>
+	globalThis.fetch = testFetch(mock(async () =>
 		new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } }),
-	) as unknown as typeof fetch;
+	));
 }
 
 afterAll(() => {

@@ -1,4 +1,5 @@
 import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { testFetch } from "@vibe-tavern/test-fetch";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import type { AgentPlan } from "@vibe-tavern/api-contracts";
 import type { StoryClock } from "@vibe-tavern/domain";
@@ -57,7 +58,7 @@ beforeEach(() => {
   rejectPut = false;
   storyPlanOverride = null;
   fetchRouter.mockClear();
-  globalThis.fetch = fetchRouter as unknown as typeof fetch;
+  globalThis.fetch = testFetch(fetchRouter);
 });
 
 afterAll(() => {

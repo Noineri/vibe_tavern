@@ -1,4 +1,5 @@
 import { describe, expect, mock, test } from "bun:test";
+import { testFetch } from "@vibe-tavern/test-fetch";
 
 import {
   NARRATION_OGG_WASM_URL,
@@ -95,10 +96,10 @@ describe("narration OGG merge (TPE-18c)", () => {
 
   test("the module loads with zero fetches (wasm only moves on first real save)", async () => {
     const implementation = async (): Promise<Response> => new Response(new Uint8Array());
-    // Skill-api precedent: bun's Mock lacks fetch.preconnect — reattach it.
-    const fetchSpy = Object.assign(mock(implementation), { preconnect: globalThis.fetch.preconnect });
+    // preconnect rides on the seam double (bun's Mock lacks it — test-fetch-seam.ts).
+    const fetchSpy = mock(implementation);
     const originalFetch = globalThis.fetch;
-    globalThis.fetch = fetchSpy as unknown as typeof fetch;
+    globalThis.fetch = testFetch(fetchSpy);
     try {
       await encodeNarrationSegmentsToOgg([blobOf([9])], {
         decodeAudio: stubDecoder(),

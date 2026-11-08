@@ -1,4 +1,5 @@
 import { afterAll, beforeEach, describe, expect, it } from "bun:test";
+import { testFetch } from "@vibe-tavern/test-fetch";
 import { useDomEnv } from "../../test/dom-env.js";
 import type { AgentPlan } from "@vibe-tavern/api-contracts";
 
@@ -34,7 +35,7 @@ beforeEach(() => {
     }
     return response({ plan: PLAN });
   };
-  globalThis.fetch = fetchRouter as unknown as typeof fetch;
+  globalThis.fetch = testFetch(fetchRouter);
 });
 
 afterAll(() => {

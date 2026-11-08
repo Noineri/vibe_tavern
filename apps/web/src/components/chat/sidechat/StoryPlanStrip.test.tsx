@@ -31,6 +31,7 @@
  * the REAL timer, remembers the ~6 s callback, and fires it manually.
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { testFetch } from "@vibe-tavern/test-fetch";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 import type { AgentPlan, AgentPlanTask } from "@vibe-tavern/api-contracts";
@@ -142,7 +143,7 @@ const planGetUrls: string[] = [];
 beforeEach(() => {
   plansByBranch.clear();
   planGetUrls.length = 0;
-  globalThis.fetch = (async (input: RequestInfo | URL): Promise<Response> => {
+  globalThis.fetch = testFetch(async (input: RequestInfo | URL): Promise<Response> => {
     const url = String(input);
     if (url.includes("/plan")) {
       planGetUrls.push(url);
@@ -153,7 +154,7 @@ beforeEach(() => {
       });
     }
     return new Response(JSON.stringify({}), { status: 200, headers: { "content-type": "application/json" } });
-  }) as unknown as typeof fetch;
+  });
   mocks.checkObjectiveCompletionAction.mockReset();
   mocks.callDirector.mockReset();
   mocks.callDirector.mockResolvedValue(undefined);

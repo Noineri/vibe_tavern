@@ -6,8 +6,9 @@
  * these field names with no companion path array, so a regression here would
  * silently flatten or misname imported files.
  */
-import { afterEach, beforeAll, describe, expect, it, jest, mock, spyOn } from "bun:test";
+import { afterEach, beforeAll, describe, expect, it, jest, spyOn } from "bun:test";
 import type { SkillCatalog } from "@vibe-tavern/api-contracts";
+import { testFetch } from "@vibe-tavern/test-fetch";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 
 GlobalRegistrator.register();
@@ -41,9 +42,7 @@ type FetchImplementation = (
 ) => ReturnType<typeof fetch>;
 
 function mockFetch(implementation: FetchImplementation): typeof fetch {
-	return Object.assign(mock<FetchImplementation>(implementation), {
-		preconnect: globalThis.fetch.preconnect,
-	});
+	return testFetch(implementation);
 }
 
 afterEach(() => {
@@ -68,7 +67,7 @@ describe("importCoauthorSkills — folder upload preserves relative paths (CTX-S
 				status: 201,
 				headers: { "Content-Type": "application/json" },
 			});
-		}) as unknown as typeof fetch;
+		});
 
 		const result = await importCoauthorSkills(files);
 
@@ -97,7 +96,7 @@ describe("importCoauthorSkills — folder upload preserves relative paths (CTX-S
 				status: 201,
 				headers: { "Content-Type": "application/json" },
 			});
-		}) as unknown as typeof fetch;
+		});
 
 		await importCoauthorSkills([file]);
 		if (!captured) throw new Error("Expected multipart FormData body");
@@ -110,7 +109,7 @@ describe("importCoauthorSkills — folder upload preserves relative paths (CTX-S
 				status: 400,
 				headers: { "Content-Type": "application/json" },
 			}),
-		) as unknown as typeof fetch;
+		);
 
 		await expect(importCoauthorSkills([folderFile("bad/SKILL.md")])).rejects.toThrow(/No SKILL\.md found/);
 	});
@@ -123,7 +122,7 @@ describe("importCoauthorSkills — folder upload preserves relative paths (CTX-S
 				status: 201,
 				headers: { "Content-Type": "application/json" },
 			});
-		}) as unknown as typeof fetch;
+		});
 
 		await importCoauthorSkills([folderFile("x/SKILL.md")]);
 		expect(capturedUrl).toContain("/api/coauthor/skills/import");
@@ -151,7 +150,7 @@ describe("createCoauthorSkill / updateCoauthorSkill — save op (AP-23d)", () =>
 				status: 201,
 				headers: { "Content-Type": "application/json" },
 			});
-		}) as unknown as typeof fetch;
+		});
 
 		const saved = await createCoauthorSkill(INPUT);
 		expect(capturedUrl).toContain("/api/coauthor/skills");
@@ -170,7 +169,7 @@ describe("createCoauthorSkill / updateCoauthorSkill — save op (AP-23d)", () =>
 				status: 200,
 				headers: { "Content-Type": "application/json" },
 			});
-		}) as unknown as typeof fetch;
+		});
 
 		const saved = await updateCoauthorSkill("fresh-skill", INPUT);
 		expect(capturedUrl).toContain("/api/coauthor/skills/fresh-skill");
@@ -185,7 +184,7 @@ describe("createCoauthorSkill / updateCoauthorSkill — save op (AP-23d)", () =>
 				status: 409,
 				headers: { "Content-Type": "application/json" },
 			}),
-		) as unknown as typeof fetch;
+		);
 
 		await expect(updateCoauthorSkill("grill-me", INPUT)).rejects.toThrow(/read-only/);
 	});
@@ -210,7 +209,7 @@ describe("reorderCoauthorSkills client (ML-7)", () => {
 				status: 200,
 				headers: { "Content-Type": "application/json" },
 			});
-		}) as unknown as typeof fetch;
+		});
 
 		const catalog = await reorderCoauthorSkills([
 			{ id: "gamma", sortOrder: 0 },

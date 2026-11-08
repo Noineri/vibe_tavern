@@ -44,6 +44,7 @@
  * Runner: bun:test with scoped happy-dom (useDomEnv).
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { testFetch } from "@vibe-tavern/test-fetch";
 import { memo, type ReactNode } from "react";
 import type { ExperienceCopilotThreadWire } from "@vibe-tavern/api-contracts";
 import { useDomEnv } from "../../../../test/dom-env.js";
@@ -306,7 +307,7 @@ beforeAll(async () => {
 
 beforeEach(() => {
   mobileOverride = false;
-  globalThis.fetch = fetchRouter as unknown as typeof fetch;
+  globalThis.fetch = testFetch(fetchRouter);
   useAgentTurnStore.setState({ turnsByThread: {}, feedByThread: {}, todoByThread: {} });
   useAgentReviewRoundStore.setState({ roundsByThread: {} });
   useAgentPendingReviewStore.setState({ summariesByThread: {} });

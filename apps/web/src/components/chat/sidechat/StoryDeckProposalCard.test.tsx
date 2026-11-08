@@ -34,6 +34,7 @@
  * the deck cache entries disjoint.
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { testFetch } from "@vibe-tavern/test-fetch";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 import type { RecordProposal, StoryCard, StoryDeck } from "@vibe-tavern/api-contracts";
@@ -95,7 +96,7 @@ const originalFetch = globalThis.fetch;
 beforeEach(() => {
   decksByBranch.clear();
   deckGets.clear();
-  globalThis.fetch = (async (input: RequestInfo | URL): Promise<Response> => {
+  globalThis.fetch = testFetch(async (input: RequestInfo | URL): Promise<Response> => {
     const url = String(input);
     if (url.includes("/deck")) {
       const branchId = url.split("/branches/")[1]?.split("/")[0] ?? "";
@@ -106,7 +107,7 @@ beforeEach(() => {
       });
     }
     return new Response(JSON.stringify({}), { status: 200, headers: { "content-type": "application/json" } });
-  }) as unknown as typeof fetch;
+  });
   mocks.applyObjectiveProposal.mockReset();
   mocks.rejectObjectiveProposal.mockReset();
   mocks.toastError.mockReset();

@@ -37,6 +37,9 @@
       ],
       "@vibe-tavern/prompt-pipeline": [
         "../../packages/prompt-pipeline/src/index.ts"
+      ],
+      "@vibe-tavern/test-fetch": [
+        "../../services/api/test/test-fetch-seam.ts"
       ]
     }
   },

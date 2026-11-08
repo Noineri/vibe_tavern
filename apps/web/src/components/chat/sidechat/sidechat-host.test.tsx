@@ -30,6 +30,7 @@
  * Runner: bun:test with scoped happy-dom.
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { testFetch } from "@vibe-tavern/test-fetch";
 import type { ReactNode } from "react";
 import { agentFeedPageFromMessages } from "../../../../test/agent-feed-page.js";
 import { createInstance } from "i18next";
@@ -254,7 +255,7 @@ const CHAT_OWNER: AgentThreadOwner = { kind: "chat", chatId: "chat-1", branchId:
 
 beforeEach(() => {
   mobileOverride = false;
-  globalThis.fetch = fetchRouter as unknown as typeof fetch;
+  globalThis.fetch = testFetch(fetchRouter);
   useAgentTurnStore.setState({ turnsByThread: {}, todoByThread: {} });
   useAgentReviewRoundStore.setState({ roundsByThread: {} });
   useSnapshotStore.setState({ allCharacters: [] });

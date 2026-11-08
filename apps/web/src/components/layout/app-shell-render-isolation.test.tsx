@@ -41,6 +41,7 @@
  * Runner: bun:test with scoped happy-dom (useDomEnv).
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { testFetch } from "@vibe-tavern/test-fetch";
 import type { ReactNode } from "react";
 import { CHAT_MODE } from "@vibe-tavern/domain";
 import type {
@@ -244,7 +245,7 @@ beforeAll(async () => {
 
 beforeEach(() => {
   mobileOverride = false;
-  globalThis.fetch = fetchRouter as unknown as typeof fetch;
+  globalThis.fetch = testFetch(fetchRouter);
   useAgentTurnStore.setState({ turnsByThread: {}, todoByThread: {} });
   useAgentReviewRoundStore.setState({ roundsByThread: {} });
   localStorage.clear();

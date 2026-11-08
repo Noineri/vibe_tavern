@@ -13,6 +13,7 @@
  * in one `bun test` process.
  */
 import { beforeEach, describe, expect, it, mock } from "bun:test";
+import { testFetch } from "@vibe-tavern/test-fetch";
 import type { ExperienceCopilotContextMetrics } from "@vibe-tavern/api-contracts";
 import { useDomEnv } from "../../test/dom-env.js";
 
@@ -84,7 +85,7 @@ const fetchRouter = mock(async (input: RequestInfo | URL, init?: RequestInit): P
   return errorResponse({ status: 404, message: `unrouted ${method} ${path}` });
 });
 
-globalThis.fetch = fetchRouter as unknown as typeof fetch;
+globalThis.fetch = testFetch(fetchRouter);
 
 /** Router calls matching method + path pattern. */
 function apiCalls(method: "GET" | "PATCH" | "POST", pattern: RegExp) {

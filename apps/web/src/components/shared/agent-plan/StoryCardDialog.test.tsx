@@ -37,6 +37,7 @@
  * BOTH queries (useIsMobile's max-width + the flip's prefers-reduced-motion).
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { testFetch } from "@vibe-tavern/test-fetch";
 import { useState } from "react";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
@@ -102,7 +103,7 @@ let playCalls: Array<{ cardId: string; body: unknown }> = [];
 let playResponses: Array<{ status: number; body: unknown }> = [];
 
 function installFetch(): void {
-  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+  globalThis.fetch = testFetch(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const url = String(input);
     const method = (init?.method ?? "GET").toUpperCase();
     if (url.includes("/deck") && method === "GET") {
@@ -119,7 +120,7 @@ function installFetch(): void {
       return next !== undefined ? json(next.body, next.status) : json({ deck: EMPTY_DECK, event: {} }, 200);
     }
     return json({});
-  }) as unknown as typeof fetch;
+  });
 }
 
 beforeEach(() => {

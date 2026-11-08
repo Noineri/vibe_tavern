@@ -14,6 +14,7 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 
+import { testFetch } from "./test-fetch-seam.js";
 import { STT_BACKENDS } from "@vibe-tavern/domain";
 
 import {
@@ -41,7 +42,7 @@ const fetchMock = mock(() => Promise.resolve(jsonResponse(200, { text: "hi" })))
 
 beforeEach(() => {
   fetchMock.mockReset();
-  globalThis.fetch = fetchMock as unknown as typeof fetch;
+  globalThis.fetch = testFetch(fetchMock);
 });
 
 // Restore the REAL fetch after every test — this file shares one bun test
