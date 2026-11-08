@@ -1,25 +1,30 @@
 import { describe, expect, it } from "bun:test";
 import { createInsightsRoutes } from "../src/api/routes/insights.js";
-import type { InsightsRuntimeApi } from "../src/api/contract/runtime-api.js";
 import { defaultObjectiveState } from "@vibe-tavern/domain";
+import type { SceneBackfillStatus } from "@vibe-tavern/api-contracts";
+import {
+	makeConfigPatchResponse,
+	makeInsightsRuntime,
+	makeSceneTargetResponse,
+} from "./insights-test-builders.js";
 
 const SCENE_TARGET = { branchId: "branch_1", messageId: "msg_1", variantId: "var_1" };
 
-/** A runtime stub that records every Scene call it receives. */
+/** A runtime double that records every Scene call it receives. */
 function sceneRuntime(capture: { method: string; chatId?: string; body?: unknown; signal?: AbortSignal }[]) {
-	return {
+	return makeInsightsRuntime({
 		refreshInsightsCompletion: async () => ({ target: { chatId: "chat_1", ...SCENE_TARGET }, patch: { objectiveState: defaultObjectiveState() } }),
 		generateScene: async (chatId: string, body: unknown, signal?: AbortSignal) => {
 			capture.push({ method: "generateScene", chatId, body, signal });
-			return { target: { chatId, ...SCENE_TARGET }, message: { id: "msg_1" } };
+			return makeSceneTargetResponse(chatId);
 		},
 		editScene: async (chatId: string, body: unknown) => {
 			capture.push({ method: "editScene", chatId, body });
-			return { target: { chatId, ...SCENE_TARGET }, message: { id: "msg_1" } };
+			return makeSceneTargetResponse(chatId);
 		},
 		deleteScene: async (chatId: string, body: unknown) => {
 			capture.push({ method: "deleteScene", chatId, body });
-			return { target: { chatId, ...SCENE_TARGET }, message: { id: "msg_1" } };
+			return makeSceneTargetResponse(chatId);
 		},
 		cancelScene: (chatId: string, body: unknown) => {
 			capture.push({ method: "cancelScene", chatId, body });
@@ -33,7 +38,7 @@ function sceneRuntime(capture: { method: string; chatId?: string; body?: unknown
 			capture.push({ method: "previewScene", chatId, body, signal });
 			return { target: { chatId, ...SCENE_TARGET }, sceneState: { mood: "preview" } };
 		},
-	} as unknown as InsightsRuntimeApi;
+	});
 }
 
 describe("Insights completion-refresh route", () => {
@@ -44,12 +49,12 @@ describe("Insights completion-refresh route", () => {
       patch: { objectiveState: defaultObjectiveState() },
     };
     let received: { chatId: string; body: { target: typeof target }; signal?: AbortSignal } | undefined;
-    const runtime = {
+    const runtime = makeInsightsRuntime({
       refreshInsightsCompletion: async (chatId: string, body: { target: typeof target }, signal?: AbortSignal) => {
         received = { chatId, body, signal };
         return responseBody;
       },
-    } as unknown as InsightsRuntimeApi;
+    });
     const app = createInsightsRoutes(runtime);
     const controller = new AbortController();
 
@@ -68,9 +73,9 @@ describe("Insights completion-refresh route", () => {
   it("accepts an optional variantId on the completion-refresh target", async () => {
     const target = { branchId: "branch_1", messageId: "msg_1", variantId: "var_1" };
     let receivedBody: unknown;
-    const runtime = {
+    const runtime = makeInsightsRuntime({
       refreshInsightsCompletion: async (_chatId: string, body: unknown) => { receivedBody = body; return { target: { chatId: "chat_1", ...target }, patch: {} }; },
-    } as unknown as InsightsRuntimeApi;
+    });
     const app = createInsightsRoutes(runtime);
 
     const response = await app.request("/api/chats/chat_1/insights/completion-refresh", {
@@ -85,12 +90,12 @@ describe("Insights completion-refresh route", () => {
 
   it("rejects an empty target before calling the runtime", async () => {
     let calls = 0;
-    const runtime = {
+    const runtime = makeInsightsRuntime({
       refreshInsightsCompletion: async () => {
         calls += 1;
         throw new Error("runtime must not be called");
       },
-    } as unknown as InsightsRuntimeApi;
+    });
     const app = createInsightsRoutes(runtime);
 
     const response = await app.request("/api/chats/chat_1/insights/completion-refresh", {
@@ -107,15 +112,15 @@ describe("Insights completion-refresh route", () => {
 describe("Insights Objective goals routes (OGM)", () => {
   it("validates and forwards mode/long-term/short-term operations", async () => {
     const calls: Array<{ method: string; chatId: string; goalId?: string; body?: unknown }> = [];
-    const ok = async () => ({ activeChat: {} });
-    const runtime = {
+    const ok = async () => makeConfigPatchResponse();
+    const runtime = makeInsightsRuntime({
       setObjectiveMode: async (chatId: string, body: unknown) => { calls.push({ method: "mode", chatId, body }); return ok(); },
       updateObjectiveLongTermGoal: async (chatId: string, body: unknown) => { calls.push({ method: "long-term", chatId, body }); return ok(); },
       addObjectiveShortTermGoal: async (chatId: string, body: unknown) => { calls.push({ method: "short-add", chatId, body }); return ok(); },
       selectObjectiveShortTermGoal: async (chatId: string, body: unknown) => { calls.push({ method: "short-select", chatId, body }); return ok(); },
       updateObjectiveShortTermGoal: async (chatId: string, goalId: string, body: unknown) => { calls.push({ method: "short-update", chatId, goalId, body }); return ok(); },
       deleteObjectiveShortTermGoal: async (chatId: string, goalId: string) => { calls.push({ method: "short-delete", chatId, goalId }); return ok(); },
-    } as unknown as InsightsRuntimeApi;
+    });
     const app = createInsightsRoutes(runtime);
     const jsonHeaders = { "content-type": "application/json" };
 
@@ -141,11 +146,11 @@ describe("Insights Objective goals routes (OGM)", () => {
 
   it("rejects invalid goals-mode bodies before runtime", async () => {
     let calls = 0;
-    const runtime = {
-      setObjectiveMode: async () => { calls += 1; return { activeChat: {} }; },
-      updateObjectiveLongTermGoal: async () => { calls += 1; return { activeChat: {} }; },
-      selectObjectiveShortTermGoal: async () => { calls += 1; return { activeChat: {} }; },
-    } as unknown as InsightsRuntimeApi;
+    const runtime = makeInsightsRuntime({
+      setObjectiveMode: async () => { calls += 1; return makeConfigPatchResponse(); },
+      updateObjectiveLongTermGoal: async () => { calls += 1; return makeConfigPatchResponse(); },
+      selectObjectiveShortTermGoal: async () => { calls += 1; return makeConfigPatchResponse(); },
+    });
     const app = createInsightsRoutes(runtime);
     const headers = { "content-type": "application/json" };
     const responses = await Promise.all([
@@ -260,14 +265,17 @@ describe("Insights Scene routes (SCN-9)", () => {
 });
 
 describe("Insights Scene backfill routes (SCN-14)", () => {
-  /** A runtime stub whose backfill methods are individually overridable + recorded. */
+  /** A runtime double whose backfill methods are individually overridable + recorded. */
   function backfillRuntime(capture: { method: string; chatId?: string; arg?: unknown }[]) {
-    const status = { runId: "sbr_1", chatId: "chat_1", mode: "fill-missing", status: "completed", total: 2, processed: 2, current: null, errors: [], summary: { total: 2, succeeded: 2, skipped: 0, failed: 0 }, cancelRequested: false };
-    return {
+    const status: SceneBackfillStatus = { runId: "sbr_1", chatId: "chat_1", mode: "fill-missing", status: "completed", total: 2, processed: 2, current: null, errors: [], summary: { total: 2, succeeded: 2, skipped: 0, failed: 0 }, cancelRequested: false };
+    return makeInsightsRuntime({
       ...sceneRuntime([]),
       startSceneBackfill: async (chatId: string, mode: string) => {
         capture.push({ method: "startSceneBackfill", chatId, arg: mode });
-        return { ...status, status: "running", mode };
+        // The runtime contract carries the mode as a raw string
+        // (runtime-api.ts) while the stored status re-narrows it — the
+        // fixture passes the request string through verbatim.
+        return { ...status, status: "running", mode: mode as SceneBackfillStatus["mode"] };
       },
       getSceneBackfillStatus: async (chatId: string, runId: string) => {
         capture.push({ method: "getSceneBackfillStatus", chatId, arg: runId });
@@ -281,7 +289,7 @@ describe("Insights Scene backfill routes (SCN-14)", () => {
         capture.push({ method: "retrySceneBackfill", chatId, arg: runId });
         return { ...status, runId };
       },
-    } as unknown as InsightsRuntimeApi;
+    });
   }
 
   it("start forwards the mode (defaulting to fill-missing) and returns the status", async () => {

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SkillLibraryService } from "../src/domain/coauthor/skills/skill-library.js";
 import type {
-  ExperienceCopilotStore,
+  ExperienceCopilotMessage,
   ExperienceCopilotThread,
   ScriptRow,
   StoreContainer,
@@ -20,6 +20,7 @@ import {
 } from "../src/domain/agent/agent-kind-registry.js";
 import type { AgentKind } from "../src/domain/agent/agent-kind.js";
 import type { ProviderProfileService } from "../src/domain/providers/provider-profile-service.js";
+import { brandId, type ExperienceCopilotMessageId, type ExperienceCopilotThreadId } from "@vibe-tavern/domain";
 // Side-effect import: registers the `script` agent kind (AS-7) so the
 // prompt/dice resolution this suite pins holds regardless of which test file
 // the shared process loaded first.
@@ -28,6 +29,17 @@ import type {
   ExperienceCopilotRuntimeApi,
 } from "../src/api/contract/runtime-api.js";
 import { ExperienceCopilotRunAdapter } from "../src/api/adapters/experience-copilot-run-adapter.js";
+import {
+  makeAgentKind,
+  makeCharacterRow,
+  makeCopilotRuntime,
+  makeCopilotStores,
+  makeExperienceCopilotStore,
+  makePersonaRow,
+  makeProviderProfileRow,
+  makeScriptRow,
+} from "./copilot-test-builders.js";
+import { strictTestDouble } from "./strict-test-double.js";
 
 /**
  * AS-2c — kind resolution at the stream-turn start. The adapter resolves the
@@ -49,7 +61,7 @@ import { ExperienceCopilotRunAdapter } from "../src/api/adapters/experience-copi
 
 function makeThread(scriptId: string | null = "script_kr_1"): ExperienceCopilotThread {
   return {
-    id: "thread_kr_1",
+    id: brandId<ExperienceCopilotThreadId>("thread_kr_1"),
     scriptId,
     draftSessionId: null,
     // SC-0a chat-owner triple: null on script-owned/draft threads (this
@@ -70,42 +82,20 @@ function makeThread(scriptId: string | null = "script_kr_1"): ExperienceCopilotT
   };
 }
 
-function makeScriptRow(scriptKind: string, id = "script_kr_1"): ScriptRow {
-  return {
-    id,
-    name: "Kind resolution script",
-    description: "",
-    code: "",
-    enabled: true,
-    scriptKind,
-    origin: "in_app",
-    firstEnabledAt: null,
-    creationIntentId: null,
-    scopeType: "global",
-    sortOrder: 0,
-    characterId: null,
-    personaId: null,
-    chatId: null,
-    defaultVisualId: null,
-    copilotProfileId: null,
-    extensions: {},
-    createdAt: "2026-01-01T00:00:00.000Z",
-    updatedAt: "2026-01-01T00:00:00.000Z",
-  } as ScriptRow;
-}
-
 function makeAdapter(thread: ExperienceCopilotThread | null, script: ScriptRow | null) {
-  const store = {
+  const store = makeExperienceCopilotStore({
     async getById(threadId: string) {
       return thread && thread.id === threadId ? thread : null;
     },
-  } as unknown as ExperienceCopilotStore;
-  const scripts = {
-    async getById(scriptId: string) {
-      return script && script.id === scriptId ? script : null;
+  });
+  const stores = makeCopilotStores({
+    experienceCopilot: store,
+    scripts: {
+      async getById(scriptId: string) {
+        return script && script.id === scriptId ? script : null;
+      },
     },
-  };
-  const stores = { experienceCopilot: store, scripts } as unknown as StoreContainer;
+  });
   return new ExperienceCopilotAdapter(stores);
 }
 
@@ -180,31 +170,35 @@ describe("ExperienceCopilotAdapter.experienceCopilotStartNewSession auto-compact
   ) {
     const created: Array<{ scriptId: string; title?: string; autoCompact?: boolean }> = [];
     const kindReads: string[] = [];
-    const store = {
+    const store = makeExperienceCopilotStore({
       async startNewSession(scriptId: string, title?: string, autoCompact?: boolean) {
         created.push({ scriptId, title, autoCompact });
         return makeThread(scriptId);
       },
-    } as unknown as ExperienceCopilotStore;
-    const scripts = {
-      async getById(scriptId: string) {
-        return script && script.id === scriptId ? script : null;
-      },
-    };
-    const agentKindSettings = {
-      async get(kind: string) {
-        kindReads.push(kind);
-        return {
-          agentKind: kind,
-          providerProfileId: null,
-          modelName: null,
-          defaultProfileId: null,
-          autoCompactDefault: defaults[kind] ?? true,
-          updatedAt: null,
-        };
-      },
-    };
-    const adapter = new ExperienceCopilotAdapter({ experienceCopilot: store, scripts, agentKindSettings } as unknown as StoreContainer);
+    });
+    const adapter = new ExperienceCopilotAdapter(
+      makeCopilotStores({
+        experienceCopilot: store,
+        scripts: {
+          async getById(scriptId: string) {
+            return script && script.id === scriptId ? script : null;
+          },
+        },
+        agentKindSettings: {
+          async get(kind: string) {
+            kindReads.push(kind);
+            return {
+              agentKind: kind,
+              providerProfileId: null,
+              modelName: null,
+              defaultProfileId: null,
+              autoCompactDefault: defaults[kind] ?? true,
+              updatedAt: null,
+            };
+          },
+        },
+      }),
+    );
     return { adapter, created, kindReads };
   }
 
@@ -253,7 +247,7 @@ function makeRouteApp(throwFromAssert: Error | null) {
       yield { event: "finish", data: JSON.stringify({ finishReason: "stop" }) };
     };
   });
-  return createExperienceCopilotRoutes(runtime as unknown as ExperienceCopilotRuntimeApi);
+  return createExperienceCopilotRoutes(makeCopilotRuntime(runtime));
 }
 
 describe("POST /api/experience-copilot/:threadId/stream kind-resolution mapping (AS-2c)", () => {
@@ -321,62 +315,26 @@ afterAll(async () => {
 });
 
 function makeProviderRow() {
-  return {
+  // Built through the full-row builder (the old erasure-cast literal carried
+  // an invalid `coauthorTransport: "chatCompletions"` — the union's value is
+  // "chat_completions" — and missed every post-cast field the record grew).
+  return makeProviderProfileRow({
     id: "prov_1",
     name: "Test",
-    providerPreset: "openai",
-    coauthorTransport: "chatCompletions",
     endpoint: `http://127.0.0.1:${providerServer.port}/v1`,
     apiKey: "sk-test",
     defaultModel: "test-model",
-    contextBudget: null,
-    pinContextBudget: false,
-    bindPerModel: false,
-    modelFreeOnly: false,
-    modelGroupByOwner: false,
     maxTokens: 2000,
     temperature: 0.3,
-    topP: 1,
-    topK: 0,
-    minP: 0,
-    topA: 0,
-    typicalP: 1,
-    tfsZ: 1,
-    repeatLastN: 0,
-    mirostat: 0,
-    mirostatTau: 5,
-    mirostatEta: 0.1,
-    dryMultiplier: 0,
-    dryBase: 1.75,
-    dryAllowedLength: 2,
-    drySequenceBreakers: null,
-    xtcThreshold: 0.1,
-    xtcProbability: 0,
-    frequencyPenalty: 0,
-    presencePenalty: 0,
-    repetitionPenalty: 1,
-    stopSequences: [],
-    logitBias: null,
-    seed: null,
-    reasoningEffort: "auto",
-    showReasoning: false,
-    streamResponse: true,
-    customSamplers: false,
-    proxyMode: "inherit",
-    proxyId: null,
-    isActive: true,
-    visionModel: null,
-    createdAt: "2026-01-01T00:00:00.000Z",
-    updatedAt: "2026-01-01T00:00:00.000Z",
-  };
+  });
 }
 
 /** Adapter over a store container that supports a full stream turn for either
  *  kind (thread store with persistence + script row + provider row). */
 function makeStreamAdapter(thread: ExperienceCopilotThread, script: ScriptRow | null) {
-  const messages: Array<Record<string, unknown>> = [];
+  const messages: ExperienceCopilotMessage[] = [];
   let counter = 0;
-  const store = {
+  const store = makeExperienceCopilotStore({
     async getById(threadId: string) {
       return thread.id === threadId ? thread : null;
     },
@@ -385,12 +343,15 @@ function makeStreamAdapter(thread: ExperienceCopilotThread, script: ScriptRow | 
     },
     async appendMessage(_threadId: string, input: { role: string; content?: string; toolCallsJson?: string | null; toolCallId?: string | null }) {
       const msg = {
-        id: `msg_${counter++}`,
+        id: brandId<ExperienceCopilotMessageId>(`msg_${counter++}`),
         threadId: thread.id,
         role: input.role,
         content: input.content ?? "",
         toolCallsJson: input.toolCallsJson ?? null,
         toolCallId: input.toolCallId ?? null,
+        reasoning: null,
+        reasoningDurationMs: null,
+        seq: null,
         createdAt: new Date(Date.now() + counter * 1000).toISOString(),
       };
       messages.push(msg);
@@ -398,9 +359,9 @@ function makeStreamAdapter(thread: ExperienceCopilotThread, script: ScriptRow | 
     },
     async updateContextMetrics() {},
     async updateTodo() {},
-  } as unknown as ExperienceCopilotStore;
+  });
   const providerRow = makeProviderRow();
-  const stores = {
+  const stores = makeCopilotStores({
     experienceCopilot: store,
     agentPlans: { get: async () => null, save: async () => {} },
     // BR-2b: these dispatch-only provider replies contain no buffer proposals.
@@ -427,7 +388,7 @@ function makeStreamAdapter(thread: ExperienceCopilotThread, script: ScriptRow | 
     },
     copilotProfiles: { async getById() { return null; } },
     experienceResources: { async getVisualById() { return null; } },
-  } as unknown as StoreContainer;
+  });
   return new ExperienceCopilotAdapter(stores);
 }
 
@@ -491,19 +452,17 @@ describe("ExperienceCopilotAdapter.experienceCopilotStream - dispatch by resolve
 
 /** The fake-kind fixture the unwired-kind tests share (AS-8b-fix-A,
  *  AS-10h): a kind the registry serves for a script kind the adapter tables
- *  have no entry for — registered only inside a test's try/finally. */
+ *  have no entry for — registered only inside a test's try/finally. Built
+ *  through the full-descriptor builder (the old erasure cast hid that the
+ *  literal omitted `owner`/`inheritsLegacyCopilotPair`/`servesChatModes`/
+ *  `recencyAnchorText`/`renderContextPackage` entirely and passed a bare
+ *  `{}` as the `toolSetSchema`). */
 function makeUnwiredFakeKind(): AgentKind {
-  return {
-    id: "kr-fake-unwired",
+  return makeAgentKind("kr-fake-unwired", {
     servesScriptKinds: ["kr-fake-script-kind"],
     basePromptServiceKey: "kr_fake",
     skillRootId: "kr-fake",
-    toolSetSchema: {},
-    defaultToolSet: {},
-    // DR-1: the descriptor's built-in seed list (the cast hides the field
-    // from the compiler — registration refuses a kind without it).
-    builtinSeeds: [{ id: "builtin", name: "kr-fake-unwired" }],
-  } as unknown as AgentKind;
+  });
 }
 
 describe("ExperienceCopilotAdapter - a resolved kind without a stream-table entry (AS-8b-fix-A)", () => {
@@ -558,9 +517,9 @@ describe("ExperienceCopilotAdapter script stream - context cards and script-libr
       copilotSkillService?: SkillLibraryService;
     } = {},
   ) {
-    const messages: Array<Record<string, unknown>> = [];
+    const messages: ExperienceCopilotMessage[] = [];
     let counter = 0;
-    const store = {
+    const store = makeExperienceCopilotStore({
       async getById(threadId: string) {
         return thread.id === threadId ? thread : null;
       },
@@ -569,12 +528,15 @@ describe("ExperienceCopilotAdapter script stream - context cards and script-libr
       },
       async appendMessage(_threadId: string, input: { role: string; content?: string; toolCallsJson?: string | null; toolCallId?: string | null }) {
         const msg = {
-          id: `msg_${counter++}`,
+          id: brandId<ExperienceCopilotMessageId>(`msg_${counter++}`),
           threadId: thread.id,
           role: input.role,
           content: input.content ?? "",
           toolCallsJson: input.toolCallsJson ?? null,
           toolCallId: input.toolCallId ?? null,
+          reasoning: null,
+          reasoningDurationMs: null,
+          seq: null,
           createdAt: new Date(Date.now() + counter * 1000).toISOString(),
         };
         messages.push(msg);
@@ -582,9 +544,9 @@ describe("ExperienceCopilotAdapter script stream - context cards and script-libr
       },
       async updateContextMetrics() {},
       async updateTodo() {},
-    } as unknown as ExperienceCopilotStore;
+    });
     const providerRow = makeProviderRow();
-    const stores = {
+    const stores = makeCopilotStores({
       experienceCopilot: store,
       agentPlans: { get: async () => null, save: async () => {} },
       agentReviewRounds: {
@@ -604,7 +566,7 @@ describe("ExperienceCopilotAdapter script stream - context cards and script-libr
       },
       characters: {
         async getById(id: string) {
-          return id === "char_kr_9" ? { id, name: "Aria" } : null;
+          return id === "char_kr_9" ? makeCharacterRow(id, { name: "Aria" }) : null;
         },
         async getProfileMdText(id: string) {
           return `# Aria\n\nFULL-CARD-ARIA-MARKER for ${id}`;
@@ -613,7 +575,7 @@ describe("ExperienceCopilotAdapter script stream - context cards and script-libr
       personas: {
         async getById(id: string) {
           return id === "persona_kr_7"
-            ? { id, name: "Muse", description: "PERSONA-DESC-MUSE-MARKER" }
+            ? makePersonaRow(id, { name: "Muse", description: "PERSONA-DESC-MUSE-MARKER" })
             : null;
         },
       },
@@ -627,7 +589,7 @@ describe("ExperienceCopilotAdapter script stream - context cards and script-libr
       },
       copilotProfiles: { async getById() { return null; } },
       experienceResources: { async getVisualById() { return null; } },
-    } as unknown as StoreContainer;
+    });
     return new ExperienceCopilotAdapter(
       stores,
       undefined,
@@ -719,23 +681,31 @@ describe("ExperienceCopilotAdapter - a resolved kind without a compaction-table 
     // the 400 JSON shape (before AS-10h it was an unhandled 500).
     const unregister = registerAgentKind(makeUnwiredFakeKind());
     try {
-      const store = {
+      const store = makeExperienceCopilotStore({
         async getById(threadId: string) {
           return threadId === "thread_kr_1" ? makeThread() : null;
         },
-      } as unknown as ExperienceCopilotStore;
-      const stores = {
+      });
+      const stores = makeCopilotStores({
         experienceCopilot: store,
         scripts: {
           async getById(scriptId: string) {
             return scriptId === "script_kr_1" ? makeScriptRow("kr-fake-script-kind") : null;
           },
         },
-      } as unknown as StoreContainer;
+      });
       // A non-empty compaction table (the built-ins) the fake kind is not in;
-      // the empty object stands in for the provider profile service, which
-      // this path never reaches (the throw happens at the table lookup).
-      const adapter = new ExperienceCopilotAdapter(stores, {} as unknown as ProviderProfileService);
+      // the strict empty double stands in for the provider profile service,
+      // which this path never reaches (the throw happens at the table
+      // lookup) — and if that ever changes, the double throws on first
+      // access instead of handing the path a lying `{}`.
+      const adapter = new ExperienceCopilotAdapter(
+        stores,
+        strictTestDouble<ProviderProfileService>(
+          {},
+          "ProviderProfileService (compaction-table miss: this path must never reach it)",
+        ),
+      );
       const app = createExperienceCopilotRoutes(adapter);
       const res = await app.request("/api/experience-copilot/thread_kr_1/compact", {
         method: "POST",

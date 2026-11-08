@@ -1,13 +1,28 @@
 import { describe, expect, it } from "bun:test";
-import type { StoreContainer } from "@vibe-tavern/db";
-import type { ObjectiveState } from "@vibe-tavern/domain";
+import type { Message } from "@vibe-tavern/db";
+import type { ObjectiveState, SceneTrackerRecord } from "@vibe-tavern/domain";
+import type { PromptAssemblyContext } from "@vibe-tavern/prompt-pipeline";
 import { OBJECTIVE_MODE, OBJECTIVE_TASK_STATUS } from "@vibe-tavern/domain";
+import type { SceneBackfillStatus } from "@vibe-tavern/api-contracts";
 import { InsightsAdapter } from "../src/api/adapters/insights-adapter.js";
 import { countTokensDefault } from "../src/infrastructure/ai/tokenizer-service.js";
 import { defaultObjectiveState } from "@vibe-tavern/domain";
-import type { ObjectiveService } from "../src/domain/insights/objective-service.js";
 import type { SceneTrackerService, SceneTarget } from "../src/domain/insights/tracker-service.js";
 import type { SessionRuntime } from "../src/runtime/session/session-runtime.js";
+import {
+	makeChatBranchRow,
+	makeChatRow,
+	makeConfigPatchResponse,
+	makeInsightsStores,
+	makeMessageRow,
+	makeObjectiveService,
+	makePromptContext,
+	makeSceneTracker,
+	makeSceneTrackerRecord,
+	makeSessionRuntime,
+	makeVariantRow,
+} from "./insights-test-builders.js";
+import { makeProviderProfileRow } from "./copilot-test-builders.js";
 
 const COMPLETION_TARGET = { branchId: "branch_1", messageId: "msg_1" };
 const SCENE_TARGET = { branchId: "branch_1", messageId: "msg_1", variantId: "var_1" };
@@ -19,8 +34,8 @@ function deferred() {
 }
 
 /** A minimal assistant message + a single selected variant for DTO building. */
-const MESSAGE_ROW = { id: "msg_1", chatId: "chat_1", branchId: "branch_1", role: "assistant", authorType: "assistant", position: 0, content: "hello", state: null, createdAt: "t", updatedAt: "t" };
-const VARIANT_ROW = { id: "var_1", messageId: "msg_1", content: "hello", variantIndex: 0, isSelected: true, modelId: "m", sceneTracker: null, coauthorModuleId: null, coauthorSkillId: null };
+const MESSAGE_ROW = makeMessageRow({ id: "msg_1" });
+const VARIANT_ROW = makeVariantRow();
 
 type TrackerMock = Partial<SceneTrackerService>;
 
@@ -39,33 +54,40 @@ function noopTracker(overrides: TrackerMock = {}): TrackerMock {
 	} as TrackerMock;
 }
 
+/** The tracker double the adapter receives: the noop fixture wrapped in the
+ *  strict seam (replaces the old `noopTracker(...) as SceneTrackerService`
+ *  single-cast hand-offs). */
+function trackerDouble(overrides: TrackerMock = {}) {
+	return makeSceneTracker(noopTracker(overrides));
+}
+
 function completionAdapter(options?: {
 	state?: ObjectiveState;
-	messageAtRead?: (read: number) => object | null;
+	messageAtRead?: (read: number) => Message | null;
 	waitForForwardState?: (chatId: string, signal?: AbortSignal) => Promise<void>;
 	tracker?: TrackerMock;
 }) {
 	let messageReads = 0;
-	const stores = {
-		chats: { getById: async (chatId: string) => ({ id: chatId }) },
+	const stores = makeInsightsStores({
+		chats: { getById: async (chatId: string) => makeChatRow({ id: chatId }) },
 		messages: {
 			getMessageById: async () => {
 				messageReads += 1;
 				if (options?.messageAtRead) return options.messageAtRead(messageReads);
-				return {
+				return makeMessageRow({
 					id: COMPLETION_TARGET.messageId,
 					chatId: "chat_1",
 					branchId: COMPLETION_TARGET.branchId,
 					role: "assistant",
-				};
+				});
 			},
 		},
-	} as unknown as StoreContainer;
-	const objectiveService = {
+	});
+	const objectiveService = makeObjectiveService({
 		waitForForwardState: options?.waitForForwardState ?? (async () => undefined),
 		getState: async () => options?.state ?? defaultObjectiveState(),
-	} as unknown as ObjectiveService;
-	return new InsightsAdapter(stores, {} as SessionRuntime, objectiveService, (options?.tracker ?? noopTracker()) as SceneTrackerService);
+	});
+	return new InsightsAdapter(stores, {} as SessionRuntime, objectiveService, trackerDouble(options?.tracker));
 }
 
 describe("InsightsAdapter Objective context", () => {
@@ -73,30 +95,30 @@ describe("InsightsAdapter Objective context", () => {
 		const state: ObjectiveState = { ...defaultObjectiveState(), contextWindow: 4 };
 		let recentMessageLimit: number | undefined;
 		let receivedContext: unknown;
-		const context = { identity: { chatId: "chat_1" } };
+		const context: PromptAssemblyContext = makePromptContext({ identity: { chatId: "chat_1" } });
 
-		const stores = {
-			chats: { getById: async () => ({ id: "chat_1" }) },
-		} as unknown as StoreContainer;
-		const sessionRuntime = {
+		const stores = makeInsightsStores({
+			chats: { getById: async () => makeChatRow() },
+		});
+		const sessionRuntime = makeSessionRuntime({
 			chatLifecycle: {
 				buildPipelineContext: async (input: { recentMessageLimit?: number }) => {
 					recentMessageLimit = input.recentMessageLimit;
 					return { context };
 				},
 			},
-			buildConfigPatchResponse: async () => ({ activeChat: {} }),
-		} as unknown as SessionRuntime;
-		const objectiveService = {
+			buildConfigPatchResponse: async () => makeConfigPatchResponse(),
+		});
+		const objectiveService = makeObjectiveService({
 			getState: async () => state,
-			resolveInsightProvider: async () => ({ profile: {}, model: "test-model" }),
+			resolveInsightProvider: async () => ({ profile: makeProviderProfileRow({ defaultModel: "test-model" }), model: "test-model" }),
 			generateTasks: async (input: { context: unknown }) => {
 				receivedContext = input.context;
 				return state;
 			},
-		} as unknown as ObjectiveService;
+		});
 
-		const adapter = new InsightsAdapter(stores, sessionRuntime, objectiveService, noopTracker() as SceneTrackerService);
+		const adapter = new InsightsAdapter(stores, sessionRuntime, objectiveService, trackerDouble());
 		await adapter.generateObjectiveTasks("chat_1", {});
 
 		expect(recentMessageLimit).toBe(4);
@@ -108,22 +130,24 @@ describe("InsightsAdapter Objective goals operations (OGM)", () => {
   it("delegates mode/long-term/short-term mutations and refreshes activeChat", async () => {
     const calls: Array<{ method: string; args: unknown[] }> = [];
     const refreshes: Array<{ chatId: string; flags: unknown }> = [];
-    const stores = { chats: { getById: async () => ({ id: "chat_1" }) } } as unknown as StoreContainer;
-    const sessionRuntime = {
+    const stores = makeInsightsStores({
+      chats: { getById: async () => makeChatRow() },
+    });
+    const sessionRuntime = makeSessionRuntime({
       buildConfigPatchResponse: async (chatId: string, flags: unknown) => {
         refreshes.push({ chatId, flags });
-        return { activeChat: {} };
+        return makeConfigPatchResponse();
       },
-    } as unknown as SessionRuntime;
-    const objectiveService = {
-      setObjectiveMode: async (...args: unknown[]) => { calls.push({ method: "mode", args }); },
-      updateLongTermGoal: async (...args: unknown[]) => { calls.push({ method: "long-term", args }); },
-      addShortTermGoal: async (...args: unknown[]) => { calls.push({ method: "short-add", args }); },
-      updateShortTermGoal: async (...args: unknown[]) => { calls.push({ method: "short-update", args }); },
-      deleteShortTermGoal: async (...args: unknown[]) => { calls.push({ method: "short-delete", args }); },
-      selectShortTermGoal: async (...args: unknown[]) => { calls.push({ method: "short-select", args }); },
-    } as unknown as ObjectiveService;
-    const adapter = new InsightsAdapter(stores, sessionRuntime, objectiveService, noopTracker() as SceneTrackerService);
+    });
+    const objectiveService = makeObjectiveService({
+      setObjectiveMode: async (...args: unknown[]) => { calls.push({ method: "mode", args }); return defaultObjectiveState(); },
+      updateLongTermGoal: async (...args: unknown[]) => { calls.push({ method: "long-term", args }); return defaultObjectiveState(); },
+      addShortTermGoal: async (...args: unknown[]) => { calls.push({ method: "short-add", args }); return defaultObjectiveState(); },
+      updateShortTermGoal: async (...args: unknown[]) => { calls.push({ method: "short-update", args }); return defaultObjectiveState(); },
+      deleteShortTermGoal: async (...args: unknown[]) => { calls.push({ method: "short-delete", args }); return defaultObjectiveState(); },
+      selectShortTermGoal: async (...args: unknown[]) => { calls.push({ method: "short-select", args }); return defaultObjectiveState(); },
+    });
+    const adapter = new InsightsAdapter(stores, sessionRuntime, objectiveService, trackerDouble());
 
     await adapter.setObjectiveMode("chat_1", { mode: OBJECTIVE_MODE.goals });
     await adapter.updateObjectiveLongTermGoal("chat_1", { description: "Free the city", status: OBJECTIVE_TASK_STATUS.active });
@@ -160,15 +184,15 @@ describe("InsightsAdapter completion refresh", () => {
 		const gate = deferred();
 		const state = { ...defaultObjectiveState(), objectiveDescription: "Committed state" };
 		let stateReads = 0;
-		const stores = {
-			chats: { getById: async () => ({ id: "chat_1" }) },
-			messages: { getMessageById: async () => ({ ...COMPLETION_TARGET, chatId: "chat_1", role: "assistant" }) },
-		} as unknown as StoreContainer;
-		const service = {
+		const stores = makeInsightsStores({
+			chats: { getById: async () => makeChatRow() },
+			messages: { getMessageById: async () => makeMessageRow({ id: COMPLETION_TARGET.messageId, branchId: COMPLETION_TARGET.branchId, role: "assistant" }) },
+		});
+		const service = makeObjectiveService({
 			waitForForwardState: async () => gate.promise,
 			getState: async () => { stateReads += 1; return state; },
-		} as unknown as ObjectiveService;
-		const adapter = new InsightsAdapter(stores, {} as SessionRuntime, service, noopTracker() as SceneTrackerService);
+		});
+		const adapter = new InsightsAdapter(stores, {} as SessionRuntime, service, trackerDouble());
 
 		const refreshing = adapter.refreshInsightsCompletion("chat_1", { target: COMPLETION_TARGET });
 		await Promise.resolve();
@@ -225,7 +249,7 @@ describe("InsightsAdapter completion refresh", () => {
 	it("rejects a target owned by another chat before joining", async () => {
 		let waitCalls = 0;
 		const adapter = completionAdapter({
-			messageAtRead: () => ({ ...COMPLETION_TARGET, chatId: "chat_2", role: "assistant" }),
+			messageAtRead: () => makeMessageRow({ id: COMPLETION_TARGET.messageId, branchId: COMPLETION_TARGET.branchId, chatId: "chat_2", role: "assistant" }),
 			waitForForwardState: async () => { waitCalls += 1; },
 		});
 
@@ -237,7 +261,7 @@ describe("InsightsAdapter completion refresh", () => {
 		const gate = deferred();
 		const adapter = completionAdapter({
 			messageAtRead: (read) => read === 1
-				? { ...COMPLETION_TARGET, chatId: "chat_1", role: "assistant" }
+				? makeMessageRow({ id: COMPLETION_TARGET.messageId, branchId: COMPLETION_TARGET.branchId, chatId: "chat_1", role: "assistant" })
 				: null,
 			waitForForwardState: async () => gate.promise,
 		});
@@ -250,49 +274,51 @@ describe("InsightsAdapter completion refresh", () => {
 });
 
 describe("InsightsAdapter Scene manual routes (SCN-9)", () => {
-	function sceneAdapter(options?: {
-		generateForTarget?: (target: SceneTarget, signal?: AbortSignal) => Promise<unknown>;
-		previewForTarget?: (target: SceneTarget, config: unknown, signal?: AbortSignal) => Promise<unknown>;
-		editScene?: (target: SceneTarget, sceneState: Record<string, unknown>) => Promise<unknown>;
-		deleteScene?: (target: SceneTarget) => Promise<void>;
-		record?: object | null;
-		generating?: boolean;
-		/** The active branch's latest selected assistant variant; defaults to SCENE_TARGET
+function sceneAdapter(options?: {
+	generateForTarget?: (target: SceneTarget, signal?: AbortSignal) => Promise<SceneTrackerRecord>;
+	previewForTarget?: (target: SceneTarget, config: unknown, signal?: AbortSignal) => Promise<SceneTrackerRecord>;
+	editScene?: (target: SceneTarget, sceneState: Record<string, unknown>) => Promise<SceneTrackerRecord>;
+	deleteScene?: (target: SceneTarget) => Promise<void>;
+	cancelTarget?: (target: SceneTarget) => void;
+	record?: SceneTrackerRecord | null;
+	generating?: boolean;
+	/** The active branch's latest selected assistant variant; defaults to SCENE_TARGET
 	 *  (target is latest). Set to a newer message to exercise the retro-generation guard. */
-		latestTarget?: { messageId: string; variantId: string } | null;
-		activeBranchId?: string;
-	}) {
-		const tracker = noopTracker({
-			generateForTarget: options?.generateForTarget ?? (async () => ({})),
-			previewForTarget: options?.previewForTarget ?? (async () => ({})),
-			editScene: options?.editScene ?? (async () => ({})),
-			deleteScene: options?.deleteScene ?? (async () => undefined),
-			getRecord: async () => options?.record ?? null,
-			hasTargetJob: () => options?.generating ?? false,
-		});
+	latestTarget?: { messageId: string; variantId: string } | null;
+	activeBranchId?: string;
+}) {
+	const tracker = trackerDouble({
+		generateForTarget: options?.generateForTarget ?? (async () => makeSceneTrackerRecord()),
+		previewForTarget: options?.previewForTarget ?? (async () => makeSceneTrackerRecord()),
+		editScene: options?.editScene ?? (async () => makeSceneTrackerRecord()),
+		deleteScene: options?.deleteScene ?? (async () => undefined),
+		cancelTarget: options?.cancelTarget ?? (() => undefined),
+		getRecord: async () => options?.record ?? null,
+		hasTargetJob: () => options?.generating ?? false,
+	});
 		const latestTarget = options?.latestTarget === undefined ? { messageId: "msg_1", variantId: "var_1" } : options.latestTarget;
-		const stores = {
+		const stores = makeInsightsStores({
 			chats: {
-				getById: async (chatId: string) => ({ id: chatId }),
-				getActiveBranch: async () => ({ id: options?.activeBranchId ?? "branch_1" }),
+				getById: async (chatId: string) => makeChatRow({ id: chatId }),
+				getActiveBranch: async () => makeChatBranchRow({ id: options?.activeBranchId ?? "branch_1" }),
 			},
 			messages: {
 				getMessageById: async () => MESSAGE_ROW,
 				getVariants: async () => [VARIANT_ROW],
 				getLatestSelectedVariant: async () => latestTarget,
 			},
-		} as unknown as StoreContainer;
-		// The scene harness never touches the objective service — a typed empty
-		// stub (one never-cast fewer, a real cleanup: SC-11's new tests first
-		// pushed the count to 1246 mid-unit; the stub pays it back to 1244).
-		const unusedObjectiveService = {} as unknown as ObjectiveService;
-		return new InsightsAdapter(stores, {} as SessionRuntime, unusedObjectiveService, tracker as SceneTrackerService);
+		});
+		// The scene harness never touches the objective service — a strict
+		// empty double (throws loudly if a path ever reaches it; the erased
+		// `{}` would have exploded as a TypeError deep in the service).
+		const unusedObjectiveService = makeObjectiveService({});
+		return new InsightsAdapter(stores, {} as SessionRuntime, unusedObjectiveService, tracker);
 	}
 
 	it("generate resolves the target, generates, and returns the scoped message patch", async () => {
 		let received: SceneTarget | undefined;
 		const adapter = sceneAdapter({
-			generateForTarget: async (target) => { received = target; return { sceneState: { mood: "calm" } }; },
+			generateForTarget: async (target) => { received = target; return makeSceneTrackerRecord({ sceneState: { mood: "calm" } }); },
 		});
 		const response = await adapter.generateScene("chat_1", { target: SCENE_TARGET });
 		expect(received).toEqual({ chatId: "chat_1", branchId: "branch_1", messageId: "msg_1", variantId: "var_1" });
@@ -309,7 +335,7 @@ describe("InsightsAdapter Scene manual routes (SCN-9)", () => {
 	it("generate forwards the request signal to the service", async () => {
 		let receivedSignal: AbortSignal | undefined;
 		const adapter = sceneAdapter({
-			generateForTarget: async (_target, signal) => { receivedSignal = signal; return {}; },
+			generateForTarget: async (_target, signal) => { receivedSignal = signal; return makeSceneTrackerRecord(); },
 		});
 		const controller = new AbortController();
 		await adapter.generateScene("chat_1", { target: SCENE_TARGET }, controller.signal);
@@ -318,28 +344,28 @@ describe("InsightsAdapter Scene manual routes (SCN-9)", () => {
 
 	it("generate rejects a wrong-owner target before generating", async () => {
 		let generateCalls = 0;
-		const stores = {
-			chats: { getById: async (chatId: string) => ({ id: chatId }) },
+		const stores = makeInsightsStores({
+			chats: { getById: async (chatId: string) => makeChatRow({ id: chatId }) },
 			messages: {
-				getMessageById: async () => ({ ...MESSAGE_ROW, chatId: "chat_2" }),
+				getMessageById: async () => makeMessageRow({ id: "msg_1", chatId: "chat_2" }),
 				getVariants: async () => [VARIANT_ROW],
 			},
-		} as unknown as StoreContainer;
-		const adapter = new InsightsAdapter(stores, {} as SessionRuntime, {} as never, noopTracker({ generateForTarget: async () => { generateCalls += 1; return {}; } }) as SceneTrackerService);
+		});
+		const adapter = new InsightsAdapter(stores, {} as SessionRuntime, {} as never, trackerDouble({ generateForTarget: async () => { generateCalls += 1; return makeSceneTrackerRecord(); } }));
 		await expect(adapter.generateScene("chat_1", { target: SCENE_TARGET })).rejects.toThrow("does not belong");
 		expect(generateCalls).toBe(0);
 	});
 
 	it("generate rejects an unknown variant id before generating", async () => {
 		let generateCalls = 0;
-		const stores = {
-			chats: { getById: async (chatId: string) => ({ id: chatId }) },
+		const stores = makeInsightsStores({
+			chats: { getById: async (chatId: string) => makeChatRow({ id: chatId }) },
 			messages: {
 				getMessageById: async () => MESSAGE_ROW,
-				getVariants: async () => [{ ...VARIANT_ROW, id: "other_variant" }],
+				getVariants: async () => [makeVariantRow({ id: "other_variant" })],
 			},
-		} as unknown as StoreContainer;
-		const adapter = new InsightsAdapter(stores, {} as SessionRuntime, {} as never, noopTracker({ generateForTarget: async () => { generateCalls += 1; return {}; } }) as SceneTrackerService);
+		});
+		const adapter = new InsightsAdapter(stores, {} as SessionRuntime, {} as never, trackerDouble({ generateForTarget: async () => { generateCalls += 1; return makeSceneTrackerRecord(); } }));
 		await expect(adapter.generateScene("chat_1", { target: SCENE_TARGET })).rejects.toThrow("no longer available");
 		expect(generateCalls).toBe(0);
 	});
@@ -347,7 +373,7 @@ describe("InsightsAdapter Scene manual routes (SCN-9)", () => {
 	it("generate rejects a non-latest target — ordinary retro LLM generation is forbidden (step 3)", async () => {
 		let generateCalls = 0;
 		const adapter = sceneAdapter({
-			generateForTarget: async () => { generateCalls += 1; return {}; },
+			generateForTarget: async () => { generateCalls += 1; return makeSceneTrackerRecord(); },
 			latestTarget: { messageId: "msg_newer", variantId: "var_newer" }, // a newer assistant is now latest
 		});
 		await expect(adapter.generateScene("chat_1", { target: SCENE_TARGET })).rejects.toThrow("only available for the latest assistant message");
@@ -358,7 +384,7 @@ describe("InsightsAdapter Scene manual routes (SCN-9)", () => {
 		let editCalls = 0;
 		let deleteCalls = 0;
 		const adapter = sceneAdapter({
-			editScene: async () => { editCalls += 1; return {}; },
+			editScene: async () => { editCalls += 1; return makeSceneTrackerRecord(); },
 			deleteScene: async () => { deleteCalls += 1; },
 			latestTarget: { messageId: "msg_newer", variantId: "var_newer" }, // SCENE_TARGET is an older record
 		});
@@ -371,7 +397,7 @@ describe("InsightsAdapter Scene manual routes (SCN-9)", () => {
 	it("edit forwards the sceneState to the service and returns the message patch", async () => {
 		let received: { target: SceneTarget; sceneState: Record<string, unknown> } | undefined;
 		const adapter = sceneAdapter({
-			editScene: async (target, sceneState) => { received = { target, sceneState }; return {}; },
+			editScene: async (target, sceneState) => { received = { target, sceneState }; return makeSceneTrackerRecord(); },
 		});
 		const response = await adapter.editScene("chat_1", { target: SCENE_TARGET, sceneState: { mood: "tense" } });
 		expect(received?.sceneState).toEqual({ mood: "tense" });
@@ -390,16 +416,19 @@ describe("InsightsAdapter Scene manual routes (SCN-9)", () => {
 
 	it("cancel reaches the coordinator and never awaits (synchronous ack)", async () => {
 		let cancelled: SceneTarget | undefined;
-		const adapter = sceneAdapter();
-		// Replace the noop cancelTarget with a spy after construction.
-		(adapter as unknown as { trackerService: SceneTrackerService }).trackerService.cancelTarget = (target: SceneTarget) => { cancelled = target; };
+		// The cancel spy rides the tracker double itself — the same seam the
+		// adapter's cancelScene actually calls (the old probe reached through
+		// an erasure cast into the adapter's PRIVATE field to swap it).
+		const adapter = sceneAdapter({
+			cancelTarget: (target) => { cancelled = target; },
+		});
 		const result = adapter.cancelScene("chat_1", { target: SCENE_TARGET });
 		expect(result).toEqual({ target: { chatId: "chat_1", ...SCENE_TARGET }, cancelled: true });
 		expect(cancelled?.variantId).toBe("var_1");
 	});
 
 	it("status reflects the coordinator + the variant's current record", async () => {
-		const record = { variantId: "var_1", schemaHash: "h", configRevision: 0, sourceHash: "s", sceneState: { mood: "calm" }, modelId: "m", generatedAt: "t" };
+		const record = makeSceneTrackerRecord({ variantId: "var_1", schemaHash: "h", sourceHash: "s", sceneState: { mood: "calm" }, modelId: "m", generatedAt: "t" });
 		const adapter = sceneAdapter({ record, generating: true });
 		const response = await adapter.getSceneStatus("chat_1", { target: SCENE_TARGET });
 		expect(response.generating).toBe(true);
@@ -410,7 +439,7 @@ describe("InsightsAdapter Scene manual routes (SCN-9)", () => {
 		let received: { target: SceneTarget; config: unknown; signal?: AbortSignal } | undefined;
 		const draftConfig = { schema: {}, autoMode: "assistant", contextWindow: 6, continuityLastN: 3, injectLastN: 1, injectionDepth: 1, promptFormat: "json", useChatModel: true, generatePrompt: "", injectPrompt: "", providerProfileId: null, model: null, revision: 0, schemaHash: "h" };
 		const adapter = sceneAdapter({
-			previewForTarget: async (target, config, signal) => { received = { target, config, signal }; return { sceneState: { mood: "preview" } }; },
+			previewForTarget: async (target, config, signal) => { received = { target, config, signal }; return makeSceneTrackerRecord({ sceneState: { mood: "preview" } }); },
 		});
 		const controller = new AbortController();
 		const response = await adapter.previewScene("chat_1", { target: SCENE_TARGET, config: draftConfig as never }, controller.signal);
@@ -423,14 +452,14 @@ describe("InsightsAdapter Scene manual routes (SCN-9)", () => {
 
 	it("preview rejects a wrong-owner target before calling the service", async () => {
 		let previewCalls = 0;
-		const stores = {
-			chats: { getById: async (chatId: string) => ({ id: chatId }) },
+		const stores = makeInsightsStores({
+			chats: { getById: async (chatId: string) => makeChatRow({ id: chatId }) },
 			messages: {
-				getMessageById: async () => ({ ...MESSAGE_ROW, chatId: "chat_2" }),
+				getMessageById: async () => makeMessageRow({ id: "msg_1", chatId: "chat_2" }),
 				getVariants: async () => [VARIANT_ROW],
 			},
-		} as unknown as StoreContainer;
-		const adapter = new InsightsAdapter(stores, {} as SessionRuntime, {} as never, noopTracker({ previewForTarget: async () => { previewCalls += 1; return {}; } }) as SceneTrackerService);
+		});
+		const adapter = new InsightsAdapter(stores, {} as SessionRuntime, {} as never, trackerDouble({ previewForTarget: async () => { previewCalls += 1; return makeSceneTrackerRecord(); } }));
 		await expect(adapter.previewScene("chat_1", { target: SCENE_TARGET, config: {} as never })).rejects.toThrow("does not belong");
 		expect(previewCalls).toBe(0);
 	});
@@ -442,20 +471,20 @@ describe("InsightsAdapter variant-aware completion refresh (SCN-9)", () => {
 		const entered = deferred();
 		let sceneWaitTarget: SceneTarget | undefined;
 		let objWaitCalled = false;
-		const objectiveService = {
+		const objectiveService = makeObjectiveService({
 			waitForForwardState: async () => { objWaitCalled = true; },
 			getState: async () => defaultObjectiveState(),
-		} as unknown as ObjectiveService;
-		const tracker = noopTracker({
+		});
+		const tracker = trackerDouble({
 			waitForTarget: async (target: SceneTarget) => { sceneWaitTarget = target; entered.resolve(); await gate.promise; },
-		}) as SceneTrackerService;
-		const stores = {
-			chats: { getById: async (chatId: string) => ({ id: chatId }) },
+		});
+		const stores = makeInsightsStores({
+			chats: { getById: async (chatId: string) => makeChatRow({ id: chatId }) },
 			messages: {
 				getMessageById: async () => MESSAGE_ROW,
 				getVariants: async () => [VARIANT_ROW],
 			},
-		} as unknown as StoreContainer;
+		});
 		const adapter = new InsightsAdapter(stores, {} as SessionRuntime, objectiveService, tracker);
 
 		const refreshing = adapter.refreshInsightsCompletion("chat_1", { target: SCENE_TARGET });
@@ -470,17 +499,17 @@ describe("InsightsAdapter variant-aware completion refresh (SCN-9)", () => {
 	});
 
 	it("swallows a non-abort Scene wait failure and still returns Objective state", async () => {
-		const objectiveService = {
+		const objectiveService = makeObjectiveService({
 			waitForForwardState: async () => undefined,
 			getState: async () => ({ ...defaultObjectiveState(), objectiveDescription: "survives" }),
-		} as unknown as ObjectiveService;
-		const tracker = noopTracker({
+		});
+		const tracker = trackerDouble({
 			waitForTarget: async () => { throw new Error("scene boom"); }, // non-abort
-		}) as SceneTrackerService;
-		const stores = {
-			chats: { getById: async (chatId: string) => ({ id: chatId }) },
+		});
+		const stores = makeInsightsStores({
+			chats: { getById: async (chatId: string) => makeChatRow({ id: chatId }) },
 			messages: { getMessageById: async () => MESSAGE_ROW, getVariants: async () => [VARIANT_ROW] },
-		} as unknown as StoreContainer;
+		});
 		const adapter = new InsightsAdapter(stores, {} as SessionRuntime, objectiveService, tracker);
 
 		const response = await adapter.refreshInsightsCompletion("chat_1", { target: SCENE_TARGET });
@@ -489,45 +518,47 @@ describe("InsightsAdapter variant-aware completion refresh (SCN-9)", () => {
 	});
 
 	it("rejects a variant that no longer belongs to the target message", async () => {
-		const tracker = noopTracker({ waitForTarget: async () => undefined }) as SceneTrackerService;
-		const stores = {
-			chats: { getById: async (chatId: string) => ({ id: chatId }) },
+		const tracker = trackerDouble({ waitForTarget: async () => undefined });
+		const stores = makeInsightsStores({
+			chats: { getById: async (chatId: string) => makeChatRow({ id: chatId }) },
 			messages: {
 				getMessageById: async () => MESSAGE_ROW,
-				getVariants: async () => [{ ...VARIANT_ROW, id: "gone" }], // variantId not found
+				getVariants: async () => [makeVariantRow({ id: "gone" })], // variantId not found
 			},
-		} as unknown as StoreContainer;
+		});
 		const adapter = new InsightsAdapter(stores, {} as SessionRuntime, {} as never, tracker);
 		await expect(adapter.refreshInsightsCompletion("chat_1", { target: SCENE_TARGET })).rejects.toThrow("no longer available");
 	});
 });
 
 describe("InsightsAdapter Scene backfill routes (SCN-14)", () => {
-	/** A tracker mock whose backfill methods record their calls. */
+	/** A tracker double whose backfill methods record their calls. */
 	function backfillTracker(capture: { method: string; chatId?: string; arg?: unknown }[]) {
-		const status = { runId: "sbr_1", chatId: "chat_1", mode: "fill-missing", status: "running", total: 3, processed: 1, current: { messageId: "msg_1", variantId: "var_1" }, errors: [], summary: null, cancelRequested: false };
-		return noopTracker({
-			startBackfill: async (chatId: unknown, mode: unknown) => {
-				capture.push({ method: "startBackfill", chatId: chatId as string, arg: mode });
-				return { ...status, mode: mode as string };
+		const status: SceneBackfillStatus = { runId: "sbr_1", chatId: "chat_1", mode: "fill-missing", status: "running", total: 3, processed: 1, current: { messageId: "msg_1", variantId: "var_1" }, errors: [], summary: null, cancelRequested: false };
+		return trackerDouble({
+			startBackfill: async (chatId, mode) => {
+				capture.push({ method: "startBackfill", chatId, arg: mode });
+				return { ...status, mode };
 			},
-			getBackfillStatus: async (chatId: unknown, runId: unknown) => {
-				capture.push({ method: "getBackfillStatus", chatId: chatId as string, arg: runId });
-				return { ...status, runId: runId as string };
+			getBackfillStatus: async (chatId, runId) => {
+				capture.push({ method: "getBackfillStatus", chatId, arg: runId });
+				return { ...status, runId };
 			},
-			cancelBackfill: async (chatId: unknown, runId: unknown) => {
-				capture.push({ method: "cancelBackfill", chatId: chatId as string, arg: runId });
-				return { ...status, runId: runId as string, cancelRequested: true };
+			cancelBackfill: async (chatId, runId) => {
+				capture.push({ method: "cancelBackfill", chatId, arg: runId });
+				return { ...status, runId, cancelRequested: true };
 			},
-			retryBackfill: async (chatId: unknown, runId: unknown) => {
-				capture.push({ method: "retryBackfill", chatId: chatId as string, arg: runId });
-				return { ...status, runId: runId as string };
+			retryBackfill: async (chatId, runId) => {
+				capture.push({ method: "retryBackfill", chatId, arg: runId });
+				return { ...status, runId };
 			},
-		} as TrackerMock) as SceneTrackerService;
+		});
 	}
 
 	function adapter(capture: { method: string; chatId?: string; arg?: unknown }[]) {
-		const stores = { chats: { getById: async (chatId: string) => ({ id: chatId }) } } as unknown as StoreContainer;
+		const stores = makeInsightsStores({
+			chats: { getById: async (chatId: string) => makeChatRow({ id: chatId }) },
+		});
 		return new InsightsAdapter(stores, {} as SessionRuntime, {} as never, backfillTracker(capture));
 	}
 

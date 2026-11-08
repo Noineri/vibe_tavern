@@ -5,6 +5,8 @@ import {
   type ExperienceCopilotRunTestDigest,
 } from "../src/domain/interactive/copilot/experience-copilot-tools.js";
 import type { ExperienceCopilotTodoResult } from "../src/domain/interactive/copilot/copilot-todo-tool.js";
+import type { AgentBufferToolOutput } from "../src/domain/agent/agent-buffer-tools.js";
+import { copilotToolInputSchema } from "./copilot-test-builders.js";
 
 /**
  * Experience-Copilot tools propose rules/visual edits and run read-only tests;
@@ -177,14 +179,6 @@ const VERBOSE_BLOB = "0123456789abcdefghij".repeat(125);
 
 /** Shared tool-execution context stub (the tools ignore it). */
 const ctx = { messages: [], toolCallId: "t", abort: () => {} } as never;
-
-/** Minimal view of a built tool exposing its zod input schema for direct
- *  validation assertions — the AI SDK validates `inputSchema` at tool-call time
- *  and `execute` receives already-validated args, so cap/status/enum/recommended
- *  rejections are asserted against the schema, not through execute. */
-interface ToolSchemaProbe {
-  inputSchema: { safeParse(value: unknown): { success: boolean } };
-}
 
 describe("experience-copilot-tools: write_buffer (rules)", () => {
   test("valid rules → returns { target, proposed, summary } and advances the working buffer", async () => {
@@ -558,11 +552,11 @@ describe("experience-copilot-tools: plan/read_plan", () => {
   });
 
   test("plan input schema is an OBJECT root `{plan}`", () => {
-    const tools = buildExperienceCopilotTools() as unknown as { plan: ToolSchemaProbe };
+    const planSchema = copilotToolInputSchema(buildExperienceCopilotTools(), "plan");
     const plan = { goal: "x", constraints: [], tasks: [] };
-    expect(tools.plan.inputSchema.safeParse(plan).success).toBe(false);
-    expect(tools.plan.inputSchema.safeParse({}).success).toBe(false);
-    expect(tools.plan.inputSchema.safeParse({ plan }).success).toBe(true);
+    expect(planSchema.safeParse(plan).success).toBe(false);
+    expect(planSchema.safeParse({}).success).toBe(false);
+    expect(planSchema.safeParse({ plan }).success).toBe(true);
   });
 });
 
@@ -618,11 +612,12 @@ describe("experience-copilot-tools: todo (full-list rewrite + saveTodo, restored
   });
 
   test("input schema rejects a list over the 30-item cap", () => {
-    const tools = buildExperienceCopilotTools({ saveTodo: async () => {} }) as unknown as {
-      todo: ToolSchemaProbe;
-    };
+    const todoSchema = copilotToolInputSchema(
+      buildExperienceCopilotTools({ saveTodo: async () => {} }),
+      "todo",
+    );
     const items = Array.from({ length: 31 }, (_, i) => ({ title: `step ${i}`, status: "pending" }));
-    expect(tools.todo.inputSchema.safeParse({ items }).success).toBe(false);
+    expect(todoSchema.safeParse({ items }).success).toBe(false);
   });
 
   test("input schema is an OBJECT root `{items}` — bare arrays and `{}` are rejected (2026-08-21 incident pin)", () => {
@@ -630,31 +625,28 @@ describe("experience-copilot-tools: todo (full-list rewrite + saveTodo, restored
     // row — tool-calling arguments are JSON objects, so every call failed
     // "expected array, received object" and the turn died. The object root is
     // the model-friendly contract; the pin guards against re-flattening it.
-    const tools = buildExperienceCopilotTools({ saveTodo: async () => {} }) as unknown as {
-      todo: ToolSchemaProbe;
-    };
-    expect(tools.todo.inputSchema.safeParse([{ title: "a", status: "pending" }]).success).toBe(false);
-    expect(tools.todo.inputSchema.safeParse({}).success).toBe(false);
-    expect(tools.todo.inputSchema.safeParse({ items: [] }).success).toBe(true);
-    expect(
-      tools.todo.inputSchema.safeParse({ items: [{ title: "a", status: "active" }] }).success,
-    ).toBe(true);
+    const todoSchema = copilotToolInputSchema(
+      buildExperienceCopilotTools({ saveTodo: async () => {} }),
+      "todo",
+    );
+    expect(todoSchema.safeParse([{ title: "a", status: "pending" }]).success).toBe(false);
+    expect(todoSchema.safeParse({}).success).toBe(false);
+    expect(todoSchema.safeParse({ items: [] }).success).toBe(true);
+    expect(todoSchema.safeParse({ items: [{ title: "a", status: "active" }] }).success).toBe(true);
   });
 
   test("input schema rejects an invalid status", () => {
-    const tools = buildExperienceCopilotTools({ saveTodo: async () => {} }) as unknown as {
-      todo: ToolSchemaProbe;
-    };
-    expect(tools.todo.inputSchema.safeParse({ items: [{ title: "a", status: "in-progress" }] }).success).toBe(false);
+    const todoSchema = copilotToolInputSchema(
+      buildExperienceCopilotTools({ saveTodo: async () => {} }),
+      "todo",
+    );
+    expect(todoSchema.safeParse({ items: [{ title: "a", status: "in-progress" }] }).success).toBe(false);
   });
 
   test("PM-7: the todo description carries the todo-vs-plan choice guidance", () => {
     // Owner ruling 2026-10-11: todo and plan coexist; the CHOICE guidance
     // lives in the tool descriptions (prompt bytes stay untouched).
-    const tools = buildExperienceCopilotTools({ saveTodo: async () => {} }) as unknown as {
-      todo: { description?: string };
-      plan: { description?: string };
-    };
+    const tools = buildExperienceCopilotTools({ saveTodo: async () => {} });
     expect(tools.todo.description).toContain("CURRENT session");
     expect(tools.todo.description).toContain("`plan` tool");
     expect(tools.plan.description).toContain("serious multi-step work");
@@ -685,21 +677,21 @@ describe("experience-copilot-tools: ask_user (awaiting marker)", () => {
   });
 
   test("input schema rejects recommended not in options", () => {
-    const tools = buildExperienceCopilotTools() as unknown as { ask_user: ToolSchemaProbe };
+    const askUserSchema = copilotToolInputSchema(buildExperienceCopilotTools(), "ask_user");
     expect(
-      tools.ask_user.inputSchema.safeParse({ question: "q", options: ["A", "B"], recommended: "C" }).success,
+      askUserSchema.safeParse({ question: "q", options: ["A", "B"], recommended: "C" }).success,
     ).toBe(false);
   });
 
   test("input schema rejects recommended without options", () => {
-    const tools = buildExperienceCopilotTools() as unknown as { ask_user: ToolSchemaProbe };
-    expect(tools.ask_user.inputSchema.safeParse({ question: "q", recommended: "A" }).success).toBe(false);
+    const askUserSchema = copilotToolInputSchema(buildExperienceCopilotTools(), "ask_user");
+    expect(askUserSchema.safeParse({ question: "q", recommended: "A" }).success).toBe(false);
   });
 
   test("input schema rejects more than 6 options", () => {
-    const tools = buildExperienceCopilotTools() as unknown as { ask_user: ToolSchemaProbe };
+    const askUserSchema = copilotToolInputSchema(buildExperienceCopilotTools(), "ask_user");
     expect(
-      tools.ask_user.inputSchema.safeParse({
+      askUserSchema.safeParse({
         question: "q",
         options: ["1", "2", "3", "4", "5", "6", "7"],
       }).success,
@@ -709,10 +701,7 @@ describe("experience-copilot-tools: ask_user (awaiting marker)", () => {
 
 describe("experience-copilot-tools: todo/plan/read_plan/ask_user gating", () => {
   test("absent/disabled toolSet drops todo, plan, read_plan, and ask_user", () => {
-    const tools = buildExperienceCopilotTools({ toolSet: { run_test: true } }) as unknown as Record<
-      string,
-      unknown
-    >;
+    const tools = buildExperienceCopilotTools({ toolSet: { run_test: true } });
     expect(tools.todo).toBeUndefined();
     expect(tools.plan).toBeUndefined();
     expect(tools.read_plan).toBeUndefined();
@@ -722,7 +711,7 @@ describe("experience-copilot-tools: todo/plan/read_plan/ask_user gating", () => 
   test("enabled toolSet includes todo, plan, read_plan, and ask_user, keeps read_skill_file", () => {
     const tools = buildExperienceCopilotTools({
       toolSet: { todo: true, plan: true, read_plan: true, ask_user: true },
-    }) as unknown as Record<string, unknown>;
+    });
     expect(tools.todo).toBeDefined();
     expect(tools.plan).toBeDefined();
     expect(tools.read_plan).toBeDefined();
@@ -734,7 +723,7 @@ describe("experience-copilot-tools: todo/plan/read_plan/ask_user gating", () => 
 
 describe("experience-copilot-tools: ToolSet shape + gating", () => {
   test("all ten tools are present by default", () => {
-    const tools = buildExperienceCopilotTools() as unknown as Record<string, unknown>;
+    const tools = buildExperienceCopilotTools();
     expect(tools.write_buffer).toBeDefined();
     expect(tools.edit_buffer).toBeDefined();
     expect(tools.run_test).toBeDefined();
@@ -754,7 +743,7 @@ describe("experience-copilot-tools: ToolSet shape + gating", () => {
   test("toolSet gating drops a disabled tool but keeps read_skill_file", () => {
     const tools = buildExperienceCopilotTools({
       toolSet: { write_buffer: true, run_test: false },
-    }) as unknown as Record<string, unknown>;
+    });
     expect(tools.write_buffer).toBeDefined();
     expect(tools.run_test).toBeUndefined();
     expect(tools.edit_buffer).toBeUndefined();
@@ -764,7 +753,7 @@ describe("experience-copilot-tools: ToolSet shape + gating", () => {
   test("toolSet gating filters the authoring/diagnostic tools independently", () => {
     const tools = buildExperienceCopilotTools({
       toolSet: { run_test: true, run_simulate: true },
-    }) as unknown as Record<string, unknown>;
+    });
     expect(tools.run_test).toBeDefined();
     expect(tools.run_simulate).toBeDefined();
     expect(tools.write_buffer).toBeUndefined();
@@ -786,11 +775,7 @@ describe("experience-copilot-tools: SS-4B trust gate (rulesTrusted: false)", () 
     // VALID rules prove non-execution: a real run would return ok:true; the
     // refusal fires before the sandbox is ever touched.
     const tools = buildExperienceCopilotTools({ rules: VALID_RULES, rulesTrusted: false });
-    const digest = (await tools.run_test.execute({}, ctx)) as unknown as {
-      ok: boolean;
-      errorCode?: string;
-      errorMessage?: string;
-    };
+    const digest = (await tools.run_test.execute({}, ctx)) as ExperienceCopilotRunTestDigest;
     expect(digest.ok).toBe(false);
     expect(digest.errorCode).toBe("script_not_trusted");
     expect(digest.errorMessage).toContain("imported and never enabled");
@@ -799,11 +784,7 @@ describe("experience-copilot-tools: SS-4B trust gate (rulesTrusted: false)", () 
 
   test("run_simulate refuses an untrusted script with the same structured digest", async () => {
     const tools = buildExperienceCopilotTools({ rules: VALID_RULES, rulesTrusted: false });
-    const digest = (await tools.run_simulate.execute({}, ctx)) as unknown as {
-      ok: boolean;
-      errorCode?: string;
-      errorMessage?: string;
-    };
+    const digest = (await tools.run_simulate.execute({}, ctx)) as ExperienceCopilotRunSimulateDigest;
     expect(digest.ok).toBe(false);
     expect(digest.errorCode).toBe("script_not_trusted");
     expect(digest.errorMessage).toContain("imported and never enabled");
@@ -816,7 +797,7 @@ describe("experience-copilot-tools: SS-4B trust gate (rulesTrusted: false)", () 
     const out = (await tools.write_buffer.execute(
       { target: "rules", content: SYNTAX_ERROR_RULES, summary: "draft" },
       ctx,
-    )) as unknown as { target: string; proposed: string; notValidated?: string };
+    )) as AgentBufferToolOutput;
     expect(out.target).toBe("rules");
     expect(out.proposed).toBe(SYNTAX_ERROR_RULES);
     expect(out.notValidated).toBe("not validated: script is imported and not yet enabled");
@@ -831,13 +812,13 @@ describe("experience-copilot-tools: SS-4B trust gate (rulesTrusted: false)", () 
         summary: "break",
       },
       ctx,
-    )) as unknown as { notValidated?: string };
+    )) as AgentBufferToolOutput;
     expect(out.notValidated).toBe("not validated: script is imported and not yet enabled");
     // The working buffer advanced (no validation throw, no rollback).
     const after = (await tools.edit_buffer.execute(
       { target: "rules", edits: [{ search: " !!broken", replace: "" }], summary: "fix" },
       ctx,
-    )) as unknown as { proposed: string; notValidated?: string };
+    )) as AgentBufferToolOutput;
     expect(after.proposed).toContain("context.experience.register({");
     expect(after.notValidated).toBe("not validated: script is imported and not yet enabled");
   });
@@ -847,7 +828,7 @@ describe("experience-copilot-tools: SS-4B trust gate (rulesTrusted: false)", () 
     const out = (await tools.write_buffer.execute(
       { target: "visual", content: "<div>x</div>", summary: "v" },
       ctx,
-    )) as unknown as { target: string; proposed: string; notValidated?: string };
+    )) as AgentBufferToolOutput;
     expect(out.target).toBe("visual");
     expect(out.proposed).toBe("<div>x</div>");
     expect(out.notValidated).toBeUndefined();
@@ -857,10 +838,7 @@ describe("experience-copilot-tools: SS-4B trust gate (rulesTrusted: false)", () 
 describe("experience-copilot-tools: SS-4B trusted parity (after first enable)", () => {
   test("rulesTrusted: true — run_test executes, rules proposals validate and carry NO marker", async () => {
     const tools = buildExperienceCopilotTools({ rules: VALID_RULES, rulesTrusted: true });
-    const digest = (await tools.run_test.execute({}, ctx)) as unknown as {
-      ok: boolean;
-      legalActionTypes?: string[];
-    };
+    const digest = (await tools.run_test.execute({}, ctx)) as ExperienceCopilotRunTestDigest;
     expect(digest.ok).toBe(true);
     expect(digest.legalActionTypes).toEqual(["increment", "reset"]);
 
@@ -871,7 +849,7 @@ describe("experience-copilot-tools: SS-4B trusted parity (after first enable)", 
     const out = (await tools.write_buffer.execute(
       { target: "rules", content: VALID_RULES, summary: "ok" },
       ctx,
-    )) as unknown as { notValidated?: string };
+    )) as AgentBufferToolOutput;
     expect(out.notValidated).toBeUndefined();
   });
 });
@@ -907,13 +885,9 @@ describe("experience-copilot-tools: buffer-tool description pin (AS-2c)", () => 
     expect(tools.write_buffer.description).toBe(WRITE_BUFFER_DESCRIPTION);
     expect(tools.edit_buffer.description).toBe(EDIT_BUFFER_DESCRIPTION);
 
-    // The zod target-enum describe texts, via a minimal shape probe.
-    const writeSchema = tools.write_buffer.inputSchema as unknown as {
-      shape: { target: { description: string } };
-    };
-    const editSchema = tools.edit_buffer.inputSchema as unknown as {
-      shape: { target: { description: string } };
-    };
+    // The zod target-enum describe texts, through the derived schema probe.
+    const writeSchema = copilotToolInputSchema(tools, "write_buffer");
+    const editSchema = copilotToolInputSchema(tools, "edit_buffer");
     expect(writeSchema.shape.target.description).toBe(WRITE_TARGET_DESCRIBE);
     expect(editSchema.shape.target.description).toBe(EDIT_TARGET_DESCRIBE);
   });

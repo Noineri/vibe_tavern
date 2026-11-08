@@ -22,9 +22,18 @@ import type {
   ExperienceCopilotMessage,
   CopilotContextMetrics,
 } from "@vibe-tavern/db";
-import { ProviderExecutionError } from "../src/infrastructure/ai/provider-execution-types.js";
-import type { ProviderProfileService } from "../src/domain/providers/provider-profile-service.js";
-import type { nonstreamingProviderExecute } from "../src/infrastructure/ai/nonstreaming-provider-executor.js";
+import {
+  brandId,
+  PROVIDER_TYPE,
+  type ExperienceCopilotMessageId,
+  type ExperienceCopilotThreadId,
+  type AssemblePromptResponse,
+} from "@vibe-tavern/domain";
+import {
+  ProviderExecutionError,
+  type GenerationResult,
+  type ProviderExecutionInput,
+} from "../src/infrastructure/ai/provider-execution-types.js";
 import { ExperienceCopilotCompactionService } from "../src/domain/interactive/copilot/experience-copilot-compaction.js";
 import { getServicePromptAssetFile } from "../src/domain/service-prompts/service-prompt-registry.js";
 import { loadPromptAsset } from "../src/shared/prompt-asset-loader.js";
@@ -32,14 +41,27 @@ import {
   COPILOT_COMPACT_MAX_OUTPUT_TOKENS,
   COPILOT_COMPACT_TEMPERATURE,
 } from "../src/domain/interactive/copilot/copilot-limits.js";
+import {
+  makeExperienceCopilotStore,
+  makeProviderProfileRow,
+  makeProviderProfilesFixture,
+} from "./copilot-test-builders.js";
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
 function makeThread(overrides: Partial<ExperienceCopilotThread> = {}): ExperienceCopilotThread {
   return {
-    id: "thread_1",
+    id: brandId<ExperienceCopilotThreadId>("thread_1"),
     scriptId: "script_1",
     draftSessionId: null,
+    // SC-0a chat-owner triple: null on script-owned threads (this suite's
+    // thread is script-owned). These five were simply absent from the old
+    // erasure-cast literal — the DK-9 hiding the row was incomplete.
+    chatId: null,
+    branchId: null,
+    agentKind: null,
+    contextLinks: [],
+    todo: [],
     title: "Draft",
     archivedAt: null,
     contextMetrics: makeMetrics(),
@@ -62,18 +84,22 @@ function makeMetrics(overrides: Partial<CopilotContextMetrics> = {}): CopilotCon
     reserveTokens: 1000,
     source: "estimate",
     measuredAt: "2025-01-01T00:00:00.000Z",
+    attachedTokens: 0,
     ...overrides,
   };
 }
 
 function makeMessage(id: string, role: string, overrides: Partial<ExperienceCopilotMessage> = {}): ExperienceCopilotMessage {
   return {
-    id,
-    threadId: "thread_1",
+    id: brandId<ExperienceCopilotMessageId>(id),
+    threadId: brandId<ExperienceCopilotThreadId>("thread_1"),
     role,
     content: `${role} ${id}`,
     toolCallsJson: null,
     toolCallId: null,
+    reasoning: null,
+    reasoningDurationMs: null,
+    seq: null,
     createdAt: "2025-01-01T00:00:00.000Z",
     ...overrides,
   };
@@ -104,7 +130,7 @@ function makeStore(initialMessages: ExperienceCopilotMessage[], threadOverrides:
   const metricsCalls: Array<{ threadId: string; metrics: CopilotContextMetrics; providerProfileId: string; model: string }> = [];
   const thread = makeThread(threadOverrides);
 
-  const store = {
+  const store = makeExperienceCopilotStore({
     async getById() {
       return thread;
     },
@@ -126,30 +152,19 @@ function makeStore(initialMessages: ExperienceCopilotMessage[], threadOverrides:
     async getAutoCompact() {
       return thread.autoCompact;
     },
-    async setAutoCompact(enabled: boolean) {
+    async setAutoCompact(_threadId: string, enabled: boolean) {
       thread.autoCompact = enabled;
     },
-  } as unknown as ExperienceCopilotStore;
+  }, "ExperienceCopilotStore (compaction)");
 
   return { store, messages, appended, metricsCalls, thread };
 }
 
-/** Minimal provider profile — `bindPerModel:false` keeps `resolveEffectiveSummaryProfile`
- *  on the identity path so the overlay lookup is never consulted. */
+/** The compaction suite's provider-profiles double — `bindPerModel:false` and
+ *  a null overlay lookup keep `resolveEffectiveSummaryProfile` on the identity
+ *  path so the overlay is never consulted. */
 function makeProviderProfiles() {
-  const profile = {
-    id: "prov_1",
-    name: "Test",
-    providerPreset: "openai",
-    endpoint: "http://localhost",
-    apiKey: "sk-test",
-    defaultModel: "model_1",
-    bindPerModel: false,
-  };
-  return {
-    getProviderProfile: async () => profile,
-    getProviderModelSettings: async () => null,
-  };
+  return makeProviderProfilesFixture();
 }
 
 type ExecuteResult = { text: string } | Error;
@@ -158,17 +173,13 @@ function makeExecutor(initial: ExecuteResult = { text: "summary" }) {
   let result: ExecuteResult = initial;
   const calls: Array<{
     model: string;
-    prompt: Record<string, unknown>;
-    input: Record<string, unknown>;
+    prompt: AssemblePromptResponse;
+    input: ProviderExecutionInput;
   }> = [];
-  const execute = async (input: Record<string, unknown>) => {
-    calls.push({
-      model: input.model as string,
-      prompt: input.prompt as Record<string, unknown>,
-      input,
-    });
+  const execute = async (input: ProviderExecutionInput): Promise<GenerationResult> => {
+    calls.push({ model: input.model, prompt: input.prompt, input });
     if (result instanceof Error) throw result;
-    return { text: result.text, providerResponse: {} };
+    return { text: result.text, providerResponse: { mode: "nonstream", steps: [] } };
   };
   return {
     execute,
@@ -188,13 +199,13 @@ async function until(cond: () => boolean, timeoutMs = 2000): Promise<void> {
   }
 }
 
-function transcriptOf(call: { prompt: Record<string, unknown> }): string {
+function transcriptOf(call: { prompt: AssemblePromptResponse }): string {
   const payload = call.prompt.finalPayload as { messages: Array<{ content: string }> };
   return payload.messages.map((m) => m.content).join("\n");
 }
 
 /** The system message of a captured summarizer call (the resolved prompt). */
-function systemMessageOf(call: { prompt: Record<string, unknown> }): string {
+function systemMessageOf(call: { prompt: AssemblePromptResponse }): string {
   const payload = call.prompt.finalPayload as { messages: Array<{ content: string }> };
   return payload.messages[0].content;
 }
@@ -354,7 +365,7 @@ describe("ExperienceCopilotCompactionService — manual compact (CM-5)", () => {
   it("propagates a provider error unchanged (global handler maps it to 502)", async () => {
     const { store } = makeStore(makeTurnSequence(20));
     const executor = makeExecutor(
-      new ProviderExecutionError("upstream 502", "server_error", "openai", { statusCode: 502 }),
+      new ProviderExecutionError("upstream 502", "server_error", PROVIDER_TYPE.openaiCompat, { statusCode: 502 }),
     );
     const service = new ExperienceCopilotCompactionService(
       store,
@@ -376,18 +387,16 @@ describe("ExperienceCopilotCompactionService — manual compact (CM-5)", () => {
     // endpoint included) runs compaction without rejection — the endpoint
     // answers for itself if it actually wants credentials. The pre-gate and
     // its loopback exemption were removed 2026-09-27.
-    const profiles = makeProviderProfiles();
-    const profile = {
+    const profile = makeProviderProfileRow({
       id: "prov_local",
       name: "Local gateway",
-      providerPreset: "openai",
       endpoint: "http://127.0.0.1:8090/v1/",
       apiKey: "",
       defaultModel: "model_1",
-      bindPerModel: false,
-    };
-    (profiles as { profile: unknown }).profile = profile;
-    profiles.getProviderProfile = async () => profile;
+    });
+    const profiles = makeProviderProfilesFixture({
+      getProviderProfile: async () => profile,
+    });
 
     const { store, appended } = makeStore(makeTurnSequence(20));
     const executor = makeExecutor({ text: "summary via gateway" });
@@ -608,7 +617,7 @@ describe("ExperienceCopilotCompactionService — service-prompt resolver (SC-8a)
     // the loaded asset exactly (no trim, no trailing delta).
     const { store } = makeStore(makeTurnSequence(20));
     const executor = makeExecutor({ text: "summary" });
-    const service = new ExperienceCopilotCompactionService(store, makeProviderProfiles() as unknown as ProviderProfileService, executor.execute as unknown as typeof nonstreamingProviderExecute);
+    const service = new ExperienceCopilotCompactionService(store, makeProviderProfiles(), executor.execute);
 
     await service.compact({ threadId: "thread_1" });
 
@@ -625,8 +634,8 @@ describe("ExperienceCopilotCompactionService — service-prompt resolver (SC-8a)
     const executor = makeExecutor({ text: "summary" });
     const service = new ExperienceCopilotCompactionService(
       store,
-      makeProviderProfiles() as unknown as ProviderProfileService,
-      executor.execute as unknown as typeof nonstreamingProviderExecute,
+      makeProviderProfiles(),
+      executor.execute,
       db,
     );
 
@@ -643,8 +652,8 @@ describe("ExperienceCopilotCompactionService — service-prompt resolver (SC-8a)
     const executor = makeExecutor({ text: "summary" });
     const service = new ExperienceCopilotCompactionService(
       store,
-      makeProviderProfiles() as unknown as ProviderProfileService,
-      executor.execute as unknown as typeof nonstreamingProviderExecute,
+      makeProviderProfiles(),
+      executor.execute,
       db,
     );
 
