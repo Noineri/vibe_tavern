@@ -9,7 +9,7 @@ import {
 	type DirectorSwipePermissionMarker,
 } from "@vibe-tavern/api-contracts";
 import { EventBus, type ChatBranchId, type ChatId } from "@vibe-tavern/domain";
-import { createStoreContainer, type ProviderProfile, type StoreContainer } from "@vibe-tavern/db";
+import { createStoreContainer, type StoreContainer } from "@vibe-tavern/db";
 import { ChatAdapter } from "../src/api/adapters/chat-adapter.js";
 import { ExperienceCopilotAdapter } from "../src/api/adapters/experience-copilot-adapter.js";
 import { wireDirectorMessageDelegates } from "../src/api/adapters/runtime-api-adapter.js";
@@ -33,6 +33,8 @@ import {
 import type { ProviderExecutionInput } from "../src/infrastructure/ai/provider-execution-types.js";
 import type { nonstreamingProviderExecute } from "../src/infrastructure/ai/nonstreaming-provider-executor.js";
 import type { streamProviderExecutor } from "../src/infrastructure/ai/stream-provider-executor.js";
+import type { StreamTextPart } from "./provider-boundary-test-builders.js";
+import { makeSidechatProviderProfile, makeStreamTextDouble } from "./provider-boundary-test-builders.js";
 
 // ════════════════════════════════════════════════════════════════════════════
 // DMT-24 (director message tools) — an allowed `request_message_swipe` runs
@@ -160,41 +162,19 @@ function nonstreamingExecutor(rp: RpExecutorState): typeof nonstreamingProviderE
 // ─── The sidechat LLM boundary (the deps' injectable streamText) ─────────────
 
 type CapturedMessage = { role: string; content: unknown };
+/** The suite's view of the captured production tools. The SDK's Tool union
+ *  assigns straight into this method-typed probe (method syntax is bivariant
+ *  under strictFunctionTypes, so no cast sits at the capture boundary);
+ *  `execute` stays optional because the SDK types it optional — the
+ *  `tool!.execute!(…)` at the call sites carries the buildTools-always-wires-
+ *  execute proof (and the `expect(tool).toBeDefined()` pin above each call). */
+interface CapturedToolProbe {
+	execute?(args: unknown, options?: { toolCallId: string; abortSignal?: AbortSignal }): unknown;
+}
 let capturedMessages: CapturedMessage[] = [];
-let capturedTools: Record<string, { execute: (args: unknown, options?: { toolCallId: string; abortSignal?: AbortSignal }) => Promise<unknown> }> = {};
+let capturedTools: Record<string, CapturedToolProbe> = {};
 let fakeReply = "OOC sidechat reply.";
-let fakeParts: unknown[] | null = null;
-
-function makeFakeStreamTextResult(parts: unknown[]): Record<string, unknown> {
-	async function* gen(): AsyncGenerator<unknown, void, unknown> {
-		for (const part of parts) yield part;
-	}
-	return {
-		stream: gen(),
-		finishReason: Promise.resolve("stop"),
-		usage: Promise.resolve(undefined),
-	};
-}
-
-function makeSidechatProviderProfile(): ProviderProfile {
-	return {
-		id: "prov_1",
-		name: "Sidechat test",
-		providerPreset: "openai",
-		coauthorTransport: "chatCompletions",
-		endpoint: "http://sidechat.test",
-		apiKey: "key",
-		defaultModel: "sidechat-model",
-		contextBudget: null,
-		pinContextBudget: false,
-		bindPerModel: false,
-		maxTokens: 2000,
-		temperature: 0.3,
-		proxyMode: "inherit",
-		proxyId: null,
-		isActive: true,
-	} as unknown as ProviderProfile;
-}
+let fakeParts: StreamTextPart[] | null = null;
 
 // ─── Real-container harness ──────────────────────────────────────────────────
 
@@ -318,11 +298,11 @@ beforeAll(async () => {
 		searchStoreReads: buildContextSearchStoreReads(stores),
 		agentPlans: stores.agentPlans,
 		...copilot.directorDelegates.sidechatStreamEntries(),
-		streamText: ((opts: { messages: CapturedMessage[]; tools?: Record<string, { execute: (args: unknown) => Promise<unknown> }> }) => {
-			capturedMessages = opts.messages;
-			capturedTools = (opts.tools ?? {}) as typeof capturedTools;
-			return makeFakeStreamTextResult(fakeParts ?? [{ type: "text-delta", text: fakeReply }]);
-		}) as unknown as SidechatStreamDeps["streamText"],
+		streamText: makeStreamTextDouble((options) => {
+			capturedMessages = options.messages ?? [];
+			capturedTools = options.tools ?? {};
+			return { parts: fakeParts ?? [{ type: "text-delta", id: "swipe-fake", text: fakeReply }] };
+		}, "sidechat streamText (director-swipe-permission)"),
 	};
 });
 
@@ -412,7 +392,7 @@ async function pauseOnSwipeMarker(
 	await drainTurn(threadId, "Give me another take");
 	const tool = capturedTools[DIRECTOR_MESSAGE_TOOLS.requestMessageSwipe];
 	expect(tool).toBeDefined();
-	const marker = (await tool!.execute(
+	const marker = (await tool!.execute!(
 		{ position: targetPosition, instruction: DRAFT_INSTRUCTION },
 		{ toolCallId: SWIPE_TOOL_CALL_ID },
 	)) as DirectorSwipePermissionMarker;
@@ -434,15 +414,19 @@ async function pauseOnSwipeMarker(
 	return marker;
 }
 
-/** The stored tool-result row for a toolCallId, parsed (fresh store read). */
-async function storedToolRow(
+/** The stored tool-result row for a toolCallId, parsed fresh from the store.
+ *  The output type parameter narrows at the ONE wire boundary — JSON.parse —
+ *  so the receipt/marker readers take a real typed output instead of an
+ *  `as unknown as` downcast at every use site. Default stays the loose
+ *  record the status pins read through. */
+async function storedToolRow<T = Record<string, unknown>>(
 	threadId: string,
 	toolCallId: string,
-): Promise<{ toolName: string; output: Record<string, unknown> } | null> {
+): Promise<{ toolName: string; output: T } | null> {
 	const rows = await stores.experienceCopilot.listMessages(threadId);
 	const row = rows.find((m) => m.role === "tool" && m.toolCallId === toolCallId);
 	if (!row) return null;
-	return JSON.parse(row.content) as { toolName: string; output: Record<string, unknown> };
+	return JSON.parse(row.content) as { toolName: string; output: T };
 }
 
 /** Every model-facing message flattened to one string. */
@@ -523,9 +507,9 @@ describe("director swipe permission — Allow through the real adapter compositi
 		expect(traceLayers[0]!.injectionDepth).toBe(1);
 
 		// The receipt stores the FINAL approved text (the durable decision).
-		const row = await storedToolRow(threadId, SWIPE_TOOL_CALL_ID);
+		const row = await storedToolRow<DirectorSwipeGrantedReceipt>(threadId, SWIPE_TOOL_CALL_ID);
 		expect(row!.toolName).toBe(DIRECTOR_MESSAGE_TOOLS.requestMessageSwipe);
-		const receipt = row!.output as unknown as DirectorSwipeGrantedReceipt;
+		const receipt = row!.output;
 		expect(receipt.status).toBe("granted");
 		expect(receipt.instruction).toBe(EDITED_INSTRUCTION);
 		expect(receipt.messageId).toBe(targetMessageId);
@@ -713,9 +697,9 @@ describe("director swipe permission — deletion, duplicates, reload durability"
 		// The still-awaiting request remains decidable (reload → decide).
 		await drainAnswerTurn(threadId, { toolCallId: SWIPE_TOOL_CALL_ID, decision: "allow", instruction: EDITED_INSTRUCTION });
 		expect(rp.streamCalls).toBe(1);
-		const decided = await storedToolRow(threadId, SWIPE_TOOL_CALL_ID);
+		const decided = await storedToolRow<DirectorSwipeGrantedReceipt>(threadId, SWIPE_TOOL_CALL_ID);
 		expect(decided!.output.status).toBe("granted");
-		expect((decided!.output as unknown as DirectorSwipeGrantedReceipt).instruction).toBe(EDITED_INSTRUCTION);
+		expect(decided!.output.instruction).toBe(EDITED_INSTRUCTION);
 	}, HEAVY_TIMEOUT);
 });
 
@@ -734,9 +718,9 @@ describe("director swipe permission — provider failure and user Stop", () => {
 		// The failure is absorbed into the outcome: the decision is DURABLE —
 		// the row stores the granted receipt (never a fresh undecided request).
 		expect(rp.streamCalls).toBe(1);
-		const row = await storedToolRow(threadId, SWIPE_TOOL_CALL_ID);
+		const row = await storedToolRow<DirectorSwipeGrantedReceipt>(threadId, SWIPE_TOOL_CALL_ID);
 		expect(row!.output.status).toBe("granted");
-		expect((row!.output as unknown as DirectorSwipeGrantedReceipt).instruction).toBe(EDITED_INSTRUCTION);
+		expect(row!.output.instruction).toBe(EDITED_INSTRUCTION);
 		expect(chunks.some((c) => c.event === "finish")).toBe(true);
 		expect((await stores.messages.getVariants(targetMessageId)).map((variant) => variant.id)).toEqual(variantsBefore);
 		expect(activeChatRunCount()).toBe(0);
@@ -798,7 +782,7 @@ describe("director swipe permission — the injected editor delegate", () => {
 		// No message-editor provider is configured in uiSettings → the
 		// delegate reports editor_not_configured and the tool returns the
 		// model-facing refusal text. No RP message changed either way.
-		const outcome = (await tool!.execute(
+		const outcome = (await tool!.execute!(
 			{ position: targetPosition, instruction: "Fix the name spelling" },
 			{ toolCallId: "tc_edit_perm_1" },
 		)) as string;

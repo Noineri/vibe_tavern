@@ -6,6 +6,7 @@ import { buildCoauthorTools } from "../src/domain/chat/coauthor-tools.js";
 import { buildCoauthorWorkingDocument } from "../src/domain/chat/coauthor-working-document.js";
 import type { LoreDelegate, LoreDelegateInput, LoreDelegateResult } from "../src/domain/coauthor/lore/lore-delegate.js";
 import type { TrackerDelegateInput } from "../src/domain/coauthor/tracker/tracker-delegate.js";
+import { coauthorToolInputSchema } from "./provider-boundary-test-builders.js";
 
 /**
  * Co-Author tools propose edits; they never write. These tests pin the
@@ -653,7 +654,7 @@ describe("coauthor-tools: edit_alt_greeting", () => {
 
 describe("coauthor-tools: toolSet filtering", () => {
   test("filters tools by the provided toolSet config", () => {
-    const tools = buildCoauthorTools({ toolSet: { write_profile: true, edit_scenario: false } }) as unknown as Record<string, unknown>;
+    const tools = buildCoauthorTools({ toolSet: { write_profile: true, edit_scenario: false } })
     expect(tools.write_profile).toBeDefined();
     expect(tools.edit_scenario).toBeUndefined();
     expect(tools.edit_greeting).toBeUndefined();
@@ -662,7 +663,7 @@ describe("coauthor-tools: toolSet filtering", () => {
   test("filters write_* tools independently from their edit siblings (CED-2)", () => {
     const tools = buildCoauthorTools({
       toolSet: { write_personality: true, write_examples: true },
-    }) as unknown as Record<string, unknown>;
+    })
     expect(tools.write_personality).toBeDefined();
     expect(tools.write_examples).toBeDefined();
     expect(tools.write_scenario).toBeUndefined();
@@ -728,7 +729,7 @@ describe("coauthor-tools: Wave 4 lore tools (CTX-L1)", () => {
   });
 
   test("lore tools are gated by toolSet like profile/greeting tools", () => {
-    const on = buildCoauthorTools({ toolSet: { create_lorebook: true, create_lore_entry: true } }) as unknown as Record<string, unknown>;
+    const on = buildCoauthorTools({ toolSet: { create_lorebook: true, create_lore_entry: true } })
     expect(on.create_lorebook).toBeDefined();
     expect(on.create_lore_entry).toBeDefined();
     expect(on.set_lore_activation).toBeUndefined();
@@ -736,7 +737,7 @@ describe("coauthor-tools: Wave 4 lore tools (CTX-L1)", () => {
   });
 
   test("without a toolSet, all lore tools are available alongside profile/greeting tools", () => {
-    const tools = buildCoauthorTools() as unknown as Record<string, unknown>;
+    const tools = buildCoauthorTools()
     expect(tools.create_lorebook).toBeDefined();
     expect(tools.create_lore_entry).toBeDefined();
     expect(tools.set_lore_activation).toBeDefined();
@@ -748,12 +749,12 @@ describe("coauthor-tools: Wave 4 lore tools (CTX-L1)", () => {
   // read_skill_file). All four seed modules enable them, but a user-created
   // module that omits them must have them excluded.
   test("search_context / read_context_item are gated by toolSet", () => {
-    const on = buildCoauthorTools({ toolSet: { search_context: true, read_context_item: true } }) as unknown as Record<string, unknown>;
+    const on = buildCoauthorTools({ toolSet: { search_context: true, read_context_item: true } })
     expect(on.search_context).toBeDefined();
     expect(on.read_context_item).toBeDefined();
     expect(on.write_profile).toBeUndefined();
 
-    const off = buildCoauthorTools({ toolSet: { write_profile: true } }) as unknown as Record<string, unknown>;
+    const off = buildCoauthorTools({ toolSet: { write_profile: true } })
     expect(off.search_context).toBeUndefined();
     expect(off.read_context_item).toBeUndefined();
     expect(off.write_profile).toBeDefined();
@@ -957,7 +958,7 @@ describe("coauthor-tools: AI-delegation lore tools (CTX-L2b)", () => {
   test("delegation tools are gated by toolSet alongside the other lore tools", () => {
     const on = buildCoauthorTools({
       toolSet: { create_lorebook: true, create_lore_entry: true, ai_write_lore_entry: true, ai_generate_lore_keys: true },
-    }) as unknown as Record<string, unknown>;
+    })
     expect(on.ai_write_lore_entry).toBeDefined();
     expect(on.ai_generate_lore_keys).toBeDefined();
     // set_lore_activation not enabled → absent; delegation tools only when toggled.
@@ -1058,11 +1059,11 @@ describe("coauthor-tools: edit + add lore tools (CE-B1)", () => {
   });
 
   test("edit tools are gated by toolSet like the other lore tools", () => {
-    const on = buildCoauthorTools({ toolSet: { edit_lorebook: true, edit_lore_entry: true, add_lore_entry: true } }) as unknown as Record<string, unknown>;
+    const on = buildCoauthorTools({ toolSet: { edit_lorebook: true, edit_lore_entry: true, add_lore_entry: true } })
     expect(on.edit_lorebook).toBeDefined();
     expect(on.edit_lore_entry).toBeDefined();
     expect(on.add_lore_entry).toBeDefined();
-    const off = buildCoauthorTools({ toolSet: { create_lorebook: true } }) as unknown as Record<string, unknown>;
+    const off = buildCoauthorTools({ toolSet: { create_lorebook: true } })
     expect(off.edit_lorebook).toBeUndefined();
     expect(off.add_lore_entry).toBeUndefined();
   });
@@ -1090,10 +1091,7 @@ describe("coauthor-tools: set_tracker_template (CT-11)", () => {
 
   test("input schema is intent-only: { action, modeHint?, focusNotes?, summary }", () => {
     const tools = buildCoauthorTools();
-    const schema = tools.set_tracker_template.inputSchema as unknown as {
-      shape: Record<string, unknown>;
-      safeParse(value: unknown): { success: boolean };
-    };
+    const schema = coauthorToolInputSchema(tools, "set_tracker_template");
     expect(Object.keys(schema.shape).sort()).toEqual(["action", "focusNotes", "modeHint", "summary"]);
     expect(schema.safeParse({ summary: "s" }).success).toBe(false);
     expect(schema.safeParse({ action: "create", summary: "s" }).success).toBe(true);
@@ -1149,9 +1147,9 @@ describe("coauthor-tools: set_tracker_template (CT-11)", () => {
   });
 
   test("gates the tool by toolSet like the other proposal tools", () => {
-    const on = buildCoauthorTools({ toolSet: { set_tracker_template: true } }) as unknown as Record<string, unknown>;
+    const on = buildCoauthorTools({ toolSet: { set_tracker_template: true } })
     expect(on.set_tracker_template).toBeDefined();
-    const off = buildCoauthorTools({ toolSet: { write_profile: true } }) as unknown as Record<string, unknown>;
+    const off = buildCoauthorTools({ toolSet: { write_profile: true } })
     expect(off.set_tracker_template).toBeUndefined();
   });
 

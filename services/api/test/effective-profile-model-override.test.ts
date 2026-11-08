@@ -1,18 +1,22 @@
 import { describe, it, expect } from "bun:test";
 import {
+  CHAT_MODE,
   COAUTHOR_GENERATION_DEFAULTS,
   GENERATION_MODE,
   resolveEffectiveSettings,
+  type ChatMode,
   type ModelSettingsOverlay,
   type StoredProviderProfileRecord,
 } from "@vibe-tavern/domain";
 import type { ProviderProfileService } from "../src/domain/providers/provider-profile-service.js";
-import type { StoreContainer } from "@vibe-tavern/db";
+import { createDb, UiSettingsStore, type StoreContainer } from "@vibe-tavern/db";
 import type { SessionRuntime } from "../src/runtime/session/session-runtime.js";
 import type { LiveChatOrchestrator } from "../src/domain/chat/live-chat-orchestrator.js";
 import type { ChatSummaryService } from "../src/domain/chat/chat-summary-service.js";
 import type { AssetService } from "../src/domain/asset/asset-service.js";
 import { ChatAdapter } from "../src/api/adapters/chat-adapter.js";
+import { makeChatRow } from "./insights-test-builders.js";
+import { strictTestDouble } from "./strict-test-double.js";
 
 /**
  * Characterization test for the per-request MODEL OVERRIDE path (Wave Q1a).
@@ -59,34 +63,51 @@ function makeProfileService(opts: {
 }): { service: ProviderProfileService; requestedFor: string[] } {
   const base = opts.base ?? makeBase();
   const requestedFor: string[] = [];
-  const service = {
-    resolveActiveProviderProfile: async () => base,
-    getProviderProfile: async (id: string) => opts.profilesById?.[id] ?? null,
-    getProviderModelSettings: async (_providerProfileId: string, modelId: string) => {
-      requestedFor.push(modelId);
-      const overlay = opts.overlays?.[modelId];
-      if (overlay === undefined) return null;
-      return { settings: overlay } as never;
+  const service = strictTestDouble<ProviderProfileService>(
+    {
+      resolveActiveProviderProfile: async () => base,
+      getProviderProfile: async (id) => opts.profilesById?.[id] ?? null,
+      getProviderModelSettings: async (_providerProfileId, modelId) => {
+        requestedFor.push(modelId);
+        const overlay = opts.overlays?.[modelId];
+        if (overlay === undefined) return null;
+        return { settings: overlay } as never;
+      },
     },
-  } as unknown as ProviderProfileService;
+    "effective-profile ProviderProfileService",
+  );
   return { service, requestedFor };
 }
 
-/** Typed accessor for the private generation-boundary method (test-only). */
+/** Typed accessor for the private generation-boundary method (test-only).
+ *  TS hides a private member from the class's public type, so the probe reads
+ *  the prototype-bound implementation and the annotation documents the EXACT
+ *  production signature (chat-adapter.ts resolveEffectiveProfileOrThrow). */
 type AdapterInternals = {
-  resolveEffectiveProfileOrThrow(options?: { chatId?: string; modelOverride?: string | null }): Promise<{ profile: StoredProviderProfileRecord; transport: import("@vibe-tavern/domain").CoauthorTransport }>;
+  resolveEffectiveProfileOrThrow(options?: { chatId?: string; modelOverride?: string | null }): Promise<{ profile: StoredProviderProfileRecord & { defaultModel: string }; transport: import("@vibe-tavern/domain").CoauthorTransport }>;
 };
 
-function makeAdapter(service: ProviderProfileService, stores?: Partial<Pick<StoreContainer, "coauthorSettings" | "uiSettings" | "chats">>): AdapterInternals {
-  // The other five constructor deps are never touched by the resolver.
-  return new ChatAdapter(
-    (stores ?? null) as unknown as StoreContainer,
-    null as unknown as SessionRuntime,
-    null as unknown as LiveChatOrchestrator,
-    null as unknown as ChatSummaryService,
+function makeAdapter(service: ProviderProfileService, stores?: StoreContainer): AdapterInternals {
+  // The other five constructor deps are never touched by the resolver — each
+  // rides a strict double that throws a labeled error if a path ever reaches
+  // one (the erased `null as unknown as X` args before).
+  const adapter = new ChatAdapter(
+    stores ?? strictTestDouble<StoreContainer>({}, "ChatAdapter stores (no-chatId resolver path)"),
+    strictTestDouble<SessionRuntime>({}, "ChatAdapter sessionRuntime (resolver fixture)"),
+    strictTestDouble<LiveChatOrchestrator>({}, "ChatAdapter liveChatOrchestrator (resolver fixture)"),
+    strictTestDouble<ChatSummaryService>({}, "ChatAdapter chatSummaryService (resolver fixture)"),
     service,
-    null as unknown as AssetService,
-  ) as unknown as AdapterInternals;
+    strictTestDouble<AssetService>({}, "ChatAdapter assetService (resolver fixture)"),
+    // Required by the ctor; never called by resolveEffectiveProfileOrThrow.
+    async () => {
+      throw new Error("transcribeSttAudio is not wired in the effective-profile fixture");
+    },
+  );
+  const resolveEffectiveProfileOrThrow: AdapterInternals["resolveEffectiveProfileOrThrow"] = Reflect.get(
+    ChatAdapter.prototype,
+    "resolveEffectiveProfileOrThrow",
+  );
+  return { resolveEffectiveProfileOrThrow: (options) => resolveEffectiveProfileOrThrow.call(adapter, options) };
 }
 
 describe("Q1a: resolveEffectiveProfileOrThrow(modelOverride?)", () => {
@@ -176,22 +197,37 @@ describe("Q1a: resolveEffectiveProfileOrThrow(modelOverride?)", () => {
 
 // ─── Co-Author generation boundary (CG-2) ─────────────────────────────────
 
-function makeStores(opts: {
-  mode?: string;
+/** The three stores the Co-Author resolver reads, over a fresh template
+ *  `:memory:` db per call. `uiSettings.get` is the REAL store so the fixture
+ *  carries production's ONE defaults derivation (the empty-row shape incl.
+ *  the bound `coauthorProviderId`) instead of a hand-forked defaults copy. */
+async function makeStores(opts: {
+  mode?: ChatMode;
   coauthorProviderId?: string | null;
   coauthorSettings?: { modelName: string | null; settings: ModelSettingsOverlay } | null;
-}): Pick<StoreContainer, "coauthorSettings" | "uiSettings" | "chats"> {
-  return {
-    uiSettings: {
-      get: async () => ({ coauthorProviderId: opts.coauthorProviderId ?? null }),
+}): Promise<StoreContainer> {
+  const ui = new UiSettingsStore(await createDb(":memory:"));
+  await ui.update({ coauthorProviderId: opts.coauthorProviderId ?? null });
+  return strictTestDouble<StoreContainer>(
+    {
+      uiSettings: { get: () => ui.get() },
+      chats: { getById: async () => makeChatRow({ id: "chat_1", mode: opts.mode ?? CHAT_MODE.rp }) },
+      coauthorSettings: {
+        getByProviderId: async (providerProfileId) =>
+          opts.coauthorSettings
+            ? {
+                providerProfileId,
+                modelName: opts.coauthorSettings.modelName,
+                settings: opts.coauthorSettings.settings,
+                sortOrder: null,
+                createdAt: "2026-01-01T00:00:00.000Z",
+                updatedAt: "2026-01-01T00:00:00.000Z",
+              }
+            : null,
+      },
     },
-    chats: {
-      getById: async (_id: string) => ({ id: "chat_1", mode: opts.mode ?? "rp" }),
-    },
-    coauthorSettings: {
-      getByProviderId: async (_id: string) => opts.coauthorSettings ?? null,
-    },
-  } as Pick<StoreContainer, "coauthorSettings" | "uiSettings" | "chats">;
+    "effective-profile stores (Co-Author resolver)",
+  );
 }
 
 describe("CG-2: Co-Author generation boundary", () => {
@@ -224,7 +260,7 @@ describe("CG-2: Co-Author generation boundary", () => {
       base: rpProfile,
       profilesById: { prof_coauthor: coauthorProfile },
     });
-    const adapter = makeAdapter(service, makeStores({
+    const adapter = makeAdapter(service, await makeStores({
       mode: "coauthor",
       coauthorProviderId: "prof_coauthor",
       coauthorSettings: {
@@ -257,7 +293,7 @@ describe("CG-2: Co-Author generation boundary", () => {
       base: makeBase({ temperature: 1.7, maxTokens: 9_000, contextBudget: 500_000, reasoningEffort: "high" }),
       profilesById: { prof_coauthor: coauthorProfile },
     });
-    const stores = makeStores({ mode: "coauthor", coauthorProviderId: "prof_coauthor", coauthorSettings });
+    const stores = await makeStores({ mode: "coauthor", coauthorProviderId: "prof_coauthor", coauthorSettings });
 
     const before = await makeAdapter(first.service, stores).resolveEffectiveProfileOrThrow({ chatId: "chat_1" });
     const after = await makeAdapter(second.service, stores).resolveEffectiveProfileOrThrow({ chatId: "chat_1" });
@@ -271,12 +307,12 @@ describe("CG-2: Co-Author generation boundary", () => {
     const first = makeProfileService({ base: rpProfile, profilesById: { prof_coauthor: coauthorProfile } });
     const second = makeProfileService({ base: rpProfile, profilesById: { prof_second: secondProfile } });
 
-    const firstResolved = await makeAdapter(first.service, makeStores({
+    const firstResolved = await makeAdapter(first.service, await makeStores({
       mode: "coauthor",
       coauthorProviderId: "prof_coauthor",
       coauthorSettings: { modelName: "first-model", settings: { temperature: 0.11, maxTokens: 111 } },
     })).resolveEffectiveProfileOrThrow({ chatId: "chat_1" });
-    const secondResolved = await makeAdapter(second.service, makeStores({
+    const secondResolved = await makeAdapter(second.service, await makeStores({
       mode: "coauthor",
       coauthorProviderId: "prof_second",
       coauthorSettings: { modelName: "second-model", settings: { temperature: 0.89, maxTokens: 222 } },
@@ -292,7 +328,7 @@ describe("CG-2: Co-Author generation boundary", () => {
 
   it("uses Co-Author defaults when the bound connection has no settings row", async () => {
     const { service } = makeProfileService({ base: rpProfile, profilesById: { prof_coauthor: coauthorProfile } });
-    const adapter = makeAdapter(service, makeStores({ mode: "coauthor", coauthorProviderId: "prof_coauthor" }));
+    const adapter = makeAdapter(service, await makeStores({ mode: "coauthor", coauthorProviderId: "prof_coauthor" }));
 
     const { profile: effective } = await adapter.resolveEffectiveProfileOrThrow({ chatId: "chat_1" });
 
@@ -305,13 +341,16 @@ describe("CG-2: Co-Author generation boundary", () => {
   it("fails closed with a stable code for unbound and deleted Co-Author connections", async () => {
     const calls: string[] = [];
     const { service } = makeProfileService({ base: rpProfile, profilesById: {} });
-    (service as unknown as { resolveActiveProviderProfile: () => Promise<StoredProviderProfileRecord> }).resolveActiveProviderProfile = async () => {
+    // The strict double proxies sets straight through to its target, so the
+    // call-tracking override is a plain typed write (the erased
+    // `as unknown as { … }` re-spell before).
+    service.resolveActiveProviderProfile = async () => {
       calls.push("rp");
       return rpProfile;
     };
 
-    const unbound = makeAdapter(service, makeStores({ mode: "coauthor", coauthorProviderId: null }));
-    const dangling = makeAdapter(service, makeStores({ mode: "coauthor", coauthorProviderId: "prof_deleted" }));
+    const unbound = makeAdapter(service, await makeStores({ mode: "coauthor", coauthorProviderId: null }));
+    const dangling = makeAdapter(service, await makeStores({ mode: "coauthor", coauthorProviderId: "prof_deleted" }));
 
     for (const adapter of [unbound, dangling]) {
       await expect(adapter.resolveEffectiveProfileOrThrow({ chatId: "chat_1" })).rejects.toMatchObject({
@@ -328,7 +367,7 @@ describe("CG-2: Co-Author generation boundary", () => {
       profilesById: { prof_coauthor: coauthorProfile },
       overlays: { "gpt-4o": { temperature: 0.4 } },
     });
-    const adapter = makeAdapter(service, makeStores({
+    const adapter = makeAdapter(service, await makeStores({
       mode: "rp",
       coauthorProviderId: "prof_coauthor",
       coauthorSettings: { modelName: "coauthor-model", settings: { temperature: 0.23 } },

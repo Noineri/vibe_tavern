@@ -18,6 +18,7 @@
 import type {
 	Chat,
 	ChatBranch,
+	ChatSummary,
 	Message,
 	MessageVariant,
 	StoreContainer,
@@ -150,6 +151,36 @@ export function makeChatBranchRow(
 		label: "main",
 		loreActivationState: {},
 		createdAt: EPOCH,
+		...over,
+	};
+}
+
+/** A complete stored chat-summary row (Wave B step 6c). The ranged summary
+ *  assembler projects only `id`/`label`/`content` (+ the summarizedFrom/To
+ *  window it filters on) — every other column rides inert defaults, and
+ *  overrides win. Replaces the `{ id, label?, content, summarizedFrom,
+ *  summarizedTo }` fragments the erasure casts let past the compiler, and the
+ *  `create` fixtures that used to return `{ id, …input }`. */
+export function makeChatSummaryRow(
+	over: Partial<ChatSummary> = {},
+): ChatSummary {
+	return {
+		id: "summary_1",
+		chatId: "chat_1",
+		branchId: "branch_1",
+		// The store's create default (`data.label ?? ''`) — a summary without a
+		// label must stay EMPTY so the ranged assembler's Trange fallback fires.
+		label: "",
+		content: "fixture summary body",
+		summarizedFrom: 1,
+		summarizedTo: 5,
+		includeInContext: true,
+		excludeSummarized: true,
+		source: "auto",
+		sortOrder: 0,
+		contentHash: null,
+		createdAt: EPOCH,
+		updatedAt: EPOCH,
 		...over,
 	};
 }

@@ -22,18 +22,24 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import type { AgentReviewSnapshot, CoauthorEditorState, ExperienceCopilotStreamRequest, ReviewTargetRecord } from "@vibe-tavern/api-contracts";
 import type { ExperienceCopilotMessage, ExperienceCopilotStore, ExperienceCopilotThread, ExperienceVisualRow, ProviderProfile, ScriptRow } from "@vibe-tavern/db";
-import { EventBus } from "@vibe-tavern/domain";
+import { brandId, EventBus, type ExperienceCopilotMessageId, type ExperienceCopilotThreadId } from "@vibe-tavern/domain";
 import { ChatAdapter } from "../src/api/adapters/chat-adapter.js";
 import { ExperienceCopilotRunAdapter } from "../src/api/adapters/experience-copilot-run-adapter.js";
 import type { RuntimeApi } from "../src/api/contract/runtime-api.js";
 import { LiveChatOrchestrator } from "../src/domain/chat/live-chat-orchestrator.js";
 import { streamExperienceCopilot, type ExperienceCopilotStreamDeps } from "../src/domain/interactive/copilot/experience-copilot-stream.js";
 import type { ProviderProfileService } from "../src/domain/providers/provider-profile-service.js";
+import type { ProviderOrchestrator } from "../src/domain/providers/provider-orchestrator.js";
+import type { ChatSummaryService } from "../src/domain/chat/chat-summary-service.js";
+import type { AssetService } from "../src/domain/asset/asset-service.js";
 import type { ProviderExecutionInput } from "../src/infrastructure/ai/provider-execution-types.js";
 import { SessionRuntime } from "../src/runtime/session/session-runtime.js";
 import { createRuntimeStore } from "../src/runtime/session/session-runtime-store.js";
 import { createApp } from "../src/server/app-factory.js";
 import { guardModelDiscovery } from "./model-discovery-guard.js";
+import { strictTestDouble } from "./strict-test-double.js";
+import { makeExperienceCopilotStore } from "./copilot-test-builders.js";
+import { makeStreamTextDouble } from "./provider-boundary-test-builders.js";
 
 guardModelDiscovery("ro6.example");
 
@@ -159,7 +165,10 @@ async function makeCoauthorEnvironment() {
   const orchestrator = new LiveChatOrchestrator(
     runtime.chatRuntime,
     runtime.chatApp,
-    null as unknown as import("../src/domain/providers/provider-orchestrator.js").ProviderOrchestrator,
+    // The providers orchestrator is never reached: the executors map below IS
+    // the provider boundary on every pinned path — a strict double keeps an
+    // accidental reach loud instead of a null dereference.
+    strictTestDouble<ProviderOrchestrator>({}, "RO-6 orchestrator providers (executors injected)"),
     new EventBus(),
     (chatId) => runtime.resolveChatModeStrategy(chatId),
     undefined,
@@ -192,10 +201,12 @@ async function makeCoauthorEnvironment() {
     stores,
     runtime,
     orchestrator,
-    null as unknown as import("../src/domain/chat/chat-summary-service.js").ChatSummaryService,
+    strictTestDouble<ChatSummaryService>({}, "RO-6 ChatAdapter chatSummaryService (not exercised)"),
     providerProfiles,
-    null as unknown as import("../src/domain/asset/asset-service.js").AssetService,
-    null as unknown as import("../src/api/contract/runtime-api.js").SttRuntimeApi["transcribeSttAudio"],
+    strictTestDouble<AssetService>({}, "RO-6 ChatAdapter assetService (not exercised)"),
+    async () => {
+      throw new Error("transcribeSttAudio is not wired in the RO-6 fixture");
+    },
   );
   return { app: await createApp({ runtime: { chat } as RuntimeApi }), chatId: coauthor.activeChat.id, providerInputs };
 }
@@ -289,33 +300,45 @@ function copilotStore(answerToolCallId: string | undefined): ExperienceCopilotSt
     );
   }
   let counter = 0;
-  return {
-    getActive: async () => thread,
-    getById: async () => thread,
-    listSessions: async () => [thread],
-    startNewSession: async () => thread,
-    activate: async () => thread,
-    archive: async () => thread,
-    listMessages: async () => [...messages],
-    appendMessage: async (_threadId: string, input: { role: ExperienceCopilotMessage["role"]; content?: string; toolCallsJson?: string | null; toolCallId?: string | null }) => {
-      const message: ExperienceCopilotMessage = {
-        id: `ro6-${counter++}`, threadId: THREAD_ID, role: input.role, content: input.content ?? "",
-        toolCallsJson: input.toolCallsJson ?? null, toolCallId: input.toolCallId ?? null, createdAt: "2025-01-01T00:00:02.000Z",
-      };
-      messages.push(message);
-      return message;
+  return makeExperienceCopilotStore(
+    {
+      getActive: async () => thread,
+      getById: async () => thread,
+      listSessions: async () => [thread],
+      startNewSession: async () => thread,
+      activate: async () => thread,
+      archive: async () => thread,
+      listMessages: async () => [...messages],
+      appendMessage: async (_threadId, input) => {
+        const message: ExperienceCopilotMessage = {
+          // brandId at the fixture seam: the store row's ids are branded; the
+          // RO-6 ids are fixture constants this suite only reads back.
+          id: brandId<ExperienceCopilotMessageId>(`ro6-${counter++}`),
+          threadId: brandId<ExperienceCopilotThreadId>(THREAD_ID),
+          role: input.role, content: input.content ?? "",
+          toolCallsJson: input.toolCallsJson ?? null, toolCallId: input.toolCallId ?? null, createdAt: "2025-01-01T00:00:02.000Z",
+          // AP-28 fields the erased literal omitted; nothing on the pinned
+          // paths reads them (inert store-row defaults).
+          reasoning: null,
+          reasoningDurationMs: null,
+          seq: 0,
+        };
+        messages.push(message);
+        return message;
+      },
+      updateContextMetrics: async () => {},
+      getAutoCompact: async () => true,
+      setAutoCompact: async () => {},
+      updateTodo: async () => {},
+      setToolResultOutput: async (_threadId, toolCallId, payload) => {
+        const row = messages.find((message) => message.role === "tool" && message.toolCallId === toolCallId);
+        if (!row) return null;
+        row.content = JSON.stringify(payload);
+        return row;
+      },
     },
-    updateContextMetrics: async () => {},
-    getAutoCompact: async () => true,
-    setAutoCompact: async () => {},
-    updateTodo: async () => {},
-    setToolResultOutput: async (_threadId: string, toolCallId: string, payload: { toolName: string; output: unknown }) => {
-      const row = messages.find((message) => message.role === "tool" && message.toolCallId === toolCallId);
-      if (!row) return null;
-      row.content = JSON.stringify(payload);
-      return row;
-    },
-  } as unknown as ExperienceCopilotStore;
+    "RO-6 copilotStore",
+  );
 }
 
 interface CapturedCopilotCall {
@@ -337,27 +360,35 @@ async function replayCopilotRequest(request: FixtureRequest): Promise<CapturedCo
   let captured: CapturedCopilotCall | undefined;
   const deps: ExperienceCopilotStreamDeps = {
     store: copilotStore(body.answer?.toolCallId),
-    agentPlans: { get: async () => null, save: async () => {} } as unknown as ExperienceCopilotStreamDeps["agentPlans"],
+    agentPlans: { get: async () => null, save: async () => {} },
     getScript: async (id) => (id === script.id ? script : null),
     getBoundVisualIds: async () => [visual.id],
     getVisual: async (id) => (id === visual.id ? visual : null),
     getProviderProfile: async () => copilotProfile(),
     getEffectiveProviderProfile: async () => copilotProfile(),
     resolveModel: () => ({}) as import("ai").LanguageModel,
-    streamText: ((options: unknown) => {
+    streamText: makeStreamTextDouble((options) => {
+      // The suite's probe type narrows the SDK's full options object to the
+      // two members the assertions read (the same ExecutableTool idiom below).
       captured = options as CapturedCopilotCall;
-      return {
-        stream: (async function* () {
-          yield { type: "text-delta", text: "ok" };
-        })(),
-        finishReason: Promise.resolve("stop"),
-        usage: Promise.resolve(undefined),
-      };
-    }) as unknown as ExperienceCopilotStreamDeps["streamText"],
+      return { parts: [{ type: "text-delta", id: "ro6-fake", text: "ok" }] };
+    }, "RO-6 copilot streamText"),
   };
-  const experienceCopilot = new ExperienceCopilotRunAdapter(deps.store, async () =>
+  const runAdapter = new ExperienceCopilotRunAdapter(deps.store, async () =>
     (threadId, streamBody, signal) => streamExperienceCopilot({ ...streamBody, threadId }, deps, signal),
-  ) as unknown as RuntimeApi["experienceCopilot"];
+  );
+  // The route consumes only the run-lifecycle slice of the runtime contract;
+  // the strict double surfaces any other member as a labeled miss instead of
+  // the adapter's own absent-method TypeError.
+  const experienceCopilot = strictTestDouble<RuntimeApi["experienceCopilot"]>(
+    {
+      experienceCopilotStream: runAdapter.experienceCopilotStream,
+      experienceCopilotStartRun: runAdapter.experienceCopilotStartRun,
+      experienceCopilotSubscribeRun: runAdapter.experienceCopilotSubscribeRun,
+      experienceCopilotStopRun: runAdapter.experienceCopilotStopRun,
+    },
+    "RuntimeApi.experienceCopilot (run-adapter slice)",
+  );
   const app = await createApp({ runtime: { experienceCopilot } as RuntimeApi });
   const response = await app.request(`/api/experience-copilot/${THREAD_ID}/stream`, {
     method: "POST",

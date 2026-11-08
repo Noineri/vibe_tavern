@@ -11,6 +11,9 @@ import {
   type ProviderFetch,
   type ProviderProxyPolicy,
 } from "../src/domain/providers/provider-fetch-factory.js";
+import { strictTestDouble } from "./strict-test-double.js";
+import { makeProxyRow } from "./provider-boundary-test-builders.js";
+import { makeProviderProfileRow } from "./copilot-test-builders.js";
 
 function mockRuntime(overrides: Partial<Pick<ProviderRuntimeApi, "testProviderChatByProfile" | "testProviderDraft" | "fetchModelsByEndpoint" | "testProviderChatByEndpoint">>): ProviderRuntimeApi {
   return overrides as ProviderRuntimeApi;
@@ -109,11 +112,14 @@ describe("profile Test: Hi transport routing", () => {
       },
     });
 
-    const stores = {
-      proxies: {
-        getById: async (id: string) => id === "proxy_1" ? { id } : null,
+    const stores = strictTestDouble<StoreContainer>(
+      {
+        proxies: {
+          getById: async (id) => (id === "proxy_1" ? makeProxyRow({ id: "proxy_1" }) : null),
+        },
       },
-    } as unknown as StoreContainer;
+      "provider adapter stores (draft proxy existence)",
+    );
     const adapter = new ProviderAdapter(
       stores,
       {} as ProviderProfileService,
@@ -146,7 +152,10 @@ describe("profile Test: Hi transport routing", () => {
     providerFetch.preconnect = () => {};
     setProviderFetchFactory({ resolveFetch: async () => providerFetch });
 
-    const stores = { proxies: { getDefaultProxyId: async () => null } } as unknown as StoreContainer;
+    const stores = strictTestDouble<StoreContainer>(
+      { proxies: { getDefaultProxyId: async () => null } },
+      "provider adapter stores (stored-key default proxy)",
+    );
     const providerProfileService = {
       getProviderProfile: async (id: string) => id === "provider_1"
         ? { endpoint: "https://provider.example/v1", apiKey: "stored-key" }
@@ -190,17 +199,24 @@ describe("novelai_oa keyless model-list auth (NAI-2b)", () => {
     const calls: string[] = [];
     setProviderFetchFactory({ resolveFetch: async () => recordingFetch(calls) });
 
-    const stores = { proxies: {} } as unknown as StoreContainer;
-    const providerProfileService = {
-      getProviderProfile: async () => ({
-        id: "p1",
-        endpoint: "https://text.novelai.net/oa/v1",
-        apiKey: null,
-        providerPreset: "novelai_oa",
-        proxyMode: "direct",
-        proxyId: null,
-      }),
-    } as unknown as ProviderProfileService;
+    const stores = strictTestDouble<StoreContainer>(
+      { proxies: {} },
+      "provider adapter stores (novelai keyless profile)",
+    );
+    const providerProfileService = strictTestDouble<ProviderProfileService>(
+      {
+        getProviderProfile: async () =>
+          makeProviderProfileRow({
+            id: "p1",
+            endpoint: "https://text.novelai.net/oa/v1",
+            apiKey: null,
+            providerPreset: "novelai_oa",
+            proxyMode: "direct",
+            proxyId: null,
+          }),
+      },
+      "provider profile service (novelai keyless profile)",
+    );
     const adapter = new ProviderAdapter(stores, providerProfileService);
 
     await expect(adapter.fetchProviderModels("p1")).rejects.toThrow(/API key required/);
@@ -211,7 +227,10 @@ describe("novelai_oa keyless model-list auth (NAI-2b)", () => {
     const calls: string[] = [];
     setProviderFetchFactory({ resolveFetch: async () => recordingFetch(calls) });
 
-    const stores = { proxies: {} } as unknown as StoreContainer;
+    const stores = strictTestDouble<StoreContainer>(
+      { proxies: {} },
+      "provider adapter stores (novelai keyless endpoint)",
+    );
     const adapter = new ProviderAdapter(stores, {} as ProviderProfileService);
 
     await expect(
@@ -224,7 +243,10 @@ describe("novelai_oa keyless model-list auth (NAI-2b)", () => {
     const calls: string[] = [];
     setProviderFetchFactory({ resolveFetch: async () => recordingFetch(calls) });
 
-    const stores = { proxies: {} } as unknown as StoreContainer;
+    const stores = strictTestDouble<StoreContainer>(
+      { proxies: {} },
+      "provider adapter stores (keyless openai-compat endpoint)",
+    );
     const adapter = new ProviderAdapter(stores, {} as ProviderProfileService);
 
     const models = await adapter.fetchModelsByEndpoint("https://api.example.com/v1", undefined, "openai_compat", "direct", null);
@@ -236,12 +258,15 @@ describe("novelai_oa keyless model-list auth (NAI-2b)", () => {
     const calls: string[] = [];
     setProviderFetchFactory({ resolveFetch: async () => recordingFetch(calls) });
 
-    const stores = {
-      providers: {
-        getCachedModels: async () => [],
-        saveCachedModels: async () => {},
+    const stores = strictTestDouble<StoreContainer>(
+      {
+        providers: {
+          getCachedModels: async () => [],
+          saveCachedModels: async () => {},
+        },
       },
-    } as unknown as StoreContainer;
+      "model cache stores (novelai keyless skip)",
+    );
 
     const result = await resolveCachedModels(stores, {
       id: "p1",

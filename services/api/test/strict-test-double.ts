@@ -37,6 +37,12 @@ export function strictTestDouble<T extends object>(provided: PartialMembers<T>, 
 	return new Proxy(provided as T, {
 		get(target, prop, receiver) {
 			if (prop in target) return Reflect.get(target, prop, receiver);
+			// Promise-adoption probes `.then` on EVERY object an async function
+			// returns — a plain object answers `undefined` (not a thenable), and
+			// the double must answer the same way or `return strictTestDouble(…)`
+			// inside an async factory rejects with this file's own miss error.
+			// No consumer ever awaits a member named `then` on a store double.
+			if (prop === "then") return undefined;
 			throw new Error(
 				`strictTestDouble(${label}): member '${String(prop)}' was not provided by this test double`,
 			);

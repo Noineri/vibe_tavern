@@ -7,6 +7,9 @@ import { wrapProviderExecutionError } from "../src/infrastructure/ai/provider-er
 import { VoiceTranscribeUnavailableError } from "../src/infrastructure/ai/stt-gate.js";
 import { VisionNotSupportedError } from "../src/infrastructure/ai/vision-gate.js";
 import type { Attachment } from "@vibe-tavern/domain";
+import { makeProviderProfileRow } from "./copilot-test-builders.js";
+import { makeExecutorPrompt } from "./provider-boundary-test-builders.js";
+import { testFetch } from "./test-fetch-seam.js";
 
 // STT_PLAN ST-6 — executor-boundary pin set. Drives the REAL
 // nonstreamingProviderExecute with a stub provider fetch and a stub voice
@@ -40,7 +43,9 @@ function musicClip(id: string): Attachment {
 let capturedBodies: string[] = [];
 
 function stubProviderFetch(): ProviderFetch {
-  const fetch = (async () =>
+  // The one fetch-double seam (bun's fetch type carries a required
+  // `preconnect` a bare async fn lacks — test-fetch-seam supplies it).
+  return testFetch(async () =>
     new Response(
       JSON.stringify({
         id: "chatcmpl-stub",
@@ -51,19 +56,17 @@ function stubProviderFetch(): ProviderFetch {
         usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
       }),
       { status: 200, headers: { "Content-Type": "application/json" } },
-    )) as ProviderFetch;
-  return fetch;
+    ));
 }
 
 function capturingFetch(): ProviderFetch {
-  const fetch = (async (_url: unknown, init?: { body?: unknown }) => {
+  return testFetch(async (input, init) => {
     capturedBodies.push(String(init?.body ?? ""));
-    return stubProviderFetch()();
-  }) as unknown as ProviderFetch;
-  return fetch;
+    return await stubProviderFetch()(input, init);
+  });
 }
 
-const PROFILE = {
+const PROFILE = makeProviderProfileRow({
   id: "prof_st6",
   name: "st6",
   providerPreset: "openai",
@@ -79,21 +82,21 @@ const PROFILE = {
   frequencyPenalty: 0,
   presencePenalty: 0,
   stopSequences: [],
-} as unknown as StoredProviderProfileRecord;
+});
 
 function makeInput(overrides: Partial<ProviderExecutionInput>): ProviderExecutionInput {
   return {
     profile: PROFILE,
     model: "stub-model",
-    prompt: {
+    prompt: makeExecutorPrompt({
       finalPayload: {
         messages: [
           { role: "user", content: "listen", attachments: overrides.prompt ? [] : undefined },
         ],
       },
-    },
+    }),
     ...overrides,
-  } as unknown as ProviderExecutionInput;
+  };
 }
 
 beforeEach(() => {
@@ -112,13 +115,13 @@ describe("ST-6 executor: voice-note transcription wiring", () => {
 
     const result = await nonstreamingProviderExecute(
       makeInput({
-        prompt: {
+        prompt: makeExecutorPrompt({
           finalPayload: {
             messages: [
               { role: "user", content: "listen", attachments: [voiceNote("v1")] },
             ],
           },
-        } as unknown as ProviderExecutionInput["prompt"],
+        }),
         voiceTranscriber: async (audio) => {
           transcribed.push(audio.fileName);
           return { transcript: "hello from the clip" };
@@ -146,13 +149,13 @@ describe("ST-6 executor: voice-note transcription wiring", () => {
 
     await nonstreamingProviderExecute(
       makeInput({
-        prompt: {
+        prompt: makeExecutorPrompt({
           finalPayload: {
             messages: [
               { role: "user", content: "listen", attachments: [voiceNote("v1")] },
             ],
           },
-        } as unknown as ProviderExecutionInput["prompt"],
+        }),
         voiceTranscriber: async () => ({ transcript: "я не могу больше", annotation: "дрожит, сбивчиво" }),
         assetLoader: (assetId) => Promise.resolve(assetId.startsWith("asset_") ? AUDIO_BYTES : null),
         onAttachmentDescriptions: async (descriptions) => {
@@ -178,13 +181,13 @@ describe("ST-6 executor: voice-note transcription wiring", () => {
 
     await nonstreamingProviderExecute(
       makeInput({
-        prompt: {
-          finalPayload: {
-            messages: [
-              { role: "user", content: "vibe", attachments: [voiceNote("v1"), musicClip("m1")] },
-            ],
-          },
-        } as unknown as ProviderExecutionInput["prompt"],
+          prompt: makeExecutorPrompt({
+            finalPayload: {
+              messages: [
+                { role: "user", content: "vibe", attachments: [voiceNote("v1"), musicClip("m1")] },
+              ],
+            },
+          }),
         voiceTranscriber: async (audio) => {
           transcribed.push(audio.fileName);
           return { transcript: "words" };
@@ -208,13 +211,13 @@ describe("ST-6 executor: voice-note transcription wiring", () => {
     try {
       await nonstreamingProviderExecute(
         makeInput({
-          prompt: {
+          prompt: makeExecutorPrompt({
             finalPayload: {
               messages: [
                 { role: "user", content: "listen", attachments: [voiceNote("v1")] },
               ],
             },
-          } as unknown as ProviderExecutionInput["prompt"],
+          }),
           assetLoader: (assetId) => Promise.resolve(assetId.startsWith("asset_") ? AUDIO_BYTES : null),
         }),
       );
@@ -229,13 +232,13 @@ describe("ST-6 executor: voice-note transcription wiring", () => {
     try {
       await nonstreamingProviderExecute(
         makeInput({
-          prompt: {
+          prompt: makeExecutorPrompt({
             finalPayload: {
               messages: [
                 { role: "user", content: "listen", attachments: [voiceNote("v1")] },
               ],
             },
-          } as unknown as ProviderExecutionInput["prompt"],
+          }),
           voiceTranscriber: async () => ({ transcript: "   " }),
           assetLoader: (assetId) => Promise.resolve(assetId.startsWith("asset_") ? AUDIO_BYTES : null),
         }),
