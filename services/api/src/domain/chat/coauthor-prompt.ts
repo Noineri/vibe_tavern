@@ -20,7 +20,7 @@
  * fields stay empty; the trace UI simply shows fewer rows.
  */
 
-import type { Attachment, ChatBranchId, ChatId, LoreEntryId, TrackerTemplate } from "@vibe-tavern/domain";
+import type { Attachment, CharacterId, ChatBranchId, ChatId, LoreEntryId, TrackerTemplate } from "@vibe-tavern/domain";
 import { attachmentPromptTokens, brandId, promptVisibleAttachmentsOf, readTrackerTemplate } from "@vibe-tavern/domain";
 import type { AssemblePromptResponse } from "@vibe-tavern/domain";
 import type { ChatModeAssembleInput, ChatModeAssembleResult, CoauthorContextItem, CoauthorBoundResources } from "./chat-mode-strategy.js";
@@ -313,6 +313,10 @@ export async function assembleCoauthorPrompt(input: ChatModeAssembleInput): Prom
   // Co-Author is actually working on lore. The trigger reads the already-loaded
   // history — the model's most recent working segment (lore-work-trigger.ts).
   const loreWorkActive = isLoreWorkActive(history);
+  // The db layer hands the character with a plain string id (brands apply at
+  // boundaries); the loader interface takes the domain brand. One boundary
+  // conversion here covers both loader calls below.
+  const characterId = brandId<CharacterId>(character.id);
 
   // Card state + lorebook context + prompt assets are all independent once
   // we have the history (skill autodetect reads it), so fan them out together.
@@ -329,11 +333,11 @@ export async function assembleCoauthorPrompt(input: ChatModeAssembleInput): Prom
     : await loaders.getCoauthorUserModules();
   const module = await getCoauthorModule(chat.coauthorModuleId, userModules);
   const [savedProfileMd, contextItems, skillCatalog, branchSummaries, boundResources] = await Promise.all([
-    loaders.getProfileMdText(character.id as unknown as import("@vibe-tavern/domain").CharacterId),
+    loaders.getProfileMdText(characterId),
     loaders.getCoauthorContextItems(chatId),
     loaders.getSkillCatalog(),
     loaders.getChatSummaries(chatId, input.branchId ?? (chat.activeBranchId as ChatBranchId)),
-    loaders.getCoauthorBoundResources(character.id as unknown as import("@vibe-tavern/domain").CharacterId),
+    loaders.getCoauthorBoundResources(characterId),
   ]);
   // Snapshot absence intentionally leaves the historical storage bytes and
   // tool seed unchanged. A supplied editor state is canonicalized once and

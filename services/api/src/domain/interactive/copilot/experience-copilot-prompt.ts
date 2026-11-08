@@ -57,11 +57,10 @@ import type { AppDb } from "@vibe-tavern/db";
 import { resolveServicePromptText } from "../../service-prompts/service-prompt-resolver.js";
 import { runExperienceTest } from "../experience-tester.js";
 import { renderAgentPlanSection } from "../../agent-plan/agent-plan-prompt.js";
-import type {
-  ExperienceCopilotRealtimeDigest,
-  ExperienceCopilotRunSimulateDigest,
-  ExperienceCopilotRunTestDigest,
-} from "./experience-copilot-tools.js";
+// The digest union's ONE derivation lives beside its members (tools); the
+// name stays exported from here for API compatibility.
+import type { ExperienceCopilotTestFeedback } from "./experience-copilot-tools.js";
+export type { ExperienceCopilotTestFeedback };
 import {
   resolveBuiltinCopilotProfile,
   resolveExperienceCopilotSkillCatalog,
@@ -147,12 +146,6 @@ export interface ExperienceCopilotContract {
 
 /** The inline 3-step creation flow the user is currently in. */
 export type ExperienceCopilotStep = "rules" | "visual" | "test";
-
-/** The latest test/simulate digest the user sent back from the test panel. */
-export type ExperienceCopilotTestFeedback =
-  | ExperienceCopilotRunTestDigest
-  | ExperienceCopilotRunSimulateDigest
-  | ExperienceCopilotRealtimeDigest;
 
 // ─── Input / result ──────────────────────────────────────────────────────────
 

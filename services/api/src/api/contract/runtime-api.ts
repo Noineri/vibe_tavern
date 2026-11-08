@@ -3,6 +3,7 @@ export type { RuntimeApi } from "./runtime-api-composite.js";
 import type { AiAssistantStreamChunk } from "../../domain/ai-assistant/reasoning-split.js";
 import type { AiAssistantStreamRequest } from "../../domain/ai-assistant/ai-assistant-stream.js";
 import type { PersonaRecord } from "../../domain/persona/persona-runtime.js";
+import type { StPersonaSlice, VtPersonaPayload } from "../../domain/persona/persona-export.js";
 import type { ClientProviderProfileRecord, ClientProxyRecord } from "../../runtime/session/session-runtime-dto.js";
 import type {
 	BootstrapState,
@@ -295,9 +296,15 @@ export interface PersonaRuntimeApi {
 	// Vision describe (A6) — uses the active provider profile's visionModel.
 	describePersonaAvatar: (personaId: string) => Promise<{ description: string }>;
 
-	// Export (PR-5). Single returns a format-shaped JSON body; bulk returns a
-	// download-ready JSON (ST backup shape or VT-native array of payloads).
-	exportPersona: (personaId: string, format: "st" | "vt") => Promise<{ body: Record<string, unknown>; filename: string; contentType: string }>;
+	// Export (PR-5). Single returns a format-shaped JSON body — the ST backup
+	// slice or the VT-native payload, exactly as the persona-export builders
+	// produce them; bulk returns a download-ready JSON (ST backup shape or
+	// VT-native array of payloads).
+	exportPersona: (personaId: string, format: "st" | "vt") => Promise<{
+		body: (StPersonaSlice & { default_persona: string }) | VtPersonaPayload;
+		filename: string;
+		contentType: string;
+	}>;
 	exportAllPersonas: (format: "st" | "vt") => Promise<{ body: unknown; filename: string; contentType: string }>;
 	// Import/restore: accepts a VT bulk payload (array of VT v1 payloads), creates
 	// personas + writes avatars. Returns a per-persona result summary.

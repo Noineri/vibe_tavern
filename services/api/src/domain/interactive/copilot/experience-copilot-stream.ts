@@ -47,10 +47,12 @@ import { AgentBufferReviewPersistence, persistAgentBufferReviewStream } from "..
 import {
   assembleExperienceCopilotPrompt,
   type ExperienceCopilotAssembleResult,
-  type ExperienceCopilotTestFeedback,
 } from "./experience-copilot-prompt.js";
 import { COPILOT_CONTEXT_BUDGET_TOKENS, COPILOT_RESPONSE_RESERVE_TOKENS, COPILOT_TOOL_LOOP_CEILING } from "./copilot-limits.js";
-import { buildExperienceCopilotTools } from "./experience-copilot-tools.js";
+import {
+  buildExperienceCopilotTools,
+  isExperienceCopilotTestFeedback,
+} from "./experience-copilot-tools.js";
 import { resolveBuiltinCopilotProfile } from "./experience-copilot-module.js";
 import { renderAttachedContext, type CopilotContextItem } from "../../agent/agent-context.js";
 import type {
@@ -302,8 +304,8 @@ export async function* streamExperienceCopilot(
         rules,
         ...(visual !== undefined ? { visual } : {}),
         ...(context.boundVisuals.length > 0 ? { boundVisuals: context.boundVisuals } : {}),
-        ...(request.testFeedback !== undefined && request.testFeedback !== null
-          ? { testFeedback: request.testFeedback as unknown as ExperienceCopilotTestFeedback }
+        ...(isExperienceCopilotTestFeedback(request.testFeedback)
+          ? { testFeedback: request.testFeedback }
           : {}),
         step,
         model: modelName,

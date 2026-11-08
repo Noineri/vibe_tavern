@@ -1,7 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import { Hono } from "hono";
-import { EventBus } from "@vibe-tavern/domain";
+import { brandId, EventBus, type ChatId } from "@vibe-tavern/domain";
 import { setTokenCountFn, setSeparatorSideFn } from "@vibe-tavern/prompt-pipeline";
 import { TokenCountStore } from "@vibe-tavern/db";
 import {
@@ -318,7 +318,9 @@ export async function createRuntimeApp(config: RuntimeAppConfig): Promise<Hono> 
 		sessionRuntime.chatApp,
 		providerOrchestrator,
 		events,
-		(chatId: string) => sessionRuntime.resolveChatModeStrategy(chatId as never),
+		// The orchestrator hands raw strings; the runtime's strategy resolver
+		// takes the domain brand — the canon brandId() boundary conversion.
+		(chatId: string) => sessionRuntime.resolveChatModeStrategy(brandId<ChatId>(chatId)),
 		composeForwardStateWait(objectiveService, trackerService),
 		new RegexHookService(stores).createHooks(),
 	);
