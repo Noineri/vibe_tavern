@@ -111,7 +111,7 @@ describe("STT profile CRUD helpers", () => {
 		globalThis.fetch = mockFetch(async () =>
 			new Response(JSON.stringify({ error: "validation failed" }), { status: 400 }),
 		);
-		await expect(sttApi.createSttProfile({ name: "x", backend: "whisper-browser" })).rejects.toThrow(
+		await expect(sttApi.createSttProfile({ name: "x", backend: "whisper-browser", config: {} })).rejects.toThrow(
 			"validation failed",
 		);
 	});

@@ -1,3 +1,4 @@
+import { brandId, type ChatId } from "@vibe-tavern/domain";
 import { listChatSummaries } from "../api/chat-api.js";
 import type { ChatSummaryRecord } from "../api/types.js";
 
@@ -38,7 +39,9 @@ export interface PromptCanvasSummaryLoadDeps {
 }
 
 const defaultDeps: PromptCanvasSummaryLoadDeps = {
-  listChatSummaries: (chatId) => listChatSummaries(chatId as never),
+  // The API takes the branded id; this seam is the API boundary, so the raw
+  // string brands here (the use-chat-events.ts boundary precedent).
+  listChatSummaries: (chatId) => listChatSummaries(brandId<ChatId>(chatId)),
 };
 
 /**

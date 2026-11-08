@@ -30,8 +30,6 @@ export const useSidechatMobileStore = create<SidechatMobileState>((set) => ({
 
 // Debug helper — mirrors the window.__ exposure pattern used by the other
 // ephemeral stores. Lets a live Playwright / dev-console session inspect the
-// mobile tab to diagnose "wrong pane after handle tap".
-if (typeof window !== "undefined") {
-  (window as unknown as { __useSidechatMobileStore?: unknown }).__useSidechatMobileStore =
-    useSidechatMobileStore;
-}
+// mobile tab to diagnose "wrong pane after handle tap". The member's type
+// lives in lib/debug-globals.d.ts (the debug-window surface's single source).
+if (typeof window !== "undefined") window.__useSidechatMobileStore = useSidechatMobileStore;

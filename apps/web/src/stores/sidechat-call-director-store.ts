@@ -166,8 +166,7 @@ export async function callDirector(
 }
 
 // Debug helper — mirrors the window.__ exposure pattern used by the other
-// ephemeral stores (diagnosing "the call message never sent" reports).
-if (typeof window !== "undefined") {
-  (window as unknown as { __useSidechatCallDirectorStore?: unknown }).__useSidechatCallDirectorStore =
-    useSidechatCallDirectorStore;
-}
+// ephemeral stores (diagnosing "the call message never sent" reports). The
+// member's type lives in lib/debug-globals.d.ts (the debug-window surface's
+// single source).
+if (typeof window !== "undefined") window.__useSidechatCallDirectorStore = useSidechatCallDirectorStore;

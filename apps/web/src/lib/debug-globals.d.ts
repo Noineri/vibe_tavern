@@ -21,6 +21,14 @@ declare global {
     __useCopilotProfileStore: typeof import("../stores/copilot-profile-store").useCopilotProfileStore;
     __useCopilotSkillStore: typeof import("../stores/copilot-skill-store").useCopilotSkillStore;
     __useMessageAiEditorStore: typeof import("../stores/message-ai-editor-store").useMessageAiEditorStore;
+    __useAgentStreamingStore: typeof import("../stores/agent-streaming-store").useAgentStreamingStore;
+    __useHeaderZoneExpansionStore: typeof import("../stores/header-zone-expansion").useHeaderZoneExpansionStore;
+    __useSceneGenerationStore: typeof import("../stores/scene-generation-store").useSceneGenerationStore;
+    __useSidechatCallDirectorStore: typeof import("../stores/sidechat-call-director-store").useSidechatCallDirectorStore;
+    __useSidechatMobileStore: typeof import("../stores/sidechat-mobile-store").useSidechatMobileStore;
+    __useSidechatOpenStore: typeof import("../stores/sidechat-open-store").useSidechatOpenStore;
+    __useSidechatVariantAttachmentsStore: typeof import("../stores/sidechat-variant-attachments-store").useSidechatVariantAttachmentsStore;
+    __useStoryCurtainTabStore: typeof import("../stores/story-curtain-tab-store").useStoryCurtainTabStore;
     __setLorebookView: (view: "pick" | "list" | "editor") => void;
     __setLorebookTab: (tab: "lorebooks" | "scripts") => void;
     __getLorebookView: () => "pick" | "list" | "editor";

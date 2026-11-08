@@ -316,7 +316,7 @@ export function useTtsProfiles(): {
         providerRef: saved.providerRef ?? null,
         autoKeyProviderName: saved.autoKeyProviderName ?? null,
         voiceId: saved.voiceId ?? "",
-        narratorVoiceId: (saved as unknown as { narratorVoiceId?: string | null }).narratorVoiceId ?? "",
+        narratorVoiceId: saved.narratorVoiceId ?? "",
         hasStoredApiKey: saved.hasStoredApiKey,
       });
       setDirty(false);

@@ -146,7 +146,10 @@ export function overlayDivergesFromSet(
   baseline: Partial<ModelSettingsOverlay>,
   current: ModelSettingsOverlay,
 ): boolean {
-  const currentRecord = current as unknown as Record<string, unknown>;
+  // ModelSettingsOverlay is an object-literal type alias, so it carries the
+  // implicit string index signature — the annotation IS the narrowing (the
+  // step-2 NodeRecord view), no cast.
+  const currentRecord: Record<string, unknown> = current;
   return Object.entries(baseline).some(
     ([key, value]) => !overlayValueEqual(value, currentRecord[key]),
   );

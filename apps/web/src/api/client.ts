@@ -97,7 +97,9 @@ export async function apiFetch(input: RequestInfo | URL, init?: RequestInit): Pr
 }
 
 export const client = hc<AppType>(getGatewayBaseUrl(), {
-  fetch: apiFetch as unknown as typeof fetch,
+  // apiFetch's declared signature IS `typeof fetch` (same params, same
+  // Promise<Response>) — hono's ClientOptions.fetch accepts it directly.
+  fetch: apiFetch,
 });
 
 export { getGatewayBaseUrl, getMobileToken };

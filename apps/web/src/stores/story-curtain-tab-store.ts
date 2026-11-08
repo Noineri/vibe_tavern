@@ -38,8 +38,7 @@ export const useStoryCurtainTabStore = create<StoryCurtainTabState>((set) => ({
 }));
 
 // Debug helper — mirrors the window.__ exposure pattern used by the other
-// ephemeral stores (diagnosing "the deck tab reset itself" reports).
-if (typeof window !== "undefined") {
-  (window as unknown as { __useStoryCurtainTabStore?: unknown }).__useStoryCurtainTabStore =
-    useStoryCurtainTabStore;
-}
+// ephemeral stores (diagnosing "the deck tab reset itself" reports). The
+// member's type lives in lib/debug-globals.d.ts (the debug-window surface's
+// single source).
+if (typeof window !== "undefined") window.__useStoryCurtainTabStore = useStoryCurtainTabStore;

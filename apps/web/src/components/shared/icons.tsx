@@ -206,7 +206,20 @@ type IconComponent = (props?: { direction?: string; className?: string }) => Rea
 
 // Backward-compat proxy: Icons.XXX → Ic.xxx
 // Handles PascalCase→camelCase, Trash→del, Send→terminal, Caret prop adapter
-export const Icons: Record<string, IconComponent> = new Proxy(Ic as unknown as Record<string, IconComponent>, {
+
+/** The proxy target: the REAL Ic shape (so the Trash→del / Send→terminal
+ *  reads are checked members — a typo there is a compile error) widened with
+ *  the string index the alias contract promises. `caret` is carried in its
+ *  IconComponent adapter form so both views agree (its raw `(d: string)`
+ *  signature is the one member the IconComponent surface cannot carry). */
+type IconRegistry = Record<string, IconComponent> & Omit<typeof Ic, "caret"> & { caret: IconComponent };
+
+const iconRegistry: IconRegistry = {
+  ...Ic,
+  caret: (props?: { direction?: string }) => Ic.caret(props?.direction ?? "r"),
+};
+
+export const Icons: Record<string, IconComponent> = new Proxy(iconRegistry, {
   get(target, prop: string) {
     // Special key mappings
     if (prop === 'Trash') return target.del;
@@ -223,4 +236,4 @@ export const Icons: Record<string, IconComponent> = new Proxy(Ic as unknown as R
     if (target[lower]) return target[lower];
     return undefined;
   }
-}) as Record<string, IconComponent>;
+});

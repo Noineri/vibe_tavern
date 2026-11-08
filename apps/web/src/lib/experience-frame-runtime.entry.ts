@@ -76,31 +76,57 @@ export interface BootOptions {
   readonly config?: ExperienceLoopConfig;
 }
 
+/** The loop-host handle the boot publishes on the frame global (the SDK and
+ *  the eval-harness tests drive the loop through it). */
+interface VtLoopHandle {
+  enqueueInput(i: { type: string }): void;
+  stop(): void;
+  getState(): unknown;
+  requestModel(seatId: string, prompt: unknown, requestId?: string): boolean;
+  applyModelResult(seatId: string, result: unknown, requestId?: string): boolean;
+  finishNow(claim?: { status?: "completed" | "interrupted"; score?: unknown; summary?: unknown }): boolean;
+}
+
+/**
+ * The runtime's view of the frame global — every member OPTIONAL (the
+ * eval-harness test may boot without a full DOM) and typed so `globalThis`
+ * (web keeps the DOM lib) assigns without a cast — the BrowserLogEnv
+ * annotation pattern. DOM-named members carry their real DOM signatures so
+ * the annotation is a genuine narrowing; every read stays behind its runtime
+ * typeof guard, so the missing-global case keeps its defensive drop.
+ */
+interface FrameGlobal {
+  __vtLoopBooted?: boolean;
+  __vtLoopHandle?: VtLoopHandle;
+  __vtFrameRuntime?: ExperienceFrameRuntimeApi;
+  /** The DOM constructor, narrowed to what dispatch() needs (a missing
+   *  constructor drops the event instead of killing the loop). */
+  CustomEvent?: new (type: string, eventInit: { detail: unknown }) => Event;
+  dispatchEvent?: (event: Event) => boolean;
+  addEventListener?: (type: string, listener: (e: Event) => void) => void;
+  requestAnimationFrame?: (cb: (now: number) => void) => number;
+  performance?: { now(): number };
+  document?: { getElementById(id: string): { textContent: string | null } | null };
+}
+
+/** Runtime guard for the listener bodies: frame events cross the window as
+ *  CustomEvents, but the DOM listener hands the base Event type — read
+ *  `.detail` only after the structural check. No `CustomEvent` reference
+ *  here on purpose: the eval harness may lack the constructor, and a plain
+ *  `{detail}` object must keep working. */
+function hasDetail(e: Event): e is Event & { detail: unknown } {
+  return "detail" in e;
+}
+
 function bootFromDocument(opts: BootOptions = {}): void {
-  const win = globalThis as unknown as {
-    __vtLoopBooted?: boolean;
-    __vtLoopHandle?: {
-      enqueueInput(i: { type: string }): void;
-      stop(): void;
-      getState(): unknown;
-      requestModel(seatId: string, prompt: unknown, requestId?: string): boolean;
-      applyModelResult(seatId: string, result: unknown, requestId?: string): boolean;
-      finishNow(claim?: { status?: "completed" | "interrupted"; score?: unknown; summary?: unknown }): boolean;
-    };
-    dispatchEvent?: (e: unknown) => boolean;
-    addEventListener?: (type: string, cb: (e: { detail: unknown }) => void) => void;
-    requestAnimationFrame?: (cb: (now: number) => void) => void;
-    performance?: { now(): number };
-    document?: { getElementById(id: string): { textContent: string | null } | null };
-  };
+  const win: FrameGlobal = globalThis;
   if (win.__vtLoopBooted) return;
 
   const dispatch = (type: string, detail: unknown): void => {
     // CustomEvent is constructed defensively: the eval-harness test may boot
     // without a full DOM (a missing constructor drops the event instead of
     // killing the loop).
-    const ctor = (globalThis as unknown as { CustomEvent?: new (t: string, d: { detail: unknown }) => unknown })
-      .CustomEvent;
+    const ctor = win.CustomEvent;
     if (ctor && typeof win.dispatchEvent === "function") {
       win.dispatchEvent(new ctor(type, { detail }));
     }
@@ -164,6 +190,7 @@ function bootFromDocument(opts: BootOptions = {}): void {
 
   if (typeof win.addEventListener === "function") {
     win.addEventListener("vt-loop:input", (e) => {
+      if (!hasDetail(e)) return;
       const input = e.detail as { type?: unknown } | null;
       if (input !== null && typeof input === "object" && typeof input.type === "string") {
         handle.enqueueInput(input as { type: string });
@@ -171,6 +198,7 @@ function bootFromDocument(opts: BootOptions = {}): void {
     });
     win.addEventListener("vt-loop:stop", () => handle.stop());
     win.addEventListener("vt-loop:model-request", (e) => {
+      if (!hasDetail(e)) return;
       const d = e.detail as { seatId?: unknown; prompt?: unknown; requestId?: unknown } | null;
       if (d !== null && typeof d === "object" && typeof d.seatId === "string") {
         handle.requestModel(
@@ -181,6 +209,7 @@ function bootFromDocument(opts: BootOptions = {}): void {
       }
     });
     win.addEventListener("vt-loop:model-result", (e) => {
+      if (!hasDetail(e)) return;
       const d = e.detail as { seatId?: unknown; result?: unknown; requestId?: unknown } | null;
       if (d !== null && typeof d === "object" && typeof d.seatId === "string") {
         handle.applyModelResult(
@@ -191,6 +220,7 @@ function bootFromDocument(opts: BootOptions = {}): void {
       }
     });
     win.addEventListener("vt-loop:finish-request", (e) => {
+      if (!hasDetail(e)) return;
       const d = e.detail as
         | { status?: unknown; score?: unknown; summary?: unknown }
         | null;
@@ -205,6 +235,7 @@ function bootFromDocument(opts: BootOptions = {}): void {
       });
     });
     win.addEventListener("vt-loop:state", (e) => {
+      if (!hasDetail(e)) return;
       const detail = e.detail as { onState?: (s: unknown) => void } | null;
       if (detail !== null && typeof detail === "object" && typeof detail.onState === "function") {
         detail.onState(handle.getState());
@@ -230,4 +261,5 @@ const api: ExperienceFrameRuntimeApi = {
   bootFromDocument,
 };
 
-(globalThis as unknown as { __vtFrameRuntime?: ExperienceFrameRuntimeApi }).__vtFrameRuntime = api;
+const publishTarget: FrameGlobal = globalThis;
+publishTarget.__vtFrameRuntime = api;

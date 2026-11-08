@@ -427,13 +427,14 @@ export function useLorebookEditorState({
     // hand-rolled dirtyFieldsRef accumulator — form.formState.dirtyFields is
     // the project-standard source of "what is dirty".
     const values = form.getValues();
-    const dirty = form.formState.dirtyFields as unknown as Record<
-      string,
-      unknown
-    >;
+    // RHF's dirtyFields is DeepMap<DeepPartial<Draft>, boolean> — a truth
+    // tree mirroring the values shape. Top-level truthiness (a boolean, or a
+    // dirty sub-tree for object/array fields) is exactly "the user touched
+    // this field since the last reset" — typed access, no erasure.
+    const dirty = form.formState.dirtyFields;
     const patch: Record<string, unknown> = {};
-    for (const k of Object.keys(values)) {
-      if (dirty[k]) patch[k] = values[k as keyof LoreEntryDraft];
+    for (const k of Object.keys(values) as Array<keyof LoreEntryDraft>) {
+      if (dirty[k]) patch[k] = values[k];
     }
     if (Object.keys(patch).length === 0) return;
     setSavingState("saving");

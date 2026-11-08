@@ -49,6 +49,19 @@ export function describeMdImportValue(value: unknown, _key?: string): string {
   return typeof value === "string" ? value : String(value ?? "");
 }
 
+/** The correlated write TS cannot see through a computed-key spread: with
+ *  `key: K` tied to `value: MdImportResult[K]`, the keyed assignment is
+ *  checked per-key — no erasure needed. */
+function setMdField<K extends keyof MdImportResult>(
+  target: Partial<MdImportResult>,
+  key: K,
+  value: MdImportResult[K],
+): Partial<MdImportResult> {
+  const next: Partial<MdImportResult> = { ...target };
+  next[key] = value;
+  return next;
+}
+
 export function mergeMdImportFields(
   target: Partial<MdImportResult>,
   key: keyof MdImportResult,
@@ -68,19 +81,19 @@ export function mergeMdImportFields(
     return { ...target, alternateGreetings: [...existing, ...incoming] };
   }
   if (typeof value === "string" && typeof target[key] === "string" && target[key]) {
-    return { ...target, [key]: `${target[key]}
+    return setMdField(target, key, `${target[key]}
 
-${value}` };
+${value}`);
   }
   if (Array.isArray(value)) {
     const text = describeMdImportValue(value).trim();
     if (!text) return target;
     if (typeof target[key] === "string" && target[key]) {
-      return { ...target, [key]: `${target[key]}
+      return setMdField(target, key, `${target[key]}
 
-${text}` };
+${text}`);
     }
-    return { ...target, [key]: text as never };
+    return setMdField(target, key, text as MdImportResult[typeof key]);
   }
-  return { ...target, [key]: value as never };
+  return setMdField(target, key, value as MdImportResult[typeof key]);
 }
