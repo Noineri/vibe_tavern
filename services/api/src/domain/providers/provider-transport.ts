@@ -126,7 +126,9 @@ export function normalizeKoboldCppBaseUrl(baseUrl: string): string {
 // Fetch helpers
 // ---------------------------------------------------------------------------
 
-export function buildHeaders(apiKey: string, withBody = false): HeadersInit {
+/** Builds the auth/content-type header record fetch accepts as-is (a plain
+ *  string→string record is a HeadersInit in the bun/undici fetch types). */
+export function buildHeaders(apiKey: string, withBody = false): Record<string, string> {
 	const headers: Record<string, string> = {
 		Accept: "application/json",
 	};

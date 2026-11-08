@@ -645,8 +645,6 @@
   "packages/domain/test/story-clock-scene.test.ts:58:17:unknown-cast",
   "packages/import-export/test/st-golden-roundtrip.test.ts:158:21:unknown-cast",
   "packages/prompt-pipeline/test/pronoun-forms.test.ts:9:10:unknown-cast",
-  "services/api/src/domain/stt/whisper-mirror.ts:265:41:unknown-cast",
-  "services/api/src/domain/tts/kokoro-mirror.ts:265:39:unknown-cast",
   "services/api/test/agent-ask-user-tool.test.ts:49:18:unknown-cast",
   "services/api/test/agent-attachments-compaction.test.ts:41:19:unknown-cast",
   "services/api/test/agent-attachments-stream.test.ts:46:17:unknown-cast",

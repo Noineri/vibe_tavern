@@ -34,6 +34,25 @@ export type QuotaResponseJson =
 	| QuotaResponseJson[]
 	| { [key: string]: QuotaResponseJson };
 
+/**
+ * Runtime proof that a parsed body really is the JSON tree above. Needed
+ * because `Response.json()` is typed `Promise<unknown>` outside lib.dom —
+ * the tree shape is checked here, once, before any adapter's Zod schema.
+ */
+export function isQuotaResponseJson(value: unknown): value is QuotaResponseJson {
+	if (value === null) return true;
+	switch (typeof value) {
+		case "string":
+		case "number":
+		case "boolean":
+			return true;
+		default:
+			if (Array.isArray(value)) return value.every(isQuotaResponseJson);
+			if (typeof value === "object") return Object.values(value).every(isQuotaResponseJson);
+			return false;
+	}
+}
+
 /** One outbound HTTP request an adapter needs. Built fresh per poll. */
 export interface QuotaRequestSpec {
 	/** Stable within an adapter — `normalize` uses it to tell its results apart. */

@@ -41,6 +41,7 @@ import { resolveProviderFetchForProfile } from "../providers/provider-fetch-fact
 import type { ProviderFetch } from "../providers/provider-fetch-factory.js";
 import {
 	isPollableCapability,
+	isQuotaResponseJson,
 	type QuotaCapabilityAdapter,
 	type QuotaRequestResult,
 	type QuotaRequestSpec,
@@ -453,12 +454,16 @@ async function executeSpec(
 		if (!response.ok) {
 			throw new QuotaRequestError(`Quota request failed with ${response.status}`, PROVIDER_QUOTA_ERROR_KIND.http);
 		}
+		let parsed: unknown;
 		try {
-			const json: QuotaResponseJson = await response.json();
-			return json;
+			parsed = await response.json();
 		} catch {
 			throw new QuotaRequestError("Quota response was not JSON", PROVIDER_QUOTA_ERROR_KIND.schema);
 		}
+		if (!isQuotaResponseJson(parsed)) {
+			throw new QuotaRequestError("Quota response was not JSON", PROVIDER_QUOTA_ERROR_KIND.schema);
+		}
+		return parsed;
 	} catch (error) {
 		if (error instanceof QuotaRequestError) throw error;
 		throw new QuotaRequestError(

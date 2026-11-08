@@ -25,6 +25,8 @@
 
 import { STT_BACKENDS } from "@vibe-tavern/domain";
 import type { SttProfileConfig } from "@vibe-tavern/domain";
+// BlobPart is the bun-types Blob constructor part (no DOM lib in this package).
+import type { BlobPart } from "bun";
 
 import type {
   SttBackend,
@@ -164,9 +166,17 @@ export const openAiCompatSttFactory: SttBackendFactory = (config) => {
   const backend: SttBackend = {
     async transcribe(audio, options): Promise<SttTranscribeResult> {
       const form = new FormData();
-      // Buffer is a Uint8Array over an ArrayBufferLike — copy it into a fresh
-      // Uint8Array so the BlobPart is backed by a real ArrayBuffer (no cast).
-      const part: BlobPart = audio instanceof ArrayBuffer ? audio : new Uint8Array(audio);
+      let part: BlobPart;
+      if (audio instanceof ArrayBuffer) {
+        part = audio;
+      } else {
+        // Buffer is a Uint8Array over an ArrayBufferLike — byte-copy into a
+        // fresh ArrayBuffer so the Blob part has a concrete backing (BlobPart
+        // wants a real ArrayBuffer, not an ArrayBufferLike view).
+        const copy = new ArrayBuffer(audio.byteLength);
+        new Uint8Array(copy).set(audio);
+        part = copy;
+      }
       form.append("file", new Blob([part], { type: options.mime }), `audio.${fileExtension(options.mime)}`);
       form.append("model", cfg.model);
       // Language is a neutral tuning — omit when unset rather than sending an

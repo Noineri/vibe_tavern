@@ -259,10 +259,9 @@ export class KokoroMirrorService {
 		// `Bun.file(dest).write(s)` silently STRINGIFY it ("[object ReadableStream]"
 		// lands on disk), and wrapping in `new Response(s)` hangs forever. The
 	// node path streams correctly.
-		// Boundary cast (justified): TS sees a DOM ReadableStream, fromWeb wants
-		// the structurally-identical node:stream/web type — runtime-identical in
-		// Bun. Narrow cast, never `any`.
-		const nodeStream = Readable.fromWeb(body as unknown as import("node:stream/web").ReadableStream);
+		// No cast needed: this package pins lib to ESNext without DOM, so the
+		// global ReadableStream type IS node:stream/web's and fromWeb takes it bare.
+		const nodeStream = Readable.fromWeb(body);
 		await new Promise<void>((resolve, reject) => {
 			const writer = createWriteStream(tmpPath);
 			nodeStream.pipe(writer);
