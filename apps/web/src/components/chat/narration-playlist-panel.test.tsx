@@ -89,6 +89,43 @@ function profile(): TtsProfileRecord {
   };
 }
 
+/** A member-for-member inert `Animation` stand-in for happy-dom (which ships
+ *  no Web Animations API): pending forever, playback members inert. Satisfies
+ *  the interface so a flash-recording stub needs no erasure cast —
+ *  production's flash guard (playlist-row.tsx:66) try/catches the animate
+ *  call and never reads the returned handle. */
+function inertAnimation(): Animation {
+  const neverSettles = new Promise<Animation>(() => {});
+  return {
+    currentTime: null,
+    effect: null,
+    finished: neverSettles,
+    id: "",
+    oncancel: null,
+    onfinish: null,
+    onremove: null,
+    pending: true,
+    playbackRate: 1,
+    playState: "running",
+    overallProgress: null,
+    ready: neverSettles,
+    replaceState: "active",
+    startTime: null,
+    timeline: null,
+    cancel: () => {},
+    commitStyles: () => {},
+    finish: () => {},
+    pause: () => {},
+    persist: () => {},
+    play: () => {},
+    reverse: () => {},
+    updatePlaybackRate: () => Promise.resolve(),
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    dispatchEvent: () => false,
+  };
+}
+
 const mocks = {
   chatId: "c1",
   branchId: "b1",
@@ -452,7 +489,14 @@ describe("narration playlist panel (TPE-18a)", () => {
     let scrolled = false;
     let flashed = false;
     target.scrollIntoView = () => { scrolled = true; };
-    (target as unknown as { animate: unknown }).animate = () => { flashed = true; return {}; };
+    // happy-dom ships no Web Animations API; production's flash guard
+    // (playlist-row.tsx:66) try/catches the call and never reads the returned
+    // handle. The stand-in satisfies Element["animate"] member-for-member —
+    // a pending-forever Animation literal — so the recording needs no erasure.
+    target.animate = () => {
+      flashed = true;
+      return inertAnimation();
+    };
     try {
       await act(async () => { fireEvent.click(getByTestId("playlist-row-show")); });
       // The chat anchor is unique — playlist rows must not carry
@@ -2613,7 +2657,10 @@ describe("narration playlist advance auto-scroll (RD-7)", () => {
   } {
     const calls: Element[] = [];
     const cardScrollsInList: { id: string | null; inListAtScrollTime: boolean }[] = [];
-    const proto = HTMLElement.prototype as unknown as { scrollIntoView?: (options?: unknown) => void };
+    // happy-dom implements Element.scrollIntoView (a no-op receiver), so the
+    // saved member is always defined and the typed restore always applies —
+    // no optional-shape erasure needed on the prototype.
+    const proto = HTMLElement.prototype;
     const prev = proto.scrollIntoView;
     proto.scrollIntoView = function (this: Element): void {
       calls.push(this);
@@ -2629,8 +2676,7 @@ describe("narration playlist advance auto-scroll (RD-7)", () => {
       calls,
       cardScrollsInList,
       restore: () => {
-        if (prev === undefined) delete proto.scrollIntoView;
-        else proto.scrollIntoView = prev;
+        proto.scrollIntoView = prev;
       },
     };
   }
@@ -2658,7 +2704,9 @@ describe("narration playlist advance auto-scroll (RD-7)", () => {
       frames.push(callback);
       return frames.length;
     };
-    const proto = HTMLElement.prototype as unknown as { scrollIntoView?: (options?: unknown) => void };
+    // Same typed prototype stub as stubCardScrolling above — happy-dom always
+    // implements the member, so the saved function restores unconditionally.
+    const proto = HTMLElement.prototype;
     const prevScrollIntoView = proto.scrollIntoView;
     const scrolled: Element[] = [];
     proto.scrollIntoView = function (this: Element): void {
@@ -2681,8 +2729,7 @@ describe("narration playlist advance auto-scroll (RD-7)", () => {
       expect(scrolled[0].closest('[data-testid="playlist-row-list"]')).not.toBeNull();
     } finally {
       globalThis.requestAnimationFrame = prevRaf;
-      if (prevScrollIntoView === undefined) delete proto.scrollIntoView;
-      else proto.scrollIntoView = prevScrollIntoView;
+      proto.scrollIntoView = prevScrollIntoView;
       list.remove();
     }
   });

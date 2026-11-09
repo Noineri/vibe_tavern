@@ -15,8 +15,11 @@ import {
 } from "@vibe-tavern/domain";
 import { useDomEnv } from "../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
+import { strictTestDouble, type PartialMembers } from "../../../test/strict-test-double.js";
+import { wireAttachment, wirePersona, wirePromptPreset, wireProviderProfile } from "../../../test/wire-fixtures.js";
 import type { SttProfileRecord } from "../../api/stt-api.js";
 import type { InputAreaData } from "./use-input-area.js";
+import { brandId, type ChatId, type PromptPresetId } from "@vibe-tavern/domain";
 
 useDomEnv();
 
@@ -78,43 +81,58 @@ function sttProfile(): SttProfileRecord {
   };
 }
 
-function makeData(overrides: Record<string, unknown> = {}) {
-  return {
-    t: (key: string) => key,
-    chat: { handleSend: mock(), handleCancelGeneration: mock() },
-    character: { handleSetChatPersona: mock() },
-    preset: { handleSetActivePromptPresetId: mock() },
-    draft: "hello",
-    setDraft: mock(),
-    isSending: false,
-    activeChatId: "chat-1",
-    chatMeta: undefined,
-    personas: [{ id: "persona-1", name: "A very long persona name that must ellipsize", avatarExt: null, avatarAssetId: null, updatedAt: "2026-01-01T00:00:00.000Z" }],
-    activePersonaId: "persona-1",
-    promptPresets: [{ id: "preset-1", name: "Narrative" }],
-    activePromptPresetId: "preset-1",
-    favoriteModels: [],
-    activeModelId: null,
-    handleSelectFavoriteModel: mock(),
-    fileInputRef: { current: null },
-    draftAttachments: [],
-    onFileInputChange: mock(),
-    handlePaste: mock(),
-    canSend: true,
-    showGenerateMore: false,
-    handleGenerateMore: mock(),
-    buckets: { system: 0, character: 0, persona: 0, lore: 0, memory: 0, tools: 0, history: 0 },
-    inputTokens: 3584,
-    permanent: 0,
-    contextSize: 8192,
-    maxTokens: 1024,
-    availableBudget: 7168,
-    tokenState: "ok",
-    perSendPrefillSupported: false,
-    handleVoiceRecorded: mock(),
-    provider: { activeProviderProfile: null },
-    ...overrides,
-  } as unknown as InputAreaData;
+/** The props double rides the web strict-double seam: every provided member is
+ *  checked against the REAL InputAreaData member type, and a member the double
+ *  did not provide throws a labeled error instead of reading undefined. The
+ *  two guarded reads (`attachmentOverflow`, `attachmentVisionWarning`) are
+ *  present as explicit undefineds so `data.x?.…` behaves exactly as the erased
+ *  literal did; `accept` (always read for the file input) gets the inert "",
+ *  and `remove` (read as soon as an attachment chip renders) the inert no-op.
+ */
+function makeData(overrides: PartialMembers<InputAreaData> = {}) {
+  return strictTestDouble<InputAreaData>(
+    {
+      t: (key: string) => key,
+      chat: { handleSend: mock(), handleCancelGeneration: mock() },
+      character: { handleSetChatPersona: mock() },
+      preset: { handleSetActivePromptPresetId: mock() },
+      draft: "hello",
+      setDraft: mock(),
+      isSending: false,
+      activeChatId: brandId<ChatId>("chat-1"),
+      chatMeta: undefined,
+      personas: [wirePersona({ id: "persona-1", name: "A very long persona name that must ellipsize" })],
+      activePersonaId: "persona-1",
+      promptPresets: [wirePromptPreset({ id: "preset-1", name: "Narrative" })],
+      activePromptPresetId: brandId<PromptPresetId>("preset-1"),
+      favoriteModels: [],
+      activeModelId: undefined,
+      handleSelectFavoriteModel: mock(),
+      fileInputRef: { current: null },
+      accept: "",
+      draftAttachments: [],
+      onFileInputChange: mock(),
+      handlePaste: mock(),
+      canSend: true,
+      showGenerateMore: false,
+      handleGenerateMore: mock(),
+      attachmentOverflow: undefined,
+      attachmentVisionWarning: undefined,
+      buckets: { system: 0, character: 0, persona: 0, lore: 0, memory: 0, tools: 0, history: 0 },
+      inputTokens: 3584,
+      permanent: 0,
+      contextSize: 8192,
+      maxTokens: 1024,
+      availableBudget: 7168,
+      tokenState: "ok",
+      perSendPrefillSupported: false,
+      remove: () => {},
+      handleVoiceRecorded: mock(),
+      provider: { activeProviderProfile: null },
+      ...overrides,
+    },
+    "MobileInputArea data",
+  );
 }
 
 function mount(data: InputAreaData) {
@@ -158,7 +176,7 @@ describe("MobileInputArea action slot", () => {
 
   it("attachments only (empty draft) -> send", () => {
     sttProfiles = [sttProfile()];
-    const view = mount(makeData({ draft: "", draftAttachments: [{ id: "a1" }], canSend: true }));
+    const view = mount(makeData({ draft: "", draftAttachments: [wireAttachment({ id: "a1" })], canSend: true }));
 
     expect(button(view, "send").disabled).toBe(false);
     expect(shown(voiceButton(view))).toBe(false);
@@ -259,11 +277,11 @@ function seedQuota(usedPercent: number, config: ProviderQuotaConfig = QUOTA_CONF
   });
 }
 
-const withProfile = { provider: { activeProviderProfile: { id: PROFILE, name: "DeepSeek" } } };
+const withProfile = { provider: { activeProviderProfile: wireProviderProfile({ id: PROFILE, name: "DeepSeek" }) } };
 
 describe("MobileInputArea model button warning dot", () => {
   it("is off while the context is ok or mid and there is no quota", () => {
-    for (const tokenState of ["ok", "mid"]) {
+    for (const tokenState of ["ok", "mid"] as const) {
       const view = mount(makeData({ tokenState }));
       expect(hasDot(view)).toBe(false);
       view.unmount();

@@ -48,9 +48,11 @@ const originalPause = HTMLMediaElement.prototype.pause;
 beforeEach(() => {
   playMock.mockClear();
   pauseMock.mockClear();
-  const proto = HTMLMediaElement.prototype as unknown as Record<string, unknown>;
-  proto.play = playMock;
-  proto.pause = pauseMock;
+  // happy-dom's prototype methods are plain members — the bun mocks carry the
+  // exact signatures (play: () => Promise<void>, pause: () => void), so the
+  // patch is a typed direct assignment (no erasure needed).
+  HTMLMediaElement.prototype.play = playMock;
+  HTMLMediaElement.prototype.pause = pauseMock;
 });
 afterAll(async () => {
   HTMLMediaElement.prototype.play = originalPlay;

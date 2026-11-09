@@ -32,6 +32,16 @@ function profile(overrides: Partial<TtsProfileRecord> = {}): TtsProfileRecord {
 const pDefault = profile({ id: "p1", isDefault: true, name: "Default", sortOrder: 0 });
 const pChar = profile({ id: "p2", isDefault: false, name: "CharVoice", sortOrder: 1 });
 
+/** The narration text is always captured before the asserts run (the tests
+ *  await the pipeline); this turns a failed capture into a loud named error
+ *  instead of asserting against null — and gives the compiler a real
+ *  `string` without an erasure cast (the capture closures hide their writes
+ *  from control-flow analysis). */
+function requireCapturedText(value: string | null): string {
+  if (value === null) throw new Error("no narration text was captured");
+  return value;
+}
+
 let currentData: { profiles: TtsProfileRecord[]; links: Array<{ ttsProfileId: string; targetType: "character" | "persona"; targetId: string; mode: "voice" | "disabled" }> } | null = null;
 
 // Mock voice-map-data before importing the hook
@@ -253,7 +263,7 @@ describe("useMessageNarration", () => {
     // Default (no stored pref) = "full": codeblock stripped, asterisk MARKERS
     // stripped, span content KEPT — the v1 silent-cut remediation (D26).
     expect(capturedText).not.toBeNull();
-    const text = capturedText as unknown as string;
+    const text = requireCapturedText(capturedText);
     expect(text).not.toContain("code block");
     expect(text).toContain("shaking");
     expect(text).toContain("nervously");
@@ -296,7 +306,7 @@ describe("useMessageNarration", () => {
     });
     // Quoted mode: only the quoted dialogue; the * markers inside the quote
     // are stripped but "ever" survives (order: markers before quotedOnly).
-    expect(capturedText as unknown as string).toBe("don’t ever come back");
+    expect(requireCapturedText(capturedText)).toBe("don’t ever come back");
     __setTtsPlaybackDepsForTests(null);
   });
 });
@@ -307,7 +317,7 @@ describe("useMessageNarration — TTS annotation tags (TPE-1)", () => {
   test("tags in the narration source pass through quoted-dialogue mode instead of being dropped", async () => {
     currentData = { profiles: [pDefault], links: [] };
     persistTtsNarrationMode("quoted-dialogue");
-    let capturedText: unknown = null;
+    let capturedText: string | null = null;
     const fakePlayer = {
       play: async () => "ended" as const,
       skipCurrent: () => {},
@@ -321,7 +331,9 @@ describe("useMessageNarration — TTS annotation tags (TPE-1)", () => {
     const origStart = useTtsPlaybackStore.getState().startNarration;
     useTtsPlaybackStore.setState({
       startNarration: async (...args: unknown[]) => {
-        capturedText = args[1];
+        // The narration text is startNarration's second argument — narrowed
+        // honestly at the capture seam instead of a cast at every read.
+        capturedText = typeof args[1] === "string" ? args[1] : null;
         return origStart(...(args as [string, string, TtsProfileRecord]));
       },
     } as never);
@@ -340,7 +352,7 @@ describe("useMessageNarration — TTS annotation tags (TPE-1)", () => {
     });
     // Quoted mode keeps the dialogue; the laugh (anchor dropped by the
     // quote filter) falls to the end instead of vanishing.
-    expect(capturedText as unknown as string).toBe("Wait, don’t ever go. [laugh]");
+    expect(requireCapturedText(capturedText)).toBe("Wait, don’t ever go. [laugh]");
     __setTtsPlaybackDepsForTests(null);
   });
 });
@@ -360,7 +372,7 @@ describe("useMessageNarration — macro resolution (TPE-19)", () => {
     useSnapshotStore.setState({ character: null, persona: null, activeChat: null } as never);
   }
 
-  async function captureStartNarrationText(source: string): Promise<unknown> {
+  async function captureStartNarrationText(source: string): Promise<string | null> {
     currentData = { profiles: [pDefault], links: [] };
     const fakePlayer = {
       play: async () => "ended" as const,
@@ -373,10 +385,12 @@ describe("useMessageNarration — macro resolution (TPE-19)", () => {
     const fakeSynthesize = mock(async (text: string) => ({ blob: new Blob([text], { type: "audio/mpeg" }), mime: "audio/mpeg" }));
     __setTtsPlaybackDepsForTests({ player: fakePlayer as never, synthesize: fakeSynthesize as never });
     const origStart = useTtsPlaybackStore.getState().startNarration;
-    let captured: unknown = null;
+    let captured: string | null = null;
     useTtsPlaybackStore.setState({
       startNarration: async (...args: unknown[]) => {
-        captured = args[1];
+        // The narration text is startNarration's second argument — narrowed
+        // honestly at the capture seam instead of a cast at every read.
+        captured = typeof args[1] === "string" ? args[1] : null;
         return origStart(...(args as [string, string, TtsProfileRecord]));
       },
     } as never);
@@ -399,21 +413,21 @@ describe("useMessageNarration — macro resolution (TPE-19)", () => {
   test("greeting macros resolve to persona/character names at the startNarration seam", async () => {
     seedMacroContext();
     const text = await captureStartNarrationText("{{user}} nodded as {{char}} spoke.");
-    expect(text as unknown as string).toBe("Alya nodded as Noi spoke.");
+    expect(text).toBe("Alya nodded as Noi spoke.");
     resetMacroContext();
   });
 
   test("pronoun macros follow the shared preset table (she/her → she)", async () => {
     seedMacroContext();
     const text = await captureStartNarrationText("{{sub}} smiled.");
-    expect(text as unknown as string).toBe("she smiled.");
+    expect(text).toBe("she smiled.");
     resetMacroContext();
   });
 
   test("coauthor mode leaves raw macros untouched (display parity)", async () => {
     seedMacroContext(true);
     const text = await captureStartNarrationText("{{user}} nodded as {{char}} spoke.");
-    expect(text as unknown as string).toBe("{{user}} nodded as {{char}} spoke.");
+    expect(text).toBe("{{user}} nodded as {{char}} spoke.");
     resetMacroContext();
   });
 });

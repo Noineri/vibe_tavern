@@ -1,17 +1,19 @@
 import { beforeAll, describe, expect, it, mock } from "bun:test";
 import { useDomEnv } from "../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
+import { strictTestDouble, type PartialMembers } from "../../../test/strict-test-double.js";
 import { TooltipProvider } from "../shared/Tooltip.js";
 import type { InputAreaData } from "./use-input-area.js";
+import type { FavoriteProviderModelRecord } from "../../api/types.js";
 import { estimateAttachmentOverflow } from "../../hooks/attachment-overflow.js";
 import { useImageRouteWarning } from "../../hooks/use-image-route-warning.js";
-import type { Attachment } from "@vibe-tavern/domain";
+import { brandId, type Attachment, type ChatId } from "@vibe-tavern/domain";
 
 useDomEnv();
 
 // House i18n test pattern via the shared co-load seam: raw keys render as-is;
 // the context-meter pins read the bundled EN templates ("Context: {n}%",
-// "Context") — byte-identical to the previous hand-built values.
+// "Context") â byte-identical to the previous hand-built values.
 installI18nContextSeam({ interpolateKeys: ["context_usage_percent", "context_label"] });
 
 let act: typeof import("@testing-library/react").act;
@@ -25,43 +27,58 @@ beforeAll(async () => {
   ({ MobileInputArea } = await import("./MobileInputArea.js"));
 });
 
-function makeData(overrides: Record<string, unknown> = {}) {
-  return {
-    t: (key: string) => key,
-    chat: { handleSend: mock(), handleCancelGeneration: mock() },
-    character: { handleSetChatPersona: mock() },
-    preset: { handleSetActivePromptPresetId: mock() },
-    draft: "hello world",
-    setDraft: mock(),
-    isSending: false,
-    activeChatId: "chat-1",
-    chatMeta: undefined,
-    personas: [],
-    activePersonaId: null,
-    promptPresets: [],
-    activePromptPresetId: null,
-    favoriteModels: [],
-    activeModelId: null,
-    handleSelectFavoriteModel: mock(),
-    fileInputRef: { current: null },
-    draftAttachments: [],
-    onFileInputChange: mock(),
-    handlePaste: mock(),
-    canSend: true,
-    showGenerateMore: false,
-    handleGenerateMore: mock(),
-    buckets: { system: 0, character: 0, persona: 0, lore: 0, memory: 0, tools: 0, history: 0 },
-    inputTokens: 6000,
-    permanent: 0,
-    contextSize: 8192,
-    maxTokens: 1024,
-    availableBudget: 7168,
-    tokenState: "mid",
-    perSendPrefillSupported: false,
-    handleVoiceRecorded: mock(),
-    provider: { activeProviderProfile: null },
-    ...overrides,
-  } as unknown as InputAreaData;
+/** The props double rides the web strict-double seam: every provided member is
+ *  checked against the REAL InputAreaData member type, and a member the double
+ *  did not provide throws a labeled error instead of reading undefined. The
+ *  two guarded reads (`attachmentOverflow`, `attachmentVisionWarning`) are
+ *  present as explicit undefineds so `data.x?.…` behaves exactly as the erased
+ *  literal did; `accept` (always read for the file input) gets the inert "",
+ *  and `remove` (read as soon as an attachment chip renders) the inert no-op.
+ */
+function makeData(overrides: PartialMembers<InputAreaData> = {}) {
+  return strictTestDouble<InputAreaData>(
+    {
+      t: (key: string) => key,
+      chat: { handleSend: mock(), handleCancelGeneration: mock() },
+      character: { handleSetChatPersona: mock() },
+      preset: { handleSetActivePromptPresetId: mock() },
+      draft: "hello world",
+      setDraft: mock(),
+      isSending: false,
+      activeChatId: brandId<ChatId>("chat-1"),
+      chatMeta: undefined,
+      personas: [],
+      activePersonaId: null,
+      promptPresets: [],
+      activePromptPresetId: null,
+      favoriteModels: [],
+      activeModelId: undefined,
+      handleSelectFavoriteModel: mock(),
+      fileInputRef: { current: null },
+      accept: "",
+      draftAttachments: [],
+      onFileInputChange: mock(),
+      handlePaste: mock(),
+      canSend: true,
+      showGenerateMore: false,
+      handleGenerateMore: mock(),
+      attachmentOverflow: undefined,
+      attachmentVisionWarning: undefined,
+      buckets: { system: 0, character: 0, persona: 0, lore: 0, memory: 0, tools: 0, history: 0 },
+      inputTokens: 6000,
+      permanent: 0,
+      contextSize: 8192,
+      maxTokens: 1024,
+      availableBudget: 7168,
+      tokenState: "mid",
+      perSendPrefillSupported: false,
+      remove: () => {},
+      handleVoiceRecorded: mock(),
+      provider: { activeProviderProfile: null },
+      ...overrides,
+    },
+    "MobileInputArea data",
+  );
 }
 
 // behavior change: was "the RP context ring renders immediately before the send
@@ -104,9 +121,11 @@ describe("MobileInputArea attachment overflow warning (CA-1e)", () => {
 });
 
 describe("MobileInputArea starred-models sheet", () => {
-  const FAVORITES = [
-    { modelId: "model-a", label: "Alpha" },
-    { modelId: "model-b", label: "" },
+  // Complete favorite rows (the erasure-era literals carried only the two
+  // fields the sheet renders; the record's identity members were hidden).
+  const FAVORITES: FavoriteProviderModelRecord[] = [
+    { id: "fav-1", providerProfileId: "p1", modelId: "model-a", scope: "rp", label: "Alpha", contextLength: null, createdAt: "2026-01-01T00:00:00.000Z" },
+    { id: "fav-2", providerProfileId: "p1", modelId: "model-b", scope: "rp", label: "", contextLength: null, createdAt: "2026-01-01T00:00:00.000Z" },
   ];
 
   function openStarSheet(data: InputAreaData) {
@@ -173,7 +192,7 @@ describe("MobileInputArea context breakdown (via the model sheet)", () => {
 });
 
 // CNR-7e characterization, written BEFORE the thin-scrollbar opt-in: the
-// hand-rolled mobile growth — content height until 40% of the viewport, the
+// hand-rolled mobile growth â content height until 40% of the viewport, the
 // same node kept across draft changes, clear recomputes the height. The
 // opt-in must not disturb any of it.
 describe("MobileInputArea draft growth (CNR-7e)", () => {
@@ -212,7 +231,7 @@ describe("MobileInputArea draft growth (CNR-7e)", () => {
   });
 
   // New boundary (fails before the CNR-7e opt-in): the textarea IS the thin
-  // scroll-area viewport — no wrapper div, no Content node, native tab stop.
+  // scroll-area viewport â no wrapper div, no Content node, native tab stop.
   it("composes the native textarea as the 3px thin-viewport and mounts the track only on overflow", async () => {
     const view = render(<TooltipProvider><MobileInputArea data={makeData()} /></TooltipProvider>);
     await act(async () => {});
@@ -231,13 +250,13 @@ describe("MobileInputArea draft growth (CNR-7e)", () => {
       expect(el).not.toBeNull();
       return el;
     });
-    // CNR-8b: the 3px is no longer a track class — the thin variant marker on
+    // CNR-8b: the 3px is no longer a track class â the thin variant marker on
     // the ScrollArea root plus the track wiring carry it (styles.css owns the
     // geometry contract, pinned in scroll-area.test.tsx).
     expect(track.closest("[data-scroll-area]")!.getAttribute("data-scroll-area")).toBe("thin");
     expect(track.getAttribute("data-orientation")).toBe("vertical");
     // CNR-8n rider (owner ruling): the composer lane carries the ONE phone
-    // exception marker — its thumb stays visible on phones, everything else
+    // exception marker â its thumb stays visible on phones, everything else
     // hides (styles.css selector pinned in auto-textarea.test.tsx).
     expect(track.closest("[data-scroll-area]")!.hasAttribute("data-scroll-composer")).toBe(true);
     expect(textbox(view)).toBe(ta);

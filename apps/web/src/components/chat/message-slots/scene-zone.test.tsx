@@ -18,6 +18,8 @@
  * Modal/BottomSheet chrome are mocked.
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { brandId, normalizeInsightsConfig, type ChatBranchId, type MessageVariantId } from "@vibe-tavern/domain";
+import { wireBranch, wireChat, wireMessage, wireVariant } from "../../../../test/wire-fixtures.js";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 import { createElement, type ReactNode } from "react";
@@ -95,8 +97,19 @@ beforeAll(async () => {
 // ── Fixtures ──────────────────────────────────────────────────────────────
 
 const SCHEMA = { mood: { $type: "string" as const }, tension: { $type: "number" as const, min: 0, max: 10 } };
-const SCHEMA_HASH = "h1";
 const REVISION = 1;
+// SCN-12 (the 7a derivation): the tracker config derives through the domain's
+// persisted-column seam — normalizeInsightsConfig recomputes `schemaHash` from
+// the schema and never accepts it as input, so the erased literal's
+// self-consistent "h1" hash was fake on BOTH sides; the sceneTracker records
+// below read the derived hash so the zone's freshness match (scene-zone.tsx:92)
+// is real.
+const TRACKER_CONFIG = normalizeInsightsConfig({
+  objectiveEnabled: false,
+  trackerEnabled: true,
+  tracker: { schema: SCHEMA, revision: REVISION },
+});
+const SCHEMA_HASH = TRACKER_CONFIG.tracker?.schemaHash ?? "";
 
 const ROSTER_SCHEMA: SceneTrackerDsl = {
   applicantRoster: {
@@ -141,33 +154,25 @@ function record(variantId: string, sceneState: SceneTrackerRecord["sceneState"],
 
 function msg(id: string, opts: { role?: "assistant" | "user"; variantId?: string; rec?: SceneTrackerRecord | null; branchId?: string } = {}): AppMessage {
   const variantId = opts.variantId ?? `${id}-v0`;
-  return {
-    id,
+  return wireMessage(id, {
     role: opts.role ?? "assistant",
-    chatId: "chat-1",
-    branchId: opts.branchId ?? "b1",
+    branchId: brandId<ChatBranchId>(opts.branchId ?? "b1"),
     content: `content ${id}`,
-    createdAt: "2026-01-01T00:00:00.000Z",
-    updatedAt: "2026-01-01T00:00:00.000Z",
-    variants: [{ id: variantId, messageId: id, variantIndex: 0, content: `content ${id}`, isSelected: true } as unknown as AppMessage["variants"][number]],
+    variants: [wireVariant(id, 0, { id: brandId<MessageVariantId>(variantId), content: `content ${id}`, isSelected: true })],
     selectedVariantIndex: 0,
-    modelId: null,
     sceneTracker: opts.rec === undefined ? null : opts.rec,
-  } as unknown as AppMessage;
+  });
 }
 
 function seed(messages: AppMessage[], trackerEnabled = true): void {
   const snap: AppSnapshot = {
     chats: [],
     allCharacters: [],
-    activeChat: {
-      id: "chat-1", title: "Chat 1", characterId: "c1",
-      insightsConfig: { objectiveEnabled: false, trackerEnabled, tracker: { schema: SCHEMA, schemaHash: SCHEMA_HASH, revision: REVISION } as never },
-    } as unknown as AppSnapshot["activeChat"],
-    activeBranch: { id: "b1", chatId: "chat-1", label: "main" } as unknown as AppSnapshot["activeBranch"],
+    activeChat: wireChat({ insightsConfig: { ...TRACKER_CONFIG, trackerEnabled } }),
+    activeBranch: wireBranch(),
     branches: [], messages, summaries: [], promptTrace: null,
-    character: null, persona: null,
-  } as unknown as AppSnapshot;
+    character: undefined, persona: null,
+  };
   useSnapshotStore.getState().ingestSnapshot(snap);
 }
 

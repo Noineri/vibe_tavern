@@ -29,14 +29,14 @@ import { testFetch } from "@vibe-tavern/test-fetch";
 import type { ReactNode } from "react";
 import { createInstance } from "i18next";
 import { I18nextProvider } from "react-i18next";
-import { CHAT_MODE } from "@vibe-tavern/domain";
+import { CHAT_MODE, brandId, type ChatBranchId, type ChatId } from "@vibe-tavern/domain";
 import type {
   AgentKindSettingsWire,
   ExperienceCopilotMessageWire,
   ExperienceCopilotThreadWire,
 } from "@vibe-tavern/api-contracts";
 import { useDomEnv } from "../../../../test/dom-env.js";
-import { wireUiSettings } from "../../../../test/wire-fixtures.js";
+import { wireBranch, wireChat, wireProviderProfile, wireUiSettings } from "../../../../test/wire-fixtures.js";
 import type { ProviderProfileRecord } from "../../../api/types.js";
 import { useSnapshotStore } from "../../../stores/snapshot-store.js";
 import { useAgentTurnStore } from "../../../stores/agent-turn-store.js";
@@ -152,11 +152,13 @@ afterAll(() => {
 type ActiveChat = NonNullable<ReturnType<typeof useSnapshotStore.getState>["activeChat"]>;
 type ActiveBranch = NonNullable<ReturnType<typeof useSnapshotStore.getState>["activeBranch"]>;
 
-const CHAT_A = { id: "chat-a", mode: "rp" } as unknown as ActiveChat;
-const BRANCH_A = { id: "branch-a", chatId: "chat-a", label: "main" } as unknown as ActiveBranch;
-const CHAT_B = { id: "chat-b", mode: "rp" } as unknown as ActiveChat;
-const BRANCH_B = { id: "branch-b", chatId: "chat-b", label: "main" } as unknown as ActiveBranch;
+const CHAT_A = wireChat({ id: brandId<ChatId>("chat-a"), mode: "rp" });
+const BRANCH_A = wireBranch({ id: brandId<ChatBranchId>("branch-a"), chatId: brandId<ChatId>("chat-a") });
+const CHAT_B = wireChat({ id: brandId<ChatId>("chat-b"), mode: "rp" });
+const BRANCH_B = wireBranch({ id: brandId<ChatBranchId>("branch-b"), chatId: brandId<ChatId>("chat-b") });
 
+// The literal carries the thread schema's complete field set (verified against
+// experienceCopilotThreadSchema) — the old double cast was pure noise.
 function chatThread(id: string): ExperienceCopilotThreadWire {
   return {
     id,
@@ -169,28 +171,29 @@ function chatThread(id: string): ExperienceCopilotThreadWire {
     metrics: null,
     contextLinks: [],
     todo: [],
-  } as unknown as ExperienceCopilotThreadWire;
+  };
 }
 
 // p1 is the ACTIVE provider profile; each profile carries one tool-capable
 // cached model so the REAL `useProviderModels` hook serves the model list
-// from cache (no fetch).
-const PROFILES = [
-  {
+// from cache (no fetch). The rows ride the wire factory — the erased literals
+// also hid the required `cachedAt` on `cachedModels`.
+const PROFILES: ProviderProfileRecord[] = [
+  wireProviderProfile({
     id: "p1",
     name: "Active RP provider",
     isActive: true,
     defaultModel: "m1",
-    cachedModels: { models: [{ id: "m1", label: "Model One", contextLength: 128000, capabilities: { tools: true } }] },
-  },
-  {
+    cachedModels: { models: [{ id: "m1", label: "Model One", contextLength: 128000, capabilities: { tools: true } }], cachedAt: "2026-01-01T00:00:00.000Z" },
+  }),
+  wireProviderProfile({
     id: "p2",
     name: "Other provider",
     isActive: false,
     defaultModel: "m2",
-    cachedModels: { models: [{ id: "m2", label: "Model Two", contextLength: 200000, capabilities: { tools: true } }] },
-  },
-] as unknown as ProviderProfileRecord[];
+    cachedModels: { models: [{ id: "m2", label: "Model Two", contextLength: 200000, capabilities: { tools: true } }], cachedAt: "2026-01-01T00:00:00.000Z" },
+  }),
+];
 
 function kindEntry(kind: string, servesChatModes: string[]): AgentKindSettingsWire {
   return {
@@ -522,8 +525,8 @@ describe("sidechat-panel — left-border drag (SC-14)", () => {
 describe("sidechat-panel — served-modes gate (SC-14)", () => {
   it("renders nothing on a co-author chat (not served)", () => {
     seedChat(
-      { id: "chat-co", mode: "coauthor" } as unknown as ActiveChat,
-      { id: "branch-co", chatId: "chat-co", label: "main" } as unknown as ActiveBranch,
+      wireChat({ id: brandId<ChatId>("chat-co"), mode: "coauthor" }),
+      wireBranch({ id: brandId<ChatBranchId>("branch-co"), chatId: brandId<ChatId>("chat-co") }),
     );
     const { queryByTestId } = render(withIsolatedI18n(<SidechatPanel />));
     expect(queryByTestId("sidechat-closed")).toBeNull();

@@ -35,8 +35,10 @@
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import { testFetch } from "@vibe-tavern/test-fetch";
+import { brandId, normalizeInsightsConfig, normalizeObjectiveState, type ChatBranchId, type ChatId } from "@vibe-tavern/domain";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
+import { wireChat } from "../../../../test/wire-fixtures.js";
 import type { RecordProposal, StoryCard, StoryDeck } from "@vibe-tavern/api-contracts";
 import en from "../../../i18n/locales/en.json";
 import ru from "../../../i18n/locales/ru.json";
@@ -45,7 +47,6 @@ useDomEnv();
 const { fireEvent, render, renderHook, waitFor } = await import("@testing-library/react");
 import { useSnapshotStore } from "../../../stores/snapshot-store.js";
 import { useStoryDeck } from "../../../hooks/use-story-deck.js";
-import type { AppSnapshot } from "../../../api/types.js";
 
 const mocks = {
   applyObjectiveProposal: mock(),
@@ -123,14 +124,15 @@ afterAll(() => {
 });
 
 /** Seed the ACTIVE chat the card reads its ids from (the sibling cards'
- *  seed pattern: minimal wire double through `ingestSnapshot`). */
+ *  seed pattern: the wire factory through `ingestSnapshot`; the objective
+ *  state rides the domain's persisted-column seam). */
 function seedChat(branchId: string): void {
   useSnapshotStore.getState().ingestSnapshot({
-    activeChat: {
-      id: "c1",
-      activeBranchId: branchId,
-      insightsConfig: { objectiveEnabled: true, trackerEnabled: false },
-      insightsObjectiveState: {
+    activeChat: wireChat({
+      id: brandId<ChatId>("c1"),
+      activeBranchId: brandId<ChatBranchId>(branchId),
+      insightsConfig: normalizeInsightsConfig({ objectiveEnabled: true, trackerEnabled: false }),
+      insightsObjectiveState: normalizeObjectiveState({
         mode: "goals",
         objectiveDescription: "",
         tasks: [],
@@ -143,9 +145,9 @@ function seedChat(branchId: string): void {
         generatePrompt: "",
         checkPrompt: "",
         injectPrompt: "",
-      },
-    },
-  } as unknown as AppSnapshot);
+      }),
+    }),
+  });
 }
 
 function proposal(over: Partial<RecordProposal> & { payload?: unknown }): RecordProposal {

@@ -56,6 +56,11 @@ export function strictTestDouble<T extends object>(provided: PartialMembers<T>, 
 			// inside an async factory rejects with this file's own miss error.
 			// No consumer ever awaits a member named `then` on a store double.
 			if (prop === "then") return undefined;
+			// Same plain-object probe class, symbol flavor (7b): React/happy-dom
+			// read `Symbol.toStringTag` off props objects during reconciliation —
+			// a plain object answers undefined there (its tag resolves off the
+			// prototype), so the double must answer the same.
+			if (prop === Symbol.toStringTag) return undefined;
 			throw new Error(
 				`strictTestDouble(${label}): member '${String(prop)}' was not provided by this test double`,
 			);

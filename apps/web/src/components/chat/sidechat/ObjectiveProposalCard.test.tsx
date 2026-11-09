@@ -15,8 +15,10 @@
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import { testFetch } from "@vibe-tavern/test-fetch";
+import { brandId, normalizeInsightsConfig, type ChatBranchId, type ChatId } from "@vibe-tavern/domain";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
+import { wireChat } from "../../../../test/wire-fixtures.js";
 import type { RecordProposal } from "@vibe-tavern/api-contracts";
 import en from "../../../i18n/locales/en.json";
 import ru from "../../../i18n/locales/ru.json";
@@ -24,7 +26,6 @@ import ru from "../../../i18n/locales/ru.json";
 useDomEnv();
 const { fireEvent, render, waitFor } = await import("@testing-library/react");
 import { useSnapshotStore } from "../../../stores/snapshot-store.js";
-import type { AppSnapshot } from "../../../api/types.js";
 
 const mocks = {
   applyObjectiveProposal: mock(),
@@ -72,12 +73,12 @@ function proposal(over: Partial<RecordProposal>): RecordProposal {
 }
 
 /** Seed the ACTIVE chat the card reads its tracker toggle from (the
- *  ImageGenMessageMenu seed pattern: minimal wire double through
- *  `ingestSnapshot`, so the hygiene cast budget stays flat). */
+ *  ImageGenMessageMenu seed pattern: the wire factory through
+ *  `ingestSnapshot`). */
 function seedChat(objectiveEnabled: boolean) {
   useSnapshotStore.getState().ingestSnapshot({
-    activeChat: { id: "c1", insightsConfig: { objectiveEnabled, trackerEnabled: false } },
-  } as unknown as AppSnapshot);
+    activeChat: wireChat({ id: brandId<ChatId>("c1"), insightsConfig: normalizeInsightsConfig({ objectiveEnabled, trackerEnabled: false }) }),
+  });
 }
 
 beforeEach(() => {
@@ -339,12 +340,12 @@ afterAll(() => {
  *  branch-less seed above is exactly the no-owner case (today's card). */
 function seedChatWithBranch(branchId: string) {
   useSnapshotStore.getState().ingestSnapshot({
-    activeChat: {
-      id: "c1",
-      activeBranchId: branchId,
-      insightsConfig: { objectiveEnabled: true, trackerEnabled: false },
-    },
-  } as unknown as AppSnapshot);
+    activeChat: wireChat({
+      id: brandId<ChatId>("c1"),
+      activeBranchId: brandId<ChatBranchId>(branchId),
+      insightsConfig: normalizeInsightsConfig({ objectiveEnabled: true, trackerEnabled: false }),
+    }),
+  });
 }
 
 describe("ObjectiveProposalCard — plan mode (DR-10b / R3)", () => {

@@ -190,7 +190,7 @@ describe("ImageGenProgressRow — Stop control (IF-9)", () => {
     // Drive the REAL run machine through the parked-generate seam — the row
     // sees the same run the store owns, so the Stop click exercises the true
     // abort boundary (PG-2: transport abort + interrupt), not a painted double.
-    const input = { mode: "portrait", profileId: "p1", anchorMessageId: "m1" } as unknown as GenerateImageGenInput;
+    const input: GenerateImageGenInput = { mode: "portrait", profileId: "p1", anchorMessageId: "m1" };
     void useImageGenChatStore.getState().runGeneration("chat-1", input, { liveProgress: true });
     served = { phase: "prompt" };
 

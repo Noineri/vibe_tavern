@@ -24,10 +24,11 @@
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import { testFetch } from "@vibe-tavern/test-fetch";
+import { brandId, normalizeInsightsConfig, normalizeObjectiveState, type ChatBranchId, type ChatId, type ObjectiveState } from "@vibe-tavern/domain";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
+import { wireChat } from "../../../../test/wire-fixtures.js";
 import type { AgentPlan, AgentPlanTask, RecordProposal } from "@vibe-tavern/api-contracts";
-import type { ObjectiveState } from "@vibe-tavern/domain";
 import en from "../../../i18n/locales/en.json";
 import ru from "../../../i18n/locales/ru.json";
 
@@ -35,7 +36,6 @@ useDomEnv();
 const { fireEvent, render, renderHook, waitFor } = await import("@testing-library/react");
 import { useSnapshotStore } from "../../../stores/snapshot-store.js";
 import { useAgentPlan } from "../../../hooks/use-agent-plan.js";
-import type { AppSnapshot } from "../../../api/types.js";
 
 const mocks = {
   applyStoryPlanProposal: mock(),
@@ -139,8 +139,9 @@ afterAll(() => {
 });
 
 /** Seed the ACTIVE chat the card reads the tracker state and ids from (the
- *  ObjectiveProposalCard seed pattern: minimal wire double through
- *  `ingestSnapshot`). */
+ *  ObjectiveProposalCard seed pattern: the wire factory through
+ *  `ingestSnapshot`; the objective state rides the domain's persisted-column
+ *  seam, which keeps valid `goals`/`route` modes and known task statuses). */
 function seedChat(over: {
   branchId: string;
   items?: { id: string; description: string; status: string }[];
@@ -149,11 +150,11 @@ function seedChat(over: {
   autoCheckFrequency?: number;
 }) {
   useSnapshotStore.getState().ingestSnapshot({
-    activeChat: {
-      id: "c1",
-      activeBranchId: over.branchId,
-      insightsConfig: { objectiveEnabled: true, trackerEnabled: false },
-      insightsObjectiveState: {
+    activeChat: wireChat({
+      id: brandId<ChatId>("c1"),
+      activeBranchId: brandId<ChatBranchId>(over.branchId),
+      insightsConfig: normalizeInsightsConfig({ objectiveEnabled: true, trackerEnabled: false }),
+      insightsObjectiveState: normalizeObjectiveState({
         mode: over.mode ?? "goals",
         objectiveDescription: "",
         tasks: over.items ?? [],
@@ -166,9 +167,9 @@ function seedChat(over: {
         generatePrompt: "",
         checkPrompt: "",
         injectPrompt: "",
-      },
-    },
-  } as unknown as AppSnapshot);
+      }),
+    }),
+  });
 }
 
 function proposal(over: Partial<RecordProposal> & { payload?: unknown }): RecordProposal {

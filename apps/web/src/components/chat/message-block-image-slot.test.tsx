@@ -15,7 +15,8 @@
  */
 
 import { afterAll, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
-import { wireCharacter } from "../../../test/wire-fixtures.js";
+import { brandId, type CharacterId } from "@vibe-tavern/domain";
+import { wireBranch, wireChat, wireCharacter, wireChatListItem, wireMessage, wireVariant } from "../../../test/wire-fixtures.js";
 import { useDomEnv } from "../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 import { installFramerMotionSeam } from "../../../test/framer-motion-seam.js";
@@ -83,11 +84,13 @@ installFramerMotionSeam();
 beforeAll(() => {
   if (typeof window !== "undefined") {
     if (!window.matchMedia) {
-      window.matchMedia = (q: string) => ({
+      // Member-for-member MediaQueryList literal (the 7a annotation shape) —
+      // no erasure needed: the literal satisfies the interface.
+      window.matchMedia = (q: string): MediaQueryList => ({
         matches: false, media: q, onchange: null,
         addEventListener: NOOP, removeEventListener: NOOP,
         addListener: NOOP, removeListener: NOOP, dispatchEvent: () => false,
-      }) as unknown as MediaQueryList;
+      });
     }
     if (typeof (globalThis as { ResizeObserver?: unknown }).ResizeObserver === "undefined") {
       (globalThis as { ResizeObserver?: unknown }).ResizeObserver = class {
@@ -160,42 +163,37 @@ function slotAttachment(overrides?: Partial<Attachment>): Attachment {
 }
 
 /** The IG-CF6 pure image slot: assistant, empty content, imageGen attachments. */
-function makeSlotMessage(id: string, attachments: Attachment[] = [slotAttachment()], variants: unknown[] = []): AppMessage {
-  return {
-    id, role: "assistant", content: "",
-    createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z",
-    variants, selectedVariantIndex: variants.length > 0 ? 0 : null, modelId: null,
+function makeSlotMessage(id: string, attachments: Attachment[] = [slotAttachment()], variants: AppMessage["variants"] = []): AppMessage {
+  return wireMessage(id, {
+    role: "assistant",
+    content: "",
+    variants,
+    selectedVariantIndex: variants.length > 0 ? 0 : null,
     attachments,
-  } as unknown as AppMessage;
+  });
 }
 
 function makeAssistantMessage(id: string, content: string, attachments?: Attachment[]): AppMessage {
-  return {
-    id, role: "assistant", content,
-    createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z",
-    variants: [], selectedVariantIndex: null, modelId: null,
+  return wireMessage(id, {
+    role: "assistant",
+    content,
     ...(attachments !== undefined ? { attachments } : {}),
-  } as unknown as AppMessage;
+  });
 }
 
 function seed(messages: AppMessage[]): AppSnapshot {
   return {
-    chats: [{ id: "chat-1", title: "Chat 1", characterId: "c1", characterName: "Char c1", subtitle: "", activeBranchLabel: "main", mode: "rp", messageCount: messages.length, updatedAt: "2026-01-01T00:00:00.000Z" }],
+    chats: [wireChatListItem({ title: "Chat 1", characterId: brandId<CharacterId>("c1"), characterName: "Char c1", messageCount: messages.length })],
     allCharacters: [],
-    activeChat: {
-      id: "chat-1",
-      title: "Chat 1",
-      characterId: "c1",
-      insightsConfig: { objectiveEnabled: false, trackerEnabled: false },
-    } as unknown as AppSnapshot["activeChat"],
-    activeBranch: { id: "b1", chatId: "chat-1", label: "main" } as unknown as AppSnapshot["activeBranch"],
+    activeChat: wireChat({ title: "Chat 1" }),
+    activeBranch: wireBranch(),
     branches: [],
     messages,
     summaries: [],
     promptTrace: null,
     character: makeCharacter("c1"),
     persona: null,
-  } as unknown as AppSnapshot;
+  };
 }
 
 beforeEach(async () => {
@@ -280,8 +278,8 @@ describe("MessageBlock — pure image slot (IG-CF6)", () => {
   test("pure slot with swipe variants: the variant carousel stays intact (1/2 counter)", async () => {
     const { MessageBlock, snapshotStore, chatStore } = await loadModules();
     const variants = [
-      { variantIndex: 0, content: "", reasoning: null, reasoningDurationMs: null, isSelected: true },
-      { variantIndex: 1, content: "", reasoning: null, reasoningDurationMs: null, isSelected: false },
+      wireVariant("m1", 0, { content: "", isSelected: true }),
+      wireVariant("m1", 1, { content: "", isSelected: false }),
     ];
     snapshotStore.useSnapshotStore.getState().ingestSnapshot(seed([makeSlotMessage("m1", [slotAttachment()], variants)]));
     chatStore.useChatStore.getState().setActiveChatId(CHAT);
@@ -296,8 +294,8 @@ describe("MessageBlock — pure image slot (IG-CF6)", () => {
     const first = slotAttachment();
     const second = slotAttachment({ id: "att-2", assetId: "asset-2", name: "imagegen-asset-2" });
     const variants = [
-      { variantIndex: 0, content: "", reasoning: null, reasoningDurationMs: null, isSelected: true, attachmentsJson: JSON.stringify([first]) },
-      { variantIndex: 1, content: "", reasoning: null, reasoningDurationMs: null, isSelected: false, attachmentsJson: JSON.stringify([second]) },
+      wireVariant("m1", 0, { content: "", isSelected: true, attachmentsJson: JSON.stringify([first]) }),
+      wireVariant("m1", 1, { content: "", isSelected: false, attachmentsJson: JSON.stringify([second]) }),
     ];
     snapshotStore.useSnapshotStore.getState().ingestSnapshot(seed([makeSlotMessage("m1", [first], variants)]));
     chatStore.useChatStore.getState().setActiveChatId(CHAT);
@@ -324,16 +322,16 @@ describe("MessageBlock — pure image slot (IG-CF6)", () => {
   test("IF-4b: slot arrows stay live while the message is busy (swipeWhileBusy path); text arrows keep the busy lock", async () => {
     const { MessageBlock, snapshotStore, chatStore } = await loadModules();
     const slotVariants = [
-      { variantIndex: 0, content: "", reasoning: null, reasoningDurationMs: null, isSelected: true },
-      { variantIndex: 1, content: "", reasoning: null, reasoningDurationMs: null, isSelected: false },
+      wireVariant("m-slot", 0, { content: "", isSelected: true }),
+      wireVariant("m-slot", 1, { content: "", isSelected: false }),
     ];
     const textVariants = [
-      { variantIndex: 0, content: "First take.", reasoning: null, reasoningDurationMs: null, isSelected: true },
-      { variantIndex: 1, content: "Second take.", reasoning: null, reasoningDurationMs: null, isSelected: false },
+      wireVariant("m-text", 0, { content: "First take.", isSelected: true }),
+      wireVariant("m-text", 1, { content: "Second take.", isSelected: false }),
     ];
     snapshotStore.useSnapshotStore.getState().ingestSnapshot(seed([
       makeSlotMessage("m-slot", [slotAttachment()], slotVariants),
-      { ...makeAssistantMessage("m-text", "Hello there."), variants: textVariants, selectedVariantIndex: 0 } as unknown as AppMessage,
+      { ...makeAssistantMessage("m-text", "Hello there."), variants: textVariants, selectedVariantIndex: 0 },
     ]));
     chatStore.useChatStore.getState().setActiveChatId(CHAT);
     // A busy message = an in-flight action holds its id (isBusy in MessageBlock).
@@ -371,8 +369,8 @@ describe("MessageBlock — pure image slot (IG-CF6)", () => {
   test("IF-4b follow-up: a NON-LAST slot still offers its variant carousel (the isLast lock is text-only)", async () => {
     const { MessageBlock, snapshotStore, chatStore } = await loadModules();
     const variants = [
-      { variantIndex: 0, content: "", reasoning: null, reasoningDurationMs: null, isSelected: true },
-      { variantIndex: 1, content: "", reasoning: null, reasoningDurationMs: null, isSelected: false },
+      wireVariant("m1", 0, { content: "", isSelected: true }),
+      wireVariant("m1", 1, { content: "", isSelected: false }),
     ];
     snapshotStore.useSnapshotStore.getState().ingestSnapshot(seed([makeSlotMessage("m1", [slotAttachment()], variants)]));
     chatStore.useChatStore.getState().setActiveChatId(CHAT);

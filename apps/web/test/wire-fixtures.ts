@@ -16,7 +16,7 @@
  * specific id.
  */
 import { brandId, normalizeAutoSummaryConfig, normalizeInsightsConfig, normalizeObjectiveState } from "@vibe-tavern/domain";
-import type { ChatBranch, ChatBranchId, CharacterId, ChatId, MessageId, MessageVariantId } from "@vibe-tavern/domain";
+import type { Attachment, ChatBranch, ChatBranchId, CharacterId, ChatId, MessageId, MessageVariantId, PromptPresetDto } from "@vibe-tavern/domain";
 import type { AppCharacter, AppMessage, AppSnapshot, ChatListItem, LoreEntryRecord, LorebookRecord, PersonaRecord, ProviderProfileRecord, ScriptRecord, UiSettingsRecord } from "../src/api/types.js";
 
 const EPOCH = "2026-01-01T00:00:00.000Z";
@@ -100,7 +100,7 @@ export function wireUiSettings(): UiSettingsRecord {
 	};
 }
 
-export function wireProviderProfile(): ProviderProfileRecord {
+export function wireProviderProfile(overrides: Partial<ProviderProfileRecord> = {}): ProviderProfileRecord {
 	return {
 		id: "profile-1",
 		name: "Provider",
@@ -166,6 +166,7 @@ export function wireProviderProfile(): ProviderProfileRecord {
 		samplerSetId: null,
 		generationFormat: null,
 		hasStoredApiKey: true,
+		...overrides,
 	};
 }
 
@@ -267,6 +268,52 @@ export function wireLoreEntry(): LoreEntryRecord {
 }
 
 // ─── Session snapshot elements (step 7a) ──────────────────────────────
+
+/** Complete domain `Attachment` — an image by default (the type drives the
+ *  preview and prompt-pipeline paths); callers override `type`/`mimeType` for
+ *  file/audio drafts. */
+export function wireAttachment(overrides: Partial<Attachment> = {}): Attachment {
+	return {
+		id: "att-1",
+		assetId: "asset-1",
+		type: "image",
+		name: "image.png",
+		mimeType: "image/png",
+		sizeBytes: 1024,
+		...overrides,
+	};
+}
+
+/** Complete `PromptPresetDto` (the bootstrap prompt-presets row): empty prompt
+ *  slots and the LS-8 prefill opt-out, so a fixture pins only what the
+ *  component under test reads (typically `name` / `perSendPrefillEnabled`). */
+export function wirePromptPreset(overrides: Partial<PromptPresetDto> = {}): PromptPresetDto {
+	return {
+		id: "preset-1",
+		name: "Preset",
+		system: "",
+		jailbreak: "",
+		prefill: "",
+		authorsNote: "",
+		authorsNoteDepth: 4,
+		authorsNotePosition: "in_prompt",
+		authorsNoteRole: "system",
+		summary: "",
+		tools: "",
+		nsfw: "",
+		enhanceDefinitions: "",
+		customInjections: [],
+		promptOrder: [],
+		advancedMode: false,
+		mergeConsecutiveRoles: false,
+		perSendPrefillEnabled: false,
+		scriptAiSystemPrompt: "",
+		aiAssistantPrompts: "",
+		createdAt: EPOCH,
+		updatedAt: EPOCH,
+		...overrides,
+	};
+}
 
 /** Complete `PersonaRecord` — the wire persona row (wire-types.ts). */
 export function wirePersona(overrides: Partial<PersonaRecord> = {}): PersonaRecord {

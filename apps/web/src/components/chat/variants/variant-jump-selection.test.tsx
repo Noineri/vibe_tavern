@@ -44,11 +44,13 @@ let act: typeof import("@testing-library/react").act;
 beforeAll(async () => {
   if (typeof window !== "undefined") {
     if (!window.matchMedia) {
-      window.matchMedia = (q: string) => ({
+      // Member-for-member MediaQueryList literal (the 7a annotation shape) —
+      // no erasure needed: the literal satisfies the interface.
+      window.matchMedia = (q: string): MediaQueryList => ({
         matches: false, media: q, onchange: null,
         addEventListener: NOOP, removeEventListener: NOOP,
         addListener: NOOP, removeListener: NOOP, dispatchEvent: () => false,
-      }) as unknown as MediaQueryList;
+      });
     }
     if (typeof (globalThis as { ResizeObserver?: unknown }).ResizeObserver === "undefined") {
       (globalThis as { ResizeObserver?: unknown }).ResizeObserver = class {

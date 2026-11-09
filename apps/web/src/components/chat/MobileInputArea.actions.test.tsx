@@ -11,8 +11,11 @@
 import { afterAll, beforeAll, describe, expect, it, mock } from "bun:test";
 import { useDomEnv } from "../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
+import { strictTestDouble, type PartialMembers } from "../../../test/strict-test-double.js";
+import { wireAttachment, wirePersona, wirePromptPreset } from "../../../test/wire-fixtures.js";
 import { TooltipProvider } from "../shared/Tooltip.js";
 import type { InputAreaData } from "./use-input-area.js";
+import { brandId, type ChatId, type PromptPresetId } from "@vibe-tavern/domain";
 
 useDomEnv();
 
@@ -38,51 +41,66 @@ afterAll(() => {
 });
 
 const PERSONAS = [
-  { id: "persona-1", name: "Noah", avatarExt: null, avatarAssetId: null, updatedAt: "2026-01-01T00:00:00.000Z" },
-  { id: "persona-2", name: "Eve", avatarExt: null, avatarAssetId: null, updatedAt: "2026-01-01T00:00:00.000Z" },
+  wirePersona({ id: "persona-1", name: "Noah" }),
+  wirePersona({ id: "persona-2", name: "Eve" }),
 ];
 const PRESETS = [
-  { id: "preset-1", name: "Narrative" },
-  { id: "preset-2", name: "Terse" },
+  wirePromptPreset({ id: "preset-1", name: "Narrative" }),
+  wirePromptPreset({ id: "preset-2", name: "Terse" }),
 ];
 
-function makeData(overrides: Record<string, unknown> = {}) {
-  return {
-    t: (key: string) => key,
-    chat: { handleSend: mock(), handleCancelGeneration: mock() },
-    character: { handleSetChatPersona: mock() },
-    preset: { handleSetActivePromptPresetId: mock() },
-    draft: "hello world",
-    setDraft: mock(),
-    isSending: false,
-    activeChatId: "chat-1",
-    chatMeta: undefined,
-    personas: PERSONAS,
-    activePersonaId: "persona-1",
-    promptPresets: PRESETS,
-    activePromptPresetId: "preset-1",
-    favoriteModels: [],
-    activeModelId: null,
-    handleSelectFavoriteModel: mock(),
-    fileInputRef: { current: null },
-    draftAttachments: [],
-    onFileInputChange: mock(),
-    handlePaste: mock(),
-    canSend: true,
-    showGenerateMore: false,
-    handleGenerateMore: mock(),
-    buckets: { system: 0, character: 0, persona: 0, lore: 0, memory: 0, tools: 0, history: 0 },
-    inputTokens: 100,
-    permanent: 0,
-    contextSize: 8192,
-    maxTokens: 1024,
-    availableBudget: 7168,
-    tokenState: "ok",
-    perSendPrefillSupported: false,
-    handleVoiceRecorded: mock(),
-    provider: { activeProviderProfile: null },
-    ...overrides,
-  } as unknown as InputAreaData;
+/** The props double rides the web strict-double seam: every provided member is
+ *  checked against the REAL InputAreaData member type, and a member the double
+ *  did not provide throws a labeled error instead of reading undefined. The
+ *  two guarded reads (`attachmentOverflow`, `attachmentVisionWarning`) are
+ *  present as explicit undefineds so `data.x?.…` behaves exactly as the erased
+ *  literal did; `accept` (always read for the file input) gets the inert "",
+ *  and `remove` (read as soon as an attachment chip renders) the inert no-op.
+ */
+function makeData(overrides: PartialMembers<InputAreaData> = {}) {
+  return strictTestDouble<InputAreaData>(
+    {
+      t: (key: string) => key,
+      chat: { handleSend: mock(), handleCancelGeneration: mock() },
+      character: { handleSetChatPersona: mock() },
+      preset: { handleSetActivePromptPresetId: mock() },
+      draft: "hello world",
+      setDraft: mock(),
+      isSending: false,
+      activeChatId: brandId<ChatId>("chat-1"),
+      chatMeta: undefined,
+      personas: PERSONAS,
+      activePersonaId: "persona-1",
+      promptPresets: PRESETS,
+      activePromptPresetId: brandId<PromptPresetId>("preset-1"),
+      favoriteModels: [],
+      activeModelId: undefined,
+      handleSelectFavoriteModel: mock(),
+      fileInputRef: { current: null },
+      accept: "",
+      draftAttachments: [],
+      onFileInputChange: mock(),
+      handlePaste: mock(),
+      canSend: true,
+      showGenerateMore: false,
+      handleGenerateMore: mock(),
+      attachmentOverflow: undefined,
+      attachmentVisionWarning: undefined,
+      buckets: { system: 0, character: 0, persona: 0, lore: 0, memory: 0, tools: 0, history: 0 },
+      inputTokens: 100,
+      permanent: 0,
+      contextSize: 8192,
+      maxTokens: 1024,
+      availableBudget: 7168,
+      tokenState: "ok",
+      perSendPrefillSupported: false,
+      remove: () => {},
+      handleVoiceRecorded: mock(),
+      provider: { activeProviderProfile: null },
+      ...overrides,
+    },
+    "MobileInputArea data",
+  );
 }
 
 function mount(data: InputAreaData) {
@@ -134,14 +152,14 @@ describe("MobileInputArea attach", () => {
   });
 
   it("is disabled at five attachments", () => {
-    const attachments = Array.from({ length: 5 }, (_, i) => ({ id: `a${i}` }));
+    const attachments = Array.from({ length: 5 }, (_, i) => wireAttachment({ id: `a${i}`, assetId: `a${i}`, name: `a${i}.png` }));
     const view = mount(makeData({ draftAttachments: attachments }));
 
     expect((attachBtn(view) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("stays enabled below five attachments", () => {
-    const attachments = Array.from({ length: 4 }, (_, i) => ({ id: `a${i}` }));
+    const attachments = Array.from({ length: 4 }, (_, i) => wireAttachment({ id: `a${i}`, assetId: `a${i}`, name: `a${i}.png` }));
     const view = mount(makeData({ draftAttachments: attachments }));
 
     expect((attachBtn(view) as HTMLButtonElement).disabled).toBe(false);

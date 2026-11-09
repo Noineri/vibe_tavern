@@ -49,7 +49,7 @@ import {
 import { CHAT_MODE, type AgentThreadOwner, type PromptPresetDto } from "@vibe-tavern/domain";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import { agentFeedPageFromMessages } from "../../../../test/agent-feed-page.js";
-import { wireUiSettings } from "../../../../test/wire-fixtures.js";
+import { wireBranch, wireChat, wireProviderProfile, wireUiSettings } from "../../../../test/wire-fixtures.js";
 import type { ProviderProfileRecord } from "../../../api/types.js";
 import { SIDECHAT_AGENT_KIND } from "../../../api/agent-kind-served-modes.js";
 import { useAgentTurnStore } from "../../../stores/agent-turn-store.js";
@@ -58,7 +58,7 @@ import { useDirectorSwipeDraftStore } from "../../../stores/director-swipe-draft
 import { useProviderDataStore } from "../../../stores/provider-data-store.js";
 import { useSnapshotStore } from "../../../stores/snapshot-store.js";
 import { brandId, type ChatBranchId, type ChatId, type MessageId, type MessageVariantId } from "@vibe-tavern/domain";
-import type { AppMessage, AppSnapshot } from "../../../api/types.js";
+import type { AppMessage } from "../../../api/types.js";
 
 useDomEnv();
 
@@ -347,15 +347,17 @@ function chatThread(id: string) {
 
 // p1 is the ACTIVE provider profile (each profile carries one tool-capable
 // cached model so the REAL `useProviderModels` hook serves the model list).
-const PROFILES = [
-  {
+// The row rides the wire factory — the erased literal also hid the required
+// `cachedAt` on `cachedModels`.
+const PROFILES: ProviderProfileRecord[] = [
+  wireProviderProfile({
     id: "p1",
     name: "Active RP provider",
     isActive: true,
     defaultModel: "m1",
-    cachedModels: { models: [{ id: "m1", label: "Model One", contextLength: 128000, capabilities: { tools: true } }] },
-  },
-] as unknown as ProviderProfileRecord[];
+    cachedModels: { models: [{ id: "m1", label: "Model One", contextLength: 128000, capabilities: { tools: true } }], cachedAt: "2026-01-01T00:00:00.000Z" },
+  }),
+];
 
 function kindEntry(kind: string): AgentKindSettingsWire {
   return {
@@ -738,10 +740,10 @@ describe("director message tools — review resolution through the apply route",
     // The open conversation carries the target message (the companion's
     // scope must match for the canonical action to merge).
     useSnapshotStore.getState().ingestSnapshot({
-      activeChat: { id: "c1", activeBranchId: "b1" },
-      activeBranch: { id: "b1" },
+      activeChat: wireChat({ id: brandId<ChatId>("c1"), activeBranchId: brandId<ChatBranchId>("b1") }),
+      activeBranch: wireBranch({ id: brandId<ChatBranchId>("b1"), chatId: brandId<ChatId>("c1") }),
       messages: [makeSnapshotMessage([makeVariant({})])],
-    } as unknown as AppSnapshot);
+    });
     const { getAllByTestId } = renderShell();
     await flushSessionLoad();
     const card = await editCard({ getAllByTestId });

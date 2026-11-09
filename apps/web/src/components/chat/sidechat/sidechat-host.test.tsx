@@ -43,7 +43,7 @@ import type {
   ExperienceCopilotThreadWire,
 } from "@vibe-tavern/api-contracts";
 import { useDomEnv } from "../../../../test/dom-env.js";
-import { wireUiSettings } from "../../../../test/wire-fixtures.js";
+import { wireProviderProfile, wireUiSettings } from "../../../../test/wire-fixtures.js";
 import type { ProviderProfileRecord } from "../../../api/types.js";
 import type { AgentToolActivity } from "../../../stores/agent-turn-store.js";
 import { getAgentHost, registerAgentHost, type AgentHostTransport } from "../../../lib/agent-host-registry.js";
@@ -188,6 +188,10 @@ afterAll(() => {
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
 
+// The literal carries the thread schema's complete field set (verified against
+// experienceCopilotThreadSchema) — the old double cast was pure noise. The
+// `chatId`/`branchId` params are identity echoes of the caller's seed and are
+// not part of the thread wire shape.
 function chatThread(id: string, chatId: string, branchId: string): ExperienceCopilotThreadWire {
   return {
     id,
@@ -200,28 +204,29 @@ function chatThread(id: string, chatId: string, branchId: string): ExperienceCop
     metrics: null,
     contextLinks: [],
     todo: [],
-  } as unknown as ExperienceCopilotThreadWire;
+  };
 }
 
 // p1 is the ACTIVE provider profile (the RP pair, SC-7); each profile carries
 // one tool-capable cached model so the REAL `useProviderModels` hook serves
-// the model list from cache (no fetch).
-const PROFILES = [
-  {
+// the model list from cache (no fetch). The rows ride the wire factory — the
+// erased literals also hid the required `cachedAt` on `cachedModels`.
+const PROFILES: ProviderProfileRecord[] = [
+  wireProviderProfile({
     id: "p1",
     name: "Active RP provider",
     isActive: true,
     defaultModel: "m1",
-    cachedModels: { models: [{ id: "m1", label: "Model One", contextLength: 128000, capabilities: { tools: true } }] },
-  },
-  {
+    cachedModels: { models: [{ id: "m1", label: "Model One", contextLength: 128000, capabilities: { tools: true } }], cachedAt: "2026-01-01T00:00:00.000Z" },
+  }),
+  wireProviderProfile({
     id: "p2",
     name: "Other provider",
     isActive: false,
     defaultModel: "m2",
-    cachedModels: { models: [{ id: "m2", label: "Model Two", contextLength: 200000, capabilities: { tools: true } }] },
-  },
-] as unknown as ProviderProfileRecord[];
+    cachedModels: { models: [{ id: "m2", label: "Model Two", contextLength: 200000, capabilities: { tools: true } }], cachedAt: "2026-01-01T00:00:00.000Z" },
+  }),
+];
 
 function kindEntry(kind: string, providerProfileId: string | null, modelName: string | null): AgentKindSettingsWire {
   return {

@@ -38,9 +38,10 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
+import { wireBranch, wireChat } from "../../../../test/wire-fixtures.js";
 import { DIRECTOR_MESSAGE_RECORD_TYPES, type RecordProposal } from "@vibe-tavern/api-contracts";
 import { brandId, type ChatBranchId, type ChatId, type MessageId, type MessageVariantId } from "@vibe-tavern/domain";
-import type { AppMessage, AppSnapshot } from "../../../api/types.js";
+import type { AppMessage } from "../../../api/types.js";
 import type { SidechatProposalMessageCompanion } from "../../../api/agent-thread-proposals-api.js";
 import en from "../../../i18n/locales/en.json";
 import ru from "../../../i18n/locales/ru.json";
@@ -192,10 +193,10 @@ function makeMessage(variants: AppMessage["variants"]): AppMessage {
 
 function seedChat(variants: AppMessage["variants"], activeChatId = "c1", activeBranchId = "b1") {
   useSnapshotStore.getState().ingestSnapshot({
-    activeChat: { id: activeChatId, activeBranchId },
-    activeBranch: { id: activeBranchId },
+    activeChat: wireChat({ id: brandId<ChatId>(activeChatId), activeBranchId: brandId<ChatBranchId>(activeBranchId) }),
+    activeBranch: wireBranch({ id: brandId<ChatBranchId>(activeBranchId), chatId: brandId<ChatId>(activeChatId) }),
     messages: [makeMessage(variants)],
-  } as unknown as AppSnapshot);
+  });
 }
 
 function storedMessage(): AppMessage {

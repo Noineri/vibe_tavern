@@ -24,8 +24,9 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
+import { wireChat } from "../../../../test/wire-fixtures.js";
 import type { RecordProposal } from "@vibe-tavern/api-contracts";
-import type { TrackerTemplate } from "@vibe-tavern/domain";
+import { brandId, normalizeInsightsConfig, type ChatId, type TrackerTemplate } from "@vibe-tavern/domain";
 import { normalizeTrackerTemplate, TRACKER_TEMPLATE_VERSION } from "@vibe-tavern/domain";
 import en from "../../../i18n/locales/en.json";
 import ru from "../../../i18n/locales/ru.json";
@@ -33,7 +34,6 @@ import ru from "../../../i18n/locales/ru.json";
 useDomEnv();
 const { fireEvent, render, waitFor } = await import("@testing-library/react");
 import { useSnapshotStore } from "../../../stores/snapshot-store.js";
-import type { AppSnapshot } from "../../../api/types.js";
 
 const mocks = {
   applyTrackerSceneProposal: mock(),
@@ -131,8 +131,8 @@ function proposal(over: Partial<RecordProposal> & { payload?: unknown }): Record
  *  ObjectiveProposalCard seed pattern). */
 function seedChat() {
   useSnapshotStore.getState().ingestSnapshot({
-    activeChat: { id: "c1", insightsConfig: { objectiveEnabled: true, trackerEnabled: false } },
-  } as unknown as AppSnapshot);
+    activeChat: wireChat({ id: brandId<ChatId>("c1"), insightsConfig: normalizeInsightsConfig({ objectiveEnabled: true, trackerEnabled: false }) }),
+  });
 }
 
 beforeEach(() => {

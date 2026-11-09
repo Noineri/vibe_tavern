@@ -32,8 +32,11 @@
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import { testFetch } from "@vibe-tavern/test-fetch";
+import { brandId, normalizeInsightsConfig, normalizeObjectiveState, type ChatBranchId, type ChatId, type MessageVariantId } from "@vibe-tavern/domain";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
+import { wireChat, wireMessage, wireVariant } from "../../../../test/wire-fixtures.js";
+import type { AppMessage } from "../../../api/types.js";
 import type { AgentPlan, AgentPlanTask } from "@vibe-tavern/api-contracts";
 import en from "../../../i18n/locales/en.json";
 import ru from "../../../i18n/locales/ru.json";
@@ -42,7 +45,6 @@ useDomEnv();
 const { act, fireEvent, render, waitFor } = await import("@testing-library/react");
 import { useSnapshotStore } from "../../../stores/snapshot-store.js";
 import { useAgentStreamingStore } from "../../../stores/agent-streaming-store.js";
-import type { AppSnapshot } from "../../../api/types.js";
 
 const mocks = {
   checkObjectiveCompletionAction: mock(),
@@ -106,16 +108,16 @@ const PLAN_V2: AgentPlan = {
 };
 
 /** Seed the ACTIVE chat the strip reads ids and the tracker state from
- *  (the StoryPlanProposalCard seed pattern — a minimal wire double through
- *  `ingestSnapshot`; the double-cast form keeps the hygiene `as-never`
- *  ratchet at its budget). */
+ *  (the StoryPlanProposalCard seed pattern — the wire factory through
+ *  `ingestSnapshot`; the objective state rides the domain's persisted-column
+ *  seam). */
 function seedChat(branchId: string, goals: Array<{ id: string; status: string }>): void {
   useSnapshotStore.getState().ingestSnapshot({
-    activeChat: {
-      id: "chat-1",
-      activeBranchId: branchId,
-      insightsConfig: { objectiveEnabled: true, trackerEnabled: false },
-      insightsObjectiveState: {
+    activeChat: wireChat({
+      id: brandId<ChatId>("chat-1"),
+      activeBranchId: brandId<ChatBranchId>(branchId),
+      insightsConfig: normalizeInsightsConfig({ objectiveEnabled: true, trackerEnabled: false }),
+      insightsObjectiveState: normalizeObjectiveState({
         mode: "goals",
         objectiveDescription: "",
         tasks: [],
@@ -128,9 +130,9 @@ function seedChat(branchId: string, goals: Array<{ id: string; status: string }>
         generatePrompt: "",
         checkPrompt: "",
         injectPrompt: "",
-      },
-    } as unknown as AppSnapshot["activeChat"],
-  } as unknown as AppSnapshot);
+      }),
+    }),
+  });
 }
 
 // ─── The plan GET through the real use-agent-plan seam ──────────────────────
@@ -347,28 +349,39 @@ describe("StoryPlanStrip (DR-11)", () => {
 // ─── The clock-promotion flash (DK-9, mockup §6) ──────────────────────────────
 
 describe("StoryPlanStrip — the «Наступило» promotion flash (DK-9)", () => {
+  // The sceneTracker rides the message's WIRE record type (scene-zone's local
+  // alias shape).
+  type SceneTrackerRecord = NonNullable<AppMessage["sceneTracker"]>;
+
+  // SCN-12 (the 7a derivation): the tracker config derives through the
+  // domain's persisted-column seam — normalizeInsightsConfig recomputes
+  // `schemaHash` from the schema and never accepts it as input, so the erased
+  // literal's self-consistent "clock-h1" was fake on BOTH sides; the record
+  // below reads the derived hash so the freshness match is real.
+  const CLOCK_TRACKER_CONFIG = normalizeInsightsConfig({
+    objectiveEnabled: true,
+    trackerEnabled: true,
+    tracker: {
+      schema: {
+        story_day: { $type: "number", clock: "day", label: "Story day" },
+        story_time: { $type: "string", clock: "part", label: "Part of day" },
+        story_date: { $type: "string", clock: "label", label: "Date label" },
+      },
+      revision: 2,
+      injectLastN: 1,
+    },
+  });
+
   /** A clocked chat: the tracker schema marks the three clock fields, the
-   *  latest assistant message carries a record at day 3, evening. */
-  function seedClockChat(branchId: string, goals: Array<{ id: string; status: string }>, sceneState: Record<string, unknown>): void {
+   *  latest assistant message carries a record at day 3, evening. The
+   *  sceneState rides the wire record's own JSON-value shape. */
+  function seedClockChat(branchId: string, goals: Array<{ id: string; status: string }>, sceneState: SceneTrackerRecord["sceneState"]): void {
     useSnapshotStore.getState().ingestSnapshot({
-      activeChat: {
-        id: "chat-1",
-        activeBranchId: branchId,
-        insightsConfig: {
-          objectiveEnabled: true,
-          trackerEnabled: true,
-          tracker: {
-            schema: {
-              story_day: { $type: "number", clock: "day", label: "Story day" },
-              story_time: { $type: "string", clock: "part", label: "Part of day" },
-              story_date: { $type: "string", clock: "label", label: "Date label" },
-            },
-            schemaHash: "clock-h1",
-            revision: 2,
-            injectLastN: 1,
-          },
-        },
-        insightsObjectiveState: {
+      activeChat: wireChat({
+        id: brandId<ChatId>("chat-1"),
+        activeBranchId: brandId<ChatBranchId>(branchId),
+        insightsConfig: { ...CLOCK_TRACKER_CONFIG, objectiveEnabled: true, trackerEnabled: true },
+        insightsObjectiveState: normalizeObjectiveState({
           mode: "goals",
           objectiveDescription: "",
           tasks: [],
@@ -381,31 +394,25 @@ describe("StoryPlanStrip — the «Наступило» promotion flash (DK-9)",
           generatePrompt: "",
           checkPrompt: "",
           injectPrompt: "",
-        },
-      } as unknown as AppSnapshot["activeChat"],
-      messages: [{
-        id: "m1",
+        }),
+      }),
+      messages: [wireMessage("m1", {
         role: "assistant",
-        chatId: "chat-1",
-        branchId,
+        branchId: brandId<ChatBranchId>(branchId),
         content: "content m1",
-        createdAt: "2026-01-01T00:00:00.000Z",
-        updatedAt: "2026-01-01T00:00:00.000Z",
-        variants: [{ id: "m1-v0", messageId: "m1", variantIndex: 0, content: "content m1", isSelected: true }],
+        variants: [wireVariant("m1", 0, { content: "content m1", isSelected: true })],
         selectedVariantIndex: 0,
-        modelId: null,
         sceneTracker: {
-          variantId: "m1-v0",
-          schemaHash: "clock-h1",
-          configRevision: 2,
+          variantId: brandId<MessageVariantId>("m1-v0"),
+          schemaHash: CLOCK_TRACKER_CONFIG.tracker?.schemaHash ?? "",
+          configRevision: CLOCK_TRACKER_CONFIG.tracker?.revision ?? 2,
           sourceHash: "s1",
           sceneState,
           modelId: null,
           generatedAt: "2026-01-01T00:00:00.000Z",
         },
-      }],
-      messageOrder: ["m1"],
-    } as unknown as AppSnapshot);
+      })],
+    });
   }
 
   const AT = { day: 3, part: "evening" as const };

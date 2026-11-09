@@ -28,7 +28,8 @@
  * directly.
  */
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
-import { wireCharacter } from "../../../test/wire-fixtures.js";
+import { brandId, normalizeInsightsConfig, type MessageVariantId } from "@vibe-tavern/domain";
+import { wireBranch, wireChat, wireCharacter, wireMessage, wireVariant } from "../../../test/wire-fixtures.js";
 import { useDomEnv } from "../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 import { createElement, type ReactNode } from "react";
@@ -36,7 +37,6 @@ import { createElement, type ReactNode } from "react";
 useDomEnv();
 const { act, fireEvent, render, waitFor } = await import("@testing-library/react");
 import type { AppMessage, AppSnapshot, AppCharacter } from "../../api/types.js";
-import type { SceneTrackerRecord } from "@vibe-tavern/domain";
 
 // ── Hoisted spies ──────────────────────────────────────────────────────────
 
@@ -135,8 +135,23 @@ async function load() {
 // ── Fixtures ───────────────────────────────────────────────────────────────
 
 const SCHEMA = { mood: { $type: "string" as const } };
-const SCHEMA_HASH = "h1";
 const REVISION = 1;
+// SCN-12 (the 7a derivation): the tracker config derives through the domain's
+// persisted-column seam — normalizeInsightsConfig recomputes `schemaHash` from
+// the schema and never accepts it as input, so the erased literal's
+// self-consistent "h1" hash was fake on BOTH sides; the sceneTracker records
+// below read the derived hash so the zone's freshness match is real.
+const TRACKER_CONFIG = normalizeInsightsConfig({
+  objectiveEnabled: false,
+  trackerEnabled: true,
+  tracker: { schema: SCHEMA, revision: REVISION },
+});
+const SCHEMA_HASH = TRACKER_CONFIG.tracker?.schemaHash ?? "";
+
+// The sceneTracker rides the message's WIRE record type (scene-zone's local
+// alias shape) — the domain entity's SceneTrackerRecord differs in its
+// serialized `schema` member.
+type SceneTrackerRecord = NonNullable<AppMessage["sceneTracker"]>;
 
 function record(variantId: string): SceneTrackerRecord {
   return {
@@ -166,30 +181,28 @@ function makeCharacter(): AppCharacter {
 
 /** Assistant message with one selected variant + a current Scene record. */
 function sceneMessage(id: string, variantId: string): AppMessage {
-  return {
-    id, role: "assistant", content: `content ${id}`,
-    chatId: "chat-1", branchId: "b1",
-    createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z",
-    variants: [{ id: variantId, messageId: id, variantIndex: 0, content: `content ${id}`, isSelected: true } as unknown as AppMessage["variants"][number]],
-    selectedVariantIndex: 0, modelId: null,
+  return wireMessage(id, {
+    role: "assistant",
+    content: `content ${id}`,
+    variants: [wireVariant(id, 0, { id: brandId<MessageVariantId>(variantId), content: `content ${id}`, isSelected: true })],
+    selectedVariantIndex: 0,
     sceneTracker: record(variantId),
-  } as unknown as AppMessage;
+  });
 }
 
 /** Assistant message with TWO variants (variantIndex 0 + 1). Used for the
  *  variant-switch + delete-variant scenarios. */
 function twoVariantMessage(id: string, v0: string, v1: string): AppMessage {
-  return {
-    id, role: "assistant", content: "c0",
-    chatId: "chat-1", branchId: "b1",
-    createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z",
+  return wireMessage(id, {
+    role: "assistant",
+    content: "c0",
     variants: [
-      { id: v0, messageId: id, variantIndex: 0, content: "c0", isSelected: true } as unknown as AppMessage["variants"][number],
-      { id: v1, messageId: id, variantIndex: 1, content: "c1", isSelected: false } as unknown as AppMessage["variants"][number],
+      wireVariant(id, 0, { id: brandId<MessageVariantId>(v0), content: "c0", isSelected: true }),
+      wireVariant(id, 1, { id: brandId<MessageVariantId>(v1), content: "c1", isSelected: false }),
     ],
-    selectedVariantIndex: 0, modelId: null,
+    selectedVariantIndex: 0,
     sceneTracker: record(v0),
-  } as unknown as AppMessage;
+  });
 }
 
 function seed(messages: AppMessage[], trackerEnabled = true): void {
@@ -202,14 +215,11 @@ function seed(messages: AppMessage[], trackerEnabled = true): void {
   const snap: AppSnapshot = {
     chats: [],
     allCharacters: [],
-    activeChat: {
-      id: "chat-1", title: "Chat 1", characterId: "c1",
-      insightsConfig: { objectiveEnabled: false, trackerEnabled, tracker: { schema: SCHEMA, schemaHash: SCHEMA_HASH, revision: REVISION } as never },
-    } as unknown as AppSnapshot["activeChat"],
-    activeBranch: { id: "b1", chatId: "chat-1", label: "main" } as unknown as AppSnapshot["activeBranch"],
+    activeChat: wireChat({ insightsConfig: { ...TRACKER_CONFIG, trackerEnabled } }),
+    activeBranch: wireBranch(),
     branches: [], messages: msgs, summaries: [], promptTrace: null,
     character: makeCharacter(), persona: null,
-  } as unknown as AppSnapshot;
+  };
   useSnapshotStore.getState().ingestSnapshot(snap);
 }
 
