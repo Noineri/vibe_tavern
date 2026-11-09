@@ -4,6 +4,7 @@ import { createStoreContainer, deleteCopilotTurn } from '@vibe-tavern/db';
 import type { Attachment } from '@vibe-tavern/domain';
 import { isAgentContentTurn, storeMessagesToHistory, streamAgentTurn, type AgentStreamDeps, type AgentStreamSeams, type AgentTurnRequest } from '../src/domain/agent/agent-stream.js';
 import * as vision from '../src/infrastructure/ai/vision-gate.js';
+import { makeStreamTextDouble, type StreamTextCall, type StreamTextPart } from './provider-boundary-test-builders.js';
 
 // T2: real generic loop, store, patch writer, media step and gate. Only the
 // external model and vision-description calls are fake; DBs use the template.
@@ -24,12 +25,9 @@ async function fixture(hasVision = false, visionModel: string | null = null) {
   const thread = await stores.experienceCopilot.startNewSession('script');
   const store = stores.experienceCopilot;
   let captured: ModelMessage[] = [];
-  const stream = mock((options: { messages: ModelMessage[] }) => {
-    captured = options.messages;
-    return {
-      stream: (async function* () { yield { type: 'text-delta', text: 'Reply' }; })(),
-      finishReason: Promise.resolve('stop'), usage: Promise.resolve(undefined),
-    };
+  const stream = mock((_options: StreamTextCall) => {
+    captured = _options.messages ?? [];
+    return { parts: [{ type: 'text-delta', id: 'aas-fake', text: 'Reply' } satisfies StreamTextPart] };
   });
   const loader = mock(async (id: string): Promise<Buffer | null> => id === 'file-asset' ? Buffer.from('Whole file\nLast line\n') : bytes);
   const resolveVisionAssets = mock(async () => ({ cachedModels: [{ modelSlug: 'model', capabilities: { vision: hasVision } }], visionModel, assetLoader: loader }));
@@ -43,7 +41,7 @@ async function fixture(hasVision = false, visionModel: string | null = null) {
     },
     getProviderProfile: async () => profile, getEffectiveProviderProfile: async () => profile,
     resolveModel: () => ({}) as LanguageModel,
-    streamText: stream as unknown as AgentStreamDeps['streamText'], resolveVisionAssets,
+    streamText: makeStreamTextDouble((options) => stream(options), 'agent-attachments-stream streamText'), resolveVisionAssets,
     deleteTurn: (id, messageId, includeUser) => deleteCopilotTurn({ db: stores.db }, id, messageId, includeUser),
   };
   const seams: AgentStreamSeams = {

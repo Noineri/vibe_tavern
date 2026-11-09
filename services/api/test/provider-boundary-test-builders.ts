@@ -42,11 +42,21 @@ export type StreamTextPart = TextStreamPart<ToolSet>;
  *  metadata. Anything omitted rides the builder's inert defaults — the same
  *  values the old erased fakes produced (`finishReason: "stop"`, an idle
  *  usage record whose every token count is `undefined`, which the loop's
- *  estimator treats exactly like the old absent usage). */
+ *  estimator treats exactly like the old absent usage).
+ *
+ *  `parts` also accepts an AsyncIterable (an async generator): the wrapper
+ *  below pulls it ONE STEP per consumer pull, so generator fakes keep their
+ *  mid-stream gates, aborts and trailing errors lazy — the timing the erased
+ *  `stream: provider()` fakes had.
+ *
+ *  `usage` may be a thenable (e.g. the parked clock-advancing stand-in for
+ *  "time passed between the last chunk and the persist"): `Promise.resolve`
+ *  at the wrap site adopts it, so a fake can schedule work on the usage
+ *  await itself — never a sleep. */
 export interface FakeStreamTextTurn {
-	parts: StreamTextPart[];
+	parts: StreamTextPart[] | AsyncIterable<StreamTextPart>;
 	finishReason?: FinishReason;
-	usage?: LanguageModelUsage;
+	usage?: LanguageModelUsage | PromiseLike<LanguageModelUsage>;
 }
 
 /** The usage record the SDK's result type requires but these suites never
@@ -62,17 +72,49 @@ const IDLE_USAGE: LanguageModelUsage = {
 	totalTokens: undefined,
 };
 
+/** A fresh idle usage record (the builder's default, shared with fakes that
+ *  need the same shape inside a thenable). */
+export function makeIdleUsage(): LanguageModelUsage {
+	return { ...IDLE_USAGE };
+}
+
 /** The fake turn's parts as the SDK's stream member: a real `ReadableStream`
  *  over the parts (bun's web streams are async-iterable, which is what makes
  *  the value satisfy the SDK's `AsyncIterable & ReadableStream` member type
- *  that the loop's `createMappedStream(result.stream)` walks). */
-function partsToStream(parts: StreamTextPart[]): ReadableStream<StreamTextPart> {
-	return new ReadableStream<StreamTextPart>({
-		start(controller) {
-			for (const part of parts) controller.enqueue(part);
-			controller.close();
+ *  that the loop's `createMappedStream(result.stream)` walks). An array is
+ *  enqueued eagerly; an AsyncIterable is pulled one step per consumer pull so
+ *  generator fakes stay lazy (gates/aborts/trailing errors fire mid-drain). */
+function partsToStream(parts: StreamTextPart[] | AsyncIterable<StreamTextPart>): ReadableStream<StreamTextPart> {
+	if (!(Symbol.asyncIterator in (parts as object))) {
+		const list = parts as StreamTextPart[];
+		return new ReadableStream<StreamTextPart>({
+			start(controller) {
+				for (const part of list) controller.enqueue(part);
+				controller.close();
+			},
+		});
+	}
+	const source = (parts as AsyncIterable<StreamTextPart>)[Symbol.asyncIterator]();
+	// `highWaterMark: 0` keeps pulls REQUEST-driven: a default-HWM stream
+	// prefetches one chunk ahead, which would run the generator's next thunk
+	// (its clock advance included) before the consumer processed the current
+	// chunk — breaking the per-chunk timing discipline the generator fakes
+	// encode. Zero queue = one pull per consumer request, the exact ordering
+	// the erased `stream: generator()` fakes had.
+	return new ReadableStream<StreamTextPart>(
+		{
+			async pull(controller) {
+				try {
+					const { value, done } = await source.next();
+					if (done) controller.close();
+					else controller.enqueue(value);
+				} catch (err) {
+					controller.error(err instanceof Error ? err : new Error(String(err)));
+				}
+			},
 		},
-	});
+		{ highWaterMark: 0 },
+	);
 }
 
 /**
@@ -110,7 +152,9 @@ export function makeStreamTextDouble(
 			{
 				stream: partsToStream(turn.parts),
 				finishReason: Promise.resolve(turn.finishReason ?? "stop"),
-				usage: Promise.resolve(turn.usage ?? { ...IDLE_USAGE }),
+				// `Promise.resolve` adopts a thenable usage (the parked clock-advance
+				// stand-in) exactly like the erased `usage:` fakes did.
+				usage: Promise.resolve(turn.usage ?? makeIdleUsage()),
 			},
 			label,
 		);

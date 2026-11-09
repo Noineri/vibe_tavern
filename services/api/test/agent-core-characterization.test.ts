@@ -46,7 +46,7 @@ import { describe, test, expect, beforeEach, afterAll } from "bun:test";
 import { join } from "node:path";
 import { setTokenCountFn } from "@vibe-tavern/prompt-pipeline";
 import type { LanguageModel } from "ai";
-import type { AgentPlan } from "@vibe-tavern/domain";
+import { brandId, type AgentPlan, type ExperienceCopilotMessageId } from "@vibe-tavern/domain";
 import type {
   ProviderProfile,
   ScriptRow,
@@ -60,12 +60,17 @@ import { assembleExperienceCopilotPrompt } from "../src/domain/interactive/copil
 import { withStandInAssets } from "./fixtures/copilot-prompt-stand-in-assets.js";
 import type { AgentHistoryMessage as ExperienceCopilotHistoryMessage } from "../src/domain/agent/agent-prompt.js";
 import { resolveBuiltinCopilotProfile } from "../src/domain/interactive/copilot/experience-copilot-module.js";
-import { buildExperienceCopilotTools } from "../src/domain/interactive/copilot/experience-copilot-tools.js";
+import {
+  buildExperienceCopilotTools,
+  type ExperienceCopilotRunTestDigest,
+} from "../src/domain/interactive/copilot/experience-copilot-tools.js";
 import {
   streamExperienceCopilot,
   type ExperienceCopilotStreamDeps,
   type ExperienceCopilotStreamEvent,
 } from "../src/domain/interactive/copilot/experience-copilot-stream.js";
+import { strictTestDouble } from "./strict-test-double.js";
+import { makeStreamTextDouble, type FakeStreamTextTurn, type StreamTextCall, type StreamTextPart } from "./provider-boundary-test-builders.js";
 
 // ─── Determinism ─────────────────────────────────────────────────────────────
 // Char-length token counting (mirrors experience-copilot-prompt.test.ts) so
@@ -190,7 +195,7 @@ async function readFixture(): Promise<string> {
 // `streamText` is a deps seam (never mock.module("ai")); each test sets
 // `streamTextImpl` and makeDeps injects it.
 
-let streamTextImpl: ((opts: unknown) => unknown) | undefined;
+let streamTextImpl: ((options: StreamTextCall) => FakeStreamTextTurn) | undefined;
 let capturedStreamOpts: { tools?: Record<string, unknown>; messages?: Array<{ role: string; content: unknown }> } | null = null;
 
 beforeEach(() => {
@@ -204,34 +209,43 @@ function createFakeStore(
   const messages: ExperienceCopilotMessage[] = [];
   let counter = 0;
   const now = () => new Date(Date.parse("2026-01-01T00:00:00.000Z") + counter++ * 1000).toISOString();
-  return {
-    messages,
-    async getActive() { return null; },
-    async getById() { return thread; },
-    async listSessions() { return [thread]; },
-    async startNewSession() { return thread; },
-    async activate() { return thread; },
-    async archive() { return thread; },
-    async listMessages() { return [...messages]; },
-    async appendMessage(_threadId: string, input: AppendMessageInput) {
-      const msg: ExperienceCopilotMessage = {
-        id: `msg_as1_${counter++}`,
-        threadId: thread.id,
-        role: input.role,
-        content: input.content ?? "",
-        toolCallsJson: input.toolCallsJson ?? null,
-        toolCallId: input.toolCallId ?? null,
-        createdAt: now(),
-      };
-      messages.push(msg);
-      return msg;
+  // The strict double keeps the provided member shapes compiler-checked and
+  // makes every unprovided member a labeled throw instead of a silent
+  // `undefined` read (the erasure class this replaces).
+  return strictTestDouble<ExperienceCopilotStore & { messages: ExperienceCopilotMessage[] }>(
+    {
+      messages,
+      async getActive() { return null; },
+      async getById() { return thread; },
+      async listSessions() { return [thread]; },
+      async startNewSession() { return thread; },
+      async activate() { return thread; },
+      async archive() { return thread; },
+      async listMessages() { return [...messages]; },
+      async appendMessage(_threadId: string, input: AppendMessageInput) {
+        const msg: ExperienceCopilotMessage = {
+          id: brandId<ExperienceCopilotMessageId>(`msg_as1_${counter++}`),
+          threadId: thread.id,
+          role: input.role,
+          content: input.content ?? "",
+          toolCallsJson: input.toolCallsJson ?? null,
+          toolCallId: input.toolCallId ?? null,
+          reasoning: input.reasoning ?? null,
+          reasoningDurationMs: input.reasoningDurationMs ?? null,
+          seq: null,
+          createdAt: now(),
+        };
+        messages.push(msg);
+        return msg;
+      },
+      async updateContextMetrics() {},
+      async getAutoCompact() { return true; },
+      async setAutoCompact() {},
+      async updateTodo() {},
+      async setToolResultOutput() { return null; },
     },
-    async updateContextMetrics() {},
-    async getAutoCompact() { return true; },
-    async setAutoCompact() {},
-    async updateTodo() {},
-    async setToolResultOutput() { return null; },
-  } as unknown as ExperienceCopilotStore & { messages: ExperienceCopilotMessage[] };
+    "AS-1 fake copilot store",
+  );
 }
 
 function makeProfile(): ProviderProfile {
@@ -320,26 +334,21 @@ function makeDeps(
     getProviderProfile: async () => profile,
     getEffectiveProviderProfile: async () => profile,
     resolveModel: () => ({}) as LanguageModel,
-    streamText: streamTextImpl as unknown as ExperienceCopilotStreamDeps["streamText"],
+    // The deps seam declares `streamText?:` — the per-test impl (undefined on
+    // non-streaming pins) rides the optionality cast-free, wrapped in the
+    // typed streamText double that adapts the fake turn to the SDK's result
+    // shape the generic loop consumes.
+    ...(streamTextImpl !== undefined
+      ? { streamText: makeStreamTextDouble(streamTextImpl, "AS-1 streamText") }
+      : {}),
     ...overrides,
   };
 }
 
-function makeFakeStreamTextResult(parts: unknown[]): Record<string, unknown> {
-  async function* gen(): AsyncGenerator<unknown, void, unknown> {
-    for (const p of parts) yield p;
-  }
-  return {
-    stream: gen(),
-    finishReason: Promise.resolve("stop"),
-    usage: Promise.resolve(undefined),
-  };
-}
-
-function capturingFake(parts: unknown[]): (opts: unknown) => unknown {
-  return (opts: unknown) => {
-    capturedStreamOpts = opts as { tools?: Record<string, unknown>; messages?: Array<{ role: string; content: unknown }> };
-    return makeFakeStreamTextResult(parts);
+function capturingFake(parts: StreamTextPart[]): (options: StreamTextCall) => FakeStreamTextTurn {
+  return (options) => {
+    capturedStreamOpts = options;
+    return { parts };
   };
 }
 
@@ -364,20 +373,24 @@ function summarizeEvents(events: Array<{ event: string; data: unknown }>): strin
   });
 }
 
-const textDelta = (text: string) => ({ type: "text-delta", text });
-const toolCall = (toolCallId: string, toolName: string, args: Record<string, unknown>) =>
+// The fake stream parts, typed to the SDK's real part union (the shapes the
+// loop's mapper walks): `text-delta` requires an `id`, and the tool parts
+// carry the typed call/result members (`input` on a result is required by the
+// SDK union but never read by the pinned paths).
+const textDelta = (text: string): StreamTextPart => ({ type: "text-delta", id: "as1-text", text });
+const toolCall = (toolCallId: string, toolName: string, args: Record<string, unknown>): StreamTextPart =>
   ({ type: "tool-call", toolCallId, toolName, input: args });
-const toolResult = (toolCallId: string, toolName: string, output: unknown) =>
-  ({ type: "tool-result", toolCallId, toolName, output });
+const toolResult = (toolCallId: string, toolName: string, output: unknown): StreamTextPart =>
+  ({ type: "tool-result", toolCallId, toolName, input: {}, output });
 
-// The AI-SDK tool-call context argument is ignored by every tool here, so a
-// stub double-cast to the tool's own execute parameter type suffices (keeps
-// the hygiene as-never ratchet untouched; same stub shape as
-// experience-copilot-tools.test.ts).
+// The AI-SDK tool-call context argument: annotated directly with the tool's
+// own execute parameter type — no tool under test reads beyond the required
+// `toolCallId`/`messages`/`context` members (the `context` value is typed
+// `any` at the SDK's ToolSet boundary; the executes close over their opts).
 type CopilotToolCallCtx = Parameters<
   NonNullable<(ReturnType<typeof buildExperienceCopilotTools>)["run_test"]["execute"]>
 >[1];
-const toolCtx = { messages: [], toolCallId: "t", abort: () => {} } as unknown as CopilotToolCallCtx;
+const toolCtx: CopilotToolCallCtx = { toolCallId: "t", messages: [], context: undefined };
 
 // ─── (a) Fixed input → byte-identical system message ─────────────────────────
 
@@ -537,7 +550,7 @@ describe("AS-1 (d) — untrusted variant (imported, never-enabled script)", () =
 
   test("the tool surface is unchanged by trust; run_test refuses without running code", async () => {
     const tools = buildExperienceCopilotTools({ rules: COUNTER_RULES, rulesTrusted: false });
-    expect(Object.keys(tools as unknown as Record<string, unknown>).sort()).toEqual([
+    expect(Object.keys(tools).sort()).toEqual([
       "ask_user",
       "edit_buffer",
       "plan",
@@ -550,11 +563,12 @@ describe("AS-1 (d) — untrusted variant (imported, never-enabled script)", () =
       "write_buffer",
     ]);
     // COUNTER_RULES would return ok:true on the trusted path — refusal proves
-    // the sandbox never ran.
-    const digest = (await tools.run_test.execute({}, toolCtx)) as unknown as {
-      ok: boolean;
-      errorCode?: string;
-    };
+    // the sandbox never ran. The ToolSet boundary erases the concrete tool
+    // generics to the SDK's `any`-instantiated Tool, so the execute result
+    // narrows once here to the run_test digest's REAL exported type.
+    const runTestExecute = tools.run_test.execute;
+    if (!runTestExecute) throw new Error("run_test execute is not wired — the probe contract is broken");
+    const digest = (await runTestExecute({}, toolCtx)) as ExperienceCopilotRunTestDigest;
     expect(digest.ok).toBe(false);
     expect(digest.errorCode).toBe("script_not_trusted");
   });

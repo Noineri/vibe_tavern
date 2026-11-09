@@ -5,21 +5,34 @@ import {
   ChatLifecycleRuntime,
   type ChatLifecycleRuntimeDeps,
 } from "../src/runtime/session/session-runtime-chat-lifecycle.js";
+import { makeChatRow } from "./insights-test-builders.js";
+import { strictTestDouble } from "./strict-test-double.js";
 
 describe("ChatLifecycleRuntime insight context branch targeting (OFA-4)", () => {
   it("passes an explicit committed branch instead of the chat's mutable active branch", async () => {
     const seenBranches: ChatBranchId[] = [];
-    const deps = {
-      stores: {
-        chats: {
-          getById: async () => ({ activeBranchId: "branch_current" }),
+    // The strict double keeps the provided members compiler-checked against
+    // the real deps contract (the store member is completed through the
+    // standing row builder — the erased fragment was missing every required
+    // Chat column); every unprovided dep throws a labeled miss instead of
+    // riding the old trailing cast.
+    const deps = strictTestDouble<ChatLifecycleRuntimeDeps>(
+      {
+        stores: strictTestDouble<StoreContainer>(
+          {
+            chats: {
+              getById: async () => makeChatRow({ activeBranchId: "branch_current" }),
+            },
+          },
+          "ChatLifecycleRuntime stores (insights context)",
+        ),
+        buildPipelineContext: async (_chatId: ChatId, branchId?: ChatBranchId) => {
+          if (branchId) seenBranches.push(branchId);
+          return { context: {} } as never;
         },
-      } as unknown as StoreContainer,
-      buildPipelineContext: async (_chatId: ChatId, branchId?: ChatBranchId) => {
-        if (branchId) seenBranches.push(branchId);
-        return { context: {} } as never;
       },
-    } as ChatLifecycleRuntimeDeps;
+      "ChatLifecycleRuntime deps (insights context)",
+    );
     const runtime = new ChatLifecycleRuntime(deps);
 
     await runtime.buildPipelineContext({

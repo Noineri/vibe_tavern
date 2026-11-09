@@ -1,14 +1,11 @@
 import { describe, expect, test } from "bun:test";
+import { z } from "zod";
 import {
   createAgentPlanTools,
   type AgentPlanToolOptions,
 } from "../src/domain/agent-plan/agent-plan-tools.js";
 
 const ctx = { messages: [], toolCallId: "t", abort: () => {} } as never;
-
-interface ToolSchemaProbe {
-  inputSchema: { safeParse(value: unknown): { success: boolean } };
-}
 
 const PLAN = {
   goal: "Ship the plan tools",
@@ -24,11 +21,18 @@ describe("agent-plan-tools", () => {
     const tools = createAgentPlanTools({
       load: async () => null,
       save: async () => {},
-    }) as unknown as { plan: ToolSchemaProbe };
+    });
+    // The tool is declared with `inputSchema: z.object(...)`; the instanceof
+    // narrows the SDK's FlexibleSchema union to the zod member that carries
+    // safeParse — a non-zod schema is a build regression this probe REPORTS.
+    const planSchema = tools.plan.inputSchema;
+    if (!(planSchema instanceof z.ZodObject)) {
+      throw new Error("plan inputSchema is not a zod object schema — the probe contract is broken");
+    }
 
-    expect(tools.plan.inputSchema.safeParse(PLAN).success).toBe(false);
-    expect(tools.plan.inputSchema.safeParse({}).success).toBe(false);
-    expect(tools.plan.inputSchema.safeParse({ plan: PLAN }).success).toBe(true);
+    expect(planSchema.safeParse(PLAN).success).toBe(false);
+    expect(planSchema.safeParse({}).success).toBe(false);
+    expect(planSchema.safeParse({ plan: PLAN }).success).toBe(true);
   });
 
   test("two active tasks return a model-correctable tool error without saving", async () => {
@@ -105,23 +109,25 @@ describe("agent-plan-tools — owner + read-only mode (SC-0h)", () => {
   });
 
   test("the branch owner scopes the read_plan description to the chat branch; the script wording stays byte-identical", () => {
+    // `description` is a real member of every Tool union member — the
+    // ToolSet-boundary reads need no probe cast at all.
     const readOnly = createAgentPlanTools(
       { load: async () => null, save: async () => {} },
       { owner: branchOwner, readOnly: true },
-    ) as unknown as { read_plan: { description: string } };
+    );
     expect(readOnly.read_plan.description).toBe("Read the full current plan for this chat branch.");
 
     // The pre-SC-0h surface (owner absent OR script owner) keeps the exact
     // wording the script/experience kinds have always shown the model.
     const noOwner = createAgentPlanTools(
       { load: async () => null, save: async () => {} },
-    ) as unknown as { read_plan: { description: string } };
+    );
     expect(noOwner.read_plan.description).toBe("Read the full current plan for this script.");
 
     const scriptScoped = createAgentPlanTools(
       { load: async () => null, save: async () => {} },
       { owner: scriptOwner },
-    ) as unknown as { plan: { description: string } };
+    );
     expect(scriptScoped.plan.description).toContain(
       "Replace the full durable plan for this script",
     );

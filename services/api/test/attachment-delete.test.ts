@@ -8,8 +8,8 @@ import type { Attachment } from "@vibe-tavern/domain";
 import { AssetService } from "../src/domain/asset/asset-service.js";
 import { ChatApplicationService } from "../src/domain/chat/chat-application-service.js";
 import { ChatAdapter } from "../src/api/adapters/chat-adapter.js";
-import type { ChatRuntimeApi } from "../src/api/contract/runtime-api.js";
 import type { SessionRuntime } from "../src/runtime/session/session-runtime.js";
+import { strictTestDouble } from "./strict-test-double.js";
 
 const noop = {} as never;
 
@@ -31,18 +31,26 @@ async function setup() {
 	// Minimal sessionRuntime: chatApp is real (so removeAttachment/deleteMessage
 	// hit the real store), chatRuntime.deleteMessage delegates to chatApp to
 	// actually remove the row (mirroring session-runtime-chat.ts) and returns a
-	// stub snapshot. ChatAdapter only needs these two for the delete paths.
-	const sessionRuntime = {
-		chatApp,
-		chatRuntime: {
-			deleteMessage: async (_chatId: string, messageId: string) => {
-				await chatApp.deleteMessage(messageId);
-				return {} as never;
+	// stub snapshot. ChatAdapter only needs these two for the delete paths;
+	// unprovided SessionRuntime members throw a labeled miss.
+	const sessionRuntime = strictTestDouble<SessionRuntime>(
+		{
+			chatApp,
+			chatRuntime: {
+				deleteMessage: async (_chatId: string, messageId: string) => {
+					await chatApp.deleteMessage(messageId);
+					return {} as never;
+				},
 			},
 		},
-	} as unknown as SessionRuntime;
+		"ChatAdapter sessionRuntime (attachment delete)",
+	);
 
-	const chat = new ChatAdapter(stores, sessionRuntime, noop, noop, noop, assetService) as unknown as ChatRuntimeApi;
+	// `ChatAdapter implements ChatRuntimeApi` — the adapter IS the runtime
+	// surface; the erasure cast was noise over the class's own declaration.
+	// The required STT transcription seam rides the same inert no-op the
+	// actions-routes harness passes (never called on these paths).
+	const chat = new ChatAdapter(stores, sessionRuntime, noop, noop, noop, assetService, async () => null);
 	return { dataRoot, stores, assetService, chatApp, chat };
 }
 

@@ -7,8 +7,7 @@ import { ExperienceCopilotCompactionService } from '../src/domain/interactive/co
 import { ScriptAgentCompactionService } from '../src/domain/agent/script-agent/script-agent-compaction.js';
 import { SidechatOocCompactionService } from '../src/domain/sidechat/sidechat-compaction.js';
 import { assembleScriptAgentPrompt } from '../src/domain/agent/script-agent/script-agent-prompt.js';
-import type { ProviderExecutionInput } from '../src/infrastructure/ai/provider-execution-types.js';
-import type { nonstreamingProviderExecute } from '../src/infrastructure/ai/nonstreaming-provider-executor.js';
+import type { ProviderExecutionInput, GenerationResult } from '../src/infrastructure/ai/provider-execution-types.js';
 import type { AttachmentAssetLoader } from '../src/infrastructure/ai/vision-gate.js';
 import '../src/domain/agent/kinds/script-kind.js';
 
@@ -38,10 +37,14 @@ async function fixture(attachments: Attachment[], kind: 'experience' | 'script' 
   await store.appendMessage(thread.id, { role: 'assistant', content: 'Understood' });
   for (let index = 0; index < 8; index++) await store.appendMessage(thread.id, { role: index % 2 ? 'assistant' : 'user', content: `Kept ${index}` });
   const calls: ProviderExecutionInput[] = [];
-  const execute = (async (input: ProviderExecutionInput) => {
+  // Typed to the REAL executor seam the service injects (6b precedent): the
+  // erased literal returned `{ providerResponse: {} }`, hiding that the
+  // trace's required members were missing; the trace shape here matches the
+  // one the real nonstreaming executor answers with.
+  const execute = async (input: ProviderExecutionInput): Promise<GenerationResult> => {
     calls.push(input);
-    return { text: 'Digest', providerResponse: {} };
-  }) as unknown as typeof nonstreamingProviderExecute;
+    return { text: 'Digest', providerResponse: { mode: 'nonstream', steps: [] } };
+  };
   const loader = mock(async (id: string) => {
     if (id !== file.assetId) throw new Error('Compaction must never load image bytes');
     return Buffer.from(fullText);

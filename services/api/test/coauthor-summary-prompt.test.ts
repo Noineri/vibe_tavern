@@ -17,6 +17,7 @@ import {
 import { SERVICE_PROMPT_ASSET_FILES } from "../src/domain/service-prompts/service-prompt-registry.js";
 import { loadPromptAsset } from "../src/shared/prompt-asset-loader.js";
 import type { nonstreamingProviderExecute } from "../src/infrastructure/ai/nonstreaming-provider-executor.js";
+import { makeProviderProfileRow, makeProviderProfilesFixture } from "./copilot-test-builders.js";
 
 /**
  * SC-8d — a summary prompt of its own for co-author chats.
@@ -46,21 +47,22 @@ function makeExecute(): typeof nonstreamingProviderExecute {
 	};
 }
 
-/** Minimal provider-profiles double for the summary executor seam — the
- *  ChatSummaryService ctor takes the ProviderProfileService class, so the
- *  test-local stub needs one structural cast (the neighboring
- *  chat-summary-assembly suite casts at the same boundary). */
+/** Minimal provider-profiles double for the summary executor seam — built
+ *  through the standing fixture builders: the profile is a COMPLETE stored
+ *  row (the erased literal was silently missing `endpoint` and the row's
+ *  other required columns), and every service member the summary paths do
+ *  not touch throws a labeled miss. */
 function makeProfiles(): ProviderProfileService {
-	return {
-		getProviderProfile: async () => ({
-			id: "profile_1",
-			providerPreset: "openai",
-			apiKey: "test-key",
-			defaultModel: "summary-model",
-			bindPerModel: false,
-		}),
-		getProviderModelSettings: async () => null,
-	} as unknown as ProviderProfileService;
+	return makeProviderProfilesFixture({
+		getProviderProfile: async () =>
+			makeProviderProfileRow({
+				id: "profile_1",
+				name: "Summary profile",
+				apiKey: "test-key",
+				defaultModel: "summary-model",
+				bindPerModel: false,
+			}),
+	});
 }
 
 interface Env {

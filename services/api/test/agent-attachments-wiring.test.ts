@@ -9,7 +9,7 @@ import { streamSidechatTurn } from '../src/domain/sidechat/sidechat-stream.js';
 import { PromptAssemblyService } from '../src/domain/prompt/prompt-assembly-service.js';
 import { StaticPromptResolver } from '../src/domain/prompt/prompt-resolver.js';
 import { RegexHookService } from '../src/domain/regex/regex-hook-service.js';
-import type { AgentStreamDeps } from '../src/domain/agent/agent-stream.js';
+import { makeStreamTextDouble } from './provider-boundary-test-builders.js';
 
 // T2: the real provider-deps builder, stores, every kind's stream entry and
 // generic core. Only the model call is fake (the established streamText seam).
@@ -25,10 +25,10 @@ async function fixture() {
   const loader = mock(async () => bytes);
   const provider = buildAgentProviderDeps({ stores, attachmentAssetLoader: loader });
   let captured: ModelMessage[] = [];
-  const streamText = ((options: { messages: ModelMessage[] }) => {
-    captured = options.messages;
-    return { stream: (async function* () { yield { type: 'text-delta', text: 'Reply' }; })(), finishReason: Promise.resolve('stop'), usage: Promise.resolve(undefined) };
-  }) as unknown as AgentStreamDeps['streamText'];
+  const streamText = makeStreamTextDouble((options) => {
+    captured = options.messages ?? [];
+    return { parts: [{ type: 'text-delta', id: 'aaw-fake', text: 'Reply' }] };
+  }, 'agent-attachments-wiring streamText');
   const resolveVisionAssets = mock(async (input: typeof profile) => {
     const assets = await provider.resolveVisionAssets(input);
     // The forwarding test selects native vision alone: describing an image is

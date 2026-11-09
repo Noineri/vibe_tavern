@@ -25,8 +25,6 @@ import { ChatApplicationService } from "../src/domain/chat/chat-application-serv
 import { ObjectiveService } from "../src/domain/insights/objective-service.js";
 import { StoryPlanSync } from "../src/domain/director/story-plan-sync.js";
 import type { ProviderProfileService } from "../src/domain/providers/provider-profile-service.js";
-import type { SceneTrackerService } from "../src/domain/insights/tracker-service.js";
-import type { SessionRuntime } from "../src/runtime/session/session-runtime.js";
 import { SIDECHAT_RECORD_PROPOSAL_REGISTRY } from "../src/domain/sidechat/sidechat-objective-proposal.js";
 import { createAgentThreadProposalRoutes } from "../src/api/routes/agent-thread-proposals.js";
 import {
@@ -37,6 +35,8 @@ import {
 } from "../src/domain/agent/kinds/sidechat/sidechat-director-tools.js";
 import { SIDECHAT_OBJECTIVE_TOOL_NAME } from "../src/domain/agent/kinds/sidechat/sidechat-objective-tools.js";
 import { isDomainError, httpStatusForDomainError, domainErrorToJson } from "../src/shared/errors.js";
+import { makeSceneTracker, makeSessionRuntime } from "./insights-test-builders.js";
+import { strictTestDouble } from "./strict-test-double.js";
 
 /**
  * SC-11 — the objective-proposal apply/reject routes. The REAL dedicated
@@ -67,17 +67,21 @@ import { isDomainError, httpStatusForDomainError, domainErrorToJson } from "../s
 
 /** The only stub: the InsightsAdapter's snapshot refresh (never asserted —
  *  the tracker assertions read the store directly; `buildConfigPatchResponse`
- *  is session-runtime surface this unit does not own). */
-const stubSessionRuntime = {
+ *  is session-runtime surface this unit does not own). `{}` is a valid
+ *  ConfigPatchResponse — every member of the patch is optional. */
+const stubSessionRuntime = makeSessionRuntime({
 	buildConfigPatchResponse: async () => ({}),
-} as unknown as SessionRuntime;
+});
 /** The never-called seams of the two reused services (providers for the
  *  ObjectiveService, tracker for the InsightsAdapter) — nothing in the
- *  add-task / add-short-term-goal paths reads them. Typed per site (the
- *  hygiene budget ratchets never-casts down, so the stubs name their
- *  target interfaces instead). */
-const stubUncalledProviders = {} as unknown as ProviderProfileService;
-const stubUncalledTracker = {} as unknown as SceneTrackerService;
+ *  add-task / add-short-term-goal paths reads them. Strict doubles: if a
+ *  path ever starts reading them, the miss throws a labeled error instead of
+ *  silently returning `undefined`. */
+const stubUncalledProviders = strictTestDouble<ProviderProfileService>(
+	{},
+	"provider profiles (uncalled seam)",
+);
+const stubUncalledTracker = makeSceneTracker({});
 
 /** Mount the production DomainError → status mapping (shared helpers, not
  *  duplicated logic) so the adapter's 404/409s are observable at the route —

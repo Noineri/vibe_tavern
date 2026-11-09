@@ -1,9 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { createChatRoutes } from "../src/api/routes/chat.js";
 import type { ChatRuntimeApi } from "../src/api/contract/runtime-api.js";
+import { strictTestDouble } from "./strict-test-double.js";
 
+// A mock runtime with each test's overrides; an unprovided member throws a
+// labeled miss instead of `undefined`.
 function mockChat(overrides: Partial<ChatRuntimeApi> = {}): ChatRuntimeApi {
-	return { ...overrides } as unknown as ChatRuntimeApi;
+	return strictTestDouble<ChatRuntimeApi>(overrides, "ChatRuntimeApi (coauthor routes)");
 }
 
 describe("CS-12 Coauthor module routes", () => {

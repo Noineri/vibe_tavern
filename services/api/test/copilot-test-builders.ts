@@ -325,6 +325,9 @@ export function makeCopilotRuntime(
  *
  * The name union is the compile-time twin of the tools suite's runtime shape
  * pin (the `Object.keys(tools).sort()` assertion) — change both together.
+ *
+ * forks: 1 — `coauthorToolInputSchema` (provider-boundary-test-builders.ts),
+ * the same narrowing pointed at the co-author toolset.
  */
 export type CopilotToolName =
 	| "write_buffer"

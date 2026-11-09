@@ -16,6 +16,7 @@ import { countTokensDefault } from "../src/infrastructure/ai/tokenizer-service.j
 import { mapMessageDto } from "../src/runtime/session/session-runtime-dto.js";
 import type { SessionRuntime } from "../src/runtime/session/session-runtime.js";
 import { createApp } from "../src/server/app-factory.js";
+import { strictTestDouble } from "./strict-test-double.js";
 
 // T2: only the external model executor is injected. Hono, error mapping,
 // profile resolution, asset loading, merged storage and DTO projection are real.
@@ -36,8 +37,15 @@ async function setup(mode: "rp" | "coauthor" = "rp") {
   const chatApp = new ChatApplicationService(stores.chats, stores.messages, stores.diceRolls, stores.experiences, stores);
   const execute = mock(async (_input: ProviderExecutionInput) => ({ text: "  The gate opens at 7.\n" }));
   const adapter = new ChatAdapter(
-    stores, { chatApp } as unknown as SessionRuntime,
-    null as unknown as LiveChatOrchestrator, null as unknown as ChatSummaryService,
+    // The attachment-action paths read only `sessionRuntime.chatApp` — the
+    // REAL ChatApplicationService this harness already builds; every other
+    // SessionRuntime member throws a labeled miss if a path ever starts
+    // reading it. The orchestrator/summary seams are never called here —
+    // strict doubles instead of the old `null`s (a labeled miss instead of
+    // an NPE far from the cause).
+    stores, strictTestDouble<SessionRuntime>({ chatApp }, "ChatAdapter sessionRuntime (attachment actions)"),
+    strictTestDouble<LiveChatOrchestrator>({}, "ChatAdapter liveChatOrchestrator (uncalled seam)"),
+    strictTestDouble<ChatSummaryService>({}, "ChatAdapter chatSummaryService (uncalled seam)"),
     providers, assets, async () => null, execute,
   );
   const app = await createApp({ runtime: { chat: adapter } as RuntimeApi });

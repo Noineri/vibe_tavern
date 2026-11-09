@@ -37,6 +37,7 @@ import { ExperienceContextService, type ExperienceChatLifecycleSeam } from "../s
 import { ExperienceModelEffectService } from "../src/domain/interactive/experience-model-effect-service.js";
 import { createProviderProfileService } from "../src/domain/providers/provider-profile-service.js";
 import type { ExperienceRuntimeApi } from "../src/api/contract/runtime-api.js";
+import { strictTestDouble } from "./strict-test-double.js";
 
 /** Mount experience routes with the production DomainError → status mapping
  *  (shared helpers, not duplicated logic) so integration tests observe the real
@@ -76,36 +77,42 @@ function stubRuntime(throws?: { kind: any; message: string }): { runtime: Experi
 		startExperienceSession: async (chatId: string, body: any) => { rec("startExperienceSession").push({ chatId, body }); maybeThrow(); return sessionResponse(chatId, body.branchId); },
 		getExperienceSession: async (sessionId: string) => { rec("getExperienceSession").push({ sessionId }); maybeThrow(); return sessionResponse("c_1", "b_1", sessionId); },
 		endExperienceSession: async (sessionId: string, body: any) => { rec("endExperienceSession").push({ sessionId, body }); maybeThrow(); return null; },
-		submitExperienceAction: async (sessionId: string, action: any, signal?: AbortSignal) => { rec("submitExperienceAction").push({ sessionId, action, signal }); maybeThrow(); return { ...sessionResponse("c_1", "b_1", sessionId), events: [], await: "human" }; },
-		getExperienceView: async (sessionId: string, participantId?: string) => { rec("getExperienceView").push({ sessionId, participantId }); maybeThrow(); return { state: { n: 0 }, actions: [], flavor: undefined, revision: 0, status: "active" }; },
+		submitExperienceAction: async (sessionId: string, action: any, signal?: AbortSignal) => { rec("submitExperienceAction").push({ sessionId, action, signal }); maybeThrow(); return { ...sessionResponse("c_1", "b_1", sessionId), events: [], await: "human" as const }; },
+		getExperienceView: async (sessionId: string, participantId?: string) => { rec("getExperienceView").push({ sessionId, participantId }); maybeThrow(); return { state: { n: 0 }, actions: [], flavor: undefined, revision: 0, status: "active" as const }; },
 		getExperienceActions: async (sessionId: string, participantId?: string) => { rec("getExperienceActions").push({ sessionId, participantId }); maybeThrow(); return []; },
 		getActiveExperienceSession: async (chatId: string, branchId: string) => { rec("getActiveExperienceSession").push({ chatId, branchId }); maybeThrow(); return sessionResponse(chatId, branchId); },
 		getExperienceQueuedAttachment: async (sessionId: string) => { rec("getExperienceQueuedAttachment").push({ sessionId }); maybeThrow(); return null; },
 		queueExperienceReport: async (sessionId: string, body: any) => { rec("queueExperienceReport").push({ sessionId, body }); maybeThrow(); return { id: "xa_1", sessionId, chatId: "c_1", branchId: "b_1", sessionRevision: body.expectedRevision, queueRevision: 1, kind: "report", publicReport: { title: "T", events: [] }, rulesSourceHash: "h", visualSourceHash: null, createdAt: "", updatedAt: "" }; },
 		getExperienceReportStatus: async (sessionId: string) => { rec("getExperienceReportStatus").push({ sessionId }); maybeThrow(); return { revision: 0, reportFrontier: 0, pendingPublicEventCount: 0, queuedAttachment: null }; },
-		undoExperienceSession: async (sessionId: string, body: any) => { rec("undoExperienceSession").push({ sessionId, body }); maybeThrow(); return { ...sessionResponse("c_1", "b_1", sessionId), events: [], await: "human" }; },
-		previewExperienceRecalculation: async (sessionId: string, body: any) => { rec("previewExperienceRecalculation").push({ sessionId, body }); maybeThrow(); return { originalRulesHash: "h1", originalState: {}, originalRevision: 0, newManifestId: "m", newRulesHash: "h2", outcome: { ok: true, finalState: {}, cursor: 0, checkpoints: [] } }; },
+		undoExperienceSession: async (sessionId: string, body: any) => { rec("undoExperienceSession").push({ sessionId, body }); maybeThrow(); return { ...sessionResponse("c_1", "b_1", sessionId), events: [], await: "human" as const }; },
+		previewExperienceRecalculation: async (sessionId: string, body: any) => { rec("previewExperienceRecalculation").push({ sessionId, body }); maybeThrow(); return { originalRulesHash: "h1", originalState: {}, originalRevision: 0, newManifestId: "m", newRulesHash: "h2", outcome: { ok: true as const, finalState: {}, cursor: 0, checkpoints: [] } }; },
 		getExperienceEffects: async (sessionId: string) => { rec("getExperienceEffects").push({ sessionId }); maybeThrow(); return []; },
-		captureExperienceContext: async (sessionId: string, body: any, signal?: AbortSignal) => { rec("captureExperienceContext").push({ sessionId, body, signal }); maybeThrow(); return { sessionId, mode: body.mode ?? "none", branchFrontierRevision: null, messageFrontierPosition: null, providerProfileId: null, modelId: null, sourceCharacterId: null, sourceChatId: null, createdAt: "2025-01-01T00:00:00Z", updatedAt: "2025-01-01T00:00:00Z" }; },
+		captureExperienceContext: async (sessionId: string, body: any, signal?: AbortSignal) => { rec("captureExperienceContext").push({ sessionId, body, signal }); maybeThrow(); return { sessionId, mode: body.mode ?? "none", branchFrontierRevision: null, messageFrontierPosition: null, providerProfileId: null, modelId: null, sourceCharacterId: null, sourceChatId: null, sourcePersonaId: null, createdAt: "2025-01-01T00:00:00Z", updatedAt: "2025-01-01T00:00:00Z" }; },
 		getExperienceContextStatus: async (sessionId: string) => { rec("getExperienceContextStatus").push({ sessionId }); maybeThrow(); return null; },
 		getExperiencePromptOverrides: async (sessionId: string) => { rec("getExperiencePromptOverrides").push({ sessionId }); maybeThrow(); return { global: null, character: null }; },
-		updateExperienceGlobalOverride: async (sessionId: string, body: any) => { rec("updateExperienceGlobalOverride").push({ sessionId, body }); maybeThrow(); return { global: { scope: "global", content: body.content, characterId: null, createdAt: "2025-01-01T00:00:00Z", updatedAt: "2025-01-01T00:00:00Z" }, character: null }; },
-		updateExperienceCharacterOverride: async (sessionId: string, body: any) => { rec("updateExperienceCharacterOverride").push({ sessionId, body }); maybeThrow(); return { global: null, character: { scope: "character", content: body.content, characterId: "c_1", createdAt: "2025-01-01T00:00:00Z", updatedAt: "2025-01-01T00:00:00Z" } }; },
+		updateExperienceGlobalOverride: async (sessionId: string, body: any) => { rec("updateExperienceGlobalOverride").push({ sessionId, body }); maybeThrow(); return { global: { scope: "global" as const, content: body.content, characterId: null, createdAt: "2025-01-01T00:00:00Z", updatedAt: "2025-01-01T00:00:00Z" }, character: null }; },
+		updateExperienceCharacterOverride: async (sessionId: string, body: any) => { rec("updateExperienceCharacterOverride").push({ sessionId, body }); maybeThrow(); return { global: null, character: { scope: "character" as const, content: body.content, characterId: "c_1", createdAt: "2025-01-01T00:00:00Z", updatedAt: "2025-01-01T00:00:00Z" } }; },
 		commitExperienceRound: async (sessionId: string, body: any) => { rec("commitExperienceRound").push({ sessionId, body }); maybeThrow(); return null; },
 		getExperienceRoundConfig: async (sessionId: string) => { rec("getExperienceRoundConfig").push({ sessionId }); maybeThrow(); return { rulesSource: "src", seed: 42, tickMs: 100, initialState: { t: 0 }, initialSettings: {}, participants: [] }; },
 		runExperienceRoundModel: async (body: any, signal?: AbortSignal) => { rec("runExperienceRoundModel").push({ body, signal }); maybeThrow(); return { seatId: body.seatId, ...(body.requestId !== undefined ? { requestId: body.requestId } : {}), result: { actionId: "move" } }; },
 	};
-	return { runtime: base as unknown as ExperienceRuntimeApi, calls };
+	// The strict double keeps the stub's member shapes compiler-checked
+	// against the REAL runtime contract; a member the routes start reading
+	// but the stub does not provide throws a labeled miss.
+	return { runtime: strictTestDouble<ExperienceRuntimeApi>(base, "ExperienceRuntimeApi (routes stub)"), calls };
 }
 
 function sessionResponse(chatId: string, branchId: string, sessionId = "s_1") {
 	return {
-		sessionId, chatId, branchId, status: "active", revision: 0,
+		sessionId, chatId, branchId, status: "active" as const, revision: 0,
 		manifest: { id: "counter", name: "Counter" }, apiVersion: 1,
 		participants: [], capabilityGrants: [], contextMode: "none" as const,
 		rulesRevision: 0, rulesSourceHash: "h",
 		visualId: null, visualSource: null, visualSourceHash: null, reportFrontier: 0,
-		view: { state: { count: 0 }, actions: [], revision: 0, status: "active" },
+		// The view's required initialSettings (the erased stub returned a
+		// fragment the routes json() verbatim; nothing asserts the body).
+		initialSettings: {},
+		view: { state: { count: 0 }, actions: [], revision: 0, status: "active" as const },
 	};
 }
 

@@ -17,6 +17,8 @@ import {
 	streamSidechatTurn,
 	type SidechatStreamDeps,
 } from "../src/domain/sidechat/sidechat-stream.js";
+import { makeProviderProfileRow } from "./copilot-test-builders.js";
+import { makeStreamTextDouble } from "./provider-boundary-test-builders.js";
 
 /**
  * DR-2 (owner ruling M1) — the model-resolution precedence, pinned through
@@ -47,12 +49,16 @@ import {
 
 // ─── Provider fixtures (id-keyed — the dangling test needs per-id lookups) ───
 
+// Built through the standing row builder: the erased literal carried the
+// INVALID transport spelling "chatCompletions" (the union value is
+// `chat_completions`) and was silently missing the row's other required
+// columns — the erasure hid both; nothing here reads them (resolveModel is
+// stubbed, so no transport resolution ever runs).
 function makeProviderProfile(id: string, defaultModel: string): ProviderProfile {
-	return {
+	return makeProviderProfileRow({
 		id,
 		name: `Test ${id}`,
 		providerPreset: "openai",
-		coauthorTransport: "chatCompletions",
 		endpoint: "http://test",
 		apiKey: "key",
 		defaultModel,
@@ -62,9 +68,7 @@ function makeProviderProfile(id: string, defaultModel: string): ProviderProfile 
 		maxTokens: 2000,
 		temperature: 0.3,
 		proxyMode: "inherit",
-		proxyId: null,
-		isActive: true,
-	} as unknown as ProviderProfile;
+	});
 }
 
 const REQUEST_PROVIDER = makeProviderProfile("prov_req", "req-default");
@@ -76,17 +80,6 @@ const PROVIDERS: Record<string, ProviderProfile> = {
 
 	// The request pair the turns below send (the client-derived kind binding).
 };
-
-function makeFakeStreamTextResult(parts: unknown[]): Record<string, unknown> {
-	async function* gen(): AsyncGenerator<unknown, void, unknown> {
-		for (const p of parts) yield p;
-	}
-	return {
-		stream: gen(),
-		finishReason: Promise.resolve("stop"),
-		usage: Promise.resolve(undefined),
-	};
-}
 
 // ─── Real-container harness ──────────────────────────────────────────────────
 
@@ -163,8 +156,10 @@ beforeAll(async () => {
 		getAgentOwnModel: (profile) =>
 			stores.agentProfileModels.get(profile.agentKind, profile.id),
 		db: stores.db,
-		streamText: (() =>
-			makeFakeStreamTextResult([{ type: "text-delta", text: "ok" }])) as unknown as SidechatStreamDeps["streamText"],
+		streamText: makeStreamTextDouble(
+			() => ({ parts: [{ type: "text-delta", id: "aom-fake", text: "ok" }] }),
+			"agent-own-model streamText",
+		),
 	};
 });
 

@@ -22,6 +22,7 @@ import type { AgentKind, AgentBuiltinProfileSeed } from "../src/domain/agent/age
 // `experience` id resolves (the foreign-kind 400 pin needs it registered).
 import "../src/domain/agent/kinds/experience-kind.js";
 import "../src/domain/agent/kinds/script-kind.js";
+import { makeStreamTextDouble } from "./provider-boundary-test-builders.js";
 
 /**
  * SC-0f — per-(chat, agent-kind) profile choice over the REAL adapter, store
@@ -497,19 +498,12 @@ describe("the stream resolves a chat-owned thread's profile through the chat cha
       resolveProfile: (scriptId) => resolver.resolveForScript(scriptId),
       resolveProfileForChat: (thread) =>
         resolver.resolveForChat(thread.chatId, thread.agentKind),
-      streamText: ((opts: unknown) => {
+      streamText: makeStreamTextDouble((opts) => {
         // Capture the OPTS the loop passed (the assembled messages live
-        // here); feed one text delta back through a minimal result shape.
+        // here); feed one text delta back through the builder's typed result.
         captured = opts;
-        async function* gen(): AsyncGenerator<unknown, void, unknown> {
-          yield { type: "text-delta", text: "ok" };
-        }
-        return {
-          stream: gen(),
-          finishReason: Promise.resolve("stop"),
-          usage: Promise.resolve(undefined),
-        };
-      }) as unknown as ExperienceCopilotStreamDeps["streamText"],
+        return { parts: [{ type: "text-delta", id: "acs-fake", text: "ok" }] };
+      }, "agent-chat-settings streamText"),
     };
     const events: ExperienceCopilotStreamEvent[] = [];
     for await (const chunk of streamExperienceCopilot(

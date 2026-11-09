@@ -45,6 +45,7 @@ import {
 import { runExperienceTest } from "../src/domain/interactive/experience-tester.js";
 import { ExperienceChatterService } from "../src/domain/interactive/experience-chatter-service.js";
 import type { ProviderProfileService } from "../src/domain/providers/provider-profile-service.js";
+import { strictTestDouble } from "./strict-test-double.js";
 import type { StoredProviderProfileRecord } from "@vibe-tavern/domain";
 
 // ─── Shared rules sources (real, runnable experience bodies) ─────────────────
@@ -912,18 +913,23 @@ describe("no-write invariant — zero persistence/binding/DB involvement", () =>
 
     // Spy on the experience store's mutating methods. The driver never receives
     // a store, so this confirms the adapter's playground methods (which DO hold
-    // a store via the lifecycle service) do not delegate to persistence.
+    // a store via the lifecycle service) do not delegate to persistence. The
+    // two real write paths a start+advance loop could hit are wrapped with
+    // typed delegating wrappers (the erased Record probe checked the third
+    // name — `appendJournalEntry` — for existence at runtime; it is not a
+    // member of the experience store).
     const writeCalls: string[] = [];
-    const target = stores.experiences as unknown as Record<string, (...args: unknown[]) => unknown>;
-    for (const method of ["applyTransition", "createSession", "appendJournalEntry"]) {
-      const original = target[method];
-      if (typeof original === "function") {
-        target[method] = (...args: unknown[]) => {
-          writeCalls.push(method);
-          return original(...args);
-        };
-      }
-    }
+    const experiences = stores.experiences;
+    const applyTransitionOriginal = experiences.applyTransition.bind(experiences);
+    const createSessionOriginal = experiences.createSession.bind(experiences);
+    experiences.applyTransition = async (data) => {
+      writeCalls.push("applyTransition");
+      return applyTransitionOriginal(data);
+    };
+    experiences.createSession = async (data) => {
+      writeCalls.push("createSession");
+      return createSessionOriginal(data);
+    };
 
     const adapter = buildAdapter(stores);
     const started = await adapter.startExperiencePlayground({
@@ -1277,7 +1283,9 @@ function makeChatterService(replyText: string): { service: ExperienceChatterServ
   };
   let calls = 0;
   const service = new ExperienceChatterService({
-    providerProfiles: providerProfiles as unknown as ProviderProfileService,
+    // The strict double keeps the three provided members compiler-checked;
+    // a member the chatter starts reading throws a labeled miss.
+    providerProfiles: strictTestDouble<ProviderProfileService>(providerProfiles, "ProviderProfileService (playground chatter)"),
     execute: (async () => {
       calls += 1;
       return { text: replyText };

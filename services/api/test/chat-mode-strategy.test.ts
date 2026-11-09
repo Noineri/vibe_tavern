@@ -1,10 +1,17 @@
 import { describe, expect, test } from "bun:test";
+import { brandId, type ChatBranchId, type ChatId } from "@vibe-tavern/domain";
 import {
   CoauthorModeStrategy,
   RpModeStrategy,
   getChatModeStrategy,
 } from "../src/domain/chat/chat-mode-strategy.js";
 import type { ChatModeAssembleInput } from "../src/domain/chat/chat-mode-strategy.js";
+import type {
+  AssemblePromptForChatInput,
+  PromptAssemblyService,
+} from "../src/domain/prompt/prompt-assembly-service.js";
+import { makeExecutorPrompt } from "./provider-boundary-test-builders.js";
+import { strictTestDouble } from "./strict-test-double.js";
 
 /**
  * Characterization tests for the chat-mode strategy registry + the assemble
@@ -37,12 +44,38 @@ describe("chat-mode strategy registry", () => {
 describe("RpModeStrategy.assemble", () => {
   test("delegates to promptService.assembleForChat, forwarding the input verbatim", async () => {
     const seen: unknown[] = [];
-    const promptService = {
-      assembleForChat: async (input: unknown) => {
-        seen.push(input);
-        return { branchId: "brn_test", prompt: { messages: [] }, promptTraceDraft: { presetId: null } };
+    // The strict double keeps the provided member compiler-checked against
+    // the REAL PromptAssemblyService; the result is a complete-typed value
+    // (the erased literal's fragments were missing the trace's required
+    // columns and the assembler response's layers). The test discards the
+    // return — every field here is inert.
+    const promptService = strictTestDouble<PromptAssemblyService>(
+      {
+        assembleForChat: async (input: AssemblePromptForChatInput) => {
+          seen.push(input);
+          return {
+            branchId: brandId<ChatBranchId>("brn_test"),
+            prompt: makeExecutorPrompt({ finalPayload: { messages: [] } }),
+            promptTraceDraft: {
+              chatId: brandId<ChatId>("chat_test"),
+              branchId: brandId<ChatBranchId>("brn_test"),
+              model: "test-model",
+              assembledLayers: [],
+              tokenAccounting: {},
+              activatedLoreEntries: [],
+              activatedLoreDetail: [],
+              scriptInjections: [],
+              retrievedMemories: [],
+              finalPayload: {},
+              latencyMs: 0,
+              presetId: null,
+              presetName: null,
+            },
+          };
+        },
       },
-    } as unknown as ChatModeAssembleInput["promptService"];
+      "RpModeStrategy promptService",
+    );
 
     const strategy = new RpModeStrategy();
     const input: ChatModeAssembleInput = {

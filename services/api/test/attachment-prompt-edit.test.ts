@@ -11,12 +11,14 @@ import { ChatAdapter } from "../src/api/adapters/chat-adapter.js";
 import type { LiveChatOrchestrator } from "../src/domain/chat/live-chat-orchestrator.js";
 import type { ChatSummaryService } from "../src/domain/chat/chat-summary-service.js";
 import type { ProviderProfileService } from "../src/domain/providers/provider-profile-service.js";
-import type { ChatRuntimeApi } from "../src/api/contract/runtime-api.js";
 import type { SessionRuntime } from "../src/runtime/session/session-runtime.js";
+import { strictTestDouble } from "./strict-test-double.js";
 
-const noop = undefined as unknown as LiveChatOrchestrator;
-const noopSummary = undefined as unknown as ChatSummaryService;
-const noopProviders = undefined as unknown as ProviderProfileService;
+// The never-called seams of the reused adapter — strict doubles: a path that
+// starts reading them throws a labeled miss instead of `undefined`.
+const noop = strictTestDouble<LiveChatOrchestrator>({}, "ChatAdapter liveChatOrchestrator (uncalled seam)");
+const noopSummary = strictTestDouble<ChatSummaryService>({}, "ChatAdapter chatSummaryService (uncalled seam)");
+const noopProviders = strictTestDouble<ProviderProfileService>({}, "ChatAdapter providers (uncalled seam)");
 
 /** Distinct PNG-signatured bytes per asset so we can tell them apart on disk. */
 const TAG = (b: number) => new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, b, b, b, b]);
@@ -32,13 +34,16 @@ async function setup() {
 
 	// Minimal sessionRuntime: chatApp is real (so the prompt write hits the
 	// real store). ChatAdapter's method only needs stores.messages +
-	// sessionRuntime.chatApp (the include-in-prompt sibling shape, MR-9 fork).
-	const sessionRuntime = {
-		chatApp,
-		chatRuntime: {},
-	} as unknown as SessionRuntime;
+	// sessionRuntime.chatApp (the include-in-prompt sibling shape, MR-9 fork);
+	// `chatRuntime` stays an empty partial — read members behave exactly as
+	// the erased literal's did.
+	const sessionRuntime = strictTestDouble<SessionRuntime>({ chatApp, chatRuntime: {} }, "ChatAdapter sessionRuntime (attachment prompt edit)");
 
-	const chat = new ChatAdapter(stores, sessionRuntime, noop, noopSummary, noopProviders, assetService) as unknown as ChatRuntimeApi;
+	// `ChatAdapter implements ChatRuntimeApi` — the adapter IS the runtime
+	// surface; the erasure cast was noise over the class's own declaration.
+	// The required STT transcription seam rides the same inert no-op the
+	// actions-routes harness passes (never called on these paths).
+	const chat = new ChatAdapter(stores, sessionRuntime, noop, noopSummary, noopProviders, assetService, async () => null);
 	return { stores, assetService, chatApp, chat };
 }
 

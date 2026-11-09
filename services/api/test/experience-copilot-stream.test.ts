@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach } from "bun:test";
-import type { LanguageModel } from "ai";
+import type { FinishReason, LanguageModel, LanguageModelUsage } from "ai";
 import type {
   CopilotProfile,
   ExperienceCopilotLaunchContext,
@@ -24,6 +24,13 @@ import type {
   ExperienceCopilotStreamDeps,
   ExperienceCopilotStreamEvent,
 } from "../src/domain/interactive/copilot/experience-copilot-stream.js";
+import { strictTestDouble } from "./strict-test-double.js";
+import {
+  makeStreamTextDouble,
+  type FakeStreamTextTurn,
+  type StreamTextCall,
+  type StreamTextPart,
+} from "./provider-boundary-test-builders.js";
 
 // ─── Fake streamText (injected via deps; no mock.module) ─────────────────────
 //
@@ -34,7 +41,7 @@ import type {
 // `streamText` is now a deps field that defaults to the real one (see
 // ExperienceCopilotStreamDeps.streamText); each test sets `streamTextImpl`
 // here and makeDeps injects it. `undefined` → production uses the real function.
-let streamTextImpl: ((opts: unknown) => unknown) | undefined;
+let streamTextImpl: ((options: StreamTextCall) => FakeStreamTextTurn) | undefined;
 
 // ─── Fake store ──────────────────────────────────────────────────────────────
 
@@ -46,7 +53,10 @@ function createFakeStore(
   const todoCalls: Array<{ threadId: string; items: unknown }> = [];
   let counter = 0;
   const now = () => new Date(Date.now() + counter++ * 1000).toISOString();
-  return {
+  // The strict double keeps the provided member shapes compiler-checked and
+  // makes every unprovided member a labeled throw instead of a silent
+  // `undefined` read.
+  return strictTestDouble<ExperienceCopilotStore & { messages: ExperienceCopilotMessage[]; metricsCalls: Array<{ threadId: string; metrics: unknown; providerProfileId: string; model: string }>; todoCalls: Array<{ threadId: string; items: unknown }> }>({
     messages,
     metricsCalls,
     todoCalls,
@@ -59,12 +69,15 @@ function createFakeStore(
     async listMessages() { return [...messages]; },
     async appendMessage(_threadId: string, input: AppendMessageInput) {
       const msg: ExperienceCopilotMessage = {
-        id: `msg_${counter++}`,
+        id: brandId<ExperienceCopilotMessageId>(`msg_${counter++}`),
         threadId: thread.id,
         role: input.role,
         content: input.content ?? "",
         toolCallsJson: input.toolCallsJson ?? null,
         toolCallId: input.toolCallId ?? null,
+        reasoning: input.reasoning ?? null,
+        reasoningDurationMs: input.reasoningDurationMs ?? null,
+        seq: null,
         createdAt: now(),
       };
       messages.push(msg);
@@ -97,7 +110,7 @@ function createFakeStore(
       row.content = JSON.stringify(payload);
       return row;
     },
-  } as unknown as ExperienceCopilotStore & { messages: ExperienceCopilotMessage[]; metricsCalls: Array<{ threadId: string; metrics: unknown; providerProfileId: string; model: string }>; todoCalls: Array<{ threadId: string; items: unknown }> };
+  }, "ExperienceCopilotStore (stream)");
 }
 
 // ─── Fake streamText result ──────────────────────────────────────────────────
@@ -108,24 +121,33 @@ function createFakeStore(
 
 interface FakeStreamOptions {
   /** FullStream parts to emit. */
-  parts?: unknown[];
+  parts?: StreamTextPart[];
   /** When set, the stream throws this error during iteration. */
   throwDuringStream?: Error;
   /** Finish reason resolved by `mapFinish`. */
-  finishReason?: string;
-  /** Provider usage resolved by `mapFinish` (undefined → no usage reported). */
+  finishReason?: FinishReason;
+  /** The usage NUMBERS mapFinish reports (the token-details members the SDK's
+   *  usage record requires are completed inside — never read by the metrics). */
   usage?: { inputTokens?: number; outputTokens?: number; totalTokens?: number };
 }
 
-function makeFakeStreamTextResult(opts: FakeStreamOptions): Record<string, unknown> {
-  async function* gen(): AsyncGenerator<unknown, void, unknown> {
+function makeFakeStreamTextResult(opts: FakeStreamOptions): FakeStreamTextTurn {
+  async function* gen(): AsyncGenerator<StreamTextPart, void, unknown> {
     if (opts.throwDuringStream) throw opts.throwDuringStream;
     for (const p of opts.parts ?? []) yield p;
   }
   return {
-    stream: gen(),
-    finishReason: Promise.resolve(opts.finishReason ?? "stop"),
-    usage: Promise.resolve(opts.usage),
+    parts: gen(),
+    ...(opts.finishReason !== undefined ? { finishReason: opts.finishReason } : {}),
+    ...(opts.usage !== undefined
+      ? {
+          usage: {
+            ...opts.usage,
+            inputTokenDetails: { noCacheTokens: undefined, cacheReadTokens: undefined, cacheWriteTokens: undefined },
+            outputTokenDetails: { textTokens: undefined, reasoningTokens: undefined },
+          },
+        }
+      : {}),
   };
 }
 
@@ -200,10 +222,11 @@ function makeDeps(
     getEffectiveProviderProfile: async () => profile,
     resolveModel: () => ({}) as LanguageModel,
     // Inject the per-test fake; undefined falls through to the real streamText
-    // (the deps default). Cast at this type-erased seam: the fake returns a
-    // partial FullStream shape (see makeFakeStreamTextResult), not the SDK's
-    // full StreamTextResult, but production only reads `.stream`.
-    streamText: streamTextImpl as unknown as ExperienceCopilotStreamDeps["streamText"],
+    // (the deps default). The typed streamText double adapts the fake turn to
+    // the SDK result shape the loop consumes.
+    ...(streamTextImpl !== undefined
+      ? { streamText: makeStreamTextDouble(streamTextImpl, "experience-copilot-stream streamText") }
+      : {}),
     ...overrides,
   };
 }
@@ -238,11 +261,35 @@ async function collect(
 
 // ─── FullStream part builders (the shape createMappedStream consumes) ────────
 
-const textDelta = (text: string) => ({ type: "text-delta", text });
-const toolCall = (toolCallId: string, toolName: string, args: Record<string, unknown>) =>
+// The fake parts, typed to the SDK's real part union (the shapes the loop's
+// mapper walks): `text-delta` requires an `id`, and a tool-result part
+// carries `input` (never read by the pinned paths).
+const textDelta = (text: string): StreamTextPart => ({ type: "text-delta", id: "ecs-text", text });
+const toolCall = (toolCallId: string, toolName: string, args: Record<string, unknown>): StreamTextPart =>
   ({ type: "tool-call", toolCallId, toolName, input: args });
-const toolResult = (toolCallId: string, toolName: string, output: unknown) =>
-  ({ type: "tool-result", toolCallId, toolName, output });
+const toolResult = (toolCallId: string, toolName: string, output: unknown): StreamTextPart =>
+  ({ type: "tool-result", toolCallId, toolName, input: {}, output });
+// The step-boundary parts (multi-step tool turns): the performance/metadata
+// members the SDK union requires are inert zeros/undefined — the loop's
+// mapper reads only `usage`/`finishReason`/`rawFinishReason`/`response` off
+// a finish-step for the per-step trace.
+const startStep = (): StreamTextPart => ({ type: "start-step", request: {}, warnings: [] });
+const finishStep = (
+  usage: { inputTokens: number; outputTokens: number; totalTokens: number },
+  finishReason: FinishReason,
+): StreamTextPart => ({
+  type: "finish-step",
+  response: { id: "ecs-step", timestamp: new Date("2025-01-01T00:00:00.000Z"), modelId: "test-model" },
+  usage: {
+    ...usage,
+    inputTokenDetails: { noCacheTokens: undefined, cacheReadTokens: undefined, cacheWriteTokens: undefined },
+    outputTokenDetails: { textTokens: undefined, reasoningTokens: undefined },
+  },
+  performance: { stepTimeMs: 0, responseTimeMs: 0, toolExecutionMs: {}, timeToFirstOutputMs: 0, effectiveOutputTokensPerSecond: 0, outputTokensPerSecond: undefined, inputTokensPerSecond: undefined, effectiveTotalTokensPerSecond: 0 },
+  finishReason,
+  rawFinishReason: undefined,
+  providerMetadata: undefined,
+});
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Tests
@@ -756,12 +803,12 @@ describe("experience-copilot stream — context metrics (CM-4)", () => {
     streamTextImpl = () => makeFakeStreamTextResult({
       parts: [
         textDelta("hi"),
-        { type: "start-step" },
-        { type: "finish-step", response: {}, usage: { inputTokens: 63000, outputTokens: 500, totalTokens: 63500 }, finishReason: "tool-calls" },
-        { type: "start-step" },
-        { type: "finish-step", response: {}, usage: { inputTokens: 64100, outputTokens: 400, totalTokens: 64500 }, finishReason: "tool-calls" },
-        { type: "start-step" },
-        { type: "finish-step", response: {}, usage: { inputTokens: 64500, outputTokens: 300, totalTokens: 64800 }, finishReason: "stop" },
+        startStep(),
+        finishStep({ inputTokens: 63000, outputTokens: 500, totalTokens: 63500 }, "tool-calls"),
+        startStep(),
+        finishStep({ inputTokens: 64100, outputTokens: 400, totalTokens: 64500 }, "tool-calls"),
+        startStep(),
+        finishStep({ inputTokens: 64500, outputTokens: 300, totalTokens: 64800 }, "stop"),
       ],
       // The aggregate the SDK resolves — the SUM across steps.
       usage: { inputTokens: 191600, outputTokens: 1200, totalTokens: 192800 },

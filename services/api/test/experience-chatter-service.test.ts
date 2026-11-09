@@ -23,6 +23,7 @@
 import { describe, expect, test } from "bun:test";
 import type { StoredProviderProfileRecord, AssemblePromptResponse, ExperienceParticipant } from "@vibe-tavern/domain";
 import type { ProviderProfileService } from "../src/domain/providers/provider-profile-service.js";
+import { strictTestDouble } from "./strict-test-double.js";
 import { ExperienceChatterService, parseChatterMarker } from "../src/domain/interactive/experience-chatter-service.js";
 
 function makeProfile(overrides: Partial<StoredProviderProfileRecord> = {}): StoredProviderProfileRecord {
@@ -67,7 +68,9 @@ function makeService(opts: {
 	};
 	const spy: ExecuteSpy = { calls: [] };
 	const service = new ExperienceChatterService({
-		providerProfiles: providerProfiles as unknown as ProviderProfileService,
+		// The strict double keeps the three provided members compiler-checked;
+		// a member the chatter starts reading throws a labeled miss.
+		providerProfiles: strictTestDouble<ProviderProfileService>(providerProfiles, "ProviderProfileService (chatter)"),
 		execute: (async (input: { profile: StoredProviderProfileRecord; model: string; prompt: AssemblePromptResponse }) => {
 			spy.calls.push({ profile: input.profile, model: input.model, prompt: input.prompt });
 			if (opts.executeThrows) throw new Error("provider blew up");

@@ -6,6 +6,8 @@ import type { Character, Message as DbMessage, Chat as DbChat } from "@vibe-tave
 import { serializeProfileMd } from "@vibe-tavern/db";
 import { trackerTemplateSchema } from "@vibe-tavern/api-contracts";
 import type { CoauthorEditorState } from "@vibe-tavern/api-contracts";
+import { makeCharacterRow } from "./copilot-test-builders.js";
+import { coauthorToolInputSchema } from "./provider-boundary-test-builders.js";
 
 /**
  * Co-Author assembly characterization. Pins what the model + frontend can
@@ -27,34 +29,19 @@ function makeLoaders(overrides?: Partial<{
   userModules: Array<Omit<import("@vibe-tavern/api-contracts").CoauthorModule, "isBuiltIn">>;
   skillCatalog: import("../src/domain/coauthor/skills/skill-scanner.js").SkillCatalogEntry[];
 }>): ChatModeAssembleLoaders {
-  const character: Character = {
-    id: "char_test",
-    slug: "test",
+  // The complete stored character row, built through the standing row
+  // builder (the erased literal carried two non-column members —
+  // `avatarCrop`/`hasFileOnDisk` — the cast silently dropped; every field
+  // the assembly reads keeps its fixture value).
+  const character = makeCharacterRow("char_test", {
     name: "Test",
     description: "desc",
-    personalitySummary: null,
-    defaultScenario: null,
     firstMessage: "The opener.",
-    mesExample: null,
     mesExampleMode: "depth",
     mesExampleDepth: 4,
     alternateGreetings: ["An alt opener."],
-    postHistoryInstructions: null,
-    creatorNotes: null,
-    characterBook: null,
-    depthPrompt: null,
-    depthPromptDepth: null,
-    depthPromptRole: null,
-    extensions: {},
-    systemPrompt: null,
-    tags: [],
-    avatarAssetId: null,
-    avatarFullAssetId: null,
-    avatarCrop: null,
-    avatarExt: null,
-    hasFileOnDisk: true,
     ...overrides?.character,
-  } as unknown as Character;
+  });
 
   return {
     getChat: async () => (overrides?.chat ?? { id: "chat_test", coauthorModuleId: null }) as any,
@@ -153,10 +140,11 @@ describe("assembleCoauthorPrompt", () => {
       histRow("user", "continue"),
     ];
     const withLore = await assembleCoauthorPrompt(makeInput(makeLoaders({ messages: loreTurn })));
-    const withLoreTools = withLore.tools as unknown as { create_lore_entry: { inputSchema: { shape: Record<string, unknown>; safeParse(value: unknown): { success: boolean } } } };
-    expect(Object.keys(withLoreTools.create_lore_entry.inputSchema.shape)).toContain("stickyWindow");
+    if (!withLore.tools) throw new Error("withLore turn carried no toolset — the probe contract is broken");
+    const withLoreTools = coauthorToolInputSchema(withLore.tools, "create_lore_entry");
+    expect(Object.keys(withLoreTools.shape)).toContain("stickyWindow");
     expect(
-      withLoreTools.create_lore_entry.inputSchema.safeParse({ lorebookId: "lb", stickyWindow: 3, summary: "s" }).success,
+      withLoreTools.safeParse({ lorebookId: "lb", stickyWindow: 3, summary: "s" }).success,
     ).toBe(true);
 
     // Same shape WITHOUT a lore call (a profile-only turn) → the basic view:
@@ -167,14 +155,15 @@ describe("assembleCoauthorPrompt", () => {
       histRow("user", "thanks"),
     ];
     const withoutLore = await assembleCoauthorPrompt(makeInput(makeLoaders({ messages: profileTurn })));
-    const withoutLoreTools = withoutLore.tools as unknown as { create_lore_entry: { inputSchema: { shape: Record<string, unknown>; safeParse(value: unknown): { success: boolean } } } };
-    expect(Object.keys(withoutLoreTools.create_lore_entry.inputSchema.shape)).not.toContain("stickyWindow");
+    if (!withoutLore.tools) throw new Error("withoutLore turn carried no toolset — the probe contract is broken");
+    const withoutLoreTools = coauthorToolInputSchema(withoutLore.tools, "create_lore_entry");
+    expect(Object.keys(withoutLoreTools.shape)).not.toContain("stickyWindow");
     expect(
-      withoutLoreTools.create_lore_entry.inputSchema.safeParse({ lorebookId: "lb", stickyWindow: 3, summary: "s" }).success,
+      withoutLoreTools.safeParse({ lorebookId: "lb", stickyWindow: 3, summary: "s" }).success,
     ).toBe(false);
     // The starter fields are still there — lore work can begin this turn.
     for (const field of ["lorebookId", "title", "constant", "position", "depth", "logic", "enabled", "summary"]) {
-      expect(Object.keys(withoutLoreTools.create_lore_entry.inputSchema.shape), `${field} must stay in the basic view`).toContain(field);
+      expect(Object.keys(withoutLoreTools.shape), `${field} must stay in the basic view`).toContain(field);
     }
   });
 
