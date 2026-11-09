@@ -1,5 +1,6 @@
 import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import type { ComponentProps } from "react";
+import type { DragCancelEvent, DragEndEvent, DragOverEvent, DragStartEvent } from "@dnd-kit/core";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 
@@ -195,9 +196,16 @@ describe("master-list primitive", () => {
     expect(onSelect).toHaveBeenCalledWith("a");
 
     expect(dndHandlers).toBeTruthy();
-    const endEvent = { active: { id: "a" }, over: { id: "b" } } as unknown as Parameters<
-      NonNullable<RealDndContextProps["onDragEnd"]>
-    >[0];
+    // Member-for-member dnd-kit event literals (the 7c annotation shape): the
+    // handlers read only active/over ids; the remaining members ride inert
+    // defaults.
+    const endEvent: DragEndEvent = {
+      activatorEvent: new Event("pointerdown"),
+      active: { id: "a", data: { current: undefined }, rect: { current: { initial: null, translated: null } } },
+      collisions: null,
+      delta: { x: 0, y: 0 },
+      over: { id: "b", rect: { width: 0, height: 0, top: 0, left: 0, right: 0, bottom: 0 }, disabled: false, data: { current: undefined } },
+    };
     act(() => {
       dndHandlers!.onDragEnd!(endEvent);
     });
@@ -325,9 +333,10 @@ describe("master-list primitive", () => {
 
     expect(view.getAllByText("Beta")).toHaveLength(1);
     expect(dndHandlers).toBeTruthy();
-    const startEvent = { active: { id: "b" } } as unknown as Parameters<
-      NonNullable<RealDndContextProps["onDragStart"]>
-    >[0];
+    const startEvent: DragStartEvent = {
+      activatorEvent: new Event("pointerdown"),
+      active: { id: "b", data: { current: undefined }, rect: { current: { initial: null, translated: null } } },
+    };
     act(() => {
       dndHandlers!.onDragStart!(startEvent);
     });
@@ -352,9 +361,10 @@ describe("master-list primitive", () => {
     const view = render(<MasterList {...props} />);
     expect(view.queryByTestId("flow-slot")).toBeNull();
     expect(dndHandlers).toBeTruthy();
-    const startEvent = { active: { id: "b" } } as unknown as Parameters<
-      NonNullable<RealDndContextProps["onDragStart"]>
-    >[0];
+    const startEvent: DragStartEvent = {
+      activatorEvent: new Event("pointerdown"),
+      active: { id: "b", data: { current: undefined }, rect: { current: { initial: null, translated: null } } },
+    };
     act(() => { dndHandlers!.onDragStart!(startEvent); });
     expect(seen).toEqual(["start"]);
     const slot = view.getByTestId("flow-slot");
@@ -365,14 +375,22 @@ describe("master-list primitive", () => {
     expect(scroll).toBeTruthy();
     expect(slot.parentElement).toBe(scroll!);
     expect(slot.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    const overEvent = { active: { id: "b" }, over: null } as unknown as Parameters<
-      NonNullable<RealDndContextProps["onDragOver"]>
-    >[0];
+    const overEvent: DragOverEvent = {
+      activatorEvent: new Event("pointerdown"),
+      active: { id: "b", data: { current: undefined }, rect: { current: { initial: null, translated: null } } },
+      collisions: null,
+      delta: { x: 0, y: 0 },
+      over: null,
+    };
     act(() => { dndHandlers!.onDragOver!(overEvent); });
     expect(seen).toEqual(["start", "over"]);
-    const cancelEvent = {} as unknown as Parameters<
-      NonNullable<RealDndContextProps["onDragCancel"]>
-    >[0];
+    const cancelEvent: DragCancelEvent = {
+      activatorEvent: new Event("pointerdown"),
+      active: { id: "b", data: { current: undefined }, rect: { current: { initial: null, translated: null } } },
+      collisions: null,
+      delta: { x: 0, y: 0 },
+      over: null,
+    };
     act(() => { dndHandlers!.onDragCancel!(cancelEvent); });
     expect(seen).toEqual(["start", "over", "cancel"]);
     expect(view.queryByTestId("flow-slot")).toBeNull();
@@ -383,9 +401,10 @@ describe("master-list primitive", () => {
     const view = render(<MasterList {...props} />);
 
     expect(dndHandlers).toBeTruthy();
-    const startEvent = { active: { id: "b" } } as unknown as Parameters<
-      NonNullable<RealDndContextProps["onDragStart"]>
-    >[0];
+    const startEvent: DragStartEvent = {
+      activatorEvent: new Event("pointerdown"),
+      active: { id: "b", data: { current: undefined }, rect: { current: { initial: null, translated: null } } },
+    };
     act(() => {
       dndHandlers!.onDragStart!(startEvent);
     });

@@ -106,17 +106,18 @@ const MOBILE_QUERY = "(max-width: 768px)";
 let realMatchMedia: typeof window.matchMedia | undefined;
 let hadMatchMedia = false;
 function stubMobile(mobile: boolean): void {
-  window.matchMedia = ((query: string) =>
-    ({
-      matches: mobile && query === MOBILE_QUERY,
-      media: query,
-      onchange: null,
-      addEventListener: () => {},
-      removeEventListener: () => {},
-      addListener: () => {},
-      removeListener: () => {},
-      dispatchEvent: () => false,
-    }) as unknown as MediaQueryList) as unknown as typeof window.matchMedia;
+  // Member-for-member MediaQueryList literal (the 7a annotation shape) —
+  // the literal satisfies the interface; no erasure.
+  window.matchMedia = (query: string): MediaQueryList => ({
+    matches: mobile && query === MOBILE_QUERY,
+    media: query,
+    onchange: null,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    addListener: () => {},
+    removeListener: () => {},
+    dispatchEvent: () => false,
+  });
 }
 
 beforeEach(() => {
@@ -126,12 +127,14 @@ beforeEach(() => {
 
 afterEach(() => {
   if (hadMatchMedia && realMatchMedia !== undefined) window.matchMedia = realMatchMedia;
-  else delete (window as unknown as { matchMedia?: unknown }).matchMedia;
+  // Removing the member lib.dom types as always-present needs the reflective
+  // form (the BottomSheet.test.tsx precedent) — no cast.
+  else Reflect.deleteProperty(window, "matchMedia");
 });
 
 afterAll(() => {
   if (hadMatchMedia && realMatchMedia !== undefined) window.matchMedia = realMatchMedia;
-  else delete (window as unknown as { matchMedia?: unknown }).matchMedia;
+  else Reflect.deleteProperty(window, "matchMedia");
 });
 
 // ── The deck grid ────────────────────────────────────────────────────────────

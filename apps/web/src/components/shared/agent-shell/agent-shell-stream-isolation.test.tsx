@@ -49,7 +49,7 @@ import { memo, type ReactNode } from "react";
 import type { ExperienceCopilotThreadWire } from "@vibe-tavern/api-contracts";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import { agentFeedPageFromMessages } from "../../../../test/agent-feed-page.js";
-import { wireUiSettings } from "../../../../test/wire-fixtures.js";
+import { wireProviderProfile, wireUiSettings } from "../../../../test/wire-fixtures.js";
 import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 import { useSnapshotStore } from "../../../stores/snapshot-store.js";
 import type { ProviderProfileRecord } from "../../../api/types.js";
@@ -228,6 +228,8 @@ const fetchRouter = mock(async (input: RequestInfo | URL, init?: RequestInit): P
 });
 
 function chatThread(id: string): ExperienceCopilotThreadWire {
+  // The literal already carries the complete experienceCopilotThreadSchema
+  // field set — the erasure was pure noise (the 7c drop precedent).
   return {
     id,
     scriptId: "script-1",
@@ -239,7 +241,7 @@ function chatThread(id: string): ExperienceCopilotThreadWire {
     metrics: null,
     contextLinks: [],
     todo: [],
-  } as unknown as ExperienceCopilotThreadWire;
+  };
 }
 
 // ── Store seeding (the ExperienceCopilotShell suite's shapes) ───────────────
@@ -247,13 +249,15 @@ function chatThread(id: string): ExperienceCopilotThreadWire {
 // One profile with a tool-capable cached model so the real useProviderModels
 // hook serves the model list from cache (no fetch) and the send guard passes
 // (no saved binding → the first profile, p1/m1).
-const PROFILES = [
-  {
+const PROFILES: ProviderProfileRecord[] = [
+  // The wire factory — the erased literal also hid the required `cachedAt`
+  // on `cachedModels`.
+  wireProviderProfile({
     id: "p1",
     name: "OpenAI Pro",
-    cachedModels: { models: [{ id: "m1", label: "Model One", contextLength: 128000, capabilities: { tools: true } }] },
-  },
-] as unknown as ProviderProfileRecord[];
+    cachedModels: { models: [{ id: "m1", label: "Model One", contextLength: 128000, capabilities: { tools: true } }], cachedAt: "2026-01-01T00:00:00.000Z" },
+  }),
+];
 
 function seedStores(): void {
   const current = useBootstrapStore.getState().data;

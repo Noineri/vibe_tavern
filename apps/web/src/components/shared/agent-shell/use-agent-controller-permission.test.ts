@@ -15,6 +15,7 @@ import { afterAll, beforeEach, describe, expect, mock, spyOn, test } from "bun:t
 import type { AgentHostTransport } from "../../../lib/agent-host-registry.js";
 import type { CopilotAnswerInput } from "../../../api/experience-copilot-api.js";
 import { useDomEnv } from "../../../../test/dom-env.js";
+import { strictTestDouble } from "../../../../test/strict-test-double.js";
 
 useDomEnv();
 
@@ -53,19 +54,29 @@ const neverCalled = () => {
 };
 // The hook's transport DI seam — only the answer/send pair is ever called;
 // the rest are unreachable stubs (a call is a wiring bug, so they throw).
-const stubTransport = {
-  sendStream,
-  answerAsk,
-  getActiveThread: neverCalled,
-  listMessages: neverCalled,
-  startSession: neverCalled,
-  listSessions: neverCalled,
-  activateSession: neverCalled,
-  renameSession: neverCalled,
-  setContextLinks: neverCalled,
-  deleteTurn: neverCalled,
-  editMessage: neverCalled,
-} as unknown as AgentHostTransport;
+// The strict double keeps every provided thrower as written; any route this
+// suite does not wire answers a labeled miss instead of `undefined`.
+// `runs: undefined` is EXPLICIT: the controller's run-attachment effect
+// presence-probes the optional member (`if (transport.runs)` —
+// use-agent-run-attachment.ts), and this suite's transport has no run
+// lifecycle, exactly as the erased literal's absent member answered.
+const stubTransport = strictTestDouble<AgentHostTransport>(
+  {
+    runs: undefined,
+    sendStream,
+    answerAsk,
+    getActiveThread: neverCalled,
+    listMessages: neverCalled,
+    startSession: neverCalled,
+    listSessions: neverCalled,
+    activateSession: neverCalled,
+    renameSession: neverCalled,
+    setContextLinks: neverCalled,
+    deleteTurn: neverCalled,
+    editMessage: neverCalled,
+  },
+  "stubTransport",
+);
 
 beforeEach(() => {
   answerAsk.mockReset();
@@ -186,8 +197,12 @@ describe("useAgentController — permission decisions (SC-23f)", () => {
     );
 
     // A mixed body matches NEITHER wire-union member (both are `.strict()`).
-    const mixed = { decision: "allow", text: "also text" } as unknown as CopilotAnswerInput;
-    const badDecision = { decision: "maybe" } as unknown as CopilotAnswerInput;
+    // Hostile wire bodies are unrepresentable as typed literals by
+    // construction; they enter as parsed wire JSON (the sanctioned boundary —
+    // the 6f precedent), the way the real caller's parsed response delivers
+    // them.
+    const mixed = JSON.parse('{"decision":"allow","text":"also text"}') as CopilotAnswerInput;
+    const badDecision = JSON.parse('{"decision":"maybe"}') as CopilotAnswerInput;
     await act(async () => {
       await result.current.handleAnswer("tc-perm", {});
       await result.current.handleAnswer("tc-perm", mixed);

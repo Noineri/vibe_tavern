@@ -21,6 +21,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, mock } from "bun
 import type { ReactElement, ReactNode } from "react";
 import { createInstance } from "i18next";
 import { I18nextProvider } from "react-i18next";
+import { testFetch } from "@vibe-tavern/test-fetch";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import { installRadixPopoverSeam } from "../../../../test/radix-popover-seam.js";
 import { installToggleSeam } from "../../../../test/toggle-seam.js";
@@ -279,7 +280,9 @@ function withIsolatedI18n(node: ReactNode) {
 let unsubs: Array<() => void> = [];
 
 beforeAll(async () => {
-	globalThis.fetch = fetchRouter as unknown as typeof globalThis.fetch;
+	// The typed test-fetch seam wraps the mock router (call tracking stays on
+	// the original variable; only the install is wrapped).
+	globalThis.fetch = testFetch(fetchRouter);
 	({ render, fireEvent, waitFor } = await import("@testing-library/react"));
 	({ AgentShell } = await import("./AgentShell.js"));
 	({ registerAgentHost, scriptOwnerId } = await import("../../../lib/agent-host-registry.js"));

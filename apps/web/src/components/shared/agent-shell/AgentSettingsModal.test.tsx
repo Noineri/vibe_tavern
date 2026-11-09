@@ -41,8 +41,7 @@ const { fireEvent, render, waitFor } = await import("@testing-library/react");
 import { useCopilotProfileStore } from "../../../stores/copilot-profile-store.js";
 import { useCopilotSkillStore } from "../../../stores/copilot-skill-store.js";
 import { useBootstrapStore } from "../../../stores/api-actions/bootstrap-actions.js";
-import { wireUiSettings } from "../../../../test/wire-fixtures.js";
-import type { ProviderProfileRecord } from "../../../api/types.js";
+import { wireProviderProfile, wireUiSettings } from "../../../../test/wire-fixtures.js";
 import type { CopilotProfile } from "@vibe-tavern/api-contracts";
 
 // ── SAFE module mocks (capture real first, spread `...real`) ───────────────
@@ -722,7 +721,7 @@ describe("AgentSettingsModal — the model row subtitle (DR-8)", () => {
 		seedSidechatBootstrap();
 		// The built-in seed is the effective profile (no chat row, no default);
 		// its own model's provider must resolve (the dangling rule).
-		useProviderDataStore.setState({ profiles: [{ id: "p1", name: "Gate" }] as unknown as ProviderProfileRecord[] });
+		useProviderDataStore.setState({ profiles: [wireProviderProfile({ id: "p1", name: "Gate" })] });
 		useAgentProfileModelStore.setState({ models: { [`${SIDECHAT_AGENT_KIND}:builtin`]: { providerProfileId: "p1", modelName: "m1" } } });
 		const { getByTestId } = renderSidechatSummary();
 		await waitFor(() =>
@@ -731,7 +730,7 @@ describe("AgentSettingsModal — the model row subtitle (DR-8)", () => {
 	});
 
 	it("a script-target host keeps today's subtitle even with a stored row (the gate)", async () => {
-		useProviderDataStore.setState({ profiles: [{ id: "p1", name: "Gate" }] as unknown as ProviderProfileRecord[] });
+		useProviderDataStore.setState({ profiles: [wireProviderProfile({ id: "p1", name: "Gate" })] });
 		useAgentProfileModelStore.setState({ models: { "experience:builtin": { providerProfileId: "p1", modelName: "m1" } } });
 		const { getByTestId } = renderSummary();
 		await waitFor(() => expect(getByTestId("agent-settings-row-model")).toBeDefined());

@@ -233,17 +233,18 @@ describe("AgentPlanSection — the story curtain's tabs (DK-6)", () => {
 
   it("phone (§7, matchMedia stub): the same pieces render — tabs, header actions, deck body", async () => {
     const realMatchMedia = window.matchMedia;
-    window.matchMedia = ((query: string) =>
-      ({
-        matches: query === "(max-width: 768px)",
-        media: query,
-        onchange: null,
-        addEventListener: () => {},
-        removeEventListener: () => {},
-        addListener: () => {},
-        removeListener: () => {},
-        dispatchEvent: () => false,
-      }) as unknown as MediaQueryList) as unknown as typeof window.matchMedia;
+    // Member-for-member MediaQueryList literal (the 7a annotation shape) —
+    // the literal satisfies the interface; no erasure.
+    window.matchMedia = (query: string): MediaQueryList => ({
+      matches: query === "(max-width: 768px)",
+      media: query,
+      onchange: null,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+      dispatchEvent: () => false,
+    });
     try {
       const view = await mountOpen("scu-chat-8", "scu-b8", { deck: DECK });
       expect(view.getByTestId("story-curtain-tabs")).toBeDefined();

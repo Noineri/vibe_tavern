@@ -30,7 +30,7 @@ const { act, renderHook, waitFor } = await import("@testing-library/react");
 const { useBootstrapStore } = await import("../../../stores/api-actions/bootstrap-actions.js");
 const { useProviderDataStore } = await import("../../../stores/provider-data-store.js");
 const { useAgentProfileModelStore } = await import("../../../stores/agent-profile-model-store.js");
-const { wireUiSettings } = await import("../../../../test/wire-fixtures.js");
+const { wireProviderProfile, wireUiSettings } = await import("../../../../test/wire-fixtures.js");
 const {
 	getAgentHost,
 	registerAgentHost,
@@ -101,18 +101,20 @@ function installFetch(): void {
 
 // Two profiles; each carries one tool-capable cached model so the REAL
 // `useProviderModels` hook serves the model list from cache (no fetch).
-const PROFILES = [
-	{
+// The rows ride the wire factory — the erased literals also hid the required
+// `cachedAt` on `cachedModels`.
+const PROFILES: ProviderProfileRecord[] = [
+	wireProviderProfile({
 		id: "p1",
 		name: "First",
-		cachedModels: { models: [{ id: "m1", label: "Model One", contextLength: 128000, capabilities: { tools: true } }] },
-	},
-	{
+		cachedModels: { models: [{ id: "m1", label: "Model One", contextLength: 128000, capabilities: { tools: true } }], cachedAt: "2026-01-01T00:00:00.000Z" },
+	}),
+	wireProviderProfile({
 		id: "p2",
 		name: "Second",
-		cachedModels: { models: [{ id: "m2", label: "Model Two", contextLength: 200000, capabilities: { tools: true } }] },
-	},
-] as unknown as ProviderProfileRecord[];
+		cachedModels: { models: [{ id: "m2", label: "Model Two", contextLength: 200000, capabilities: { tools: true } }], cachedAt: "2026-01-01T00:00:00.000Z" },
+	}),
+];
 
 function kindEntry(kind: string, providerProfileId: string | null, modelName: string | null): AgentKindSettingsWire {
 	return { agentKind: kind, providerProfileId, modelName, defaultProfileId: null, updatedAt: "", servesChatModes: [], autoCompactDefault: true };

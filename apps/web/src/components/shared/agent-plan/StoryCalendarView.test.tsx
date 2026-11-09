@@ -38,8 +38,10 @@ import { testFetch } from "@vibe-tavern/test-fetch";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 import type { AgentPlan } from "@vibe-tavern/api-contracts";
-import type { MessageVariantId } from "@vibe-tavern/domain";
+import { normalizeInsightsConfig } from "@vibe-tavern/domain";
+import type { MessageVariantId, SceneTrackerDsl } from "@vibe-tavern/domain";
 import type { AppMessage, AppSnapshot } from "../../../api/types.js";
+import { wireBranch, wireChat, wireMessage, wireVariant } from "../../../../test/wire-fixtures.js";
 
 useDomEnv();
 const { fireEvent, render, waitFor, within } = await import("@testing-library/react");
@@ -61,15 +63,21 @@ beforeAll(async () => {
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
 
-const CLOCK_SCHEMA = {
+const CLOCK_SCHEMA: SceneTrackerDsl = {
   mood: { $type: "string", label: "Mood" },
   story_day: { $type: "number", clock: SCENE_CLOCK_MARKER.day, label: "Story day" },
   story_time: { $type: "string", clock: SCENE_CLOCK_MARKER.part, label: "Part of day" },
   story_date: { $type: "string", clock: SCENE_CLOCK_MARKER.label, label: "Date label" },
-} as unknown as Record<string, { $type: string; clock?: string }>;
-const PLAIN_SCHEMA = { mood: { $type: "string", label: "Mood" } } as unknown as Record<string, { $type: string }>;
-const SCHEMA_HASH = "clock-h1";
+};
+const PLAIN_SCHEMA: SceneTrackerDsl = { mood: { $type: "string", label: "Mood" } };
 const REVISION = 4;
+// The tracker config rides the domain's persisted-column seam: schemaHash is
+// RECOMPUTED from the schema (never accepted as input), so the records below
+// derive their hash from the SAME seam and the freshness match is real — the
+// literal "clock-h1" the erased config carried was fake on both sides (the
+// scene-zone seeding pattern, step 7b).
+const CLOCK_TRACKER = normalizeInsightsConfig({ tracker: { schema: CLOCK_SCHEMA, revision: REVISION, injectLastN: 1 } }).tracker;
+const SCHEMA_HASH = CLOCK_TRACKER?.schemaHash ?? "";
 
 type SceneRecord = NonNullable<AppMessage["sceneTracker"]>;
 type SceneState = SceneRecord["sceneState"];
@@ -93,20 +101,12 @@ function record(variantId: string, sceneState: SceneState): SceneRecord {
 }
 
 function msg(id: string, opts: { rec?: SceneRecord | null } = {}): AppMessage {
-  const variantId = `${id}-v0`;
-  return {
-    id,
-    role: "assistant",
-    chatId: "chat-1",
-    branchId: "b1",
+  return wireMessage(id, {
     content: `content ${id}`,
-    createdAt: "2026-01-01T00:00:00.000Z",
-    updatedAt: "2026-01-01T00:00:00.000Z",
-    variants: [{ id: variantId, messageId: id, variantIndex: 0, content: `content ${id}`, isSelected: true } as unknown as AppMessage["variants"][number]],
+    variants: [wireVariant(id, 0, { content: `content ${id}`, isSelected: true })],
     selectedVariantIndex: 0,
-    modelId: null,
     sceneTracker: opts.rec === undefined ? null : opts.rec,
-  } as unknown as AppMessage;
+  });
 }
 
 function task(id: string, title: string, status: AgentPlan["tasks"][number]["status"], at?: AgentPlan["tasks"][number]["at"]): AgentPlan["tasks"][number] {
@@ -132,7 +132,7 @@ const EMPTY_PLAN: AgentPlan = { goal: "", constraints: [], tasks: [] };
 // ── The snapshot seed ───────────────────────────────────────────────────────
 
 interface SeedOptions {
-  schema?: unknown;
+  schema?: SceneTrackerDsl;
   trackerEnabled?: boolean;
   injectLastN?: number;
   messages: AppMessage[];
@@ -142,25 +142,24 @@ function seed({ schema = CLOCK_SCHEMA, trackerEnabled = true, injectLastN = 1, m
   const snap: AppSnapshot = {
     chats: [],
     allCharacters: [],
-    activeChat: {
-      id: "chat-1",
-      title: "Chat 1",
-      characterId: "c1",
-      activeBranchId: "b1",
-      insightsConfig: {
+    activeChat: wireChat({
+      insightsConfig: normalizeInsightsConfig({
         objectiveEnabled: false,
         trackerEnabled,
-        tracker: { schema, schemaHash: SCHEMA_HASH, revision: REVISION, injectLastN },
-      },
-    } as unknown as AppSnapshot["activeChat"],
-    activeBranch: { id: "b1", chatId: "chat-1", label: "main" } as unknown as AppSnapshot["activeBranch"],
+        tracker: { schema, revision: REVISION, injectLastN },
+      }),
+    }),
+    activeBranch: wireBranch(),
     branches: [],
     messages,
     summaries: [],
     promptTrace: null,
-    character: null,
+    // The wire type carries no null for character (the erased cast hid that);
+    // `undefined` keeps the key present — ingestSnapshot's `?? null` maps it
+    // to the same empty store slot the original null produced.
+    character: undefined,
     persona: null,
-  } as unknown as AppSnapshot;
+  };
   useSnapshotStore.getState().ingestSnapshot(snap);
 }
 
@@ -170,8 +169,8 @@ const originalFetch = globalThis.fetch;
 const plansByBranch = new Map<string, AgentPlan>();
 const planPuts: Array<{ branchId: string; body: AgentPlan }> = [];
 const sceneEdits: Array<{ body: { target: { messageId: string; variantId: string }; sceneState: Record<string, unknown> } }> = [];
-const insightPatches: Array<{ body: { insightsConfig?: { tracker?: { schema: unknown }; trackerEnabled?: boolean } } }> = [];
-let configSchema: unknown = CLOCK_SCHEMA;
+const insightPatches: Array<{ body: { insightsConfig?: { tracker?: { schema: SceneTrackerDsl }; trackerEnabled?: boolean } } }> = [];
+let configSchema: SceneTrackerDsl = CLOCK_SCHEMA;
 let configTrackerEnabled = true;
 
 beforeEach(() => {
@@ -215,7 +214,7 @@ beforeEach(() => {
       });
     }
     if (/\/insights-config$/.test(path)) {
-      const body = JSON.parse(String(init?.body ?? "{}")) as { insightsConfig?: { tracker?: { schema: unknown }; trackerEnabled?: boolean } };
+      const body = JSON.parse(String(init?.body ?? "{}")) as { insightsConfig?: { tracker?: { schema: SceneTrackerDsl }; trackerEnabled?: boolean } };
       insightPatches.push({ body });
       if (body.insightsConfig?.tracker?.schema !== undefined) configSchema = body.insightsConfig.tracker.schema;
       if (body.insightsConfig?.trackerEnabled !== undefined) configTrackerEnabled = body.insightsConfig.trackerEnabled;
