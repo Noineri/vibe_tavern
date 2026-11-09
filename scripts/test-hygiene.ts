@@ -99,7 +99,12 @@ export const BUDGETS = {
 	// their erased seed-tracker literals (message-edit-coordination +
 	// scene-zone — normalizeInsightsConfig accepts the literal cast-free);
 	// same law, same supervisor follow-up commit.
-	asNever: 1238,
+	// 1235 (2026-11-10, TYPE-SAFETY sweep 7g): 3 `as never` sites died WITH
+	// their erased constructs in TopBar.narrate.test.tsx (TooltipProvider /
+	// Popover.Root probe arms + the erased fetch install — the batch replaced
+	// the probes with direct typed package exports); same law, same
+	// supervisor follow-up commit.
+	asNever: 1235,
 	/** Global `screen.` usage in apps/web test files (binds at import time). */
 	// 196 (2026-10-04): ratcheted to the merged tree's count after PR #51
 	// (provider-lists unification removed the forked pickers' screen usage;
