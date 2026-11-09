@@ -1,7 +1,7 @@
 import { describe, it, expect } from "bun:test";
 import { PromptAssemblyService, type PromptAssemblyResolver } from "../src/domain/prompt/prompt-assembly-service.js";
-import type { StoreContainer } from "@vibe-tavern/db";
-import { normalizeInsightsConfig, normalizeObjectiveState, type ChatId } from "@vibe-tavern/domain";
+import type { ChatId } from "@vibe-tavern/domain";
+import { makePromptAssemblyStores } from "./insights-test-builders.js";
 
 /**
  * Characterization test for the per-request PRESET OVERRIDE path (Wave Q1b).
@@ -90,32 +90,12 @@ function makeResolver(): { resolver: PromptAssemblyResolver; calls: string[] } {
   return { resolver, calls };
 }
 
-const mockStores = {
-  chats: {
-    getById: async () => ({
-      id: "chat_1",
-      characterId: "char_1",
-      personaId: "persona_1",
-      promptPresetId: "preset_chat",
-      activeBranchId: "branch_1",
-      insightsConfig: normalizeInsightsConfig({}),
-      insightsObjectiveState: normalizeObjectiveState({}),
-      title: "Test",
-      summary: null,
-      createdAt: "0",
-      updatedAt: "0",
-    }),
-    getBranches: async () => [{ id: "branch_1", chatId: "chat_1", parentBranchId: null, label: "main" }],
-    getMessages: async () => [],
+const mockStores = makePromptAssemblyStores(
+  {
+    chat: { personaId: "persona_1", promptPresetId: "preset_chat", title: "Test" },
   },
-  personas: { listAll: async () => [] },
-  messages: { getMessages: async () => [] },
-  chatSummaries: { listByChatBranch: async () => [] },
-  characterAssets: { listByCharacter: async () => [] },
-  presets: { listAll: async () => [] },
-  diceRolls: { getRollsForMessages: async () => new Map() },
-  experiences: { getAttachmentsForMessages: async () => new Map() },
-} as unknown as StoreContainer;
+  "PromptAssemblyService stores (preset-override)",
+);
 
 const mockFileStore = {
   dataRoot: "/mock",

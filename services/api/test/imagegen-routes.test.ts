@@ -40,6 +40,7 @@ import { ProviderExecutionError } from "../src/infrastructure/ai/provider-execut
 import type { StoredProviderProfileRecord } from "@vibe-tavern/domain";
 import { createImageGenRoutes } from "../src/api/routes/image-gen.js";
 import type { RuntimeApi } from "../src/api/contract/runtime-api.js";
+import { makeRuntimeApi } from "./routes-test-builders.js";
 import { createApp } from "../src/server/app-factory.js";
 import { openRouterImageGenFactory } from "../src/domain/imagegen/backends/openrouter.js";
 import { openAiImagesFactory } from "../src/domain/imagegen/backends/openai-images.js";
@@ -195,14 +196,17 @@ describe("image-gen routes — profile CRUD", () => {
   test("PATCH /api/image-gen/profiles/reorder requires mobile bearer auth before the route", async () => {
     let reorderCalled = false;
     const app = await createApp({
-      runtime: {
-        imageGen: {
-          reorderImageGenProfiles: async () => {
-            reorderCalled = true;
-            return [];
+      runtime: makeRuntimeApi(
+        {
+          imageGen: {
+            reorderImageGenProfiles: async () => {
+              reorderCalled = true;
+              return [];
+            },
           },
         },
-      } as unknown as RuntimeApi,
+        "RuntimeApi (imagegen-routes: auth gate)",
+      ),
       mobileAccessToken: "test-token",
       enforceMobileAuth: true,
     });

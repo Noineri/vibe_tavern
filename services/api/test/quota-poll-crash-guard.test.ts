@@ -3,6 +3,7 @@ import type { QuotaStore } from "@vibe-tavern/db";
 import { EventBus } from "@vibe-tavern/domain";
 import type { ProviderProfileService } from "../src/domain/providers/provider-profile-service.js";
 import { QuotaService } from "../src/domain/quota/quota-service.js";
+import { strictTestDouble } from "./strict-test-double.js";
 
 // Regression pin (incident 2026-08-21): the poll timer callback ran
 // `void this.pollProfile(profileId)` — pollProfile's internal try/catch covers
@@ -16,26 +17,35 @@ import { QuotaService } from "../src/domain/quota/quota-service.js";
 // an unhandled rejection, so reaching the final expect() means the guard held.
 
 function makeService(profileLookup: () => Promise<never>): QuotaService {
-	// Minimal store stubs, type-erased at this test's boundary on purpose:
-	// only listSettings (start) and getProviderProfile (poll, pre-try) run.
-	const quota = {
-		listSettings: async () => [
-			{
-				providerProfileId: "prof_poll_crash",
-				config: {
-					kind: "windowed",
-					displayEnabled: true,
-					lowQuotaEnabled: true,
-					lowQuotaRemainingPercent: 25,
-					resetNotifyEnabled: true,
-					pollIntervalMinutes: 2,
+	// Minimal store stubs, labeled-miss strict doubles: only listSettings
+	// (start) and getProviderProfile (poll, pre-try) run; everything else on
+	// either seam throws a labeled miss instead of reading undefined.
+	const quota = strictTestDouble<QuotaStore>(
+		{
+			listSettings: async () => [
+				{
+					providerProfileId: "prof_poll_crash",
+					config: {
+						kind: "windowed",
+						displayEnabled: true,
+						lowQuotaEnabled: true,
+						lowQuotaRemainingPercent: 25,
+						resetNotifyEnabled: true,
+						pollIntervalMinutes: 2,
+					},
+					createdAt: "2026-08-21T21:07:42.000Z",
+					updatedAt: "2026-08-21T21:07:42.000Z",
 				},
-			},
-		],
-	} as unknown as QuotaStore;
-	const profiles = {
-		getProviderProfile: profileLookup,
-	} as unknown as ProviderProfileService;
+			],
+		},
+		"QuotaStore (poll-crash-guard)",
+	);
+	const profiles = strictTestDouble<ProviderProfileService>(
+		{
+			getProviderProfile: profileLookup,
+		},
+		"ProviderProfileService (poll-crash-guard)",
+	);
 	return new QuotaService({
 		quota,
 		profiles,

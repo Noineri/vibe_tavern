@@ -974,11 +974,16 @@ describe("comfyui adapter", () => {
 
     it("fails closed on an unknown direct workflow selection instead of falling back", async () => {
       const { transport } = ditTransport("pid-workflow-unknown");
+      // The fails-closed pin needs a family id that is by construction OUTSIDE
+      // the ImageGenWorkflowFamilyId union (the unregistered-selection case) —
+      // the string is branded at this one documented fixture seam, the same
+      // unrepresentable-test-value pattern as makeAgentKind's serve-list.
+      const unregisteredWorkflow = (id: string) => id as ImageGenWorkflowFamilyId;
       await expect(
         backendWith(transport).generate({
           prompt: "p",
           model: MUSE,
-          workflowFamily: "unregistered-workflow" as unknown as ImageGenWorkflowFamilyId,
+          workflowFamily: unregisteredWorkflow("unregistered-workflow"),
         }),
       ).rejects.toThrow('ComfyUI workflow family "unregistered-workflow" has no workflow template');
     });

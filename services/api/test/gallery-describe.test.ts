@@ -6,13 +6,15 @@ import { join } from "node:path";
 import { createStoreContainer, STORAGE_FOLDERS } from "@vibe-tavern/db";
 import { AssetService } from "../src/domain/asset/asset-service.js";
 import type { ProviderProfileService } from "../src/domain/providers/provider-profile-service.js";
-import { PROXY_MODE, type StoredProviderProfileRecord } from "@vibe-tavern/domain";
+import { PROXY_MODE } from "@vibe-tavern/domain";
 import {
 	resetProviderFetchFactory,
 	setProviderFetchFactory,
 	type ProviderFetch,
 } from "../src/domain/providers/provider-fetch-factory.js";
 import type { describeAttachments, resolveVisionDescribePrompt } from "../src/infrastructure/ai/vision-gate.js";
+import { makeProviderProfileRow } from "./copilot-test-builders.js";
+import { strictTestDouble } from "./strict-test-double.js";
 
 const CHARS = STORAGE_FOLDERS.characters;
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
@@ -65,7 +67,7 @@ afterEach(() => {
 
 // ─── Stub provider profile service ──────────────────────────────────────────
 function makeProfileService(opts: { visionModel?: string | null; active?: boolean } = {}): ProviderProfileService {
-	const profile = {
+	const profile = makeProviderProfileRow({
 		id: "prof_1",
 		name: "test",
 		providerPreset: "openai",
@@ -75,10 +77,13 @@ function makeProfileService(opts: { visionModel?: string | null; active?: boolea
 		visionModel: opts.visionModel !== undefined ? opts.visionModel : "vision-test",
 		proxyMode: PROXY_MODE.inherit,
 		proxyId: null,
-	} as unknown as StoredProviderProfileRecord;
-	return {
-		resolveActiveProviderProfile: async () => (opts.active === false ? null : profile),
-	} as unknown as ProviderProfileService;
+	});
+	return strictTestDouble<ProviderProfileService>(
+		{
+			resolveActiveProviderProfile: async () => (opts.active === false ? null : profile),
+		},
+		"ProviderProfileService (gallery-describe)",
+	);
 }
 
 const noopSession = {} as never;

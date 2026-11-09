@@ -19,11 +19,24 @@ import type {
 	Chat,
 	ChatBranch,
 	ChatSummary,
+	CharacterAssetRow,
+	DiceRoll,
+	ExperienceAttachmentRow,
+	LorebookRow,
 	Message,
 	MessageVariant,
+	RegexStore,
 	StoreContainer,
 	MessageStore,
 	ChatStore,
+	PersonaStore,
+	PresetStore,
+	ChatSummaryStore,
+	CharacterAssetStore,
+	DiceRollStore,
+	ExperienceStore,
+	Persona,
+	PromptPreset,
 } from "@vibe-tavern/db";
 import {
 	CHAT_MODE,
@@ -33,6 +46,7 @@ import {
 	normalizeAutoSummaryConfig,
 	normalizeInsightsConfig,
 	normalizeObjectiveState,
+	type CharacterId,
 	type ChatBranchId,
 	type ChatId,
 	type MessageVariantId,
@@ -40,14 +54,21 @@ import {
 	type SceneTrackerRecord,
 } from "@vibe-tavern/domain";
 import type { PromptAssemblyContext } from "@vibe-tavern/prompt-pipeline";
-import type { ConfigPatchResponse, SceneTargetResponse } from "../src/api/contract/session-types.js";
+import type {
+	ConfigPatchResponse,
+	SceneTargetResponse,
+	SessionSnapshot,
+} from "../src/api/contract/session-types.js";
+import type { CharacterRecord } from "../src/domain/character/character-runtime.js";
 import type { ObjectiveService } from "../src/domain/insights/objective-service.js";
 import type { SceneTrackerService } from "../src/domain/insights/tracker-service.js";
 import type { InsightsRuntimeApi } from "../src/api/contract/runtime-api.js";
 import type { SessionRuntime } from "../src/runtime/session/session-runtime.js";
-import type { BuiltPipelineContext } from "../src/domain/prompt/prompt-assembly-service.js";
-import { mapChatDto, mapMessageDto } from "../src/runtime/session/session-runtime-dto.js";
+import type { BuiltPipelineContext, PromptAssemblyResolver } from "../src/domain/prompt/prompt-assembly-service.js";
+import { toCharacterRecord } from "../src/domain/character/character-runtime.js";
+import { mapChatBranch, mapChatDto, mapMessageDto } from "../src/runtime/session/session-runtime-dto.js";
 import { strictTestDouble, type PartialMembers } from "./strict-test-double.js";
+import { makeCharacterRow } from "./copilot-test-builders.js";
 
 const EPOCH = "2026-01-01T00:00:00.000Z";
 
@@ -184,6 +205,225 @@ export function makeChatSummaryRow(
 		...over,
 	};
 }
+
+// ─── Rows + stores for the prompt-assembly / lorebook / import suites ───────
+
+/** A complete stored lorebook row; only identity fields carry fixture data —
+ *  the import/participating paths read `id` (plus whatever `over` pins for an
+ *  assertion). The rest rides inert defaults matching the store's create
+ *  shape. Replaces the `{ id, name }` fragments the erasure casts let past. */
+export function makeLorebookRow(over: Partial<LorebookRow> = {}): LorebookRow {
+	return {
+		id: "lb_1",
+		name: "Fixture lorebook",
+		description: "",
+		scopeType: "global",
+		scanDepth: 60,
+		tokenBudget: 1000,
+		tokenBudgetPercent: null,
+		tokenBudgetCap: 0,
+		recursiveScanning: false,
+		useGroupScoring: true,
+		caseSensitive: false,
+		matchWholeWords: false,
+		maxRecursionSteps: 0,
+		includeNames: false,
+		minActivations: 0,
+		minActivationsDepthMax: 0,
+		overflowAlert: false,
+		characterStrategy: 0,
+		sortOrder: 0,
+		enabled: true,
+		characterId: null,
+		personaId: null,
+		chatId: null,
+		extensions: {},
+		createdAt: EPOCH,
+		updatedAt: EPOCH,
+		...over,
+	};
+}
+
+/** A complete stored character-asset (gallery) row; the prompt-assembly D7
+ *  filter reads `description`/`includeInPrompt`/`caption`, the persona-export
+ *  legacy-avatar path reads `ext` — everything else rides inert defaults. */
+export function makeCharacterAssetRow(
+	id: string,
+	over: Partial<Omit<CharacterAssetRow, "id">> = {},
+): CharacterAssetRow {
+	return {
+		id,
+		characterId: "char_1",
+		ext: "png",
+		mimeType: "image/png",
+		caption: "",
+		description: null,
+		includeInPrompt: false,
+		avatarCropJson: null,
+		order: 0,
+		createdAt: EPOCH,
+		...over,
+	};
+}
+
+/** The `SessionSnapshot` the full (non-lean) import path returns verbatim:
+ *  every required member present, built through the SAME funnels the wire
+ *  uses (`mapChatDto`/`toCharacterRecord` over standing row builders). The
+ *  import tests only ever assert the snapshot EXISTS, so the body is inert;
+ *  overrides win wholesale. Replaces the erased `{ chats: [], messages: [] }`
+ *  fragments that satisfied the old cast. */
+export function makeSessionSnapshot(over: Partial<SessionSnapshot> = {}): SessionSnapshot {
+	// The row → record funnel takes the DOMAIN view; the id is the only
+	// brand-differentiated field (the same re-brand prompt-resolver.ts:116 does
+	// over its store row).
+	const row = makeCharacterRow("char_1");
+	const character: CharacterRecord = toCharacterRecord({ ...row, id: brandId<CharacterId>(row.id) });
+	const branch = makeChatBranchRow();
+	return {
+		chats: [],
+		allCharacters: [],
+		activeChat: mapChatDto(makeChatRow()),
+		activeBranch: mapChatBranch(branch),
+		branches: [mapChatBranch(branch)],
+		messages: [],
+		summaries: [],
+		promptTrace: null,
+		character,
+		persona: null,
+		...over,
+	};
+}
+
+/**
+ * The `StoreContainer` double for `PromptAssemblyService` (and the
+ * `StaticPromptResolver`/`RegexHookService` pair that share the container).
+ * The service reads exactly the slices wired below; every other store throws a
+ * labeled miss on access. Replaces the six suites' `as unknown as
+ * StoreContainer` literals — which, silently INCOMPLETE, also carried the dead
+ * pre-TH-11 seams (`chats.getMessages`, `characterAssets.listGalleryByCharacter`
+ * — neither exists on the real stores); the typed double drops them, so a
+ * regression that revives a dead seam fails loudly instead of reading
+ * `undefined`.
+ *
+ * The chat row is completed through {@link makeChatRow} (DK-9: the erased
+ * literals omitted required columns); `fixture.chat` overrides win. History
+ * rows ride {@link makeMessageRow}; summaries {@link makeChatSummaryRow}.
+ */
+export interface PromptAssemblyStoresFixture {
+	/** Overrides merged over the canonical chat row (`promptPresetId`,
+	 *  `personaId`, `insightsConfig`, `messageHistoryLimit`, …). */
+	chat?: Partial<Chat>;
+	/** `chats.getById` returns null (the fail-closed not-found paths). */
+	chatMissing?: boolean;
+	/** `chats.getBranches` rows (defaults to the canonical branch_1 row). */
+	branches?: ChatBranch[];
+	/** `messages.getMessages(branchId)` rows (defaults to []). */
+	messages?: Message[];
+	/** `messages.getSelectedSceneHistory` rows + capture (SCN-7 fixtures). */
+	selectedSceneHistory?: Array<{
+		messageId: string;
+		variantId: string;
+		record: {
+			variantId: string;
+			schemaHash: string;
+			configRevision: number;
+			sourceHash: string;
+			sceneState: Record<string, unknown>;
+			modelId: string | null;
+			generatedAt: string;
+		};
+	}>;
+	onSceneHistoryQuery?: (branchId: string, scanLimit: number) => void;
+	personas?: Persona[];
+	presets?: PromptPreset[];
+	/** `chatSummaries.listByChatBranch` rows. */
+	summaries?: ChatSummary[];
+	/** `characterAssets.listByCharacter` rows (the D7 gallery filter). */
+	characterAssets?: CharacterAssetRow[];
+	/** `diceRolls.getRollsForMessages` result, copied per call. */
+	diceRolls?: Map<string, DiceRoll[]>;
+	/** Captures the dice batch query (the no-N+1 pins). */
+	onDiceQuery?: () => void;
+	/** `experiences.getAttachmentsForMessages` result, copied per call. */
+	experienceAttachments?: Map<string, ExperienceAttachmentRow[]>;
+	/** Captures the experience batch query (the no-N+1 pins). */
+	onAttachmentQuery?: () => void;
+	/** A complete `regex` slice override (the RX-13 fixtures build their own
+	 *  strict double around `resolveActiveRegexPresets`). */
+	regex?: RegexStore;
+}
+
+export function makePromptAssemblyStores(
+	fixture: PromptAssemblyStoresFixture = {},
+	label = "PromptAssemblyService stores",
+): StoreContainer {
+	const storeLabel = (slice: string) => `${label}: ${slice}`;
+	const rollMap = new Map(fixture.diceRolls ?? []);
+	const attachmentMap = new Map(fixture.experienceAttachments ?? []);
+	return strictTestDouble<StoreContainer>(
+		{
+			chats: strictTestDouble<ChatStore>(
+				{
+					getById: async () => (fixture.chatMissing ? null : makeChatRow(fixture.chat)),
+					getBranches: async () => fixture.branches ?? [makeChatBranchRow()],
+				},
+				storeLabel("chats"),
+			),
+			messages: strictTestDouble<MessageStore>(
+				{
+					getMessages: async () => fixture.messages ?? [],
+					...(fixture.selectedSceneHistory || fixture.onSceneHistoryQuery
+						? {
+								getSelectedSceneHistory: async (branchId: string, scanLimit: number) => {
+									fixture.onSceneHistoryQuery?.(branchId, scanLimit);
+									return fixture.selectedSceneHistory ?? [];
+								},
+							}
+						: {}),
+				},
+				storeLabel("messages"),
+			),
+			personas: strictTestDouble<PersonaStore>(
+				{ listAll: async () => fixture.personas ?? [] },
+				storeLabel("personas"),
+			),
+			presets: strictTestDouble<PresetStore>(
+				{ listAll: async () => fixture.presets ?? [] },
+				storeLabel("presets"),
+			),
+			chatSummaries: strictTestDouble<ChatSummaryStore>(
+				{ listByChatBranch: async () => fixture.summaries ?? [] },
+				storeLabel("chatSummaries"),
+			),
+			characterAssets: strictTestDouble<CharacterAssetStore>(
+				{ listByCharacter: async () => fixture.characterAssets ?? [] },
+				storeLabel("characterAssets"),
+			),
+			diceRolls: strictTestDouble<DiceRollStore>(
+				{
+					getRollsForMessages: async () => {
+						fixture.onDiceQuery?.();
+						return new Map(rollMap);
+					},
+				},
+				storeLabel("diceRolls"),
+			),
+			experiences: strictTestDouble<ExperienceStore>(
+				{
+					getAttachmentsForMessages: async () => {
+						fixture.onAttachmentQuery?.();
+						return new Map(attachmentMap);
+					},
+				},
+				storeLabel("experiences"),
+			),
+			...(fixture.regex ? { regex: fixture.regex } : {}),
+		},
+		label,
+	);
+}
+
+// ─── Scene tracker ───────────────────────────────────────────────────────────
 
 /** A complete Scene record as the tracker service really returns it (the
  *  domain type — every field inert unless overridden; the id is branded here,

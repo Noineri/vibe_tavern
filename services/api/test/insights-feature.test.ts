@@ -36,7 +36,7 @@ describe("Insights feature immutable event targeting (OFA-4 / SCN-8)", () => {
 
   it("forwards qualifying assistant appends to the Scene auto-start (SCN-8)", async () => {
     const seen: SceneAutoGenerateTrigger[] = [];
-    const objectiveService = { triggerAutoCheck: async () => {} } as unknown as Pick<ObjectiveService, "triggerAutoCheck">;
+    const objectiveService = { triggerAutoCheck: async () => {} } satisfies Pick<ObjectiveService, "triggerAutoCheck">;
     const trackerService = {
       triggerAutoGenerate: async (trigger: SceneAutoGenerateTrigger) => { seen.push(trigger); },
     } satisfies Pick<SceneTrackerService, "triggerAutoGenerate">;
@@ -55,8 +55,8 @@ describe("Insights feature immutable event targeting (OFA-4 / SCN-8)", () => {
   it("stops forwarding after deactivate (both subscriptions removed)", async () => {
     const obj: ObjectiveAutoCheckTrigger[] = [];
     const scn: SceneAutoGenerateTrigger[] = [];
-    const objectiveService = { triggerAutoCheck: async (t: ObjectiveAutoCheckTrigger) => { obj.push(t); } } as unknown as Pick<ObjectiveService, "triggerAutoCheck">;
-    const trackerService = { triggerAutoGenerate: async (t: SceneAutoGenerateTrigger) => { scn.push(t); } } as unknown as Pick<SceneTrackerService, "triggerAutoGenerate">;
+    const objectiveService = { triggerAutoCheck: async (t: ObjectiveAutoCheckTrigger) => { obj.push(t); } } satisfies Pick<ObjectiveService, "triggerAutoCheck">;
+    const trackerService = { triggerAutoGenerate: async (t: SceneAutoGenerateTrigger) => { scn.push(t); } } satisfies Pick<SceneTrackerService, "triggerAutoGenerate">;
     const events = new EventBus();
     const feature = createInsightsFeature({ objectiveService, trackerService });
     feature.activate({ events, router: null as never });

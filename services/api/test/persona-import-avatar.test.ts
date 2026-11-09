@@ -9,12 +9,13 @@ import { PersonaAdapter } from "../src/api/adapters/persona-adapter.js";
 import type { SessionRuntime } from "../src/runtime/session/session-runtime.js";
 import type { PersonaRuntimeApi } from "../src/api/contract/runtime-api.js";
 import { minimalPng } from "./image-bytes.js";
+import { strictTestDouble } from "./strict-test-double.js";
 
 const PERSONAS = STORAGE_FOLDERS.personas;
 
-// Minimal sessionRuntime stub — the import path doesn't call into it. Typed
-// two-step cast instead of the banned pattern: the hygiene ratchet budgets it.
-const noopSession = {} as unknown as SessionRuntime;
+// Minimal sessionRuntime stub — the import path doesn't call into it; the
+// strict double throws a labeled miss if that ever changes.
+const noopSession = strictTestDouble<SessionRuntime>({}, "SessionRuntime (persona-import, uncalled seam)");
 
 async function setup() {
 	const dataRoot = await mkdtemp(join(tmpdir(), "vt-persona-import-"));

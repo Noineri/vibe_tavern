@@ -12,9 +12,9 @@
  */
 import { describe, it, expect } from "bun:test";
 import { PromptAssemblyService, type PromptAssemblyResolver } from "../src/domain/prompt/prompt-assembly-service.js";
-import type { StoreContainer } from "@vibe-tavern/db";
-import type { ChatId } from "@vibe-tavern/domain";
-import { computeSceneSchemaHash } from "@vibe-tavern/domain";
+import type { ChatId, SceneTrackerDsl } from "@vibe-tavern/domain";
+import { computeSceneSchemaHash, createDefaultSceneTrackerConfig, normalizeInsightsConfig } from "@vibe-tavern/domain";
+import { makePromptAssemblyStores } from "./insights-test-builders.js";
 
 const SCHEMA_A = { mood: { $type: "string" }, tension: { $type: "number", min: 0, max: 10 } } as const;
 const HASH_A = computeSceneSchemaHash(SCHEMA_A);
@@ -52,7 +52,7 @@ function target(index: number, over: Partial<RawTarget["record"]> = {}): RawTarg
 
 interface SceneServiceOptions {
 	trackerEnabled?: boolean;
-	schema?: Record<string, unknown>;
+	schema?: SceneTrackerDsl;
 	revision?: number;
 	injectLastN?: number;
 	contextWindow?: number;
@@ -78,39 +78,29 @@ function makeSceneService(options: SceneServiceOptions = {}) {
 		onHistoryQuery,
 	} = options;
 
-	const stores = {
-		chats: {
-			getById: async () => ({
-				id: "chat_1",
-				characterId: "char_1",
-				personaId: null,
-				promptPresetId: null,
-				activeBranchId: "branch_1",
-				title: "T",
-				summary: null,
-				messageHistoryLimit: 0,
-				insightsConfig: { trackerEnabled, tracker: { schema, revision, injectLastN, contextWindow, injectionDepth, promptFormat, injectPrompt } },
-				insightsObjectiveState: {},
-				createdAt: "2025-01-01T00:00:00Z",
-				updatedAt: "2025-01-01T00:00:00Z",
-			}),
-			getBranches: async () => [{ id: "branch_1", chatId: "chat_1", parentBranchId: null, label: "main" }],
-			getMessages: async () => [],
-		},
-		messages: {
-			getMessages: async () => [],
-			getSelectedSceneHistory: async (branchId: string, scanLimit: number) => {
-				onHistoryQuery?.(branchId, scanLimit);
-				return rawTargets;
+	const stores = makePromptAssemblyStores(
+		{
+			chat: {
+				insightsConfig: {
+					...normalizeInsightsConfig({}),
+					trackerEnabled,
+					tracker: {
+						...createDefaultSceneTrackerConfig(),
+						schema,
+						revision,
+						injectLastN,
+						contextWindow,
+						injectionDepth,
+						promptFormat,
+						injectPrompt,
+					},
+				},
 			},
+			selectedSceneHistory: rawTargets,
+			onSceneHistoryQuery: onHistoryQuery,
 		},
-		personas: { listAll: async () => [] },
-		presets: { listAll: async () => [] },
-		chatSummaries: { listByChatBranch: async () => [] },
-		characterAssets: { listByCharacter: async () => [] },
-		diceRolls: { getRollsForMessages: async () => new Map() },
-		experiences: { getAttachmentsForMessages: async () => new Map() },
-	} as unknown as StoreContainer;
+		"PromptAssemblyService stores (scene)",
+	);
 
 	const resolver: PromptAssemblyResolver = {
 		getCharacter: async () => ({

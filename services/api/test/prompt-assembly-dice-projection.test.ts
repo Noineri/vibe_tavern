@@ -11,9 +11,9 @@
  */
 import { describe, it, expect } from "bun:test";
 import { PromptAssemblyService, type PromptAssemblyResolver } from "../src/domain/prompt/prompt-assembly-service.js";
-import type { StoreContainer } from "@vibe-tavern/db";
 import type { DiceRoll } from "@vibe-tavern/db";
 import type { ChatId } from "@vibe-tavern/domain";
+import { makePromptAssemblyStores, makeMessageRow } from "./insights-test-builders.js";
 
 /** A flat store DiceRoll row (JSON strings, unbranded) bound to msg_1. */
 function makeStoreRoll(overrides: Partial<DiceRoll> = {}): DiceRoll {
@@ -55,43 +55,17 @@ interface DiceServiceOptions {
 function makeDiceService(options: DiceServiceOptions = {}) {
 	const { rollsByMessage = new Map<string, DiceRoll[]>(), onDiceQuery } = options;
 
-	const stores = {
-		chats: {
-			getById: async () => ({
-				id: "chat_1",
-				characterId: "char_1",
-				personaId: null,
-				promptPresetId: null,
-				activeBranchId: "branch_1",
-				title: "T",
-				summary: null,
-				messageHistoryLimit: 0,
-				insightsConfig: {},
-				insightsObjectiveState: {},
-				createdAt: "2025-01-01T00:00:00Z",
-				updatedAt: "2025-01-01T00:00:00Z",
-			}),
-			getBranches: async () => [{ id: "branch_1", chatId: "chat_1", parentBranchId: null, label: "main" }],
-			getMessages: async () => [],
-		},
-		messages: {
-			getMessages: async () => [
-				{ id: "msg_1", role: "user", content: "I sneak past the guards.", branchId: "branch_1", position: 0, authorType: "user", state: "complete", createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z" },
-				{ id: "msg_2", role: "assistant", content: "You move quietly.", branchId: "branch_1", position: 1, authorType: "character", state: "complete", createdAt: "2026-01-01T00:00:01.000Z", updatedAt: "2026-01-01T00:00:01.000Z" },
+	const stores = makePromptAssemblyStores(
+		{
+			messages: [
+				makeMessageRow({ id: "msg_1", role: "user", authorType: "user", content: "I sneak past the guards.", branchId: "branch_1", position: 0 }),
+				makeMessageRow({ id: "msg_2", role: "assistant", authorType: "character", content: "You move quietly.", branchId: "branch_1", position: 1 }),
 			],
+			diceRolls: rollsByMessage,
+			onDiceQuery,
 		},
-		personas: { listAll: async () => [] },
-		presets: { listAll: async () => [] },
-		chatSummaries: { listByChatBranch: async () => [] },
-		characterAssets: { listByCharacter: async () => [] },
-		diceRolls: {
-			getRollsForMessages: async () => {
-				onDiceQuery?.();
-				return new Map(rollsByMessage);
-			},
-		},
-		experiences: { getAttachmentsForMessages: async () => new Map() },
-	} as unknown as StoreContainer;
+		"PromptAssemblyService stores (dice-projection)",
+	);
 
 	const resolver: PromptAssemblyResolver = {
 		getCharacter: async () => ({

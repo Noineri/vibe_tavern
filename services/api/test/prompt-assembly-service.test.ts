@@ -1,8 +1,10 @@
 import { describe, it, expect } from "bun:test";
 import { PromptAssemblyService, type PromptAssemblyResolver, resolveObjectiveTaskContext, resolveObjectiveLongTermContext } from "../src/domain/prompt/prompt-assembly-service.js";
-import type { Message, StoreContainer } from "@vibe-tavern/db";
+import type { Chat, Message, StoreContainer } from "@vibe-tavern/db";
 import type { ChatId, ChatBranchId, LoreEntry, MessageId, RetrievedMemoryHit } from "@vibe-tavern/domain";
 import { normalizeInsightsConfig, normalizeObjectiveState, OBJECTIVE_MODE, OBJECTIVE_TASK_STATUS } from "@vibe-tavern/domain";
+import { makePromptAssemblyStores, makeMessageRow, makeCharacterAssetRow, type PromptAssemblyStoresFixture } from "./insights-test-builders.js";
+import { makePersonaRow } from "./copilot-test-builders.js";
 
 // ─── Mock helpers ──────────────────────────────────────────────────────────
 
@@ -41,39 +43,18 @@ const defaultBranchHistory: Message[] = [
 ];
 
 function createMockStores(
-  overrides?: Partial<StoreContainer["chats"]>,
+  fixture: PromptAssemblyStoresFixture = {},
   branchHistory: Message[] = defaultBranchHistory,
 ): StoreContainer {
-  return {
-    chats: {
-      getById: async () => ({
-        id: "chat_1",
-        characterId: "char_1",
-        personaId: "persona_1",
-        promptPresetId: "preset_1",
-        activeBranchId: "branch_1",
-        insightsConfig: normalizeInsightsConfig({}),
-        insightsObjectiveState: normalizeObjectiveState({}),
-        title: "Test Chat",
-        summary: null,
-        createdAt: "2025-01-01T00:00:00Z",
-        updatedAt: "2025-01-01T00:00:00Z",
-      }),
-      getBranches: async () => [
-        { id: "branch_1", chatId: "chat_1", parentBranchId: null, label: "main" },
-      ],
-      ...overrides,
+  return makePromptAssemblyStores(
+    {
+      ...fixture,
+      chat: { personaId: "persona_1", promptPresetId: "preset_1", title: "Test Chat", ...fixture.chat },
+      messages: branchHistory,
+      personas: [makePersonaRow("persona_1", { name: "User", defaultForNewChats: true })],
     },
-    messages: { getMessages: async () => branchHistory },
-    presets: { listAll: async () => [] },
-    chatSummaries: { listByChatBranch: async () => [] },
-    characterAssets: { listByCharacter: async () => [] },
-    personas: {
-      listAll: async () => [{ id: "persona_1", name: "User", description: "A user.", defaultForNewChats: true }],
-    },
-    diceRolls: { getRollsForMessages: async () => new Map() },
-    experiences: { getAttachmentsForMessages: async () => new Map() },
-  } as unknown as StoreContainer;
+    "PromptAssemblyService stores",
+  );
 }
 
 const mockResolver: PromptAssemblyResolver = {
@@ -193,9 +174,7 @@ describe("PromptAssemblyService", () => {
   });
 
   it("throws when chat not found", async () => {
-    const stores = createMockStores({
-      getById: async () => null,
-    });
+    const stores = createMockStores({ chatMissing: true });
     const service = new PromptAssemblyService(stores, mockResolver, mockFileStore);
 
     expect(
@@ -250,19 +229,7 @@ describe("PromptAssemblyService", () => {
 
   it("uses chat summary when present", async () => {
     const stores = createMockStores({
-      getById: async () => ({
-        id: "chat_1",
-        characterId: "char_1",
-        personaId: "persona_1",
-        promptPresetId: "preset_1",
-        activeBranchId: "branch_1",
-        insightsConfig: normalizeInsightsConfig({}),
-        insightsObjectiveState: normalizeObjectiveState({}),
-        title: "Summarized Chat",
-        summary: "The characters met at a tavern.",
-        createdAt: "2025-01-01T00:00:00Z",
-        updatedAt: "2025-01-01T00:00:00Z",
-      }),
+      chat: { title: "Summarized Chat", summary: "The characters met at a tavern." },
     });
     const service = new PromptAssemblyService(stores, mockResolver, mockFileStore);
     const result = await service.assembleForChat({
@@ -310,7 +277,7 @@ describe("PromptAssemblyService", () => {
       }),
     );
 
-    const stores = createMockStores(undefined, manyMessages);
+    const stores = createMockStores({}, manyMessages);
     const service = new PromptAssemblyService(stores, mockResolver, mockFileStore);
     const result = await service.assembleForChat({
       chatId: "chat_1" as ChatId,
@@ -351,46 +318,19 @@ function makeFilterService(
   const includeGalleryInPrompt = options?.includeGalleryInPrompt ?? true;
   const messages = options?.messages ?? [];
 
-  const stores = {
-    chats: {
-      getById: async () => ({
-        id: "chat_1",
-        characterId: "char_1",
-        personaId: null,
-        promptPresetId: null,
-        activeBranchId: "branch_1",
-        insightsConfig: normalizeInsightsConfig({}),
-        insightsObjectiveState: normalizeObjectiveState({}),
-        title: "T",
-        summary: null,
-        messageHistoryLimit: 0,
-        createdAt: "2025-01-01T00:00:00Z",
-        updatedAt: "2025-01-01T00:00:00Z",
-      }),
-      getBranches: async () => [{ id: "branch_1", chatId: "chat_1", parentBranchId: null, label: "main" }],
-      getMessages: async () => [],
-    },
-    messages: { getMessages: async () => messages },
-    personas: { listAll: async () => [] },
-    presets: { listAll: async () => [] },
-    chatSummaries: { listByChatBranch: async () => [] },
-    characterAssets: {
-      listByCharacter: async () =>
-        galleryRows.map((r) => ({
-          id: r.id,
-          characterId: "char_1",
-          ext: "png",
-          mimeType: "image/png",
+  const stores = makePromptAssemblyStores(
+    {
+      messages: messages.map((m) => makeMessageRow({ id: m.id, position: m.position, role: m.role, content: m.content, branchId: m.branchId })),
+      characterAssets: galleryRows.map((r) =>
+        makeCharacterAssetRow(r.id, {
           caption: r.caption ?? "",
           description: r.description,
           includeInPrompt: r.includeInPrompt,
-          order: 0,
-          createdAt: "2025-01-01T00:00:00Z",
-        })),
+        }),
+      ),
     },
-    diceRolls: { getRollsForMessages: async () => new Map() },
-    experiences: { getAttachmentsForMessages: async () => new Map() },
-  } as unknown as StoreContainer;
+    "PromptAssemblyService stores (gallery filter)",
+  );
 
   const resolver: PromptAssemblyResolver = {
     getCharacter: async () => ({

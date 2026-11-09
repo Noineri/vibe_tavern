@@ -20,17 +20,7 @@ import {
   isLoreWorkActive,
   type LoreWorkHistoryMessage,
 } from "../src/domain/coauthor/lore/lore-work-trigger.js";
-
-/** Minimal view of a built tool exposing its zod input schema for direct
- *  validation assertions (same probe pattern as experience-copilot-tools.test.ts
- *  — the AI SDK validates `inputSchema` at tool-call time, so view membership
- *  is asserted against the schema, not through execute). */
-interface ToolSchemaProbe {
-  inputSchema: {
-    safeParse(value: unknown): { success: boolean };
-    shape: Record<string, unknown>;
-  };
-}
+import { coauthorToolInputSchema } from "./provider-boundary-test-builders.js";
 
 /** History row with an assistant tool call (`name` = persisted toolCallsJson shape). */
 function assistantWithCalls(toolNames: string[]): LoreWorkHistoryMessage {
@@ -119,22 +109,21 @@ describe("isLoreWorkActive: most-recent-working-segment trigger", () => {
 
 describe("lore-work flag wiring through buildCoauthorTools", () => {
   test("outside lore work: advanced settings fields are rejected, basics accepted", () => {
-    const tools = buildCoauthorTools({ loreWorkActive: false }) as unknown as {
-      create_lore_entry: ToolSchemaProbe;
-      edit_lorebook: ToolSchemaProbe;
-    };
+    const tools = buildCoauthorTools({ loreWorkActive: false });
+    const createLoreEntry = coauthorToolInputSchema(tools, "create_lore_entry");
+    const editLorebook = coauthorToolInputSchema(tools, "edit_lorebook");
     // Membership first: the advanced fields are OFF the tool block entirely
     // (they would otherwise cost the per-turn schema bytes step 6 removes).
-    expect(Object.keys(tools.create_lore_entry.inputSchema.shape)).not.toContain("stickyWindow");
-    expect(Object.keys(tools.create_lore_entry.inputSchema.shape)).not.toContain("probability");
-    expect(Object.keys(tools.edit_lorebook.inputSchema.shape)).not.toContain("tokenBudgetPercent");
+    expect(Object.keys(createLoreEntry.shape)).not.toContain("stickyWindow");
+    expect(Object.keys(createLoreEntry.shape)).not.toContain("probability");
+    expect(Object.keys(editLorebook.shape)).not.toContain("tokenBudgetPercent");
     // And strict: a model sending an advanced field anyway gets a named
     // tool-error (no silent key-stripping settings loss), while basics pass.
     expect(
-      tools.create_lore_entry.inputSchema.safeParse({ lorebookId: "lb", stickyWindow: 3, summary: "s" }).success,
+      createLoreEntry.safeParse({ lorebookId: "lb", stickyWindow: 3, summary: "s" }).success,
     ).toBe(false);
     expect(
-      tools.create_lore_entry.inputSchema.safeParse({
+      createLoreEntry.safeParse({
         lorebookId: "lb",
         title: "T",
         constant: true,
@@ -146,50 +135,48 @@ describe("lore-work flag wiring through buildCoauthorTools", () => {
       }).success,
     ).toBe(true);
     expect(
-      tools.edit_lorebook.inputSchema.safeParse({ lorebookId: "lb", tokenBudgetPercent: 25, summary: "s" }).success,
+      editLorebook.safeParse({ lorebookId: "lb", tokenBudgetPercent: 25, summary: "s" }).success,
     ).toBe(false);
     expect(
-      tools.edit_lorebook.inputSchema.safeParse({ lorebookId: "lb", scanDepth: 8, tokenBudget: 500, summary: "s" }).success,
+      editLorebook.safeParse({ lorebookId: "lb", scanDepth: 8, tokenBudget: 500, summary: "s" }).success,
     ).toBe(true);
   });
 
   test("inside lore work: the full settings surface is accepted", () => {
-    const tools = buildCoauthorTools({ loreWorkActive: true }) as unknown as {
-      create_lore_entry: ToolSchemaProbe;
-      edit_lorebook: ToolSchemaProbe;
-    };
+    const tools = buildCoauthorTools({ loreWorkActive: true });
+    const createLoreEntry = coauthorToolInputSchema(tools, "create_lore_entry");
+    const editLorebook = coauthorToolInputSchema(tools, "edit_lorebook");
     expect(
-      tools.create_lore_entry.inputSchema.safeParse({ lorebookId: "lb", stickyWindow: 3, cooldownWindow: 2, summary: "s" }).success,
+      createLoreEntry.safeParse({ lorebookId: "lb", stickyWindow: 3, cooldownWindow: 2, summary: "s" }).success,
     ).toBe(true);
     expect(
-      tools.edit_lorebook.inputSchema.safeParse({ lorebookId: "lb", tokenBudgetPercent: 25, matchWholeWords: true, summary: "s" }).success,
+      editLorebook.safeParse({ lorebookId: "lb", tokenBudgetPercent: 25, matchWholeWords: true, summary: "s" }).success,
     ).toBe(true);
   });
 
   test("an ABSENT flag keeps the full view (callers predating the trigger are unchanged)", () => {
-    const tools = buildCoauthorTools() as unknown as { create_lore_entry: ToolSchemaProbe };
+    const createLoreEntry = coauthorToolInputSchema(buildCoauthorTools(), "create_lore_entry");
     expect(
-      tools.create_lore_entry.inputSchema.safeParse({ lorebookId: "lb", stickyWindow: 3, probability: 50, summary: "s" }).success,
+      createLoreEntry.safeParse({ lorebookId: "lb", stickyWindow: 3, probability: 50, summary: "s" }).success,
     ).toBe(true);
   });
 
   test("the delegate and activation tools stay call-shaped in BOTH views", () => {
     for (const loreWorkActive of [false, true]) {
-      const tools = buildCoauthorTools({ loreWorkActive }) as unknown as {
-        set_lore_activation: ToolSchemaProbe;
-        ai_generate_lore_keys: ToolSchemaProbe;
-        ai_write_lore_entry: ToolSchemaProbe;
-      };
+      const tools = buildCoauthorTools({ loreWorkActive });
+      const setLoreActivation = coauthorToolInputSchema(tools, "set_lore_activation");
+      const aiWriteLoreEntry = coauthorToolInputSchema(tools, "ai_write_lore_entry");
+      const aiGenerateLoreKeys = coauthorToolInputSchema(tools, "ai_generate_lore_keys");
       expect(
-        tools.set_lore_activation.inputSchema.safeParse({ entryId: "e", constant: true, summary: "s" }).success,
+        setLoreActivation.safeParse({ entryId: "e", constant: true, summary: "s" }).success,
         `set_lore_activation (loreWorkActive=${loreWorkActive})`,
       ).toBe(true);
       expect(
-        tools.ai_write_lore_entry.inputSchema.safeParse({ entryId: "e", instruction: "write it", summary: "s" }).success,
+        aiWriteLoreEntry.safeParse({ entryId: "e", instruction: "write it", summary: "s" }).success,
         `ai_write_lore_entry (loreWorkActive=${loreWorkActive})`,
       ).toBe(true);
       expect(
-        tools.ai_generate_lore_keys.inputSchema.safeParse({ entryId: "e", keyTarget: "primary", summary: "s" }).success,
+        aiGenerateLoreKeys.safeParse({ entryId: "e", keyTarget: "primary", summary: "s" }).success,
         `ai_generate_lore_keys (loreWorkActive=${loreWorkActive})`,
       ).toBe(true);
     }

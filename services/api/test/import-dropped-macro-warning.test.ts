@@ -12,47 +12,33 @@
  * domain-only below this layer (st-macro-parity step 8, unit 22).
  */
 import { describe, expect, mock, test } from "bun:test";
-import type { ImportExportModuleDeps } from "../src/runtime/session/session-runtime-import-export.js";
+import type { CreateCharacterData } from "@vibe-tavern/db";
+import type { ChatId } from "@vibe-tavern/domain";
+import { brandId } from "@vibe-tavern/domain";
+import type { CreateChatRequest } from "../src/domain/chat/chat-application-types.js";
 import { importJson } from "../src/runtime/session/session-runtime-import-export.js";
+import { makeImportExportDeps } from "./import-test-builders.js";
+import { makeCharacterRow } from "./copilot-test-builders.js";
 
 // Inline per-file factory (testing-skill contract); mirrors the stub shape of
-// import-lean.test.ts — only the store methods importJson actually touches.
+// import-lean.test.ts — only the store methods importJson actually touch, the
+// rest rides makeImportExportDeps' labeled-miss defaults.
 function makeDeps() {
-	return {
-		stores: {
+	return makeImportExportDeps(
+		{
 			characters: {
-				getById: mock((_id: string) => Promise.resolve(null)),
-				create: mock((_data: unknown) => Promise.resolve({ id: "char_test_123" })),
-				update: mock((_id: string, _patch: unknown) => Promise.resolve()),
-				resolveFolderName: mock((id: string) => Promise.resolve(id)),
-				listAll: mock(() => Promise.resolve([])),
+				create: mock((_data: CreateCharacterData) =>
+					Promise.resolve(makeCharacterRow("char_test_123")),
+				),
 			},
-			lorebooks: {
-				createLorebook: mock(async (_data: unknown) => ({ id: "lore_test_123" })),
-				bulkCreateEntries: mock(async (_id: unknown, _entries: unknown) => 1),
-				addLink: mock(async (_id: unknown, _type: unknown, _target: unknown) => undefined),
-			},
-			content: {
-				writeEntity: mock((_folder: unknown, _id: string, _data: unknown) =>
-					Promise.resolve("stub/path"),
+			chatApp: {
+				createChat: mock((_input: CreateChatRequest) =>
+					Promise.resolve({ id: brandId<ChatId>("chat_test_456"), activeBranchId: "br_test_789" }),
 				),
 			},
 		},
-		chatApp: {
-			createChat: mock((_input: unknown) =>
-				Promise.resolve({ id: "chat_test_456", activeBranchId: "br_test_789" }),
-			),
-		},
-		chatOrder: { add: mock((_id: unknown) => {}) },
-		resolveDefaultPersonaId: mock(() => Promise.resolve("persona_default")),
-		resolveDefaultPromptPresetId: mock(() => Promise.resolve("preset_default")),
-		seedImportedOpening: mock((_chatId: unknown, _first: string, _alts?: string[]) =>
-			Promise.resolve(),
-		),
-		getSnapshot: mock((_chatId: unknown) =>
-			Promise.resolve({ chats: [], messages: [] }),
-		),
-	} as unknown as ImportExportModuleDeps;
+		"ImportExportModuleDeps (import-dropped-macro-warning)",
+	);
 }
 
 function cardJson(fields: Record<string, string>): string {

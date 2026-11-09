@@ -13,6 +13,7 @@ import type { ProviderProfileService } from "../src/domain/providers/provider-pr
 import type { AssetService } from "../src/domain/asset/asset-service.js";
 import type { nonstreamingProviderExecute } from "../src/infrastructure/ai/nonstreaming-provider-executor.js";
 import { domainErrorToJson, httpStatusForDomainError, isDomainError, providerError } from "../src/shared/errors.js";
+import { makeProviderProfilesFixture, makeProviderProfileRow } from "./copilot-test-builders.js";
 
 type Execute = typeof nonstreamingProviderExecute;
 function deferred<T>() {
@@ -50,10 +51,16 @@ async function setup(execute: Execute = async () => result()) {
   const events = new EventBus();
   const notifications: ChatNotification[] = [];
   events.on("chat.notification", (notification) => { notifications.push(notification); });
-  const profiles = {
-    getProviderProfile: async (id: string) => id === "profile" ? { id, providerPreset: "openai", defaultModel: "summary-model", bindPerModel: false } : null,
-    getProviderModelSettings: async () => null,
-  } as unknown as ProviderProfileService;
+  const profiles = makeProviderProfilesFixture(
+    {
+      getProviderProfile: async (id: string) =>
+        id === "profile"
+          ? makeProviderProfileRow({ id, providerPreset: "openai", defaultModel: "summary-model", bindPerModel: false })
+          : null,
+      getProviderModelSettings: async () => null,
+    },
+    "ProviderProfileService (manual-summary-background-routes)",
+  );
   const service = new ChatSummaryService(stores, runtime, profiles, events, execute);
   const adapter = new ChatAdapter(stores, runtime, {} as LiveChatOrchestrator, service, profiles, {} as AssetService, async () => null);
   const app = createChatRoutes(adapter);

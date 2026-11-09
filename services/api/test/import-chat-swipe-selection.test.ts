@@ -28,10 +28,11 @@ import {
 	type StoreIdGenerator,
 } from "@vibe-tavern/db";
 import { serializeSillyTavernChat } from "@vibe-tavern/import-export";
-import {
-	importJson,
-	type ImportExportModuleDeps,
-} from "../src/runtime/session/session-runtime-import-export.js";
+import { importJson } from "../src/runtime/session/session-runtime-import-export.js";
+import type { ChatId } from "@vibe-tavern/domain";
+import { brandId } from "@vibe-tavern/domain";
+import type { CreateChatRequest, CreateChatResponse } from "../src/domain/chat/chat-application-types.js";
+import { makeImportExportDeps } from "./import-test-builders.js";
 
 const FIXED_NOW = "2025-05-04T12:00:00.000Z";
 let clockTick = 0;
@@ -94,17 +95,26 @@ async function importInto(jsonlText: string) {
 	const sourceChat = await chatStore.createChat({ characterId: "char_1", title: "source", promptPresetId: null });
 	const targetChat = await chatStore.createChat({ characterId: "char_1", title: "target", promptPresetId: null });
 
-	const deps = {
-		stores: { chats: chatStore, messages },
-		chatApp: { createChat: mock(() => Promise.resolve(targetChat)) },
-		chatOrder: { add: mock(() => {}) },
-		resolveDefaultPersonaId: mock(() => Promise.resolve("persona_default" as never)),
-		resolveDefaultPromptPresetId: mock(() => Promise.resolve("preset_default" as never)),
-		getSnapshot: mock(() => Promise.resolve({ chats: [], messages: [] } as never)),
-		seedImportedOpening: mock(() => Promise.resolve()),
-		resolver: {},
-		fileStore: {},
-	} as unknown as ImportExportModuleDeps;
+	const deps = makeImportExportDeps(
+		{
+			chats: chatStore,
+			messages,
+			chatApp: {
+				// The real target chat row, projected onto the CreateChatResponse
+				// seam (the id branded at the fixture edge — the row's id is plain).
+				createChat: mock(async (_input: CreateChatRequest): Promise<CreateChatResponse> => ({
+					id: brandId<ChatId>(targetChat.id),
+					activeBranchId: targetChat.activeBranchId,
+				})),
+			},
+			resolveDefaultPersonaId: mock(() => Promise.resolve("persona_default" as never)),
+			resolveDefaultPromptPresetId: mock(() => Promise.resolve("preset_default" as never)),
+			getSnapshot: mock((_chatId: unknown) =>
+				Promise.resolve({ chats: [], messages: [] } as never),
+			),
+		},
+		"ImportExportModuleDeps (import-chat-swipe-selection)",
+	);
 
 	await importJson(deps, { fileName: "chat.jsonl", jsonText: jsonlText, chatId: sourceChat.id, lean: true });
 

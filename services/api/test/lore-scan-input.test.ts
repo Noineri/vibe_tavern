@@ -1,15 +1,10 @@
 import { describe, expect, it } from "bun:test";
-import type { StoreContainer } from "@vibe-tavern/db";
-import {
-  normalizeInsightsConfig,
-  normalizeObjectiveState,
-  type ChatId,
-  type MessageId,
-} from "@vibe-tavern/domain";
+import type { ChatId, MessageId } from "@vibe-tavern/domain";
 import {
   PromptAssemblyService,
   type PromptAssemblyResolver,
 } from "../src/domain/prompt/prompt-assembly-service.js";
+import { makePromptAssemblyStores, makeMessageRow, makeChatSummaryRow } from "./insights-test-builders.js";
 
 type PromptPreset = NonNullable<Awaited<ReturnType<PromptAssemblyResolver["getPromptPreset"]>>>;
 
@@ -24,7 +19,7 @@ interface ScanMessage {
 function makeService(messages: ScanMessage[], options: {
   summaries?: Array<{
     id: string;
-    source: string;
+    source: "auto" | "manual";
     includeInContext: boolean;
     excludeSummarized: boolean;
     content: string;
@@ -36,33 +31,18 @@ function makeService(messages: ScanMessage[], options: {
   onScanMessages: (messages: Array<{ role: string; content: string }>) => void;
   onLoreScanInput?: (input: Parameters<PromptAssemblyResolver["listActiveLoreEntries"]>[0]) => void;
 }) {
-  const stores = {
-    chats: {
-      getById: async () => ({
-        id: "chat_1",
-        characterId: "char_1",
-        personaId: null,
+  const stores = makePromptAssemblyStores(
+    {
+      chat: {
         promptPresetId: options.promptPreset ? "preset_1" : null,
-        activeBranchId: "branch_1",
-        insightsConfig: normalizeInsightsConfig({}),
-        insightsObjectiveState: normalizeObjectiveState({}),
         title: "Lore scan input",
-        summary: null,
         messageHistoryLimit: options.messageHistoryLimit ?? 0,
-        createdAt: "2025-01-01T00:00:00Z",
-        updatedAt: "2025-01-01T00:00:00Z",
-      }),
-      getBranches: async () => [{ id: "branch_1", chatId: "chat_1", parentBranchId: null, label: "main" }],
-      getMessages: async () => [],
+      },
+      messages: messages.map((m) => makeMessageRow({ id: m.id, position: m.position, role: m.role, content: m.content, branchId: m.branchId })),
+      summaries: (options.summaries ?? []).map((s) => makeChatSummaryRow({ id: s.id, source: s.source, includeInContext: s.includeInContext, excludeSummarized: s.excludeSummarized, content: s.content, summarizedFrom: s.summarizedFrom, summarizedTo: s.summarizedTo })),
     },
-    messages: { getMessages: async () => messages },
-    personas: { listAll: async () => [] },
-    presets: { listAll: async () => [] },
-    chatSummaries: { listByChatBranch: async () => options.summaries ?? [] },
-    characterAssets: { listByCharacter: async () => [] },
-    diceRolls: { getRollsForMessages: async () => new Map() },
-    experiences: { getAttachmentsForMessages: async () => new Map() },
-  } as unknown as StoreContainer;
+    "PromptAssemblyService stores (lore-scan-input)",
+  );
   const resolver: PromptAssemblyResolver = {
     getCharacter: async () => ({ id: "char_1", name: "Lorekeeper", description: "" }),
     getPersona: async () => null,

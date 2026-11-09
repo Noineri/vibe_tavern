@@ -101,9 +101,11 @@ export function makeExperienceCopilotStore(
  * domain (`string`), not the `ScriptKind` union: the bogus-kind pins exist
  * precisely to resolve a legacy/corrupted column value to nothing, and that
  * value is not expressible in the union. The single narrowing at the return
- * is the fixture seam for that unrepresentable case.
+ * is the fixture seam for that unrepresentable case. The optional `over`
+ * completes only the identity/display fields a suite reads (name, enabled,
+ * scopeType, sortOrder, …) — everything else rides the inert defaults.
  */
-export function makeScriptRow(scriptKind: string, id = "script_kr_1"): ScriptRow {
+export function makeScriptRow(scriptKind: string, id = "script_kr_1", over: Partial<ScriptRow> = {}): ScriptRow {
 	return {
 		id,
 		name: "Kind resolution script",
@@ -124,6 +126,7 @@ export function makeScriptRow(scriptKind: string, id = "script_kr_1"): ScriptRow
 		extensions: {},
 		createdAt: "2026-01-01T00:00:00.000Z",
 		updatedAt: "2026-01-01T00:00:00.000Z",
+		...over,
 	};
 }
 
@@ -283,6 +286,7 @@ export function makeProviderProfileRow(
  */
 export function makeProviderProfilesFixture(
 	over: PartialMembers<ProviderProfileService> = {},
+	label = "ProviderProfileService (compaction)",
 ): ProviderProfileService {
 	return strictTestDouble<ProviderProfileService>(
 		{
@@ -297,7 +301,7 @@ export function makeProviderProfilesFixture(
 			getProviderModelSettings: async () => null,
 			...over,
 		},
-		"ProviderProfileService (compaction)",
+		label,
 	);
 }
 

@@ -12,6 +12,7 @@ import {
 } from "@vibe-tavern/domain";
 import { QuotaService } from "../src/domain/quota/quota-service.js";
 import type { ProviderProfileService } from "../src/domain/providers/provider-profile-service.js";
+import { strictTestDouble } from "./strict-test-double.js";
 
 const FIXTURES = join(import.meta.dir, "fixtures", "quota");
 
@@ -38,10 +39,10 @@ const BASE_CREATE = {
  * test honest about that instead of dragging the whole profile service in.
  */
 function profileServiceFor(profiles: Map<string, StoredProviderProfileRecord>): ProviderProfileService {
-	const service = {
-		getProviderProfile: async (id: string) => profiles.get(id) ?? null,
-	};
-	return service as unknown as ProviderProfileService;
+	return strictTestDouble<ProviderProfileService>(
+		{ getProviderProfile: async (id: string) => profiles.get(id) ?? null },
+		"ProviderProfileService (quota-service)",
+	);
 }
 
 async function zaiBody(usedFraction: number, resetsAtMs: number): Promise<string> {

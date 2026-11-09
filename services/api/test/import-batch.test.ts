@@ -11,8 +11,12 @@
  * is a throw-fail mock so any accidental non-lean path surfaces immediately.
  */
 import { test, expect, mock, describe } from "bun:test";
-import type { ImportExportModuleDeps } from "../src/runtime/session/session-runtime-import-export.js";
+import type { CreateCharacterData } from "@vibe-tavern/db";
+import type { CreateLorebookData, CreateLoreEntryData } from "@vibe-tavern/db";
 import { importJsonBatch } from "../src/runtime/session/session-runtime-import-export.js";
+import { makeImportExportDeps } from "./import-test-builders.js";
+import { makeCharacterRow } from "./copilot-test-builders.js";
+import { makeLorebookRow } from "./insights-test-builders.js";
 
 function makeCard(name: string, withEmbeddedBook = false) {
 	return {
@@ -39,41 +43,35 @@ function makeDeps() {
 	const getSnapshot = mock((_chatId: unknown) =>
 		Promise.resolve({ chats: [], messages: [] }) as never,
 	);
-	const createLorebook = mock(async (_data: unknown) => ({ id: "lore_1" }));
-	const bulkCreateEntries = mock(async (_id: unknown, _entries: unknown) => 1);
-	const addLink = mock(async (_id: unknown, _type: unknown, _target: unknown) => undefined);
-	const deps = {
-		stores: {
+	const createLorebook = mock(async (data: CreateLorebookData) =>
+		makeLorebookRow({ id: "lore_1", name: data.name }),
+	);
+	const bulkCreateEntries = mock(async (_lorebookId: string, _entries: CreateLoreEntryData[]) => 1);
+	const addLink = mock(async (_lorebookId: string, _targetType: string, _targetId: string) => undefined);
+	const deps = makeImportExportDeps(
+		{
 			characters: {
-				getById: mock((_id: string) => Promise.resolve(null)),
-				create: mock((data: { name: string }) =>
-					Promise.resolve({ id: `char_${data.name}` }) as never,
+				create: mock((data: CreateCharacterData) =>
+					Promise.resolve(makeCharacterRow(`char_${data.name}`, { name: data.name })) as never,
 				),
 				update: mock(() => Promise.resolve() as never),
-				resolveFolderName: mock((id: string) => Promise.resolve(id)),
-				listAll: mock(() => Promise.resolve([])),
 			},
-			lorebooks: { createLorebook, bulkCreateEntries, addLink },
 			content: {
 				writeEntity: mock(() => Promise.resolve("stub/path") as never),
 			},
+			chatApp: {
+				createChat: mock((input: { characterId: string }) =>
+					Promise.resolve({ id: `chat_${input.characterId}`, activeBranchId: "br" }) as never,
+				),
+			},
+			resolveDefaultPersonaId: mock(() => Promise.resolve("persona_default" as never)),
+			resolveDefaultPromptPresetId: mock(() => Promise.resolve("preset_default" as never)),
+			seedImportedOpening: mock(() => Promise.resolve() as never),
+			lorebooks: { createLorebook, bulkCreateEntries, addLink },
+			getSnapshot,
 		},
-		chatApp: {
-			createChat: mock((input: { characterId: string }) =>
-				Promise.resolve({ id: `chat_${input.characterId}`, activeBranchId: "br" }) as never,
-			),
-		},
-		chatOrder: { add: mock(() => {}) },
-		resolveDefaultPersonaId: mock(() => Promise.resolve("persona_default" as never)),
-		resolveDefaultPromptPresetId: mock(() => Promise.resolve("preset_default" as never)),
-		seedImportedOpening: mock(() => Promise.resolve() as never),
-		getSnapshot,
-		resolver: {
-			getCharacter: () => { throw new Error("should not be called"); },
-			getPersona: () => { throw new Error("should not be called"); },
-		},
-		fileStore: { resolvePath: () => { throw new Error("should not be called"); } },
-	} as unknown as ImportExportModuleDeps;
+		"ImportExportModuleDeps (import-batch)",
+	);
 	return { deps, getSnapshot, createLorebook, bulkCreateEntries, addLink };
 }
 
@@ -110,7 +108,7 @@ describe("importJsonBatch — mass-import batch path (MASS_IMPORT Wave 2)", () =
 			name: "Embedded Lore",
 			scopeType: "entity",
 		});
-		expect("characterId" in (createLorebook.mock.calls[0][0] as Record<string, unknown>)).toBe(false);
+		expect("characterId" in createLorebook.mock.calls[0][0]).toBe(false);
 		expect(addLink.mock.calls[0]).toEqual(["lore_1", "character", "char_Embedded"]);
 	});
 

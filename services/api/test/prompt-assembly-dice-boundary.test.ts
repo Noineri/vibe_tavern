@@ -10,74 +10,43 @@
  * mutate prompt fields, inject messages, or run during assembly.
  */
 import { describe, expect, test } from "bun:test";
-import type { StoreContainer } from "@vibe-tavern/db";
-import type { Script, Chat } from "@vibe-tavern/domain";
+import type { ChatStore, ScriptRow, ScriptStore, StoreContainer } from "@vibe-tavern/db";
 import { StaticPromptResolver } from "../src/domain/prompt/prompt-resolver.js";
 import { RegexHookService } from "../src/domain/regex/regex-hook-service.js";
-
-function makeScript(overrides: Partial<Script> & { id: string }): Script {
-  return {
-    id: overrides.id,
-    name: overrides.name ?? "Script",
-    description: "",
-    code: overrides.code ?? "",
-    scriptKind: overrides.scriptKind ?? "prompt",
-    enabled: overrides.enabled ?? true,
-    scopeType: overrides.scopeType ?? "chat",
-    sortOrder: overrides.sortOrder ?? 0,
-    characterId: overrides.characterId ?? null,
-    personaId: overrides.personaId ?? null,
-    chatId: overrides.chatId ?? "chat_1",
-    extensions: {},
-    createdAt: "2026-01-01T00:00:00.000Z",
-    updatedAt: "2026-01-01T00:00:00.000Z",
-  };
-}
-
-function makeChat(): Chat {
-  return {
-    id: "chat_1",
-    characterId: "char_1" as Chat["characterId"],
-    personaId: null,
-    title: "Test",
-    status: "active",
-    mode: "rp",
-    activeBranchId: "branch_1" as Chat["activeBranchId"],
-    promptPresetId: "preset_1" as Chat["promptPresetId"],
-    selectedGreetingIndex: 0,
-    coauthorContextLinks: [],
-    coauthorModuleId: null,
-    createdAt: "2026-01-01T00:00:00.000Z",
-    updatedAt: "2026-01-01T00:00:00.000Z",
-  };
-}
+import { makeScriptRow } from "./copilot-test-builders.js";
+import { makeChatRow } from "./insights-test-builders.js";
+import { strictTestDouble } from "./strict-test-double.js";
 
 /**
  * A store mock that returns Dice-kind scripts from `listAllEnabledForChat` —
  * simulating a hypothetical store-boundary leak. The resolver's defense-in-depth
  * filter must still prevent them from reaching the prompt sandbox.
  */
-function makeStoresWithDiceLeak(scripts: Script[]): StoreContainer {
-  const chat = makeChat();
-  return {
-    chats: {
-      getById: async () => ({ ...chat, scriptState: {} }),
-      updateScriptState: async () => {},
+function makeStoresWithDiceLeak(scripts: ScriptRow[]): StoreContainer {
+  return strictTestDouble<StoreContainer>(
+    {
+      chats: strictTestDouble<ChatStore>(
+        {
+          getById: async () => makeChatRow({ promptPresetId: "preset_1" }),
+          updateScriptState: async () => {},
+        },
+        "makeStoresWithDiceLeak chats",
+      ),
+      scripts: strictTestDouble<ScriptStore>(
+        { listAllEnabledForChat: async () => [...scripts] },
+        "makeStoresWithDiceLeak scripts",
+      ),
     },
-    scripts: {
-      listAllEnabledForChat: async () => [...scripts],
-    },
-  } as unknown as StoreContainer;
+    "StoreContainer (dice-boundary)",
+  );
 }
 
 describe("prompt-assembly Dice boundary", () => {
   test("a Dice-kind script is NOT executed during prompt assembly", async () => {
     // This Dice script body tries to mutate prompt fields — if it ran inside
     // the prompt VM, personality would change. The resolver must filter it out.
-    const diceScript = makeScript({
-      id: "dice_1",
+    const diceScript = makeScriptRow("dice", "dice_1", {
       name: "Rogue Dice Script",
-      scriptKind: "dice",
       code: `context.character.personality = "PWNED BY DICE";`,
     });
 
@@ -105,16 +74,12 @@ describe("prompt-assembly Dice boundary", () => {
   });
 
   test("a prompt-kind script in the same batch still runs normally", async () => {
-    const promptScript = makeScript({
-      id: "prompt_1",
+    const promptScript = makeScriptRow("prompt", "prompt_1", {
       name: "Legit Prompt Script",
-      scriptKind: "prompt",
       code: `context.character.personality += ", enhanced";`,
     });
-    const diceScript = makeScript({
-      id: "dice_1",
+    const diceScript = makeScriptRow("dice", "dice_1", {
       name: "Rogue Dice Script",
-      scriptKind: "dice",
       code: `context.character.personality = "PWNED";`,
     });
 

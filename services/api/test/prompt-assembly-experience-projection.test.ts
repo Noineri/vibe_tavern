@@ -17,8 +17,9 @@
  */
 import { describe, it, expect } from "bun:test";
 import { PromptAssemblyService, type PromptAssemblyResolver } from "../src/domain/prompt/prompt-assembly-service.js";
-import type { StoreContainer, ExperienceAttachmentRow } from "@vibe-tavern/db";
+import type { ExperienceAttachmentRow } from "@vibe-tavern/db";
 import type { ChatId } from "@vibe-tavern/domain";
+import { makePromptAssemblyStores, makeMessageRow } from "./insights-test-builders.js";
 
 /** A flat store ExperienceAttachmentRow bound to msg_1 with a well-formed report. */
 function makeStoreAttachment(overrides: Partial<ExperienceAttachmentRow> = {}): ExperienceAttachmentRow {
@@ -55,43 +56,17 @@ interface ExperienceServiceOptions {
 function makeExperienceService(options: ExperienceServiceOptions = {}) {
 	const { attachmentsByMessage = new Map<string, ExperienceAttachmentRow[]>(), onAttachmentQuery } = options;
 
-	const stores = {
-		chats: {
-			getById: async () => ({
-				id: "chat_1",
-				characterId: "char_1",
-				personaId: null,
-				promptPresetId: null,
-				activeBranchId: "branch_1",
-				title: "T",
-				summary: null,
-				messageHistoryLimit: 0,
-				insightsConfig: {},
-				insightsObjectiveState: {},
-				createdAt: "2025-01-01T00:00:00Z",
-				updatedAt: "2025-01-01T00:00:00Z",
-			}),
-			getBranches: async () => [{ id: "branch_1", chatId: "chat_1", parentBranchId: null, label: "main" }],
-			getMessages: async () => [],
-		},
-		messages: {
-			getMessages: async () => [
-				{ id: "msg_1", role: "user", content: "I make my move.", branchId: "branch_1", position: 0, authorType: "user", state: "complete", createdAt: "2026-07-21T00:00:00.000Z", updatedAt: "2026-07-21T00:00:00.000Z" },
-				{ id: "msg_2", role: "assistant", content: "Noted.", branchId: "branch_1", position: 1, authorType: "character", state: "complete", createdAt: "2026-07-21T00:00:01.000Z", updatedAt: "2026-07-21T00:00:01.000Z" },
+	const stores = makePromptAssemblyStores(
+		{
+			messages: [
+				makeMessageRow({ id: "msg_1", role: "user", authorType: "user", content: "I make my move.", branchId: "branch_1", position: 0 }),
+				makeMessageRow({ id: "msg_2", role: "assistant", authorType: "character", content: "Noted.", branchId: "branch_1", position: 1 }),
 			],
+			experienceAttachments: attachmentsByMessage,
+			onAttachmentQuery,
 		},
-		personas: { listAll: async () => [] },
-		presets: { listAll: async () => [] },
-		chatSummaries: { listByChatBranch: async () => [] },
-		characterAssets: { listByCharacter: async () => [] },
-		diceRolls: { getRollsForMessages: async () => new Map() },
-		experiences: {
-			getAttachmentsForMessages: async () => {
-				onAttachmentQuery?.();
-				return new Map(attachmentsByMessage);
-			},
-		},
-	} as unknown as StoreContainer;
+		"PromptAssemblyService stores (experience-projection)",
+	);
 
 	const resolver: PromptAssemblyResolver = {
 		getCharacter: async () => ({

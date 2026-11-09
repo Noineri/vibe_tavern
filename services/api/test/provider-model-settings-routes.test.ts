@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { createProviderRoutes } from "../src/api/routes/provider.js";
 import type { ProviderRuntimeApi } from "../src/api/contract/runtime-api.js";
-import type { ProviderModelSettingsRecord } from "@vibe-tavern/api-contracts";
+import { strictTestDouble } from "./strict-test-double.js";
 
 /**
  * Route-level integration tests for the per-model settings overlay endpoints.
@@ -9,14 +9,15 @@ import type { ProviderModelSettingsRecord } from "@vibe-tavern/api-contracts";
  * so zod validation + routing + JSON wiring are exercised end-to-end.
  */
 
-// Minimal mock — only the overlay methods are exercised; the rest is cast away.
+// Minimal mock — only the overlay methods are exercised; the rest throws a
+// labeled miss if a route ever reaches it.
 function mockRuntime(overrides: Partial<Pick<ProviderRuntimeApi,
   "listProviderModelSettings" |
   "getProviderModelSettings" |
   "upsertProviderModelSettings" |
   "deleteProviderModelSettings"
 >> = {}): ProviderRuntimeApi {
-  return { ...overrides } as unknown as ProviderRuntimeApi;
+  return strictTestDouble<ProviderRuntimeApi>(overrides, "ProviderRuntimeApi (model-settings)");
 }
 
 const OVERLAY = { temperature: 0.3, contextBudget: 8000, pinContextBudget: true };
@@ -109,7 +110,7 @@ describe("provider model-settings overlay routes", () => {
     const runtime = mockRuntime({
       upsertProviderModelSettings: async (_p, _m, settings) => {
         capturedSettings = settings;
-        return { id: "x", providerProfileId: "p", modelId: "m", settings: settings as unknown as ProviderModelSettingsRecord["settings"], createdAt: "t", updatedAt: "t" };
+        return { id: "x", providerProfileId: "p", modelId: "m", settings, createdAt: "t", updatedAt: "t" };
       },
     });
     const app = createProviderRoutes(runtime);

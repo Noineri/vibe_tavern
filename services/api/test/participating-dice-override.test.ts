@@ -12,12 +12,13 @@ import { describe, expect, test } from "bun:test";
 import { createDb, ChatStore, ScriptStore, CharacterStore, PersonaStore } from "@vibe-tavern/db";
 import type { StoreContainer, StoreClock, StoreIdGenerator } from "@vibe-tavern/db";
 import { ScriptAdapter } from "../src/api/adapters/script-adapter.js";
+import { strictTestDouble } from "./strict-test-double.js";
 
 const fixedClock: StoreClock = { now: () => "2026-10-04T00:00:00.000Z" };
 let counter = 0;
 const idGen: StoreIdGenerator = { next: (prefix) => `${prefix}_dice_ovr_${++counter}` };
 
-async function setup() {
+	async function setup() {
 	const db = await createDb(":memory:");
 	const scripts = new ScriptStore(db, { content: null, clock: fixedClock, idGenerator: idGen });
 	const chats = new ChatStore(db, { clock: fixedClock, idGenerator: idGen });
@@ -27,7 +28,10 @@ async function setup() {
 	const persona = await personas.create({ name: "P" });
 	const charOther = await characters.create({ name: "CO" });
 	const chat = await chats.createChat({ characterId: char.id, personaId: persona.id, title: "T", promptPresetId: null });
-	const adapter = new ScriptAdapter({ chats, scripts } as unknown as StoreContainer);
+	const adapter = new ScriptAdapter(strictTestDouble<StoreContainer>(
+		{ chats, scripts },
+		"StoreContainer (participating-dice-override)",
+	));
 	return { chats, scripts, chat, adapter, char, charOther };
 }
 

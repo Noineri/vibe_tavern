@@ -18,6 +18,7 @@ import { createQuotaFeature, createQuotaRoutes } from "../src/domain/quota/quota
 import type { QuotaService } from "../src/domain/quota/quota-service.js";
 import type { ProviderProfileService } from "../src/domain/providers/provider-profile-service.js";
 import { isDomainError } from "../src/shared/errors.js";
+import { strictTestDouble } from "./strict-test-double.js";
 
 const BASE_CREATE = {
 	endpoint: "https://api.z.ai/api/paas/v4",
@@ -47,7 +48,10 @@ const WINDOWED_CONFIG = {
 };
 
 function profileServiceFor(profiles: Map<string, StoredProviderProfileRecord>): ProviderProfileService {
-	return { getProviderProfile: async (id: string) => profiles.get(id) ?? null } as unknown as ProviderProfileService;
+	return strictTestDouble<ProviderProfileService>(
+		{ getProviderProfile: async (id: string) => profiles.get(id) ?? null },
+		"ProviderProfileService (quota-routes)",
+	);
 }
 
 describe("quota routes", () => {
@@ -82,9 +86,10 @@ describe("quota routes", () => {
 			profiles.set(id, (await providers.getById(id))!);
 		}
 
-		const quotaService = {
-			resyncProfile: async (profileId: string) => { resyncs.push(profileId); },
-		} as unknown as QuotaService;
+		const quotaService = strictTestDouble<QuotaService>(
+			{ resyncProfile: async (profileId: string) => { resyncs.push(profileId); } },
+			"QuotaService (quota-routes)",
+		);
 
 		// Mirrors app-factory: domain errors become their HTTP status.
 		app = new Hono();
@@ -279,9 +284,11 @@ describe("quota SSE channel", () => {
 	function mountSse(events: EventBus): Hono {
 		const router = new Hono();
 		const feature = createQuotaFeature({
-			quota: {} as unknown as QuotaStore,
-			profiles: {} as unknown as ProviderProfileService,
-			quotaService: {} as unknown as QuotaService,
+			// The SSE feature reads only the bus; the three deps are inert
+			// labeled doubles — any access throws instead of reading undefined.
+			quota: strictTestDouble<QuotaStore>({}, "quota (quota-routes SSE, uncalled seam)"),
+			profiles: strictTestDouble<ProviderProfileService>({}, "profiles (quota-routes SSE, uncalled seam)"),
+			quotaService: strictTestDouble<QuotaService>({}, "quotaService (quota-routes SSE, uncalled seam)"),
 		});
 		feature.activate({ events, router });
 		return router;
