@@ -88,7 +88,14 @@ export const BUDGETS = {
 	// the guard counts *.test.ts files only); ratchet lowered to match (owner
 	// ruling: a unit that lowers a count locks the lower budget in the same
 	// commit — the DR-3a minimization extended across suites).
-	asNever: 1243,
+	// 1240 (2026-11-09, TYPE-SAFETY sweep 6f): 3 `as never` sites died WITH
+	// their erased constructs (regex-assist's fakeRouter activation pair,
+	// st-directory-scanner's realAssemble narrowing) when the batch replaced
+	// the erasures with typed doubles — re-adding dead casts to hold the
+	// number contradicts the ratchet's direction. The worker's packet barred
+	// budget edits, so the supervisor locks the lower budget in the immediate
+	// follow-up commit.
+	asNever: 1240,
 	/** Global `screen.` usage in apps/web test files (binds at import time). */
 	// 196 (2026-10-04): ratcheted to the merged tree's count after PR #51
 	// (provider-lists unification removed the forked pickers' screen usage;
