@@ -1,0 +1,16 @@
+{
+  // Test-file typecheck config — consumed ONLY by scripts/test-type-gate.ts
+  // (`bun run typecheck` stage). Covers apps/web/test/** (suites + seam
+  // infrastructure). The ~600 *.test.tsx files COLLOCATED in src/ are already
+  // inside the main config's include and typechecked by the workspace's own
+  // `typecheck` — this config deliberately does not repeat them (one program,
+  // not two). `src/**/*.d.ts` rides along for the ambient globals (bun env,
+  // debug globals, extended JSX attrs) the test tree compiles against; DOM
+  // lib inherits from the workspace config — do not weaken it.
+  "extends": "./tsconfig.json",
+  "include": [
+    "test/**/*.ts",
+    "test/**/*.tsx",
+    "src/**/*.d.ts"
+  ]
+}
