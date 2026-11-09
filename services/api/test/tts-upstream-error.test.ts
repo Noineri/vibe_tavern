@@ -25,9 +25,12 @@ import {
 import { GeminiTtsError } from "../src/domain/tts/backends/gemini-tts.js";
 import { ElevenLabsTtsError } from "../src/domain/tts/backends/elevenlabs-tts.js";
 import type { RuntimeApi } from "../src/api/contract/runtime-api.js";
+import { makeRuntimeApi } from "./routes-test-builders.js";
 
 function runtimeWithTts(tts: Partial<RuntimeApi["tts"]>): RuntimeApi {
-	return { tts } as unknown as RuntimeApi;
+	// Every unlisted tts member (and every other runtime slice) becomes an
+	// inert labeled double — the router decomposes all of them at construction.
+	return makeRuntimeApi({ tts }, "RuntimeApi (tts-upstream-error)");
 }
 
 const GENERATE_BODY = {

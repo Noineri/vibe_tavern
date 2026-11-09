@@ -6,7 +6,7 @@
  * schema/config revision bump, explicit cancel) and assert nothing stale persists.
  */
 import { describe, it, expect } from "bun:test";
-import type { StoreContainer } from "@vibe-tavern/db";
+import type { ChatStore, MessageStore, StoreContainer } from "@vibe-tavern/db";
 import type { PromptAssemblyContext } from "@vibe-tavern/prompt-pipeline";
 import type { ProviderExecutionInput } from "../src/infrastructure/ai/provider-execution-types.js";
 import {
@@ -16,8 +16,10 @@ import {
 	type SceneTarget,
 	type SceneGenerateInput,
 } from "../src/domain/insights/tracker-service.js";
-import { computeSceneSourceHash } from "@vibe-tavern/domain";
+import { computeSceneSourceHash, normalizeInsightsConfig } from "@vibe-tavern/domain";
 import type { SceneTrackerRecord } from "@vibe-tavern/domain";
+import { makeChatRow, makeMessageRow, makeVariantRow } from "./insights-test-builders.js";
+import { strictTestDouble } from "./strict-test-double.js";
 
 // ─── fixtures ───────────────────────────────────────────────────────────────
 
@@ -50,6 +52,11 @@ interface MockVariant {
 	content: string;
 	isSelected?: boolean;
 }
+/** The stored per-variant Scene record shape — structurally the store's
+ *  MessageVariantSceneRecord with its OPTIONAL schema/promptFormat snapshot
+ *  fields omitted (that type is not exported from the @vibe-tavern/db barrel;
+ *  the strictTestDouble member check still verifies this shape against the
+ *  real getSceneRecord/setSceneRecord signatures). */
 interface MockRecord {
 	variantId: string;
 	schemaHash: string;
@@ -80,51 +87,67 @@ function makeStore(opts: {
 	const messages = opts.messages ?? [];
 
 	const cacheWrites: unknown[] = [];
-	const stores = {
-		chats: {
-			getById: async () => ({ insightsConfig: { tracker: trackerRaw } }),
-			...(opts.cacheRebuild
-				? {
-						updateInsightsCurrentScene: async (_chatId: string, cache: unknown) => {
-							if (opts.cacheThrow) throw new Error("cache write failed");
-							cacheWrites.push(cache);
-						},
-					}
-				: {}),
-		},
-		messages: {
-			...(opts.cacheRebuild
-				? {
-						getCurrentSceneTarget: async () => {
-							for (let i = messages.length - 1; i >= 0; i -= 1) {
-								const m = messages[i];
-								if (!m || m.role !== "assistant") continue;
-								const sel = (variants[m.id] ?? []).find((v) => v.isSelected);
-								if (!sel) continue;
-								const rec = records[sel.id];
-								if (!rec) continue;
-								return { messageId: m.id, variantId: sel.id, record: rec };
+	const stores = strictTestDouble<StoreContainer>(
+		{
+			chats: strictTestDouble<ChatStore>(
+				{
+					// The chat row completes through the standing builder; the config
+					// rides the domain's persisted-column seam (raw stored json →
+					// normalized InsightsConfig — the same tracker values the old
+					// erasure handed the service, plus inert defaults it never
+					// reads; trackerEnabled stays falsy on this path either way).
+					getById: async () => makeChatRow({ insightsConfig: normalizeInsightsConfig({ tracker: trackerRaw }) }),
+					...(opts.cacheRebuild
+						? {
+								updateInsightsCurrentScene: async (_chatId: string, cache: unknown) => {
+									if (opts.cacheThrow) throw new Error("cache write failed");
+									cacheWrites.push(cache);
+								},
 							}
-							return null;
-						},
-					}
-				: {}),
-			getVariants: async (messageId: string) =>
-				(variants[messageId] ?? []).map((v) => ({ id: v.id, content: v.content, isSelected: v.isSelected ?? false })),
-			getSceneRecord: async (variantId: string) => records[variantId] ?? null,
-			setSceneRecord: async (variantId: string, record: MockRecord) => {
-				records[variantId] = record;
-			},
-			clearSceneRecord: async (variantId: string) => {
-				delete records[variantId];
-			},
-			getMessages: async () => messages,
-			getSelectedVariant: async (messageId: string) => {
-				const sel = (variants[messageId] ?? []).find((v) => v.isSelected);
-				return sel ? { id: sel.id, content: sel.content } : null;
-			},
+						: {}),
+				},
+				"makeStore: chats (tracker-service)",
+			),
+			messages: strictTestDouble<MessageStore>(
+				{
+					...(opts.cacheRebuild
+						? {
+								getCurrentSceneTarget: async () => {
+									for (let i = messages.length - 1; i >= 0; i -= 1) {
+										const m = messages[i];
+										if (!m || m.role !== "assistant") continue;
+										const sel = (variants[m.id] ?? []).find((v) => v.isSelected);
+										if (!sel) continue;
+										const rec = records[sel.id];
+										if (!rec) continue;
+										return { messageId: m.id, variantId: sel.id, record: rec };
+									}
+									return null;
+								},
+							}
+						: {}),
+					// Rows/variants complete through the standing builders (the erased
+					// fragments carried only the fields the service reads).
+					getVariants: async (messageId: string) =>
+						(variants[messageId] ?? []).map((v) => makeVariantRow({ id: v.id, content: v.content, isSelected: v.isSelected ?? false })),
+					getSceneRecord: async (variantId) => records[variantId] ?? null,
+					setSceneRecord: async (variantId, record) => {
+						records[variantId] = record;
+					},
+					clearSceneRecord: async (variantId) => {
+						delete records[variantId];
+					},
+					getMessages: async () => messages.map((m) => makeMessageRow(m)),
+					getSelectedVariant: async (messageId) => {
+						const sel = (variants[messageId] ?? []).find((v) => v.isSelected);
+						return sel ? makeVariantRow({ id: sel.id, content: sel.content }) : null;
+					},
+				},
+				"makeStore: messages (tracker-service)",
+			),
 		},
-	} as unknown as StoreContainer;
+		"StoreContainer (tracker-service)",
+	);
 
 	return {
 		stores,
@@ -534,8 +557,9 @@ describe("SceneTrackerService.generateScene (SCN-5)", () => {
 		const pending = service.generateScene(generateInput());
 		await started;
 		handle.setVariantContent("m2", "var_1", "The warlord sneers.");
-		// Simulate deletion: replace the message's variants with none matching.
-		(handle.stores as unknown as { messages: { getVariants: () => Promise<MockVariant[]> } }).messages.getVariants = async () => [];
+		// Simulate deletion: replace the message's variants with none matching
+		// (the typed store double takes the mutation directly).
+		handle.stores.messages.getVariants = async () => [];
 		release(VALID_REPLY);
 		await expect(pending).rejects.toThrow(/no longer exists/i);
 	});

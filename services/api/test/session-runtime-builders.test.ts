@@ -24,7 +24,6 @@ import { createRuntimeStore } from "../src/runtime/session/session-runtime-store
 import { SessionRuntime } from "../src/runtime/session/session-runtime.js";
 import { ChatAdapter } from "../src/api/adapters/chat-adapter.js";
 import { countTokensDefault } from "../src/infrastructure/ai/tokenizer-service.js";
-import type { ChatRuntimeApi } from "../src/api/contract/runtime-api.js";
 import type { ChatId, MessageId } from "@vibe-tavern/domain";
 
 /** Unused-dep stub for ChatAdapter construction in narrow wiring tests. Mirror of attachment-delete.test.ts. */
@@ -507,7 +506,20 @@ describe("Wave B1.1 — per-endpoint response builder shapes", () => {
 		const fresh = await runtime.character.createFromScratch({
 			name: "MemBot", description: "d", firstMessage: "hi",
 		});
-		const adapter = new ChatAdapter(stores, runtime, noop, noop, noop, noop) as unknown as ChatRuntimeApi;
+		// ChatAdapter IMPLEMENTS ChatRuntimeApi (chat-adapter.ts:32) — the erased
+		// cast was pure noise (6d precedent); the ctor's required STT seam gets
+		// the inert thrower (updateMemorySettings never reaches it).
+		const adapter = new ChatAdapter(
+			stores,
+			runtime,
+			noop,
+			noop,
+			noop,
+			noop,
+			async () => {
+				throw new Error("transcribeSttAudio is not wired in the session-runtime-builders fixture");
+			},
+		);
 		const r = await adapter.updateMemorySettings(fresh.activeChatId, {
 			messageHistoryLimit: 42,
 			autoSummaryConfig: { enabled: true, everyN: 5 },

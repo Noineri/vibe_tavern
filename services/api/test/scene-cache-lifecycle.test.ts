@@ -22,6 +22,7 @@ import {
 } from "@vibe-tavern/db";
 import { computeSceneSchemaHash } from "@vibe-tavern/domain";
 import { rebuildCurrentSceneCache } from "../src/domain/insights/scene-cache.js";
+import { strictTestDouble } from "./strict-test-double.js";
 
 // ─── harness ────────────────────────────────────────────────────────────────
 
@@ -93,7 +94,10 @@ beforeEach(async () => {
 	idCounters = new Map();
 	chatStore = new ChatStore(db, { clock: testClock, idGenerator: testIdGen });
 	messages = new MessageStore(db, { clock: testClock, idGenerator: testIdGen });
-	stores = { chats: chatStore, messages } as unknown as StoreContainer;
+	stores = strictTestDouble<StoreContainer>(
+		{ chats: chatStore, messages },
+		"StoreContainer (scene-cache-lifecycle)",
+	);
 	// character FK required by chats (mirror message-store.test.ts bootstrap).
 	db.insert(characters).values({
 		id: "char_1", name: "Aria", description: "",

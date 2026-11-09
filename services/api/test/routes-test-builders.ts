@@ -12,9 +12,8 @@
  * strict double that throws a labeled miss if a route on these paths ever
  * reaches it.
  *
- * forks: 2 — dice-send-http-error.test.ts / experience-send-http-error.test.ts
- * carry the same `uncalled`-slice lists as pre-6e local helpers (their batch's
- * precedent); adopt this builder on their next touch.
+ * forks: 0 — both pre-6e local lists (dice/experience send-http-error)
+ * adopted in step-6 batch 6f; this builder is the only remaining derivation.
  */
 import type { RuntimeApi } from "../src/api/contract/runtime-api.js";
 import { strictTestDouble, type PartialMembers } from "./strict-test-double.js";

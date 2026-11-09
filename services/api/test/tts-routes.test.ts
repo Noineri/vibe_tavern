@@ -5,7 +5,7 @@ import { createDb } from "@vibe-tavern/db";
 import { ProviderStore, TtsListingSnapshotStore, TtsStore } from "@vibe-tavern/db";
 
 import { createTtsRoutes } from "../src/api/routes/tts.js";
-import type { RuntimeApi } from "../src/api/contract/runtime-api.js";
+import { makeRuntimeApi } from "./routes-test-builders.js";
 import { createApp } from "../src/server/app-factory.js";
 import { openAiCompatTtsFactory } from "../src/domain/tts/backends/openai-tts.js";
 import { __setDockerProbeRunnerForTests } from "../src/domain/tts/docker-probe.js";
@@ -77,14 +77,17 @@ describe("TTS routes — CRUD", () => {
   test("PATCH /api/tts/profiles/reorder requires mobile bearer auth before the route", async () => {
     let reorderCalled = false;
     const app = await createApp({
-      runtime: {
-        tts: {
-          reorderTtsProfiles: async () => {
-            reorderCalled = true;
-            return [];
+      runtime: makeRuntimeApi(
+        {
+          tts: {
+            reorderTtsProfiles: async () => {
+              reorderCalled = true;
+              return [];
+            },
           },
         },
-      } as unknown as RuntimeApi,
+        "RuntimeApi (tts-routes reorder auth)",
+      ),
       mobileAccessToken: "test-token",
       enforceMobileAuth: true,
     });

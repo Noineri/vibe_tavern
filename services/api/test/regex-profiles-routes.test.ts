@@ -9,9 +9,10 @@ import type {
   RegexProfileId,
 } from "@vibe-tavern/domain";
 import { brandId } from "@vibe-tavern/domain";
+import { strictTestDouble } from "./strict-test-double.js";
 
 function mockRegex(overrides: Partial<RegexRuntimeApi> = {}): RegexRuntimeApi {
-	return { ...overrides } as unknown as RegexRuntimeApi;
+	return strictTestDouble<RegexRuntimeApi>(overrides, "RegexRuntimeApi (regex-profiles-routes)");
 }
 
 const preset = (id: string, extra: Partial<RegexPreset> = {}): RegexPreset => ({

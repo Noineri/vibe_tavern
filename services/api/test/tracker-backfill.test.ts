@@ -11,15 +11,29 @@
  * failure + continue-through-errors + sequential ordering are deterministic.
  */
 import { describe, it, expect } from "bun:test";
-import type { StoreContainer } from "@vibe-tavern/db";
+import type {
+	ChatStore,
+	MessageStore,
+	SceneBackfillRun,
+	StoreContainer,
+} from "@vibe-tavern/db";
 import type { PromptAssemblyContext } from "@vibe-tavern/prompt-pipeline";
 import type { ProviderExecutionInput } from "../src/infrastructure/ai/provider-execution-types.js";
 import {
 	SceneTrackerService,
 	type SceneBackfillStatus,
 } from "../src/domain/insights/tracker-service.js";
-import { SCENE_BACKFILL_MODE, computeSceneSchemaHash, computeSceneSourceHash } from "@vibe-tavern/domain";
+import {
+	SCENE_BACKFILL_MODE,
+	computeSceneSchemaHash,
+	computeSceneSourceHash,
+	normalizeInsightsConfig,
+	type SceneBackfillMode,
+	type SceneBackfillRunStatus,
+} from "@vibe-tavern/domain";
 import type { ChatId } from "@vibe-tavern/domain";
+import { makeChatRow, makeMessageRow, makeVariantRow } from "./insights-test-builders.js";
+import { strictTestDouble } from "./strict-test-double.js";
 
 // ─── fixtures ───────────────────────────────────────────────────────────────
 
@@ -38,6 +52,20 @@ const VALID_REPLY = '{"mood":"calm","tension":3}';
 const CHAT: ChatId = "chat_1" as never;
 const BRANCH = "brnch_1";
 
+/** Structurally the store's MessageVariantSceneRecord minus its OPTIONAL
+ *  schema/promptFormat snapshot fields (that type is not exported from the
+ *  @vibe-tavern/db barrel; the strictTestDouble member check still verifies
+ *  the record shape against the real getSceneRecord/setSceneRecord). */
+interface SceneRecordShape {
+	variantId: string;
+	schemaHash: string;
+	configRevision: number;
+	sourceHash: string;
+	sceneState: Record<string, unknown>;
+	modelId: string | null;
+	generatedAt: string;
+}
+
 /** One assistant turn in the fake branch: a single selected variant + optional
  *  pre-existing record (for sparse-history / fill-missing scenarios). */
 interface FakeAssistant {
@@ -45,14 +73,14 @@ interface FakeAssistant {
 	variantId: string;
 	content: string;
 	/** null = no record; an object = an existing record (stale or current). */
-	record?: Record<string, unknown> | null;
+	record?: SceneRecordShape | null;
 }
 
 interface BackfillRunRow {
 	id: string;
 	chatId: string;
-	mode: string;
-	status: string;
+	mode: SceneBackfillMode;
+	status: SceneBackfillRunStatus;
 	manifestJson: string;
 	totalItems: number;
 	cursor: number;
@@ -70,7 +98,7 @@ interface StoreHandle {
 	/** Replace a variant's content mid-run (content drift → revalidation skip). */
 	setContent: (variantId: string, content: string) => void;
 	/** Read a variant's current record from the fake. */
-	getRecord: (variantId: string) => Record<string, unknown> | null;
+	getRecord: (variantId: string) => SceneRecordShape | null;
 	/** All execute calls seen, in order (for sequential-ordering assertions). */
 	execLog: string[];
 }
@@ -84,7 +112,7 @@ function makeStore(opts: {
 	let trackerRaw: Record<string, unknown> = opts.tracker ?? { schema: TEST_SCHEMA };
 	const trackerEnabled = opts.trackerEnabled ?? true;
 	// records keyed by variantId, seeded from the assistants' `record`.
-	const records = new Map<string, Record<string, unknown>>();
+	const records = new Map<string, SceneRecordShape>();
 	for (const assistant of assistants) {
 		if (assistant.record) records.set(assistant.variantId, structuredClone(assistant.record));
 	}
@@ -95,25 +123,29 @@ function makeStore(opts: {
 	const execLog: string[] = [];
 
 	const messagesStore = {
+		// Rows/variants completed through the standing builders (the erased
+		// fragments carried only the identity fields the service reads).
 		getMessages: async (_branchId: string) =>
-			assistants.map((assistant) => ({ id: assistant.id, role: "assistant", branchId: _branchId })),
+			assistants.map((assistant) => makeMessageRow({ id: assistant.id, role: "assistant", branchId: _branchId })),
 		getSelectedVariant: async (messageId: string) => {
 			const assistant = assistants.find((candidate) => candidate.id === messageId);
 			if (!assistant) return null;
-			return { id: assistant.variantId, content: contents.get(assistant.variantId) ?? assistant.content };
+			return makeVariantRow({ id: assistant.variantId, content: contents.get(assistant.variantId) ?? assistant.content });
 		},
 		getVariants: async (messageId: string) => {
 			const assistant = assistants.find((candidate) => candidate.id === messageId);
-			return assistant ? [{ id: assistant.variantId, content: contents.get(assistant.variantId) ?? assistant.content }] : [];
+			return assistant
+				? [makeVariantRow({ id: assistant.variantId, content: contents.get(assistant.variantId) ?? assistant.content })]
+				: [];
 		},
 		getSceneRecord: async (variantId: string) => records.get(variantId) ?? null,
-		setSceneRecord: async (variantId: string, record: Record<string, unknown>) => {
+		setSceneRecord: async (variantId: string, record: SceneRecordShape) => {
 			records.set(variantId, record);
 		},
 		clearSceneRecord: async (variantId: string) => {
 			records.delete(variantId);
 		},
-		createSceneBackfillRun: async (input: { chatId: string; mode?: string; manifestJson: string; totalItems: number }) => {
+		createSceneBackfillRun: async (input: { chatId: string; mode?: SceneBackfillMode; manifestJson: string; totalItems: number }) => {
 			runCounter += 1;
 			const id = `sbr_${runCounter}`;
 			const now = new Date().toISOString();
@@ -151,12 +183,26 @@ function makeStore(opts: {
 		},
 	};
 
-	const stores = {
-		chats: {
-			getById: async () => ({ insightsConfig: { trackerEnabled, tracker: trackerRaw }, activeBranchId: BRANCH }),
+	const stores = strictTestDouble<StoreContainer>(
+		{
+			chats: strictTestDouble<ChatStore>(
+				{
+					// The chat row completes through the standing builder; the config
+					// rides the domain's persisted-column seam (raw stored json →
+					// normalized InsightsConfig — the same values the old erasure
+					// handed the service, plus inert defaults it never reads).
+					getById: async () =>
+						makeChatRow({
+							activeBranchId: BRANCH,
+							insightsConfig: normalizeInsightsConfig({ trackerEnabled, tracker: trackerRaw }),
+						}),
+				},
+				"makeStore: chats (tracker-backfill)",
+			),
+			messages: strictTestDouble<MessageStore>(messagesStore, "makeStore: messages (tracker-backfill)"),
 		},
-		messages: messagesStore,
-	} as unknown as StoreContainer;
+		"StoreContainer (tracker-backfill)",
+	);
 
 	return {
 		stores,

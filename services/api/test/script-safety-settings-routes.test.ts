@@ -13,12 +13,17 @@ import type { StoreContainer } from "@vibe-tavern/db";
 import { scriptSafetySettingsSchema } from "@vibe-tavern/api-contracts";
 import { SettingsAdapter } from "../src/api/adapters/settings-adapter.js";
 import { createSettingsRoutes } from "../src/api/routes/settings.js";
+import { strictTestDouble } from "./strict-test-double.js";
 
 /** StoreContainer stub carrying only the member the script-safety endpoints
  * touch — the adapter seam (constructor DI) keeps this test-local. */
 async function makeApp(): Promise<ReturnType<typeof createSettingsRoutes>> {
   const db = await createDb(":memory:");
-  return createSettingsRoutes(new SettingsAdapter({ db } as unknown as StoreContainer));
+  return createSettingsRoutes(
+    new SettingsAdapter(
+      strictTestDouble<StoreContainer>({ db }, "StoreContainer (script-safety-settings)"),
+    ),
+  );
 }
 
 describe("GET/PUT /api/settings/script-safety (SS-4)", () => {

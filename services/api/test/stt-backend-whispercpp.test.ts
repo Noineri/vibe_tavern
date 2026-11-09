@@ -38,7 +38,13 @@ function jsonResponse(status: number, body: unknown): Response {
 
 const originalFetch = globalThis.fetch;
 
-const fetchMock = mock(() => Promise.resolve(jsonResponse(200, { text: "hi" })));
+// The mock impl carries the REAL fetch parameter types (read off `typeof
+// fetch` itself) so `mock.calls` records the wire args as their real tuple —
+// the destructuring sites below read them without erasure casts.
+const fetchMock = mock(
+  (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) =>
+    Promise.resolve(jsonResponse(200, { text: "hi" })),
+);
 
 beforeEach(() => {
   fetchMock.mockReset();
@@ -88,13 +94,13 @@ describe("whisper.cpp STT adapter (SPE-9)", () => {
     expect(result.language).toBeUndefined();
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    const [url, init] = fetchMock.mock.calls[0]!;
     expect(url).toBe("http://127.0.0.1:8080/inference");
-    expect(init.method).toBe("POST");
+    expect(init!.method).toBe("POST");
     // No auth of any kind — the server checks none.
-    expect(init.headers).toBeUndefined();
+    expect(init!.headers).toBeUndefined();
     // Multipart body carries the documented field name and format.
-    const form = init.body as FormData;
+    const form = init!.body as FormData;
     expect(form).toBeInstanceOf(FormData);
     const file = form.get("file");
     expect(file).toBeInstanceOf(Blob);
@@ -115,11 +121,11 @@ describe("whisper.cpp STT adapter (SPE-9)", () => {
       language: "ru",
     });
 
-    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
-    const form = init.body as FormData;
+    const [, init] = fetchMock.mock.calls[0]!;
+    const form = init!.body as FormData;
     expect(form.get("language")).toBe("ru");
     // Trailing slashes on the endpoint are normalized away.
-    const [url] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    const [url] = fetchMock.mock.calls[0]!;
     expect(url).toBe("http://localhost:9000/inference");
   });
 
@@ -165,9 +171,9 @@ describe("whisper.cpp STT adapter (SPE-9)", () => {
 
     expect(result.ok).toBe(true);
     expect(result.detail).toBe("ok");
-    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    const [url, init] = fetchMock.mock.calls[0]!;
     expect(url).toBe("http://127.0.0.1:8080/health");
-    expect(init.method).toBeUndefined(); // GET (fetch default)
+    expect(init!.method).toBeUndefined(); // GET (fetch default)
   });
 
   test("probe reports 503 loading-model with its status (the model is still loading)", async () => {

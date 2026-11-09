@@ -41,6 +41,9 @@ describe("regex-assist contracts", () => {
 // dialect contract is asserted end-to-end too.
 
 import { createDb, type AppDb } from "@vibe-tavern/db";
+import { Hono } from "hono";
+import type { EventBus } from "@vibe-tavern/domain";
+import { strictTestDouble } from "./strict-test-double.js";
 import type { StreamDeps } from "../src/domain/ai-assistant/ai-assistant-stream.js";
 import { generateRegexAssist } from "../src/domain/ai-assistant/regex-assist-service.js";
 import { createAiAssistantFeature } from "../src/domain/ai-assistant/ai-assistant-feature.js";
@@ -163,18 +166,17 @@ describe("POST /api/ai/regex-assist route (feature mount)", () => {
       },
     };
     const feature = createAiAssistantFeature(runtime as never);
-    const router = feature.activate as unknown as (deps: unknown) => { post: (path: string, handler: (c: unknown) => Promise<Response>) => { json: (fn: (c: unknown) => Response) => void } };
-    // The feature module's activate({router}) registers routes on a Hono-like
-    // router; drive the real shape instead: build the Hono app the way the
-    // server does is heavy — assert the route registration surface directly.
-    const registered: Array<string> = [];
-    const fakeRouter = {
-      post(path: string, handler: (c: unknown) => unknown) {
-        registered.push(path);
-        (fakeRouter as unknown as Record<string, unknown>)[path] = handler;
-      },
-    };
-    feature.activate({ router: fakeRouter as never } as never);
+    // The feature module's activate({router}) registers routes on a real Hono
+    // sub-router (FeatureDeps.router); a bare `new Hono()` carries the exact
+    // registration surface the server hands features, so the registered paths
+    // are read straight off it — no router double, no cast (response-compression
+    // precedent).
+    const app = new Hono();
+    feature.activate({
+      events: strictTestDouble<EventBus>({}, "EventBus (regex-assist route registration)"),
+      router: app,
+    });
+    const registered = app.routes.map((route) => route.path);
     expect(registered).toContain("/api/ai/regex-assist");
   });
 });

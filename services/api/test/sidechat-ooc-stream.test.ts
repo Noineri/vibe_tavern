@@ -33,11 +33,18 @@ import { sidechatObjectiveProposalInputSchema } from "../src/domain/agent/kinds/
 import { buildContextSearchStoreReads } from "../src/domain/context/context-search-store-reads.js";
 import { SidechatOocCompactionService } from "../src/domain/sidechat/sidechat-compaction.js";
 import {
+	makeStreamTextDouble,
+	type FakeStreamTextTurn,
+	type StreamTextPart,
+} from "./provider-boundary-test-builders.js";
+import { makeProviderProfileRow } from "./copilot-test-builders.js";
+import { strictTestDouble } from "./strict-test-double.js";
+import type { GenerationResult, ProviderExecutionInput } from "../src/infrastructure/ai/provider-execution-types.js";
+import {
 	ATTACHED_VARIANT_NOT_IN_BRANCH_CODE,
 	type AttachedVariantPair,
 } from "../src/domain/sidechat/rp-branch-view.js";
 import type { ProviderProfileService } from "../src/domain/providers/provider-profile-service.js";
-import type { nonstreamingProviderExecute } from "../src/infrastructure/ai/nonstreaming-provider-executor.js";
 import { isDomainError, type DomainError } from "../src/shared/errors.js";
 import {
 	streamSidechatTurn,
@@ -92,40 +99,36 @@ let capturedTools: Record<string, { execute: (args: unknown, options?: { toolCal
 let fakeReply = REPLY_TEXT;
 /** SC-23e: scripted stream parts for split-turn turns (tool-call +
  *  tool-result chunks); null → the default single text-delta fake reply. */
-let fakeParts: unknown[] | null = null;
+let fakeParts: StreamTextPart[] | null = null;
 /** SC-23e: the stopWhen list the loop handed the SDK (the wait-tool stop
  *  conditions' wiring is asserted through it). */
 let capturedStopWhen: unknown[] = [];
 
-function makeFakeStreamTextResult(parts: unknown[]): Record<string, unknown> {
-	async function* gen(): AsyncGenerator<unknown, void, unknown> {
+/** The fake turn's parts as a lazy async iterable (the timing the erased
+ *  `stream: gen()` fake had); finish/usage ride the builder's defaults. */
+function makeFakeStreamTextResult(parts: StreamTextPart[]): FakeStreamTextTurn {
+	async function* gen(): AsyncGenerator<StreamTextPart, void, unknown> {
 		for (const p of parts) yield p;
 	}
-	return {
-		stream: gen(),
-		finishReason: Promise.resolve("stop"),
-		usage: Promise.resolve(undefined),
-	};
+	return { parts: gen() };
 }
 
 function makeProviderProfile(): ProviderProfile {
-	return {
+	// Complete stored row via the standing builder; the erased literal carried
+	// the INVALID transport spelling "chatCompletions" (runtime never read it —
+	// resolveModel is stubbed) and omitted the stored record's other columns.
+	return makeProviderProfileRow({
 		id: "prov_1",
 		name: "Test",
 		providerPreset: "openai",
-		coauthorTransport: "chatCompletions",
 		endpoint: "http://test",
 		apiKey: "key",
 		defaultModel: "test-model",
 		contextBudget: null,
 		pinContextBudget: false,
-		bindPerModel: false,
 		maxTokens: 2000,
 		temperature: 0.3,
-		proxyMode: "inherit",
-		proxyId: null,
-		isActive: true,
-	} as unknown as ProviderProfile;
+	});
 }
 
 // ─── Real-container harness ──────────────────────────────────────────────────
@@ -204,15 +207,15 @@ beforeAll(async () => {
 				},
 			}),
 		db: stores.db,
-		// Type-erased seam: the fake returns the partial FullStream shape the
-		// loop reads (`.stream`, `finishReason`, `usage`), not the SDK's full
-		// result.
-		streamText: ((opts: { messages: CapturedMessage[]; tools?: Record<string, { execute: (args: unknown) => Promise<unknown> }>; stopWhen?: unknown[] }) => {
-			capturedMessages = opts.messages;
+		// The typed streamText double (provider-boundary seam): the fake carries
+		// the FullStream members the loop reads (.stream, finishReason, usage),
+		// completed by the builder's inert defaults.
+		streamText: makeStreamTextDouble((opts) => {
+			capturedMessages = opts.messages ?? [];
 			capturedTools = opts.tools ?? {};
 			capturedStopWhen = opts.stopWhen ?? [];
 			return makeFakeStreamTextResult(fakeParts ?? [{ type: "text-delta", text: fakeReply }]);
-		}) as unknown as SidechatStreamDeps["streamText"],
+		}, "SidechatStreamDeps.streamText (sidechat-ooc-stream)"),
 		// SC-10: the ONE extracted store-reads mapping over the real stores, no
 		// Co-Author skill catalog — the sidechat's production wiring.
 		searchStoreReads: buildContextSearchStoreReads(stores),
@@ -518,17 +521,22 @@ describe("streamSidechatTurn (SC-4b)", () => {
 /** The sidechat compaction service over the REAL store with the provider
  *  boundary faked (injectable executor — no `mock.module`, no network). */
 function makeCompactionService(
-	execute: (input: Record<string, unknown>) => Promise<{ text: string; providerResponse: Record<string, unknown> }>,
+	// The REAL executor seam the production service injects
+	// (`(input: ProviderExecutionInput) => Promise<GenerationResult>`).
+	execute: (input: ProviderExecutionInput) => Promise<GenerationResult>,
 ): SidechatOocCompactionService {
 	const profile = makeProviderProfile();
-	const providerProfiles = {
-		getProviderProfile: async () => profile,
-		getProviderModelSettings: async () => null,
-	};
+	const providerProfiles = strictTestDouble<ProviderProfileService>(
+		{
+			getProviderProfile: async () => profile,
+			getProviderModelSettings: async () => null,
+		},
+		"makeCompactionService: providerProfiles (sidechat-ooc-stream)",
+	);
 	return new SidechatOocCompactionService(
 		stores.experienceCopilot,
-		providerProfiles as unknown as ProviderProfileService,
-		execute as unknown as typeof nonstreamingProviderExecute,
+		providerProfiles,
+		execute,
 		stores.db,
 	);
 }
@@ -567,7 +575,9 @@ describe("streamSidechatTurn after a compaction (SC-8c)", () => {
 		}
 		const service = makeCompactionService(async () => ({
 			text: "DIGEST-BODY-MARKER what was discussed",
-			providerResponse: {},
+			// The compaction path reads only .text; the trace rides its typed
+			// empty shape (the erased `{}` stub was never assignable).
+			providerResponse: { mode: "nonstream", steps: [] },
 		}));
 		await service.compact({ threadId });
 		return { threadId, chatId, branchId };
@@ -677,7 +687,7 @@ describe("streamSidechatTurn after a compaction (SC-8c)", () => {
 		let executed = 0;
 		const service = makeCompactionService(async () => {
 			executed += 1;
-			return { text: "should not run", providerResponse: {} };
+			return { text: "should not run", providerResponse: { mode: "nonstream", steps: [] } };
 		});
 		const fired: Array<{ threadId: string; discussionTokens: number; roomTokens: number }> = [];
 		service.autoCompactAfterSidechatTurn = async (firedThreadId, pressure) => {
@@ -1488,7 +1498,7 @@ describe("streamSidechatTurn read_message_prompt permission split-turn (SC-23e)"
 
 		fakeParts = [
 			{ type: "tool-call", toolCallId: "tc_pr_1", toolName: "read_message_prompt", input: { position: 1 } },
-			{ type: "tool-result", toolCallId: "tc_pr_1", toolName: "read_message_prompt", output: marker },
+			{ type: "tool-result", toolCallId: "tc_pr_1", toolName: "read_message_prompt", input: { position: 1 }, output: marker },
 		];
 		const chunks = await drainTurn(threadId, "That one, please.");
 		// The SSE relays the call and the marker verbatim; the turn FINISHES
@@ -1511,7 +1521,7 @@ describe("streamSidechatTurn read_message_prompt permission split-turn (SC-23e)"
 		const marker = await capturedTools.read_message_prompt!.execute({ position: 1 }, { toolCallId: "tc_pr_2" });
 		fakeParts = [
 			{ type: "tool-call", toolCallId: "tc_pr_2", toolName: "read_message_prompt", input: { position: 1 } },
-			{ type: "tool-result", toolCallId: "tc_pr_2", toolName: "read_message_prompt", output: marker },
+			{ type: "tool-result", toolCallId: "tc_pr_2", toolName: "read_message_prompt", input: { position: 1 }, output: marker },
 		];
 		await drainTurn(threadId, "This one.");
 
@@ -1546,7 +1556,7 @@ describe("streamSidechatTurn read_message_prompt permission split-turn (SC-23e)"
 		const marker = await capturedTools.read_message_prompt!.execute({ position: 1 }, { toolCallId: "tc_pr_3" });
 		fakeParts = [
 			{ type: "tool-call", toolCallId: "tc_pr_3", toolName: "read_message_prompt", input: { position: 1 } },
-			{ type: "tool-result", toolCallId: "tc_pr_3", toolName: "read_message_prompt", output: marker },
+			{ type: "tool-result", toolCallId: "tc_pr_3", toolName: "read_message_prompt", input: { position: 1 }, output: marker },
 		];
 		await drainTurn(threadId, "That one.");
 		const chunks = await drainAnswerTurn(threadId, { toolCallId: "tc_pr_3", decision: "deny" });
@@ -1573,7 +1583,7 @@ describe("streamSidechatTurn read_message_prompt permission split-turn (SC-23e)"
 				input: { position: 1 },
 				providerMetadata: { google: { thoughtSignature: "sig_tc_pr_4" } },
 			},
-			{ type: "tool-result", toolCallId: "tc_pr_4", toolName: "read_message_prompt", output: marker },
+			{ type: "tool-result", toolCallId: "tc_pr_4", toolName: "read_message_prompt", input: { position: 1 }, output: marker },
 		];
 		await drainTurn(threadId, "This one.");
 		await drainAnswerTurn(threadId, { toolCallId: "tc_pr_4", decision: "allow" });
@@ -1678,6 +1688,7 @@ describe("streamSidechatTurn request_message_swipe permission split-turn (DMT-23
 				type: "tool-result",
 				toolCallId: "tc_sw_stream",
 				toolName: DIRECTOR_MESSAGE_TOOLS.requestMessageSwipe,
+				input: { position: 0, instruction: "DRAFT-INSTRUCTION make it rain" },
 				output: marker,
 			},
 		];
@@ -1834,7 +1845,7 @@ describe("streamSidechatTurn request_message_swipe permission split-turn (DMT-23
 		const marker = await capturedTools.read_message_prompt!.execute({ position: 1 }, { toolCallId: "tc_pr_guard" });
 		fakeParts = [
 			{ type: "tool-call", toolCallId: "tc_pr_guard", toolName: "read_message_prompt", input: { position: 1 } },
-			{ type: "tool-result", toolCallId: "tc_pr_guard", toolName: "read_message_prompt", output: marker },
+			{ type: "tool-result", toolCallId: "tc_pr_guard", toolName: "read_message_prompt", input: { position: 1 }, output: marker },
 		];
 		await drainTurn(threadId, "This one.");
 		const calls: Array<{ instruction: string }> = [];

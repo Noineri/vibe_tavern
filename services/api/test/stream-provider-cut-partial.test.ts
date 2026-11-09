@@ -17,7 +17,7 @@ import type { ChatModeAssembleResult, ChatModeStrategy } from "../src/domain/cha
 import { LiveChatOrchestrator } from "../src/domain/chat/live-chat-orchestrator.js";
 import { userMessageSavedFlag } from "../src/domain/chat/user-message-saved.js";
 import type { ProviderOrchestrator } from "../src/domain/providers/provider-orchestrator.js";
-import type { SessionSnapshot } from "../src/api/contract/session-types.js";
+import { makeSessionSnapshot } from "./insights-test-builders.js";
 import { nonstreamingProviderExecute } from "../src/infrastructure/ai/nonstreaming-provider-executor.js";
 import { streamProviderExecutor } from "../src/infrastructure/ai/stream-provider-executor.js";
 
@@ -162,8 +162,9 @@ function makeHarness(chat: TestChat): InstanceType<typeof LiveChatOrchestrator> 
     // Typed stubs (the hygiene budget forbids new never-casts): the response
     // builders the append paths call return minimal valid shapes; the rest
     // must never run here. prepareLiveTurn's snapshot is read only for
-    // `messages.length` — a full SessionSnapshot fixture would be noise.
-    getSnapshot: async () => ({ messages: [] }) as unknown as SessionSnapshot,
+    // `messages.length` — the standing builder's snapshot keeps that list
+    // empty (the SessionSnapshot import goes with the erased stub).
+    getSnapshot: async () => makeSessionSnapshot(),
     buildMessageResponse: async () => ({ messages: [], promptTrace: null }),
     buildVariantResponse: async () => ({ messages: [] }),
     buildBranchResponse: unusedDep,

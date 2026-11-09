@@ -12,7 +12,7 @@ import { createDb } from "@vibe-tavern/db";
 import { ProviderStore, SttListingSnapshotStore, SttStore, TtsStore } from "@vibe-tavern/db";
 
 import { createSttRoutes } from "../src/api/routes/stt.js";
-import type { RuntimeApi } from "../src/api/contract/runtime-api.js";
+import { makeRuntimeApi } from "./routes-test-builders.js";
 import { createApp } from "../src/server/app-factory.js";
 import { SttAdapter, __setSttDiscoveryFetchForTests } from "../src/api/adapters/stt-adapter.js";
 
@@ -151,14 +151,17 @@ describe("STT routes — CRUD", () => {
   test("PATCH /api/stt/profiles/reorder requires mobile bearer auth before the route", async () => {
     let reorderCalled = false;
     const app = await createApp({
-      runtime: {
-        stt: {
-          reorderSttProfiles: async () => {
-            reorderCalled = true;
-            return [];
+      runtime: makeRuntimeApi(
+        {
+          stt: {
+            reorderSttProfiles: async () => {
+              reorderCalled = true;
+              return [];
+            },
           },
         },
-      } as unknown as RuntimeApi,
+        "RuntimeApi (stt-routes reorder auth)",
+      ),
       mobileAccessToken: "test-token",
       enforceMobileAuth: true,
     });

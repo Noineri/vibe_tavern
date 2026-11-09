@@ -81,7 +81,9 @@ describe("SP-5 coauthor base honors profile", () => {
     });
     await uiSettings.update({ activeServicePromptProfileId: profile.id });
 
-    const loaders = {
+    // Annotated against the REAL loaders seam; the members' own inert `never`
+    // returns keep the partial rows compiling (Wave-D debt, untouched).
+    const loaders: ChatModeAssembleInput["loaders"] = {
       getChat: async () => ({ id: "chat_test", coauthorModuleId: null }) as never,
       getMessages: async () => [] as never,
       getCharacter: async () => ({
@@ -113,7 +115,7 @@ describe("SP-5 coauthor base honors profile", () => {
       getChatSummaries: async () => [],
       getCoauthorUserModules: async () => [],
       getSkillCatalog: async () => [],
-    } as unknown as ChatModeAssembleInput["loaders"];
+    };
 
     const input = {
       chatId: "chat_test" as never,
@@ -131,7 +133,9 @@ describe("SP-5 coauthor base honors profile", () => {
 
   test("coauthor base falls back to asset when no profile override", async () => {
     const { db } = await setupDb();
-    const loaders = {
+    // Annotated against the REAL loaders seam; the members' own inert `never`
+    // returns keep the partial rows compiling (Wave-D debt, untouched).
+    const loaders: ChatModeAssembleInput["loaders"] = {
       getChat: async () => ({ id: "chat_test", coauthorModuleId: null }) as never,
       getMessages: async () => [] as never,
       getCharacter: async () => ({
@@ -163,7 +167,7 @@ describe("SP-5 coauthor base honors profile", () => {
       getChatSummaries: async () => [],
       getCoauthorUserModules: async () => [],
       getSkillCatalog: async () => [],
-    } as unknown as ChatModeAssembleInput["loaders"];
+    };
     const input = {
       chatId: "chat_test" as never,
       model: "test-model",

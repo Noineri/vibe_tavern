@@ -35,9 +35,11 @@ interface Env {
 
 /** The raw bun:sqlite handle under the drizzle store container — used only to
  *  manufacture corruption states the app itself cannot produce with FKs on
- *  (since-deleted character row, dangling activeBranchId). */
+ *  (since-deleted character row, dangling activeBranchId). Drizzle carries the
+ *  client as the typed `$client` property, so the reach-through needs no
+ *  erasure. */
 function rawClient(stores: Env["stores"]): Database {
-	return (stores.db as unknown as { $client: Database }).$client;
+	return stores.db.$client;
 }
 
 /** Field-by-field oracle = the ingredients the CURRENT mapChatToListItem

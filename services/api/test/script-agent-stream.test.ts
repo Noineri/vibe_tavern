@@ -22,6 +22,7 @@ import type {
   ScriptRow,
   StoreContainer,
 } from "@vibe-tavern/db";
+import { brandId, type ExperienceCopilotMessageId } from "@vibe-tavern/domain";
 import {
   streamScriptAgentTurn,
   type ScriptAgentStreamDeps,
@@ -30,6 +31,14 @@ import {
 // assembly's descriptor path works regardless of which test file the shared
 // process loaded first.
 import "../src/domain/agent/kinds/script-kind.js";
+import { makeProviderProfileRow } from "./copilot-test-builders.js";
+import {
+  makeStreamTextDouble,
+  type FakeStreamTextTurn,
+  type StreamTextCall,
+  type StreamTextPart,
+} from "./provider-boundary-test-builders.js";
+import { strictTestDouble } from "./strict-test-double.js";
 
 // ─── Fakes ───────────────────────────────────────────────────────────────────
 
@@ -40,61 +49,68 @@ type CapturedMessage = { role: string; content: unknown };
 
 /** The fake `streamText` records the model-facing messages it was called with. */
 let capturedMessages: CapturedMessage[] = [];
-let streamTextImpl: ((opts: { messages: CapturedMessage[] }) => unknown) | undefined;
+let streamTextImpl: ((opts: StreamTextCall) => FakeStreamTextTurn) | undefined;
 
-function makeFakeStreamTextResult(parts: unknown[]): Record<string, unknown> {
-  async function* gen(): AsyncGenerator<unknown, void, unknown> {
+/** The fake turn's parts as a lazy async iterable (the timing the erased
+ *  `stream: gen()` fake had); finish/usage ride the builder's defaults. */
+function fakeTurn(parts: StreamTextPart[]): FakeStreamTextTurn {
+  async function* gen(): AsyncGenerator<StreamTextPart, void, unknown> {
     for (const p of parts) yield p;
   }
-  return {
-    stream: gen(),
-    finishReason: Promise.resolve("stop"),
-    usage: Promise.resolve(undefined),
-  };
+  return { parts: gen() };
 }
 
 function createFakeStore(thread: ExperienceCopilotThread): ExperienceCopilotStore {
   const messages: ExperienceCopilotMessage[] = [];
   let counter = 0;
-  return {
-    async getById() { return thread; },
-    async listMessages() { return [...messages]; },
-    async appendMessage(_threadId: string, input: AppendMessageInput) {
-      const msg: ExperienceCopilotMessage = {
-        id: `msg_${counter++}`,
-        threadId: thread.id,
-        role: input.role,
-        content: input.content ?? "",
-        toolCallsJson: input.toolCallsJson ?? null,
-        toolCallId: input.toolCallId ?? null,
-        createdAt: new Date(Date.now() + counter * 1000).toISOString(),
-      };
-      messages.push(msg);
-      return msg;
+  return strictTestDouble<ExperienceCopilotStore>(
+    {
+      async getById() { return thread; },
+      async listMessages() { return [...messages]; },
+      async appendMessage(_threadId: string, input: AppendMessageInput) {
+        // The DK-9 completion: reasoning/reasoningDurationMs/seq are required
+        // members the erased literal omitted (6a precedent); all three ride
+        // inert values on this path (the fake store itself defines ordering).
+        const seq = counter++;
+        const msg: ExperienceCopilotMessage = {
+          id: brandId<ExperienceCopilotMessageId>(`msg_${seq}`),
+          threadId: thread.id,
+          role: input.role,
+          content: input.content ?? "",
+          reasoning: null,
+          reasoningDurationMs: null,
+          seq,
+          toolCallsJson: input.toolCallsJson ?? null,
+          toolCallId: input.toolCallId ?? null,
+          createdAt: new Date(Date.now() + counter * 1000).toISOString(),
+        };
+        messages.push(msg);
+        return msg;
+      },
+      async updateContextMetrics() {},
+      async updateTodo() {},
     },
-    async updateContextMetrics() {},
-    async updateTodo() {},
-  } as unknown as ExperienceCopilotStore;
+    "ExperienceCopilotStore (script-agent-stream)",
+  );
 }
 
 function makeProviderProfile(): ProviderProfile {
-  return {
+  // Complete stored row via the standing builder; the erased literal carried
+  // the INVALID transport spelling "chatCompletions" (runtime never read it —
+  // resolveModel is stubbed, so no transport resolution runs) and omitted the
+  // stored record's other columns.
+  return makeProviderProfileRow({
     id: "prov_1",
     name: "Test",
     providerPreset: "openai",
-    coauthorTransport: "chatCompletions",
     endpoint: "http://test",
     apiKey: "key",
     defaultModel: "test-model",
     contextBudget: null,
     pinContextBudget: false,
-    bindPerModel: false,
     maxTokens: 2000,
     temperature: 0.3,
-    proxyMode: "inherit",
-    proxyId: null,
-    isActive: true,
-  } as unknown as ProviderProfile;
+  });
 }
 
 function makeThread(scriptId: string | null = "script_1"): ExperienceCopilotThread {
@@ -152,15 +168,16 @@ function makeDeps(
     getProviderProfile: async () => profile,
     getEffectiveProviderProfile: async () => profile,
     resolveModel: () => ({}) as LanguageModel,
-    stores: {} as unknown as StoreContainer,
-    // Type-erased seam: the fake returns the partial FullStream shape the loop
-    // reads (`.stream`, `finishReason`, `usage`), not the SDK's full result.
-    streamText: ((opts: { messages: CapturedMessage[] }) => {
-      capturedMessages = opts.messages;
+    stores: strictTestDouble<StoreContainer>({}, "ScriptAgentStreamDeps.stores (script-agent-stream)"),
+    // The typed streamText double (provider-boundary seam): the fake carries
+    // the FullStream members the loop reads (.stream, finishReason, usage),
+    // completed by the builder's inert defaults.
+    streamText: makeStreamTextDouble((opts) => {
+      capturedMessages = opts.messages ?? [];
       return streamTextImpl
         ? streamTextImpl(opts)
-        : makeFakeStreamTextResult([{ type: "text-delta", text: "ok" }]);
-    }) as unknown as ScriptAgentStreamDeps["streamText"],
+        : fakeTurn([{ type: "text-delta", id: "delta-ok", text: "ok" }]);
+    }, "ScriptAgentStreamDeps.streamText (script-agent-stream)"),
     ...overrides,
   };
 }

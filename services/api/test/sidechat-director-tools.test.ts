@@ -37,6 +37,9 @@ import {
   type SidechatTrackerGroundingSource,
 } from "../src/domain/agent/kinds/sidechat/sidechat-director-tools.js";
 import type { TrackerDelegate, TrackerDelegateInput } from "../src/domain/coauthor/tracker/tracker-delegate.js";
+// Shared zod input-schema probe over a built ToolSet (takes any ToolSet —
+// no per-suite fork).
+import { coauthorToolInputSchema as toolInputSchema } from "./provider-boundary-test-builders.js";
 import {
   defaultObjectiveState,
   normalizeInsightsConfig,
@@ -158,13 +161,12 @@ describe("buildSidechatDirectorTools (DR-4a) — toggle gating", () => {
 describe("propose_plan (DR-4a)", () => {
   test("input is an OBJECT root `{ plan, summary? }` — a bare plan is rejected", () => {
     const { tools } = makeTools({});
-    const probe = tools as unknown as Record<
-      string,
-      { inputSchema: { safeParse(value: unknown): { success: boolean } } }
-    >;
-    expect(probe.propose_plan.inputSchema.safeParse(PLAN).success).toBe(false);
-    expect(probe.propose_plan.inputSchema.safeParse({ plan: PLAN }).success).toBe(true);
-    expect(probe.propose_plan.inputSchema.safeParse({ plan: PLAN, summary: "Two events" }).success).toBe(true);
+    // Shared zod input-schema probe (instanceof-narrowed; script-agent-tools /
+    // coauthor reuse the same provider-boundary builder).
+    const probe = toolInputSchema(tools, "propose_plan");
+    expect(probe.safeParse(PLAN).success).toBe(false);
+    expect(probe.safeParse({ plan: PLAN }).success).toBe(true);
+    expect(probe.safeParse({ plan: PLAN, summary: "Two events" }).success).toBe(true);
   });
 
   test("a valid plan + summary → story-plan UPDATE proposal on the thread's branch, payload = normalized plan", async () => {
@@ -231,19 +233,18 @@ describe("propose_plan (DR-4a)", () => {
 
   test("an invalid `at` stamp is refused by the input schema — the loop's validation text, no proposal", () => {
     const { tools } = makeTools({});
-    const probe = tools as unknown as Record<
-      string,
-      { inputSchema: { safeParse(value: unknown): { success: boolean } } }
-    >;
+    // Shared zod input-schema probe (instanceof-narrowed; script-agent-tools /
+    // coauthor reuse the same provider-boundary builder).
+    const probe = toolInputSchema(tools, "propose_plan");
     const badDay = { ...PLAN, tasks: [{ ...PLAN.tasks[0], at: { day: 0, part: "morning" } }] };
     const badPart = { ...PLAN, tasks: [{ ...PLAN.tasks[0], at: { day: 2, part: "dusk" } }] };
     const extraKey = { ...PLAN, tasks: [{ ...PLAN.tasks[0], at: { day: 2, part: null, hour: 9 } }] };
-    expect(probe.propose_plan.inputSchema.safeParse({ plan: badDay }).success).toBe(false);
-    expect(probe.propose_plan.inputSchema.safeParse({ plan: badPart }).success).toBe(false);
-    expect(probe.propose_plan.inputSchema.safeParse({ plan: extraKey }).success).toBe(false);
+    expect(probe.safeParse({ plan: badDay }).success).toBe(false);
+    expect(probe.safeParse({ plan: badPart }).success).toBe(false);
+    expect(probe.safeParse({ plan: extraKey }).success).toBe(false);
     // The same rule accepts the valid stamp (the wire rule, one source).
     const good = { ...PLAN, tasks: [{ ...PLAN.tasks[0], at: { day: 2, part: null } }] };
-    expect(probe.propose_plan.inputSchema.safeParse({ plan: good }).success).toBe(true);
+    expect(probe.safeParse({ plan: good }).success).toBe(true);
   });
 });
 
@@ -393,36 +394,35 @@ describe("propose_deck (DK-5a)", () => {
 
   test("the input contract refuses an empty deck, a bad suit and bad shapes — the loop's self-correction text, no proposal", () => {
     const { tools } = makeTools({ toolSet: { propose_deck: true } });
-    const probe = tools as unknown as Record<
-      string,
-      { inputSchema: { safeParse(value: unknown): { success: boolean } } }
-    >;
+    // Shared zod input-schema probe (instanceof-narrowed; script-agent-tools /
+    // coauthor reuse the same provider-boundary builder).
+    const probe = toolInputSchema(tools, "propose_deck");
     // No cards at all / an EMPTY deck — the model must propose at least one
     // card (the packet's self-correction rule).
-    expect(probe.propose_deck.inputSchema.safeParse({}).success).toBe(false);
-    expect(probe.propose_deck.inputSchema.safeParse({ cards: [] }).success).toBe(false);
+    expect(probe.safeParse({}).success).toBe(false);
+    expect(probe.safeParse({ cards: [] }).success).toBe(false);
     // A suit outside the five fixed ones is refused (the wire mirror's rule).
     expect(
-      probe.propose_deck.inputSchema.safeParse({
+      probe.safeParse({
         cards: [{ id: "c1", suit: "fortune", title: "The gypsy card", body: "" }],
       }).success,
     ).toBe(false);
     // Shape misses: a bare array (no OBJECT root), cards as a string, a card
     // missing its body, extra keys on the card (strict mirror).
-    expect(probe.propose_deck.inputSchema.safeParse(DECK_CARDS).success).toBe(false);
-    expect(probe.propose_deck.inputSchema.safeParse({ cards: "two cards" }).success).toBe(false);
+    expect(probe.safeParse(DECK_CARDS).success).toBe(false);
+    expect(probe.safeParse({ cards: "two cards" }).success).toBe(false);
     expect(
-      probe.propose_deck.inputSchema.safeParse({
+      probe.safeParse({
         cards: [{ id: "c1", suit: "threat", title: "No body here" }],
       }).success,
     ).toBe(false);
     expect(
-      probe.propose_deck.inputSchema.safeParse({
+      probe.safeParse({
         cards: [{ id: "c1", suit: "threat", title: "Extra", body: "", weight: 2 }],
       }).success,
     ).toBe(false);
     // And the well-formed deck passes.
-    expect(probe.propose_deck.inputSchema.safeParse({ cards: DECK_CARDS }).success).toBe(true);
+    expect(probe.safeParse({ cards: DECK_CARDS }).success).toBe(true);
   });
 
   test("needs no grounding — the loaders are never read", async () => {

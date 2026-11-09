@@ -6,6 +6,7 @@ import type { RuntimeApi } from "../src/api/contract/runtime-api.js";
 import { ChatGenerationRunAdapter } from "../src/api/adapters/chat-generation-run-adapter.js";
 import { makeCharacterRow } from "./copilot-test-builders.js";
 import { makeChatRow } from "./insights-test-builders.js";
+import { makeRuntimeApi } from "./routes-test-builders.js";
 import { strictTestDouble } from "./strict-test-double.js";
 
 /**
@@ -70,51 +71,11 @@ function runtimeWithSend(send: {
   ));
   // RuntimeApi is decomposed per-feature by createApiRouter: router
   // construction reads EVERY slice (each route factory stores its slice), so
-  // the double provides all of them — `chat` wired for real, every other
-  // slice an inert strict double that throws a labeled miss if a route on
-  // these paths ever reaches it.
-  const uncalled = <K extends keyof RuntimeApi>(k: K) =>
-    strictTestDouble<RuntimeApi[K]>({}, `${String(k)} (uncalled seam)`);
-  return strictTestDouble<RuntimeApi>(
-    {
-      chat: { ...send, startChatGeneration: runs.startChatGeneration },
-      userThemes: uncalled("userThemes"),
-      system: uncalled("system"),
-      diagnostics: uncalled("diagnostics"),
-      bootstrap: uncalled("bootstrap"),
-      servicePrompts: uncalled("servicePrompts"),
-      imagePromptProfiles: uncalled("imagePromptProfiles"),
-      character: uncalled("character"),
-      persona: uncalled("persona"),
-      lorebook: uncalled("lorebook"),
-      script: uncalled("script"),
-      regex: uncalled("regex"),
-      tts: uncalled("tts"),
-      stt: uncalled("stt"),
-      imageGen: uncalled("imageGen"),
-      provider: uncalled("provider"),
-      proxy: uncalled("proxy"),
-      preset: uncalled("preset"),
-      importExport: uncalled("importExport"),
-      asset: uncalled("asset"),
-      coauthorSkills: uncalled("coauthorSkills"),
-      copilotSkills: uncalled("copilotSkills"),
-      aiAssistant: uncalled("aiAssistant"),
-      settings: uncalled("settings"),
-      mobileAccess: uncalled("mobileAccess"),
-      insights: uncalled("insights"),
-      dice: uncalled("dice"),
-      experience: uncalled("experience"),
-      experienceCopilot: uncalled("experienceCopilot"),
-      agentThreadProposals: uncalled("agentThreadProposals"),
-      agentFeed: uncalled("agentFeed"),
-      copilotProfiles: uncalled("copilotProfiles"),
-      agentPlan: uncalled("agentPlan"),
-      storyDeck: uncalled("storyDeck"),
-      samplerSets: uncalled("samplerSets"),
-      formatTemplates: uncalled("formatTemplates"),
-      aiInstructionTemplates: uncalled("aiInstructionTemplates"),
-    },
+  // the runtime comes through makeRuntimeApi — `chat` wired for real, every
+  // other slice an inert strict double that throws a labeled miss if a route
+  // on these paths ever reaches it.
+  return makeRuntimeApi(
+    { chat: { ...send, startChatGeneration: runs.startChatGeneration } },
     "RuntimeApi (experience send)",
   );
 }

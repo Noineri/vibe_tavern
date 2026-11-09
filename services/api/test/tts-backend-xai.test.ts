@@ -56,8 +56,10 @@ function lastRequest(): RecordedRequest {
   return recordedRequests[recordedRequests.length - 1]!;
 }
 
-function audioResponse(bytes: Uint8Array = new Uint8Array([1, 2, 3])): Response {
-  return new Response(bytes as unknown as BodyInit, {
+function audioResponse(bytes: Uint8Array<ArrayBuffer> = new Uint8Array([1, 2, 3])): Response {
+  // An ArrayBuffer-backed view IS a BodyInit — the erasure only papered over
+  // the default `Uint8Array<ArrayBufferLike>` widening.
+  return new Response(bytes, {
     status: 200,
     headers: { "content-type": "audio/mpeg" },
   });

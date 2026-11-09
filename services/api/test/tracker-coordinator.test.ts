@@ -11,11 +11,13 @@
  * latest-valid/none) rather than rejecting.
  */
 import { describe, it, expect } from "bun:test";
-import type { StoreContainer } from "@vibe-tavern/db";
+import type { ChatStore, MessageStore, StoreContainer } from "@vibe-tavern/db";
 import type { PromptAssemblyContext } from "@vibe-tavern/prompt-pipeline";
 import type { ProviderExecutionInput } from "../src/infrastructure/ai/provider-execution-types.js";
 import { SceneTrackerService, type SceneTarget } from "../src/domain/insights/tracker-service.js";
-import { computeSceneSchemaHash } from "@vibe-tavern/domain";
+import { computeSceneSchemaHash, normalizeInsightsConfig } from "@vibe-tavern/domain";
+import { makeChatRow, makeMessageRow, makeVariantRow } from "./insights-test-builders.js";
+import { strictTestDouble } from "./strict-test-double.js";
 
 const CTX = {
 	identity: { chatId: "chat_1" },
@@ -43,22 +45,44 @@ interface Harness {
 function harness(opts: { trackerEnabled?: boolean; latest?: { messageId: string; variantId: string } | null } = {}): Harness {
 	let trackerEnabled = opts.trackerEnabled ?? true;
 	let latest: { messageId: string; variantId: string } | null = opts.latest === undefined ? { messageId: "m2", variantId: "var_1" } : opts.latest;
+	// Structurally the store's MessageVariantSceneRecord minus its OPTIONAL
+	// schema/promptFormat snapshot fields (that type is not exported from the
+	// @vibe-tavern/db barrel; the strictTestDouble member check still verifies
+	// the record shape against the real getSceneRecord/setSceneRecord).
 	const records: Record<string, { variantId: string; schemaHash: string; configRevision: number; sourceHash: string; sceneState: Record<string, unknown>; modelId: string | null; generatedAt: string }> = {};
 
-	const stores = {
-		chats: {
-			getById: async () => ({ id: "chat_1", activeBranchId: "branch_1", insightsConfig: { trackerEnabled, tracker: { schema: SCHEMA, revision: 0 } } }),
+	const stores = strictTestDouble<StoreContainer>(
+		{
+			chats: strictTestDouble<ChatStore>(
+				{
+					// The chat row completes through the standing builder; the config
+					// rides the domain's persisted-column seam (raw stored json →
+					// normalized InsightsConfig — the same values the old erasure
+					// handed the service, plus inert defaults it never reads).
+					getById: async () =>
+						makeChatRow({
+							id: "chat_1",
+							activeBranchId: "branch_1",
+							insightsConfig: normalizeInsightsConfig({ trackerEnabled, tracker: { schema: SCHEMA, revision: 0 } }),
+						}),
+				},
+				"harness: chats (tracker-coordinator)",
+			),
+			messages: strictTestDouble<MessageStore>(
+				{
+					getMessages: async () => [makeMessageRow({ id: "m1", role: "user" }), makeMessageRow({ id: "m2", role: "assistant" })],
+					getVariants: async () => [makeVariantRow()],
+					getSelectedVariant: async () => makeVariantRow({ id: latest?.variantId ?? "var_1" }),
+					getLatestSelectedVariant: async () => (latest ? { messageId: latest.messageId, variantId: latest.variantId } : null),
+					getSceneRecord: async (variantId) => records[variantId] ?? null,
+					setSceneRecord: async (variantId, record) => { records[variantId] = record; },
+					clearSceneRecord: async (variantId) => { delete records[variantId]; },
+				},
+				"harness: messages (tracker-coordinator)",
+			),
 		},
-		messages: {
-			getMessages: async () => [{ id: "m1", role: "user" }, { id: "m2", role: "assistant" }],
-			getVariants: async () => [{ id: "var_1", content: "hello", isSelected: true }],
-			getSelectedVariant: async () => ({ id: latest?.variantId ?? "var_1", content: "hello" }),
-			getLatestSelectedVariant: async () => latest ? { messageId: latest.messageId, variantId: latest.variantId } : null,
-			getSceneRecord: async (variantId: string) => records[variantId] ?? null,
-			setSceneRecord: async (variantId: string, record: typeof records[string]) => { records[variantId] = record; },
-			clearSceneRecord: async (variantId: string) => { delete records[variantId]; },
-		},
-	} as unknown as StoreContainer;
+		"StoreContainer (tracker-coordinator)",
+	);
 
 	const sessionRuntime = { chatLifecycle: { buildPipelineContext: async () => ({ context: CTX }) } } as never;
 	const providerProfiles = { resolveActiveProviderProfile: async () => ({ id: "prof", defaultModel: "scene-model" }) } as never;

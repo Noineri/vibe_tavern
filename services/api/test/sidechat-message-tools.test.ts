@@ -19,6 +19,9 @@ import {
 } from "../src/domain/agent/kinds/sidechat/sidechat-message-tools.js";
 import type { DirectorMessageEditorDelegateInput, DirectorMessageEditorDelegateResult } from "../src/domain/director/director-message-editor-delegate.js";
 import type { DirectorMessageTargetDeps } from "../src/domain/director/director-message-target.js";
+// Shared zod input-schema probe over a built ToolSet (takes any ToolSet —
+// no per-suite fork).
+import { coauthorToolInputSchema as toolInputSchema } from "./provider-boundary-test-builders.js";
 
 /**
  * DMT-21 — the Director's three message tools at their own boundary (real
@@ -536,20 +539,20 @@ describe("incomplete variant set refusal (DMT-21)", () => {
 describe("tool input schemas (DMT-11 contract, one source)", () => {
 	it("the tools enforce the contract's input schemas", () => {
 		const { tools } = makeTools({ owner: { chatId: "c", branchId: "b" } });
-		const probe = tools as unknown as Record<
-			string,
-			{ inputSchema: { safeParse(value: unknown): { success: boolean } } }
-		>;
+		// Shared zod input-schema probe (takes any ToolSet — no per-suite fork).
+		const edit = toolInputSchema(tools, "propose_message_edit");
+		const variant = toolInputSchema(tools, "propose_message_variant");
+		const swipe = toolInputSchema(tools, "request_message_swipe");
 		// propose_message_edit: optional variant, positive-int only.
-		expect(probe.propose_message_edit.inputSchema.safeParse({ position: 1, instruction: "Fix" }).success).toBe(true);
-		expect(probe.propose_message_edit.inputSchema.safeParse({ position: 1.5, instruction: "Fix" }).success).toBe(false);
-		expect(probe.propose_message_edit.inputSchema.safeParse({ position: 1 }).success).toBe(false);
+		expect(edit.safeParse({ position: 1, instruction: "Fix" }).success).toBe(true);
+		expect(edit.safeParse({ position: 1.5, instruction: "Fix" }).success).toBe(false);
+		expect(edit.safeParse({ position: 1 }).success).toBe(false);
 		// propose_message_variant: at least one source, non-empty content.
-		expect(probe.propose_message_variant.inputSchema.safeParse({ position: 1, sourceVariants: [2], content: "Text." }).success).toBe(true);
-		expect(probe.propose_message_variant.inputSchema.safeParse({ position: 1, sourceVariants: [], content: "Text." }).success).toBe(false);
-		expect(probe.propose_message_variant.inputSchema.safeParse({ position: 1, sourceVariants: [2], content: "" }).success).toBe(false);
+		expect(variant.safeParse({ position: 1, sourceVariants: [2], content: "Text." }).success).toBe(true);
+		expect(variant.safeParse({ position: 1, sourceVariants: [], content: "Text." }).success).toBe(false);
+		expect(variant.safeParse({ position: 1, sourceVariants: [2], content: "" }).success).toBe(false);
 		// request_message_swipe: position + non-empty instruction.
-		expect(probe.request_message_swipe.inputSchema.safeParse({ position: 1, instruction: "Rewrite" }).success).toBe(true);
-		expect(probe.request_message_swipe.inputSchema.safeParse({ position: 1 }).success).toBe(false);
+		expect(swipe.safeParse({ position: 1, instruction: "Rewrite" }).success).toBe(true);
+		expect(swipe.safeParse({ position: 1 }).success).toBe(false);
 	});
 });

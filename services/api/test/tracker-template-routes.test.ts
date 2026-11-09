@@ -15,6 +15,7 @@ import type { ProviderProfileService } from "../src/domain/providers/provider-pr
 import { createCharacterRoutes } from "../src/api/routes/character.js";
 import { createInsightsRoutes } from "../src/api/routes/insights.js";
 import { SessionRuntime } from "../src/runtime/session/session-runtime.js";
+import { strictTestDouble } from "./strict-test-double.js";
 
 const TEMPLATE = {
   version: 1,
@@ -50,17 +51,19 @@ async function createEnvironment(mode: ChatMode = "rp") {
   });
   const created = await runtime.chatLifecycle.createChatForCharacter(character.id, mode);
   const chatId = created.activeChat.id;
+  // The four adapter deps are inert construction refs on these template paths
+  // — labeled strict doubles that throw if a route ever reaches them.
   const characterAdapter = new CharacterAdapter(
     runtime,
     stores,
-    {} as unknown as AssetService,
-    {} as unknown as ProviderProfileService,
+    strictTestDouble<AssetService>({}, "CharacterAdapter: assetService (tracker-template-routes)"),
+    strictTestDouble<ProviderProfileService>({}, "CharacterAdapter: providerProfiles (tracker-template-routes)"),
   );
   const insightsAdapter = new InsightsAdapter(
     stores,
     runtime,
-    {} as unknown as ObjectiveService,
-    {} as unknown as SceneTrackerService,
+    strictTestDouble<ObjectiveService>({}, "InsightsAdapter: objectiveService (tracker-template-routes)"),
+    strictTestDouble<SceneTrackerService>({}, "InsightsAdapter: sceneTracker (tracker-template-routes)"),
   );
   const app = new Hono();
   app.onError((error) => {

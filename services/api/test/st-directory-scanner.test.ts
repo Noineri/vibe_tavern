@@ -29,6 +29,7 @@ import { resolve, join, relative } from "node:path";
 import { tmpdir } from "node:os";
 import { createRuntimeStore } from "../src/runtime/session/session-runtime-store.js";
 import { SessionRuntime } from "../src/runtime/session/session-runtime.js";
+import type { ChatLifecycleRuntimeDeps } from "../src/runtime/session/session-runtime-chat-lifecycle.js";
 import { setTokenCountFn } from "@vibe-tavern/prompt-pipeline";
 import { STORAGE_FOLDERS } from "@vibe-tavern/db";
 import { scanSillyTavernDirectory } from "../src/shared/st-directory-scanner.js";
@@ -219,15 +220,16 @@ describe("ST directory scanner — three gaps (STN-1D)", () => {
 		// runtime → importExportDeps → chatLifecycle.seedImportedOpening, so this
 		// also pins the withTrace-wiring fix: if the importExportDeps wrapper ever
 		// drops the { withTrace: false } option again, assemblePrompt fires and
-		// this assertion fails — the 68s/card freeze stays dead.
-		const lifecycle = env.runtime.chatLifecycle as unknown as {
-			deps: { assemblePrompt: (chatId: unknown, branchId: string) => Promise<unknown> };
-		};
-		const realAssemble = lifecycle.deps.assemblePrompt;
+		// this assertion fails — the 68s/card freeze stays dead. The spy wraps
+		// the lifecycle's PRIVATE deps closure (seed-imported-opening-trace
+		// idiom): reached through Reflect.get, annotated with the REAL
+		// ChatLifecycleRuntimeDeps member type.
+		const lifecycleDeps: ChatLifecycleRuntimeDeps = Reflect.get(env.runtime.chatLifecycle, "deps");
+		const realAssemble = lifecycleDeps.assemblePrompt;
 		let assembleCalls = 0;
-		lifecycle.deps.assemblePrompt = mock(async (chatId: unknown, branchId: string) => {
+		lifecycleDeps.assemblePrompt = mock(async (chatId, branchId) => {
 			assembleCalls++;
-			return realAssemble(chatId as never, branchId);
+			return realAssemble(chatId, branchId);
 		});
 
 		const loreBefore = (await env.stores.lorebooks.listAllLorebooks()).length;

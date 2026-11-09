@@ -24,8 +24,9 @@ import { resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { createRuntimeStore } from "../src/runtime/session/session-runtime-store.js";
 import { SessionRuntime } from "../src/runtime/session/session-runtime.js";
+import type { ChatLifecycleRuntimeDeps } from "../src/runtime/session/session-runtime-chat-lifecycle.js";
 import { setTokenCountFn } from "@vibe-tavern/prompt-pipeline";
-import type { ChatId } from "@vibe-tavern/domain";
+import type { ChatBranchId, ChatId } from "@vibe-tavern/domain";
 
 // Every case provisions a fresh SessionRuntime against a real on-disk SQLite
 // database, so the fixture alone can outrun Bun's 5-second per-test default on
@@ -71,13 +72,16 @@ describe("seedImportedOpening { withTrace } (MASS_IMPORT Wave 3)", () => {
 		env = await createTestRuntime();
 
 		// Spy on assemblePrompt via the lifecycle deps. We wrap the existing
-		// method to count calls without breaking behavior elsewhere.
-		const lifecycle = env.runtime.chatLifecycle as unknown as {
-			deps: { assemblePrompt: (chatId: ChatId, branchId: string) => Promise<unknown> };
-		};
-		const realAssemble = lifecycle.deps.assemblePrompt;
+		// method to count calls without breaking behavior elsewhere. The spy
+		// wraps the lifecycle's PRIVATE deps closure — the same
+		// test-to-private boundary the erased probe had, reached through
+		// Reflect.get and annotated with the REAL ChatLifecycleRuntimeDeps
+		// member type (a renamed/re-typed seam fails to compile here instead
+		// of reading undefined).
+		const lifecycleDeps: ChatLifecycleRuntimeDeps = Reflect.get(env.runtime.chatLifecycle, "deps");
+		const realAssemble = lifecycleDeps.assemblePrompt;
 		let assembleCalls = 0;
-		lifecycle.deps.assemblePrompt = mock(async (chatId: ChatId, branchId: string) => {
+		lifecycleDeps.assemblePrompt = mock(async (chatId: ChatId, branchId?: ChatBranchId) => {
 			assembleCalls++;
 			return realAssemble(chatId, branchId);
 		});
@@ -123,12 +127,12 @@ describe("seedImportedOpening { withTrace } (MASS_IMPORT Wave 3)", () => {
 		// Reset the spy from the previous test by getting a fresh runtime.
 		const env2 = await createTestRuntime();
 		try {
-			const lifecycle = env2.runtime.chatLifecycle as unknown as {
-				deps: { assemblePrompt: (chatId: ChatId, branchId: string) => Promise<unknown> };
-			};
+			// Same private-deps Reflect.get boundary as the first test (the real
+			// ChatLifecycleRuntimeDeps member type annotated at the read).
+			const lifecycleDeps: ChatLifecycleRuntimeDeps = Reflect.get(env2.runtime.chatLifecycle, "deps");
 			let assembleCalls = 0;
-			const realAssemble = lifecycle.deps.assemblePrompt;
-			lifecycle.deps.assemblePrompt = mock(async (chatId: ChatId, branchId: string) => {
+			const realAssemble = lifecycleDeps.assemblePrompt;
+			lifecycleDeps.assemblePrompt = mock(async (chatId: ChatId, branchId?: ChatBranchId) => {
 				assembleCalls++;
 				return realAssemble(chatId, branchId);
 			});

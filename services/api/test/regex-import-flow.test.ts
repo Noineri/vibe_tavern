@@ -33,7 +33,14 @@ import { tmpdir } from "node:os";
 import { createRuntimeStore } from "../src/runtime/session/session-runtime-store.js";
 import { SessionRuntime } from "../src/runtime/session/session-runtime.js";
 import { importJson } from "../src/runtime/session/session-runtime-import-export.js";
-import type { ImportExportModuleDeps } from "../src/runtime/session/session-runtime-import-export.js";
+import type { ImportExportModuleDeps, ImportExportResolver } from "../src/runtime/session/session-runtime-import-export.js";
+import type { ChatApplicationService } from "../src/domain/chat/chat-application-service.js";
+import type { IChatOrder } from "../src/runtime/session/session-runtime-chat-order.js";
+import { brandId, type ChatId, type PersonaId, type PromptPresetId } from "@vibe-tavern/domain";
+import type { CharacterStore, ChatStore, ContentStore, FileStore, RegexStore, StoreContainer } from "@vibe-tavern/db";
+import { makeCharacterRow } from "./copilot-test-builders.js";
+import { makeSessionSnapshot } from "./insights-test-builders.js";
+import { strictTestDouble } from "./strict-test-double.js";
 
 const tmpDirs: string[] = [];
 
@@ -229,31 +236,48 @@ describe("RXU-23 card regex import flow", () => {
     tmpDirs.push(tmpDir);
     await mkdir(resolve(tmpDir, "data"), { recursive: true });
     const stores = await createRuntimeStore(resolve(tmpDir, "data"));
-    const deps = {
+    const deps: ImportExportModuleDeps = {
       stores: {
         ...stores,
-        characters: {
-          getById: async () => null,
-          create: async () => ({ id: "char_dedupe_1" }),
-          update: async () => {
-            throw new Error("update must not run while getById returns null");
+        characters: strictTestDouble<CharacterStore>(
+          {
+            getById: async () => null,
+            // The created row is completed through the standing builder (the
+            // erased fragment carried only `{ id }`); the dedupe path reads
+            // the id and never the other columns.
+            create: async () => makeCharacterRow("char_dedupe_1"),
+            update: async () => {
+              throw new Error("update must not run while getById returns null");
+            },
+            resolveFolderName: async (id) => id,
           },
-          resolveFolderName: async (id: string) => id,
-        },
+          "regex dedupe: stores.characters",
+        ),
         content: {
           ...stores.content,
           writeEntity: async () => "stub/path",
         },
       },
-      chatApp: {
-        createChat: async () => ({ id: "chat_dedupe_1", activeBranchId: "br_1" }),
-      },
-      chatOrder: { add: () => {} },
-      resolveDefaultPersonaId: async () => "persona_default",
-      resolveDefaultPromptPresetId: async () => "preset_default",
+      // Export-only seams importJson never calls (lean: true — getSnapshot is
+      // skipped by the same flag); inert labeled doubles per the
+      // makeImportExportDeps seam contract.
+      resolver: strictTestDouble<ImportExportResolver>({}, "regex dedupe: resolver (uncalled seam)"),
+      chatApp: strictTestDouble<ChatApplicationService>(
+        {
+          createChat: async () => ({
+            id: brandId<ChatId>("chat_dedupe_1"),
+            activeBranchId: "br_1",
+          }),
+        },
+        "regex dedupe: chatApp",
+      ),
+      chatOrder: strictTestDouble<IChatOrder>({ add: () => {} }, "regex dedupe: chatOrder"),
+      fileStore: strictTestDouble<FileStore>({}, "regex dedupe: fileStore (uncalled seam)"),
+      resolveDefaultPersonaId: async () => brandId<PersonaId>("persona_default"),
+      resolveDefaultPromptPresetId: async () => brandId<PromptPresetId>("preset_default"),
       seedImportedOpening: async () => {},
-      getSnapshot: async () => ({ chats: [], messages: [] }),
-    } as unknown as ImportExportModuleDeps;
+      getSnapshot: async () => makeSessionSnapshot(),
+    };
 
     const card = makeCard([stScript("Strip", "/foo/g"), stScript("Censor", "/bar/g")]);
     const first = await importJson(deps, { fileName: "card.json", jsonText: card, lean: true });
@@ -354,41 +378,64 @@ describe("RXU-23 card regex import flow", () => {
     const regexExplosion = () => {
       throw new Error("regex store must not be touched on the skipExisting path");
     };
-    const deps = {
-      stores: {
-        characters: {
-          getById: mock(async () => ({ id: "char_existing_1", name: "Already Here" })),
-          update: mock(async () => ({ id: "char_existing_1", name: "Already Here" })),
-          resolveFolderName: mock(async (id: string) => id),
+    const deps: ImportExportModuleDeps = {
+      stores: strictTestDouble<StoreContainer>(
+        {
+          characters: strictTestDouble<CharacterStore>(
+            {
+              getById: mock(async () => makeCharacterRow("char_existing_1", { name: "Already Here" })),
+              update: mock(async () => makeCharacterRow("char_existing_1", { name: "Already Here" })),
+              resolveFolderName: mock(async (id) => id),
+            },
+            "skipExisting: stores.characters",
+          ),
+          chats: strictTestDouble<ChatStore>(
+            { listByCharacter: mock(async () => []) },
+            "skipExisting: stores.chats",
+          ),
+          content: strictTestDouble<ContentStore>(
+            { writeEntity: mock(async () => "stub/path") },
+            "skipExisting: stores.content",
+          ),
+          regex: strictTestDouble<RegexStore>(
+            {
+              listProfiles: regexExplosion,
+              listAll: regexExplosion,
+              createProfileBundle: regexExplosion,
+            },
+            "skipExisting: stores.regex",
+          ),
         },
-        chats: {
-          listByCharacter: mock(async () => []),
+        "skipExisting: stores",
+      ),
+      resolver: strictTestDouble<ImportExportResolver>(
+        {
+          getCharacter: () => { throw new Error("resolver.getCharacter should not be called by importJson"); },
+          getPersona: () => { throw new Error("resolver.getPersona should not be called by importJson"); },
         },
-        content: {
-          writeEntity: mock(async () => "stub/path"),
+        "skipExisting: resolver",
+      ),
+      chatApp: strictTestDouble<ChatApplicationService>(
+        {
+          createChat: mock(async () => ({
+            id: brandId<ChatId>("chat_skip_1"),
+            activeBranchId: "br_1",
+          })),
         },
-        regex: {
-          listProfiles: regexExplosion,
-          listAll: regexExplosion,
-          createProfileBundle: regexExplosion,
+        "skipExisting: chatApp",
+      ),
+      chatOrder: strictTestDouble<IChatOrder>({ add: mock(() => {}) }, "skipExisting: chatOrder"),
+      fileStore: strictTestDouble<FileStore>(
+        {
+          resolvePath: () => { throw new Error("fileStore should not be called by importJson"); },
         },
-      },
-      chatApp: {
-        createChat: mock(async () => ({ id: "chat_skip_1", activeBranchId: "br_1" })),
-      },
-      chatOrder: { add: mock(() => {}) },
-      resolveDefaultPersonaId: mock(async () => "persona_default"),
-      resolveDefaultPromptPresetId: mock(async () => "preset_default"),
+        "skipExisting: fileStore",
+      ),
+      resolveDefaultPersonaId: mock(async () => brandId<PersonaId>("persona_default")),
+      resolveDefaultPromptPresetId: mock(async () => brandId<PromptPresetId>("preset_default")),
       seedImportedOpening: mock(async () => {}),
-      getSnapshot: mock(async () => ({ chats: [], messages: [] })),
-      resolver: {
-        getCharacter: () => { throw new Error("resolver.getCharacter should not be called by importJson"); },
-        getPersona: () => { throw new Error("resolver.getPersona should not be called by importJson"); },
-      },
-      fileStore: {
-        resolvePath: () => { throw new Error("fileStore should not be called by importJson"); },
-      },
-    } as unknown as ImportExportModuleDeps;
+      getSnapshot: mock(async () => makeSessionSnapshot()),
+    };
 
     const result = await importJson(deps, {
       fileName: "card.json",

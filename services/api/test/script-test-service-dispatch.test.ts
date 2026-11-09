@@ -8,9 +8,11 @@
  *    against simulated persona/character inputs.
  */
 import { describe, expect, test } from "bun:test";
-import type { StoreContainer } from "@vibe-tavern/db";
+import type { StoreContainer, ScriptStore } from "@vibe-tavern/db";
 import type { Script } from "@vibe-tavern/domain";
 import { testScript } from "../src/domain/scripts-engine/script-test-service.js";
+import { makeScriptRow } from "./copilot-test-builders.js";
+import { strictTestDouble } from "./strict-test-double.js";
 
 function makeScript(overrides: Partial<Script> & { id: string; code: string }): Script {
   return {
@@ -32,11 +34,21 @@ function makeScript(overrides: Partial<Script> & { id: string; code: string }): 
 }
 
 function storesWith(script: Script): StoreContainer {
-  return {
-    scripts: {
-      getById: async () => ({ ...script }),
+  return strictTestDouble<StoreContainer>(
+    {
+      scripts: strictTestDouble<ScriptStore>(
+        {
+          // The domain-level Script row completes to the STORE row through the
+          // standing builder (the domain shape lacks origin/firstEnabledAt/
+          // creationIntentId/defaultVisualId/copilotProfileId — all inert on
+          // the tester's dispatch path).
+          getById: async () => makeScriptRow(script.scriptKind, script.id, script),
+        },
+        "storesWith: scripts (script-test-service-dispatch)",
+      ),
     },
-  } as unknown as StoreContainer;
+    "StoreContainer (script-test-service-dispatch)",
+  );
 }
 
 // ─── Prompt dispatch (unchanged seven-channel tester) ────────────────────────
