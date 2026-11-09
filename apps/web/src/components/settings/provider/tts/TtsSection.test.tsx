@@ -2,6 +2,7 @@ import { describe, expect, it, mock, afterEach } from "bun:test";
 import React from "react";
 import { useDomEnv } from "../../../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../../../test/i18n-context-seam.js";
+import { wireTtsProfile } from "../../../../../test/wire-fixtures.js";
 
 useDomEnv();
 
@@ -22,20 +23,29 @@ mock.module("../../../shared/MasterDetailModal.js", () => ({
 const { act, cleanup, render, within } = await import("@testing-library/react");
 const { TtsSection } = await import("./TtsSection.js");
 
+type TtsHook = ReturnType<typeof import("../../../../hooks/use-tts-profiles.js").useTtsProfiles>;
+
 afterEach(async () => {
   await act(async () => {});
   cleanup();
 });
 
-function makeTts(overrides: Record<string, unknown> = {}) {
-  const base = {
-    profiles: [] as unknown[],
+function makeTts(overrides: Partial<TtsHook> = {}): TtsHook {
+  const base: TtsHook = {
+    profiles: [],
     loading: false,
-    editingId: null as string | null,
+    editingId: null,
     form: null,
     dirty: false,
-    error: null as string | null,
+    error: null,
     saving: false,
+    // Edit-screen pointer + live-form hint: required hook members the erased
+    // literal left undefined — unread by the section list, inert.
+    headerMode: "view",
+    startEdit: mock(() => {}),
+    setDefault: mock(async () => {}),
+    draftAutoKeyProviderName: null,
+    defaultProfileId: null,
     select: mock(() => {}),
     startCreate: mock(() => {}),
     setForm: mock(() => {}),
@@ -44,16 +54,15 @@ function makeTts(overrides: Record<string, unknown> = {}) {
     cancelEdit: mock(() => {}),
     reload: mock(async () => {}),
     profileSearch: "",
-    filteredProfiles: [] as unknown[],
+    filteredProfiles: [],
     setProfileSearch: mock(() => {}),
     reorder: mock(async () => {}),
-    defaultProfileId: null as string | null,
   };
   return {
     ...base,
     ...overrides,
     filteredProfiles: "filteredProfiles" in overrides ? overrides.filteredProfiles : base.profiles,
-  } as unknown as ReturnType<typeof import("../../../../hooks/use-tts-profiles.js").useTtsProfiles>;
+  };
 }
 
 describe("TtsSection", () => {
@@ -62,9 +71,9 @@ describe("TtsSection", () => {
     const startCreate = mock(() => {});
     const tts = makeTts({
       profiles: [
-        { id: "p1", name: "Alpha", backend: "kokoro", config: {}, voiceId: "", lang: "en", sortOrder: 0, isDefault: false, createdAt: "", updatedAt: "" },
-        { id: "p2", name: "Beta", backend: "gemini", config: {}, voiceId: "", lang: "en", sortOrder: 1, isDefault: false, createdAt: "", updatedAt: "" },
-      ] as unknown[],
+        wireTtsProfile({ id: "p1", name: "Alpha", backend: "kokoro", sortOrder: 0 }),
+        wireTtsProfile({ id: "p2", name: "Beta", backend: "gemini", sortOrder: 1 }),
+      ],
       editingId: "p1",
       select,
       startCreate,
@@ -89,9 +98,9 @@ describe("TtsSection", () => {
     // persisted default; inactive rows show nothing.
     const tts = makeTts({
       profiles: [
-        { id: "p1", name: "Alpha", backend: "kokoro", hasStoredApiKey: true, config: {}, voiceId: "", lang: "en", sortOrder: 0, isDefault: true, createdAt: "", updatedAt: "" },
-        { id: "p2", name: "Beta", backend: "gemini", hasStoredApiKey: true, config: {}, voiceId: "", lang: "en", sortOrder: 1, isDefault: false, createdAt: "", updatedAt: "" },
-      ] as unknown[],
+        wireTtsProfile({ id: "p1", name: "Alpha", backend: "kokoro", sortOrder: 0, isDefault: true }),
+        wireTtsProfile({ id: "p2", name: "Beta", backend: "gemini", sortOrder: 1 }),
+      ],
       defaultProfileId: "p1",
     });
     const view = render(<TtsSection tts={tts} />);
@@ -107,8 +116,8 @@ describe("TtsSection", () => {
     // stored key renders the red dot (the old defaultStatusClassName rule).
     const tts = makeTts({
       profiles: [
-        { id: "p1", name: "Alpha", backend: "kokoro", hasStoredApiKey: false, autoKeyProviderName: null, config: {}, voiceId: "", lang: "en", sortOrder: 0, isDefault: true, createdAt: "", updatedAt: "" },
-      ] as unknown[],
+        wireTtsProfile({ id: "p1", name: "Alpha", backend: "kokoro", sortOrder: 0, isDefault: true, hasStoredApiKey: false }),
+      ],
       defaultProfileId: "p1",
     });
     const view = render(<TtsSection tts={tts} />);
@@ -122,9 +131,9 @@ describe("TtsSection", () => {
     const startCreate = mock(() => {});
     const tts = makeTts({
       profiles: [
-        { id: "p1", name: "Alpha", backend: "kokoro", config: {}, voiceId: "", lang: "en", sortOrder: 0, isDefault: false, createdAt: "", updatedAt: "" },
-        { id: "p2", name: "Beta", backend: "gemini", config: {}, voiceId: "", lang: "en", sortOrder: 1, isDefault: false, createdAt: "", updatedAt: "" },
-      ] as unknown[],
+        wireTtsProfile({ id: "p1", name: "Alpha", backend: "kokoro", sortOrder: 0 }),
+        wireTtsProfile({ id: "p2", name: "Beta", backend: "gemini", sortOrder: 1 }),
+      ],
       select,
       startCreate,
     });
@@ -140,13 +149,13 @@ describe("TtsSection", () => {
   });
 
   it("shows load error when tts.error is set", async () => {
-    const tts = makeTts({ error: "boom", profiles: [] as unknown[] });
+    const tts = makeTts({ error: "boom", profiles: [] });
     const view = render(React.createElement(TtsSection as never, { tts } as never));
     expect(view.getByTestId("tts-load-error").textContent).toContain("boom");
   });
 
   it("keeps the loading shell title, label, and compact layout", () => {
-    const tts = makeTts({ loading: true, profiles: [] as unknown[] });
+    const tts = makeTts({ loading: true, profiles: [] });
     const view = render(<TtsSection tts={tts} />);
     const section = view.getByTestId("tts-section");
     expect(section.className).toBe("flex flex-col p-3");

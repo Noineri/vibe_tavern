@@ -1,5 +1,6 @@
 import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import type { ComponentProps } from "react";
+import type { DragEndEvent } from "@dnd-kit/core";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 
@@ -128,7 +129,16 @@ describe("ProviderProfileList", () => {
     const view = render(<ProviderProfileList {...baseProps({ selectionOnly: true, onReorder })} />);
 
     expect(view.getAllByLabelText("drag")).toHaveLength(2);
-    const endEvent = { active: { id: "p1" }, over: { id: "p2" } } as unknown as Parameters<NonNullable<RealDndContextProps["onDragEnd"]>>[0];
+    // Member-for-member dnd-kit event literal (the 7d master-list shape):
+    // the reorder handler reads only active.id / over.id; the remaining
+    // members ride inert defaults.
+    const endEvent: DragEndEvent = {
+      activatorEvent: new Event("pointerdown"),
+      active: { id: "p1", data: { current: undefined }, rect: { current: { initial: null, translated: null } } },
+      collisions: null,
+      delta: { x: 0, y: 0 },
+      over: { id: "p2", rect: { width: 0, height: 0, top: 0, left: 0, right: 0, bottom: 0 }, disabled: false, data: { current: undefined } },
+    };
     act(() => { dndHandlers!.onDragEnd!(endEvent); });
     expect(onReorder).toHaveBeenCalledWith([{ id: "p2", sortOrder: 0 }, { id: "p1", sortOrder: 1 }]);
   });
@@ -138,10 +148,13 @@ describe("ProviderProfileList", () => {
     render(<ProviderProfileList {...baseProps({ onReorder })} />);
 
     expect(dndHandlers).toBeTruthy();
-    const endEvent = {
-      active: { id: "p1" },
-      over: { id: "p2" },
-    } as unknown as Parameters<NonNullable<RealDndContextProps["onDragEnd"]>>[0];
+    const endEvent: DragEndEvent = {
+      activatorEvent: new Event("pointerdown"),
+      active: { id: "p1", data: { current: undefined }, rect: { current: { initial: null, translated: null } } },
+      collisions: null,
+      delta: { x: 0, y: 0 },
+      over: { id: "p2", rect: { width: 0, height: 0, top: 0, left: 0, right: 0, bottom: 0 }, disabled: false, data: { current: undefined } },
+    };
     act(() => {
       dndHandlers!.onDragEnd!(endEvent);
     });

@@ -1,4 +1,5 @@
 import { describe, expect, it, beforeEach, afterEach, mock } from "bun:test";
+import type { Mock } from "bun:test";
 import React from "react";
 import { useDomEnv } from "../../../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../../../test/i18n-context-seam.js";
@@ -104,7 +105,10 @@ function renderPanel() {
   return render(React.createElement(KokoroModelPanel));
 }
 
-let previewSynth: ReturnType<typeof mock>;
+// Typed by the real synthesis contract so mock.calls destructure the true
+// arg tuple (the ungenerified `ReturnType<typeof mock>` erased calls to
+// unknown[] and forced double casts at every read).
+let previewSynth: Mock<(input: { voiceId?: string }) => Promise<{ blob: Blob; mime: string }>>;
 let previewPlay: ReturnType<typeof mock>;
 
 beforeEach(() => {
@@ -304,7 +308,7 @@ describe("useKokoroModel + KokoroModelPanel", () => {
     });
     await waitFor(() => expect(view.getByTestId("tts-kokoro-model-ready")).toBeTruthy());
     await waitFor(() => expect(previewSynth).toHaveBeenCalledTimes(1));
-    expect(((previewSynth.mock.calls[0] as unknown as unknown[])[0] as { voiceId: string }).voiceId).toBe("af_heart");
+    expect(previewSynth.mock.calls[0][0].voiceId).toBe("af_heart");
     // Second download should fire again once
     await act(async () => {
       fireEvent.click(view.getByTestId("tts-kokoro-model-switch-btn"));

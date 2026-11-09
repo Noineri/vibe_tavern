@@ -1,5 +1,7 @@
 import { describe, expect, it, afterEach, mock } from "bun:test";
+import type { Mock } from "bun:test";
 import React from "react";
+import type { SttBackendType } from "@vibe-tavern/domain";
 import { useDomEnv } from "../../../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../../../test/i18n-context-seam.js";
 import { __setWhisperLaneProbeForTests } from "../../../../lib/stt/whisper-client-instance.js";
@@ -39,6 +41,8 @@ const { SttProfileEditor } = await import("./SttProfileEditor.js");
 const { DEFAULT_WHISPER_MODEL_ID } = await import("@vibe-tavern/domain");
 
 type SttRecord = import("../../../../api/stt-api.js").SttProfileRecord;
+type SttHook = ReturnType<typeof import("../../../../hooks/use-stt-profiles.js").useSttProfiles>;
+type SttForm = NonNullable<SttHook["form"]>;
 
 function makeRecord(overrides: Partial<SttRecord> = {}): SttRecord {
   return {
@@ -58,8 +62,9 @@ function makeRecord(overrides: Partial<SttRecord> = {}): SttRecord {
 
 /** Hydrate a form from a record the way useSttProfiles.select does — the
  *  editor under test is decoupled from the hook, so a plain object with the
- *  same shape is enough. */
-function makeForm(overrides: Record<string, unknown> = {}) {
+ *  same shape is enough. Typed against the real form: fixtures that omit the
+ *  ST-7 emotion flag get the falsy default the erased literals carried. */
+function makeForm(overrides: Partial<SttForm> = {}): SttForm {
   return {
     id: "p1",
     name: "Dictation",
@@ -68,14 +73,20 @@ function makeForm(overrides: Record<string, unknown> = {}) {
     apiKey: "",
     autoKeyProviderName: null,
     hasStoredApiKey: false,
+    emotionAnnotation: false,
     ...overrides,
   };
 }
 
-function makeStt(overrides: Record<string, unknown> = {}) {
-  const setForm = mock((patch: Record<string, unknown>) => {});
-  return {
-    profiles: [makeRecord()] as SttRecord[],
+// The fixture's setForm is always the base's tracked mock (no caller
+// overrides it), so tests read stt.setForm.mock.calls directly.
+type SttFixture = SttHook & { setForm: Mock<(patch: Partial<SttForm>) => void> };
+type SttFixtureOverrides = Omit<Partial<SttHook>, "setForm">;
+
+function makeStt(overrides: SttFixtureOverrides = {}): SttFixture {
+  const setForm = mock((patch: Partial<SttForm>) => {});
+  const base: Omit<SttFixture, "setForm"> = {
+    profiles: [makeRecord()],
     loading: false,
     editingId: "p1",
     form: makeForm(),
@@ -83,17 +94,20 @@ function makeStt(overrides: Record<string, unknown> = {}) {
     error: null,
     saving: false,
     headerMode: "view",
+    // P2 draft hint + default pointer: required hook members the erased
+    // literals left undefined — unread by the editor, inert.
+    draftAutoKeyProviderName: null,
+    defaultProfileId: null,
     startEdit: mock(() => {}),
     setDefault: mock(async () => {}),
     select: mock(() => {}),
     startCreate: mock(() => {}),
-    setForm,
     save: mock(async () => {}),
     remove: mock(async () => {}),
     cancelEdit: mock(() => {}),
     reload: mock(async () => {}),
-    ...overrides,
   };
+  return { ...base, setForm, ...overrides };
 }
 
 afterEach(async () => {
@@ -108,7 +122,7 @@ describe("SttProfileEditor — view mode base card auto-key", () => {
       profiles: [makeRecord({ autoKeyProviderName: "LLM Hub" })],
       form: makeForm({ autoKeyProviderName: "LLM Hub" }),
     });
-    const props = { stt } as unknown as React.ComponentProps<typeof SttProfileEditor>;
+    const props: React.ComponentProps<typeof SttProfileEditor> = { stt };
     const view = render(React.createElement(SttProfileEditor, props));
     await waitFor(() => expect(view.getByTestId("stt-base-card")).toBeTruthy());
     const status = view.getByTestId("stt-base-card-status").textContent ?? "";
@@ -468,7 +482,7 @@ describe("SttProfileEditor — P12 language dropdown", () => {
 
 
 describe('SttProfileEditor — native backends (SPE-4..6, SPE-7 picker)', () => {
-  function nativeStt(backend: string, model: string, headerMode: 'view' | 'edit' = 'view') {
+  function nativeStt(backend: SttBackendType, model: string, headerMode: 'view' | 'edit' = 'view') {
     const form = makeForm({ backend, config: { model }, emotionAnnotation: false });
     return makeStt({
       form,
@@ -735,10 +749,10 @@ describe('SttProfileEditor — whisper.cpp own-wire local backend (SPE-9)', () =
 // refresh button is the only live path, and nothing about a pick re-lists.
 describe("SttProfileEditor - stored-first model listing (step 11c)", () => {
   const listUrl = "https://api.openai.com/v1";
-  // Typed props seam: the file-wide never-cast is a ratchet-budgeted
-  // pattern (test-hygiene), so the tests added since do not extend it.
-  const props = (stt: ReturnType<typeof makeStt>) =>
-    ({ stt }) as unknown as React.ComponentProps<typeof SttProfileEditor>;
+  // Typed props seam: makeStt returns the real hook shape, so the component's
+  // props are satisfied directly (the file-wide never-cast stays a
+  // ratchet-budgeted pattern — tests added since do not extend it).
+  const props = (stt: ReturnType<typeof makeStt>): React.ComponentProps<typeof SttProfileEditor> => ({ stt });
 
   it("a draft (no id yet) lists live: no stored marker, no profile id", async () => {
     const stt = makeStt({ form: makeForm({ id: null }) });

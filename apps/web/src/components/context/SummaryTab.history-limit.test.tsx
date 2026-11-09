@@ -34,7 +34,10 @@ function restoreMatchMedia(): void {
 	if (hadOwnMatchMedia && originalMatchMedia) {
 		Object.defineProperty(window, "matchMedia", originalMatchMedia);
 	} else {
-		delete (window as unknown as { matchMedia?: typeof window.matchMedia }).matchMedia;
+		// The stub was own-property-installed on the happy-dom window (the
+		// BottomSheet elementFromPoint restore precedent) — remove it by key,
+		// no window view cast needed.
+		Reflect.deleteProperty(window, "matchMedia");
 	}
 }
 

@@ -29,11 +29,12 @@ function renderEditor(el: React.ReactElement) {
   return render(React.createElement(TooltipProvider, null, el));
 }
 const { TTS_BACKEND } = await import("@vibe-tavern/domain");
+import type { TtsProfileForm } from "../../../../hooks/use-tts-profiles.js";
 
 // Draft voices (F1) + models (F3): safe mock.module pattern — real module
 // captured first, only draft helpers overridden.
 const realTtsApi = await import("../../../../api/tts-api.js");
-import type { TtsDraftVoicesResponse } from "../../../../api/tts-api.js";
+import type { TtsDraftVoicesResponse, TtsProfileRecord } from "../../../../api/tts-api.js";
 const defaultVoices = async (_body: { backend: string; config: Record<string, unknown>; profileId?: string; source?: "stored" }): Promise<TtsDraftVoicesResponse> => ({
   voices: [
     { id: "alloy", label: "Alloy", lang: "en" },
@@ -73,8 +74,10 @@ function normalizeForm(form: Record<string, unknown> | null | undefined) {
   return { apiKey: "", providerRef: null, autoKeyProviderName: null, hasStoredApiKey: false, ...form } as never;
 }
 
-function makeTts(overrides: Partial<ReturnType<typeof import("../../../../hooks/use-tts-profiles.js").useTtsProfiles>> = {}) {
-  const base = {
+type TtsHook = ReturnType<typeof import("../../../../hooks/use-tts-profiles.js").useTtsProfiles>;
+
+function makeTts(overrides: Partial<TtsHook> = {}): TtsHook {
+  const base: TtsHook = {
     profiles: [],
     loading: false,
     editingId: "p1",
@@ -86,6 +89,9 @@ function makeTts(overrides: Partial<ReturnType<typeof import("../../../../hooks/
     // mechanism renders it only in headerMode "edit".
     headerMode: "edit" as never,
     startEdit: () => {},
+    // The base card's default-voice toggle (unread on the pinned paths —
+    // the erased literal left it absent, so no test ever invoked it).
+    setDefault: mock(async () => {}),
     select: () => {},
     startCreate: () => {},
     setForm: mock(() => {}),
@@ -96,12 +102,13 @@ function makeTts(overrides: Partial<ReturnType<typeof import("../../../../hooks/
     // D21: the live-form auto-key mirror — default null (no provider match);
     // tests set it to pin the draft-hint path.
     draftAutoKeyProviderName: null,
+    defaultProfileId: null,
   };
   const merged = { ...base, ...overrides };
   if (overrides.form !== undefined) {
     (merged as { form: unknown }).form = normalizeForm(overrides.form as Record<string, unknown> | null);
   }
-  return merged as unknown as ReturnType<typeof import("../../../../hooks/use-tts-profiles.js").useTtsProfiles>;
+  return merged;
 }
 
 beforeEach(() => {
@@ -122,7 +129,7 @@ afterEach(async () => {
  *  LLM mechanism renders the base card + config sections (voices, model
  *  card, tuning, bindings) only in this state; the connection form is the
  *  separate edit screen. Derives the profiles record from the form. */
-function viewTts(overrides: Partial<ReturnType<typeof import("../../../../hooks/use-tts-profiles.js").useTtsProfiles>> = {}) {
+function viewTts(overrides: Partial<TtsHook> = {}) {
   const base = makeTts(overrides);
   const form = base.form as { id: string | null; name: string; backend: string; config: Record<string, unknown>; voiceId: string; narratorVoiceId?: string; hasStoredApiKey?: boolean } | null;
   const record =
@@ -148,11 +155,13 @@ function viewTts(overrides: Partial<ReturnType<typeof import("../../../../hooks/
 }
 
 
-/** One typed seam for loose form fixtures in the step-11c tests: the file-wide
- *  `as never` convenience cast is a ratchet-budgeted pattern (test-hygiene),
- *  so tests added since do not extend it. */
-function asForm(form: Record<string, unknown>): NonNullable<ReturnType<typeof import("../../../../hooks/use-tts-profiles.js").useTtsProfiles>["form"]> {
-  return form as unknown as NonNullable<ReturnType<typeof import("../../../../hooks/use-tts-profiles.js").useTtsProfiles>["form"]>;
+/** One typed seam for loose form fixtures in the step-11c tests: the caller
+ *  pins the connection fields, the typed-key defaults ride the file's own
+ *  TE2-16 normalizer rule (same defaults normalizeForm applies). The
+ *  file-wide `as never` convenience cast stays a ratchet-budgeted pattern
+ *  (test-hygiene) — tests added since do not extend it. */
+function asForm(form: Partial<TtsProfileForm> & Pick<TtsProfileForm, "id" | "name" | "backend" | "config" | "voiceId">): NonNullable<TtsHook["form"]> {
+  return { apiKey: "", providerRef: null, autoKeyProviderName: null, hasStoredApiKey: false, narratorVoiceId: "", ...form };
 }
 
 describe("TtsProfileEditor", () => {
@@ -352,7 +361,7 @@ describe("TtsProfileEditor", () => {
     // outlive its own 400ms debounce and leak a recorded call (endpoint
     // "https://x" — run 34668434046), making calls[0] someone else's. Clear
     // before this test's own effect fires (same pattern as the F3 test below).
-    (listTtsDraftVoicesMock as unknown as { mockClear: () => void }).mockClear?.();
+    listTtsDraftVoicesMock.mockClear();
     const tts = viewTts({
       form: {
         id: null,
@@ -394,8 +403,8 @@ describe("TtsProfileEditor", () => {
 
   it("F3 draft models: gemini form fetches models via draft endpoint, refresh button visible", async () => {
     // Clear prior calls (voices/models mocks are process-scoped).
-    (listTtsDraftModelsMock as unknown as { mockClear: () => void }).mockClear?.();
-    (listTtsDraftVoicesMock as unknown as { mockClear: () => void }).mockClear?.();
+    listTtsDraftModelsMock.mockClear();
+    listTtsDraftVoicesMock.mockClear();
     const tts = viewTts({
       form: {
         id: null,
@@ -999,8 +1008,8 @@ describe("TtsProfileEditor — TE2-8 provider form fork", () => {
         narratorVoiceId: "",
       } as never,
     });
-    const calls: Array<{ config?: Record<string, unknown> }> = [];
-    (tts as unknown as { setForm: (patch: { config?: Record<string, unknown> }) => void }).setForm = (patch) => calls.push(patch);
+    const calls: Array<Partial<TtsProfileForm>> = [];
+    tts.setForm = (patch) => calls.push(patch);
     let view!: ReturnType<typeof render>;
     await act(async () => {
       view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
@@ -1264,7 +1273,7 @@ describe("TtsProfileEditor — TE2-9 test card states", () => {
 });
 
 describe("TtsProfileEditor — TE2-10 view mode (LLM headerMode mechanism)", () => {
-  function collapsedTts(overrides: Partial<ReturnType<typeof import("../../../../hooks/use-tts-profiles.js").useTtsProfiles>> = {}) {
+  function collapsedTts(overrides: Partial<TtsHook> = {}): TtsHook {
     const profiles = [
       {
         id: "p1",
@@ -1297,7 +1306,7 @@ describe("TtsProfileEditor — TE2-10 view mode (LLM headerMode mechanism)", () 
         updatedAt: "",
       } as never,
     ];
-    const base: Record<string, unknown> = {
+    const base: TtsHook = {
       profiles,
       loading: false,
       editingId: "p1",
@@ -1308,6 +1317,7 @@ describe("TtsProfileEditor — TE2-10 view mode (LLM headerMode mechanism)", () 
         config: {},
         apiKey: "",
         providerRef: null,
+        autoKeyProviderName: null,
         voiceId: "af_heart",
         narratorVoiceId: "",
         hasStoredApiKey: false,
@@ -1325,12 +1335,14 @@ describe("TtsProfileEditor — TE2-10 view mode (LLM headerMode mechanism)", () 
       remove: mock(async () => {}),
       cancelEdit: mock(() => {}),
       reload: mock(async () => {}),
+      draftAutoKeyProviderName: null,
+      defaultProfileId: null,
     };
     const merged = { ...base, ...overrides };
     if (overrides.form !== undefined) {
       (merged as { form: unknown }).form = normalizeForm(overrides.form as Record<string, unknown> | null);
     }
-    return merged as unknown as ReturnType<typeof import("../../../../hooks/use-tts-profiles.js").useTtsProfiles>;
+    return merged;
   }
 
   it("collapsed keeps voices, speed and bindings visible (plan row)", async () => {
@@ -1625,7 +1637,7 @@ describe("TtsProfileEditor — TE2-12 tuning accordion + toggle-card", () => {
         updatedAt: "",
       } as never,
     ];
-    const tts = {
+    const tts: TtsHook = {
       profiles,
       loading: false,
       editingId: "p1",
@@ -1653,7 +1665,9 @@ describe("TtsProfileEditor — TE2-12 tuning accordion + toggle-card", () => {
       remove: mock(async () => {}),
       cancelEdit: mock(() => {}),
       reload: mock(async () => {}),
-    } as unknown as ReturnType<typeof import("../../../../hooks/use-tts-profiles.js").useTtsProfiles>;
+      draftAutoKeyProviderName: null,
+      defaultProfileId: null,
+    };
     const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
     expect(view.getByTestId("tts-base-card")).toBeTruthy();
     expect(view.getByTestId("tts-tuning-accordion")).toBeTruthy();
@@ -2335,10 +2349,10 @@ describe("TtsProfileEditor — stored-first listings (step 11c)", () => {
   });
 
   it("edit mode renders no pickers and no clone card for a saved remote profile", async () => {
-    const record = { id: "p1", name: "Open", backend: TTS_BACKEND.OpenAiCompatible, config: savedOpenai.config, voiceId: "alloy", narratorVoiceId: null, hasStoredApiKey: true, lang: "en", sortOrder: 0, isDefault: false, createdAt: "", updatedAt: "" };
+    const record: TtsProfileRecord = { id: "p1", name: "Open", backend: TTS_BACKEND.OpenAiCompatible, config: savedOpenai.config, voiceId: "alloy", narratorVoiceId: null, hasStoredApiKey: true, providerRef: null, autoKeyProviderName: null, lang: "en", sortOrder: 0, isDefault: false, createdAt: "", updatedAt: "" };
     const tts = makeTts({
       form: asForm(savedOpenai),
-      profiles: [record] as unknown as ReturnType<typeof viewTts>["profiles"],
+      profiles: [record],
     });
     const view = mountEditor(tts);
     expect(view.queryByTestId("tts-voice-section")).toBeNull();

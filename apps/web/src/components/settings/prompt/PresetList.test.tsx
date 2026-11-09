@@ -1,5 +1,6 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import type { ComponentProps } from "react";
+import type { DragEndEvent, DragStartEvent } from "@dnd-kit/core";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 
@@ -122,8 +123,20 @@ describe("PresetList", () => {
   it("renders the drag preview through the primitive overlay", () => {
     const view = render(<PresetList {...baseProps()} />);
     expect(view.getAllByText("Alpha")).toHaveLength(1);
-    const start = { active: { id: "p1" } } as unknown as Parameters<NonNullable<RealDndContextProps["onDragStart"]>>[0];
-    const end = { active: { id: "p1" }, over: null } as unknown as Parameters<NonNullable<RealDndContextProps["onDragEnd"]>>[0];
+    // Member-for-member dnd-kit event literals (the 7d master-list shape):
+    // the handlers read only active.id / over; the remaining members ride
+    // inert defaults.
+    const start: DragStartEvent = {
+      activatorEvent: new Event("pointerdown"),
+      active: { id: "p1", data: { current: undefined }, rect: { current: { initial: null, translated: null } } },
+    };
+    const end: DragEndEvent = {
+      activatorEvent: new Event("pointerdown"),
+      active: { id: "p1", data: { current: undefined }, rect: { current: { initial: null, translated: null } } },
+      collisions: null,
+      delta: { x: 0, y: 0 },
+      over: null,
+    };
     act(() => { dndHandlers!.onDragStart!(start); });
     // Row + inline overlay preview (the DragOverlay mock renders inline —
     // the ML-1 rework-2 lesson: the preview must exist during a drag).

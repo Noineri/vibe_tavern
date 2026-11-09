@@ -43,12 +43,42 @@ function parkedResponse() {
   releases.push(() => gate.resolve(Response.json(null)));
   return gate;
 }
-class NetworkEvents {
+// Member-for-member EventSource stand-in (the SSE boundary the hook opens):
+// the class IS assignable to `typeof EventSource`, so the global install
+// needs no cast. addEventListener keeps only function listeners (the only
+// kind use-chat-events registers); inert defaults for the members the hook
+// never reads (readyState/withCredentials/on*). The listener param carries
+// the MessageEvent-flavored member because lib.dom's redeclared
+// EventSource.addEventListener overloads compare contravariantly against a
+// bare EventListener.
+type SourceListener = (ev: MessageEvent) => unknown;
+class NetworkEvents extends EventTarget implements EventSource {
+  static readonly CONNECTING = 0;
+  static readonly OPEN = 1;
+  static readonly CLOSED = 2;
   static instances: NetworkEvents[] = [];
-  listeners = new Map<string, EventListener>();
+  readonly url: string;
+  readonly readyState = 0;
+  readonly withCredentials = false;
+  readonly CONNECTING = 0;
+  readonly OPEN = 1;
+  readonly CLOSED = 2;
+  onopen: ((this: EventSource, ev: Event) => unknown) | null = null;
+  onmessage: ((this: EventSource, ev: MessageEvent) => unknown) | null = null;
+  onerror: ((this: EventSource, ev: Event) => unknown) | null = null;
+  listeners = new Map<string, SourceListener>();
   closed = false;
-  constructor(readonly url: string) { NetworkEvents.instances.push(this); }
-  addEventListener(kind: string, listener: EventListener) { this.listeners.set(kind, listener); }
+  constructor(url?: string | URL) {
+    super();
+    this.url = String(url ?? "");
+    NetworkEvents.instances.push(this);
+  }
+  addEventListener(type: string, listener: EventListener | ((this: EventSource, ev: MessageEvent) => unknown) | EventListenerObject | null, options?: boolean | AddEventListenerOptions): void {
+    if (typeof listener === "function") this.listeners.set(type, listener);
+  }
+  removeEventListener(type: string, listener: EventListener | ((this: EventSource, ev: MessageEvent) => unknown) | EventListenerObject | null, options?: boolean | EventListenerOptions): void {
+    this.listeners.delete(type);
+  }
   close() { this.closed = true; }
   emit(kind: string, payload: Record<string, unknown> = {}) {
     this.listeners.get(kind)?.(new MessageEvent(kind, { data: JSON.stringify(payload) }));
@@ -122,7 +152,7 @@ beforeEach(() => {
   listResponse = null;
   stopStatus = 200;
   globalThis.fetch = Object.assign(network, { preconnect: originalFetch.preconnect });
-  globalThis.EventSource = NetworkEvents as unknown as typeof EventSource;
+  globalThis.EventSource = NetworkEvents;
 });
 afterEach(async () => { await act(async () => { for (const release of releases.splice(0)) release(); }); });
 afterAll(() => {

@@ -21,6 +21,7 @@ const { useSttProfiles } = await import("../../../../hooks/use-stt-profiles.js")
 const { useMasterDetail, MasterDetailModal } = await import("../../../shared/MasterDetailModal.js");
 
 type SttRecord = import("../../../../api/stt-api.js").SttProfileRecord;
+type SttHook = ReturnType<typeof useSttProfiles>;
 
 function makeRecord(overrides: Partial<SttRecord> = {}): SttRecord {
   return {
@@ -39,9 +40,9 @@ function makeRecord(overrides: Partial<SttRecord> = {}): SttRecord {
   };
 }
 
-function makeStt(overrides: Record<string, unknown> = {}) {
-  const base = {
-    profiles: [makeRecord()] as SttRecord[],
+function makeStt(overrides: Partial<SttHook> = {}): SttHook {
+  const base: SttHook = {
+    profiles: [makeRecord()],
     loading: false,
     editingId: "p1",
     form: null,
@@ -49,6 +50,8 @@ function makeStt(overrides: Record<string, unknown> = {}) {
     error: null,
     saving: false,
     headerMode: "view",
+    // D21-STT analog: the live-form draft hint — unread by SttSection, inert.
+    draftAutoKeyProviderName: null,
     startEdit: mock(() => {}),
     setDefault: mock(async () => {}),
     select: mock(() => {}),
@@ -59,10 +62,10 @@ function makeStt(overrides: Record<string, unknown> = {}) {
     cancelEdit: mock(() => {}),
     reload: mock(async () => {}),
     profileSearch: "",
-    filteredProfiles: [makeRecord()] as SttRecord[],
+    filteredProfiles: [makeRecord()],
     setProfileSearch: mock(() => {}),
     reorder: mock(async () => {}),
-    defaultProfileId: null as string | null,
+    defaultProfileId: null,
   };
   return {
     ...base,
@@ -119,7 +122,7 @@ describe("SttSection", () => {
       filteredProfiles: [makeRecord({ id: "p1", isDefault: true, hasStoredApiKey: true }), makeRecord({ id: "p2", name: "Second", hasStoredApiKey: true })],
       editingId: null,
       defaultProfileId: "p1",
-    }) as unknown as ReturnType<typeof useSttProfiles>;
+    });
     const view = render(
       <MasterDetailModal
         isOpen={true}

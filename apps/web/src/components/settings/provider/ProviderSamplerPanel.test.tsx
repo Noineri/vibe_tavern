@@ -412,7 +412,9 @@ function makeHarness(initial: FormState) {
   const calls: Array<{ k: keyof FormState; v: unknown }> = [];
   const updateForm = <K extends keyof FormState>(k: K, v: FormState[K]) => {
     calls.push({ k, v: v as unknown });
-    (current as unknown as Record<string, unknown>)[k as string] = v;
+    // The key/value pair is correlated (same K on both sides) — the
+    // compiler checks the write without an index-signature view cast.
+    current[k] = v;
   };
   return { current, calls, updateForm };
 }

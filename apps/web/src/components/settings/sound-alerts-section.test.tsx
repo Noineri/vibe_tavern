@@ -14,13 +14,32 @@ const { getSettingsSections } = await import("../../lib/settings-section-registr
 // The Notification-permission flows install a minimal fake on window and
 // remove it in afterAll. i18n is uninitialized: raw keys are the query strings.
 
-class FakeNotification {
+// Member-for-member Notification stand-in (happy-dom ships none): the class
+// IS assignable to `typeof Notification`, so the window install needs no
+// cast. Inert defaults for the members the section never reads.
+class FakeNotification extends EventTarget implements Notification {
+  static readonly maxActions: number = 0;
   static permission: NotificationPermission = "default";
   static requestPermission = (): Promise<NotificationPermission> =>
     Promise.resolve(FakeNotification.permission);
-  constructor(_title: string, _options?: NotificationOptions) {}
+  readonly actions: ReadonlyArray<NotificationAction> = [];
+  readonly body: string = "";
+  readonly data: unknown = null;
+  readonly dir: NotificationDirection = "auto";
+  readonly icon: string = "";
+  readonly lang: string = "";
+  readonly requireInteraction: boolean = false;
+  readonly silent: boolean | null = null;
+  readonly tag: string = "";
+  readonly title: string = "";
+  onclick: ((this: Notification, ev: Event) => unknown) | null = null;
+  onclose: ((this: Notification, ev: Event) => unknown) | null = null;
+  onerror: ((this: Notification, ev: Event) => unknown) | null = null;
+  onshow: ((this: Notification, ev: Event) => unknown) | null = null;
+  constructor(_title: string, _options?: NotificationOptions) {
+    super();
+  }
   close(): void {}
-  onclick: (() => void) | null = null;
 }
 
 const notificationWindow = window as Window & { Notification?: typeof Notification };
@@ -39,7 +58,7 @@ afterAll(() => {
 
 function installFakeNotification(permission: NotificationPermission): void {
   FakeNotification.permission = permission;
-  notificationWindow.Notification = FakeNotification as unknown as typeof Notification;
+  notificationWindow.Notification = FakeNotification;
 }
 
 describe("SoundAlertsSection layout", () => {

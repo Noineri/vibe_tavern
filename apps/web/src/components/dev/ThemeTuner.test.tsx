@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it } from "bun:test";
 import { StrictMode } from "react";
 import { useDomEnv } from "../../../test/dom-env.js";
+import { strictTestDouble } from "../../../test/strict-test-double.js";
 
 useDomEnv();
 
@@ -23,7 +24,20 @@ function installWebGlMock() {
   const program = {} as WebGLProgram;
   const buffer = {} as WebGLBuffer;
   const uniform = {} as WebGLUniformLocation;
-  const target = {
+  // Member-for-member WebGLRenderingContext double over the seam: every
+  // member LavaBackground reads is provided explicitly (the old proxy's
+  // noop-fallback members are now the typed inert noops below), so the
+  // double's labeled-miss throw can only fire on a member the component
+  // genuinely does not read. getExtension is composed on top typed by its
+  // own name (lib.dom's literal-name overload set cannot be satisfied by
+  // one plain signature); createProgram/createBuffer lose their old
+  // `lost ? null : …` branches — the real lib types them NON-null and no
+  // test drives a post-loss creation (the shaderSource guard fires first).
+  const getExtension = (name: string): WEBGL_lose_context | null =>
+    name === "WEBGL_lose_context"
+      ? { loseContext: () => { lost = true; }, restoreContext: () => {} }
+      : null;
+  const gl = Object.assign(strictTestDouble<WebGLRenderingContext>({
     VERTEX_SHADER: 0x8b31,
     FRAGMENT_SHADER: 0x8b30,
     COMPILE_STATUS: 0x8b81,
@@ -36,22 +50,33 @@ function installWebGlMock() {
     shaderSource: (value: WebGLShader | null) => {
       if (!value) throw new Error("shaderSource called after WebGL context loss");
     },
+    compileShader: () => {},
     getShaderParameter: () => true,
-    createProgram: () => lost ? null : program,
+    getShaderInfoLog: () => null,
+    deleteShader: () => {},
+    createProgram: () => program,
+    attachShader: () => {},
+    linkProgram: () => {},
     getProgramParameter: () => true,
-    createBuffer: () => lost ? null : buffer,
+    getProgramInfoLog: () => null,
+    deleteProgram: () => {},
+    useProgram: () => {},
+    createBuffer: () => buffer,
+    bindBuffer: () => {},
+    bufferData: () => {},
+    deleteBuffer: () => {},
     getAttribLocation: () => 0,
+    enableVertexAttribArray: () => {},
+    vertexAttribPointer: () => {},
     getUniformLocation: () => lost ? null : uniform,
-    getExtension: (name: string) => name === "WEBGL_lose_context"
-      ? { loseContext: () => { lost = true; } }
-      : null,
-  };
-  const gl = new Proxy(target, {
-    get(object, property, receiver) {
-      if (Reflect.has(object, property)) return Reflect.get(object, property, receiver);
-      return () => {};
-    },
-  }) as unknown as WebGLRenderingContext;
+    uniform1f: () => {},
+    uniform1fv: () => {},
+    uniform2f: () => {},
+    uniform3fv: () => {},
+    uniform4f: () => {},
+    viewport: () => {},
+    drawArrays: () => {},
+  }, "WebGLRenderingContext (LavaBackground stub)"), { getExtension });
 
   Object.defineProperty(HTMLCanvasElement.prototype, "getContext", {
     configurable: true,

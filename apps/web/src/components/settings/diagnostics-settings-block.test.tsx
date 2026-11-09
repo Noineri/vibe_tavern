@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, spyOn, test } from "
 import { brandId, type ChatId, type ChatBranchId, type MessageId, type MessageVariantId, type PromptTraceRecordDto } from "@vibe-tavern/domain";
 import { useDomEnv } from "../../../test/dom-env.js";
 import type { DiagnosticsGenerationPreview, DiagnosticsGenerationSelection } from "../../api/diagnostics-api.js";
-import type { Window as HappyWindow } from "happy-dom";
+import type { DetachedWindowAPI } from "happy-dom";
 
 useDomEnv({ failOnNetwork: true });
 const { render, fireEvent, waitFor, cleanup, act, within } = await import("@testing-library/react");
@@ -22,7 +22,11 @@ const originalModal = useModalStore.getState();
 const originalChat = useChatStore.getState();
 const originalSections = getSettingsSections();
 const originalWidth = window.innerWidth;
-const browser = window as unknown as HappyWindow;
+// The happy-dom global registered by useDomEnv(): lib.dom's Window type
+// cannot express the test driver's happyDOM member, so the view is a
+// documented narrowing (the registered window really carries it).
+type HappyDomTestWindow = typeof window & { happyDOM: DetachedWindowAPI };
+const browser = window as HappyDomTestWindow;
 const cacheKey = "vibe-tavern.update-check.v3";
 const originalCache = localStorage.getItem(cacheKey);
 const createUrl = spyOn(URL, "createObjectURL");
