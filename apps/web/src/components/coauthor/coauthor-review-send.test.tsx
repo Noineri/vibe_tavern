@@ -16,6 +16,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, it } from "bun:test"
 import { brandId, type ChatId } from "@vibe-tavern/domain";
 
 import { useDomEnv } from "../../../test/dom-env.js";
+import { wireCharacter, wireChat, wireProviderProfile, wireUiSettings } from "../../../test/wire-fixtures.js";
 
 useDomEnv();
 const { act, renderHook } = await import("@testing-library/react");
@@ -68,19 +69,21 @@ const reviewInput: CoauthorReviewInput = {
 
 function seed(streamResponse: boolean): () => void {
   useSnapshotStore.setState({
-    character: { id: CHARACTER, name: "Saved" } as unknown as ReturnType<typeof useSnapshotStore.getState>["character"],
-    activeChat: { id: CHAT, mode: "coauthor" } as unknown as ReturnType<typeof useSnapshotStore.getState>["activeChat"],
+    character: wireCharacter({ id: CHARACTER, name: "Saved" }),
+    activeChat: wireChat({ id: CHAT, mode: "coauthor" }),
   });
   useChatStore.setState({ activeChatId: CHAT, draft: "send review", draftAttachments: [], generations: {} });
   useProviderStore.setState((state) => ({ connection: { ...state.connection, streamResponse } }));
   useProviderDataStore.setState({
-    profiles: [{ id: "profile-review", isActive: true, defaultModel: "review-model" } as unknown as ReturnType<typeof useProviderDataStore.getState>["profiles"][number]],
+    profiles: [wireProviderProfile({ id: "profile-review", isActive: true, defaultModel: "review-model" })],
     coauthorSettingsByProfile: {},
   });
   useBootstrapStore.setState({
     data: {
-      uiSettings: { coauthorProviderId: "profile-review" },
-    } as unknown as ReturnType<typeof useBootstrapStore.getState>["data"],
+      initialChatId: null, snapshot: null, isFirstRun: false, allCharacters: [], promptPresets: [],
+      agentKindSettings: {}, isArmServer: false,
+      uiSettings: { ...wireUiSettings(), coauthorProviderId: "profile-review" },
+    },
   });
   const unregister = registerCoauthorEditor(CHAT, CHARACTER, () => ({
     name: "Live editor",
@@ -196,16 +199,16 @@ describe("coauthor review send through useChatController", () => {
 
   it("omits state without a mounted co-author editor on both send modes", async () => {
     useSnapshotStore.setState({
-      character: { id: CHARACTER, name: "Saved" } as unknown as ReturnType<typeof useSnapshotStore.getState>["character"],
-      activeChat: { id: CHAT, mode: "coauthor" } as unknown as ReturnType<typeof useSnapshotStore.getState>["activeChat"],
+      character: wireCharacter({ id: CHARACTER, name: "Saved" }),
+      activeChat: wireChat({ id: CHAT, mode: "coauthor" }),
     });
     await expectOmittedFromBothSendModes();
   });
 
   it("omits a holder registered for a different co-author scope on both send modes", async () => {
     useSnapshotStore.setState({
-      character: { id: CHARACTER, name: "Saved" } as unknown as ReturnType<typeof useSnapshotStore.getState>["character"],
-      activeChat: { id: CHAT, mode: "coauthor" } as unknown as ReturnType<typeof useSnapshotStore.getState>["activeChat"],
+      character: wireCharacter({ id: CHARACTER, name: "Saved" }),
+      activeChat: wireChat({ id: CHAT, mode: "coauthor" }),
     });
     const unregister = registerCoauthorEditor(brandId<ChatId>("other-chat"), CHARACTER, () => ({ name: "Wrong", body: "Wrong", greetings: [], cardClean: true }));
     await expectOmittedFromBothSendModes();
@@ -214,8 +217,8 @@ describe("coauthor review send through useChatController", () => {
 
   it("omits even a matching holder from roleplay sends on both send modes", async () => {
     useSnapshotStore.setState({
-      character: { id: CHARACTER, name: "Saved" } as unknown as ReturnType<typeof useSnapshotStore.getState>["character"],
-      activeChat: { id: CHAT, mode: "rp" } as unknown as ReturnType<typeof useSnapshotStore.getState>["activeChat"],
+      character: wireCharacter({ id: CHARACTER, name: "Saved" }),
+      activeChat: wireChat({ id: CHAT, mode: "rp" }),
     });
     const unregister = registerCoauthorEditor(CHAT, CHARACTER, () => ({ name: "Live", body: "Live", greetings: [], cardClean: true }));
     await expectOmittedFromBothSendModes();

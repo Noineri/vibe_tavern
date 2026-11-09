@@ -2,7 +2,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bu
 
 import { useDomEnv } from "../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
-import type { ProviderProfileRecord } from "../../api/types.js";
+import { wireProviderProfile } from "../../../test/wire-fixtures.js";
 
 useDomEnv();
 
@@ -28,15 +28,16 @@ beforeAll(async () => {
   ({ CoauthorLoreAssistantSettings } = await import("./CoauthorLoreAssistantSettings.js"));
 });
 
-const PROFILE = {
+const PROFILE = wireProviderProfile({
   id: "profile_1",
   name: "Lore provider",
   providerPreset: "openai",
   endpoint: "https://api.test/v1",
   defaultModel: null,
   isActive: false,
-  cachedModels: { models: [{ id: "lore-model", label: "Lore model" }] },
-} as unknown as ProviderProfileRecord;
+  // `cachedAt` is required by the wire record — the erased literal omitted it.
+  cachedModels: { cachedAt: "2026-01-01T00:00:00.000Z", models: [{ id: "lore-model", label: "Lore model" }] },
+});
 
 function fieldTrigger(view: ReturnType<typeof render>, label: string) {
   const labelNode = view.getByText(label);

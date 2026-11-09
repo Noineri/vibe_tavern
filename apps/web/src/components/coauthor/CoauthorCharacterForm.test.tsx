@@ -20,7 +20,7 @@
  * primary assertion.
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
-import { wireCharacter } from "../../../test/wire-fixtures.js";
+import { wireCharacter, wireChat, wireUiSettings } from "../../../test/wire-fixtures.js";
 import { useDomEnv } from "../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 import { expectReviewOutcomeFixture, type ReviewOutcomeFixture, type ReviewOutcomeFixtureRequest } from "../../../test/review-outcome-fixtures.js";
@@ -28,7 +28,6 @@ import { expectReviewOutcomeFixture, type ReviewOutcomeFixture, type ReviewOutco
 useDomEnv();
 const { act, fireEvent, render: renderReact, waitFor } = await import("@testing-library/react");
 import type { AppCharacter, LorebookRecord } from "../../api/types.js";
-import type { BootstrapData } from "../../stores/api-actions/bootstrap-actions.js";
 import type { CoauthorToolActivity } from "../../stores/coauthor-turn-store.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js";
@@ -85,7 +84,6 @@ const refetchTrackerTemplateMock = mock(async () => undefined);
 
 /** Shared Checkbox exposes its state via aria-checked (role="checkbox"), not input.checked. */
 const ariaChecked = (el: Element) => el.getAttribute("aria-checked") === "true";
-type ActiveChat = NonNullable<ReturnType<typeof useSnapshotStore.getState>["activeChat"]>;
 
 installI18nContextSeam();
 
@@ -179,12 +177,15 @@ function setLoreModel(modelName: string | null) {
 			allCharacters: [],
 			promptPresets: [],
 			uiSettings: {
-				id: "default", theme: "dark", chatFontSize: 15, uiFontSize: 14, messageWidth: 700, language: "en",
-				activePromptPresetId: null, aiAssistantProviderId: null, aiAssistantModelName: null,
-				coauthorProviderId: null, coauthorLoreProviderId: modelName ? "profile_1" : null, coauthorLoreModelName: modelName, updatedAt: "2026-01-01",
+				...wireUiSettings(),
+				coauthorProviderId: null,
+				coauthorLoreProviderId: modelName ? "profile_1" : null,
+				coauthorLoreModelName: modelName,
+				updatedAt: "2026-01-01",
 			},
+			agentKindSettings: {},
 			isArmServer: false,
-		} as unknown as BootstrapData,
+		},
 	});
 }
 
@@ -403,7 +404,7 @@ describe("CoauthorCharacterForm", () => {
 		__isSending = true;
 		useSnapshotStore.setState({
 			character: makeCharacter(),
-			activeChat: { id: TEST_CHAT } as unknown as ActiveChat,
+			activeChat: wireChat({ id: brandId<ChatId>(TEST_CHAT) }),
 		});
 		const { container } = render(<CoauthorCharacterForm />);
 		// The trigger button is the '+' button inside LinkBindingPopover.
@@ -424,7 +425,7 @@ describe("CoauthorCharacterForm", () => {
 				avatarAssetId: null, avatarFullAssetId: null, avatarCropJson: null,
 				avatarExt: null, avatarFullExt: null, updatedAt: "0",
 			}],
-			activeChat: { id: TEST_CHAT, coauthorContextLinks: [{ targetType: "character", targetId: "char_pinned" }] } as unknown as ActiveChat,
+			activeChat: wireChat({ id: brandId<ChatId>(TEST_CHAT), coauthorContextLinks: [{ targetType: "character", targetId: "char_pinned" }] }),
 		});
 		const { getByText } = render(<CoauthorCharacterForm />);
 		expect(getByText("Mira")).toBeTruthy();
@@ -435,7 +436,7 @@ describe("CoauthorCharacterForm", () => {
 		// L1 full content, L2 lorebook names+titles, L3 script names+summaries.
 		useSnapshotStore.setState({
 			character: makeCharacter(),
-			activeChat: { id: TEST_CHAT } as unknown as ActiveChat,
+			activeChat: wireChat({ id: brandId<ChatId>(TEST_CHAT) }),
 		});
 		const { getByText, findByText } = render(<CoauthorCharacterForm />);
 		// L1 caption renders immediately (not behind BoundResourcesField's load).
@@ -521,7 +522,7 @@ describe("CoauthorCharacterForm", () => {
 	/** Seed the snapshot with a character + an active co-author chat (for chatId). */
 	function seedReviewing(characterOver: Partial<AppCharacter> = {}): AppCharacter {
 		const character = makeCharacter(characterOver);
-		useSnapshotStore.setState({ character, activeChat: { id: TEST_CHAT, mode: "coauthor" } as unknown as ActiveChat });
+		useSnapshotStore.setState({ character, activeChat: wireChat({ id: brandId<ChatId>(TEST_CHAT), mode: "coauthor" }) });
 		return character;
 	}
 
@@ -555,7 +556,7 @@ describe("CoauthorCharacterForm", () => {
 		seedReviewing({ description: "A reserved arachnid weaver." });
 		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeProfileActivity("t1", "Bold and direct."));
 
-		const fetchMock = mock((_url: unknown, _init: unknown) =>
+		const fetchMock = mock((_url: RequestInfo | URL, init?: RequestInit) =>
 			Promise.resolve({
 				ok: true,
 				status: 200,
@@ -579,7 +580,7 @@ describe("CoauthorCharacterForm", () => {
 		await waitFor(() => {
 			// The RPC fired against the Apply endpoint.
 			expect(fetchMock).toHaveBeenCalledTimes(1);
-			const call = fetchMock.mock.calls[0] as unknown as [unknown, RequestInit | undefined];
+			const call = fetchMock.mock.calls[0]!;
 			expect(String(call[0])).toContain("/coauthor/apply");
 			expect(String(call[0])).toContain(TEST_CHAT);
 			// Apply routes through the aggregated profileMd (never a raw string-swap).
@@ -614,7 +615,7 @@ describe("CoauthorCharacterForm", () => {
 		const warningSpy = mock(() => {});
 		toast.warning = warningSpy as never;
 
-		globalThis.fetch = mock((_u: unknown, _i: unknown) =>
+		globalThis.fetch = mock((_url: RequestInfo | URL, init?: RequestInit) =>
 			Promise.resolve({
 				ok: true,
 				status: 200,
@@ -686,7 +687,7 @@ describe("CoauthorCharacterForm", () => {
 	it("RO-5: mounted live editor state rides the actual non-stream and stream HTTP bodies", async () => {
 		useSnapshotStore.setState({
 			character: makeCharacter({ name: "", firstMessage: "", alternateGreetings: [""] }),
-			activeChat: { id: TEST_CHAT, mode: "coauthor" } as unknown as ActiveChat,
+			activeChat: wireChat({ id: brandId<ChatId>(TEST_CHAT), mode: "coauthor" }),
 		});
 		const requests: string[] = [];
 		const fetchMock = mock(async (url: unknown, init: RequestInit | undefined) => {
@@ -730,7 +731,7 @@ describe("CoauthorCharacterForm", () => {
 	it("RO-5: mounted empty editor values ride the actual non-stream and stream HTTP bodies", async () => {
 		useSnapshotStore.setState({
 			character: makeCharacter({ name: "", description: "", scenario: "", mesExample: "", firstMessage: "", alternateGreetings: [] }),
-			activeChat: { id: TEST_CHAT, mode: "coauthor" } as unknown as ActiveChat,
+			activeChat: wireChat({ id: brandId<ChatId>(TEST_CHAT), mode: "coauthor" }),
 		});
 		const requests: string[] = [];
 		const fetchMock = mock(async (url: unknown, init: RequestInit | undefined) => {
@@ -816,7 +817,7 @@ describe("CoauthorCharacterForm", () => {
 		expect(getByText("coauthor.tracker_template.review.title")).toBeTruthy();
 		fireEvent.click(getByText("coauthor.review.apply"));
 		await waitFor(() => {
-			const call = fetchMock.mock.calls[0] as unknown as [unknown, RequestInit | undefined];
+			const call = fetchMock.mock.calls[0]!;
 			const body = JSON.parse(String(call[1]?.body ?? "{}"));
 			expect(body.trackerTemplate.scene.config.schema.location.$type).toBe("string");
 			expect(refetchTrackerTemplateMock).toHaveBeenCalledTimes(1);
@@ -828,7 +829,7 @@ describe("CoauthorCharacterForm", () => {
 		fireEvent.click(getByText("coauthor.review.apply"));
 		await waitFor(() => {
 			expect(fetchMock).toHaveBeenCalledTimes(2);
-			const call = fetchMock.mock.calls[1] as unknown as [unknown, RequestInit | undefined];
+			const call = fetchMock.mock.calls[1]!;
 			const body = JSON.parse(String(call[1]?.body ?? "{}"));
 			expect(body.trackerTemplate).toBeUndefined();
 		});
@@ -950,12 +951,12 @@ describe("CoauthorCharacterForm", () => {
 		fireEvent.click(utils.getAllByRole("checkbox")[1]!);
 		fireEvent.click(utils.getAllByRole("checkbox")[2]!);
 		await act(async () => {
-			useSnapshotStore.setState({ activeChat: { id: "chat_other", mode: "coauthor" } as unknown as ActiveChat });
+			useSnapshotStore.setState({ activeChat: wireChat({ id: brandId<ChatId>("chat_other"), mode: "coauthor" }) });
 			useCoauthorTurnStore.getState().upsertActivity("chat_other", twoHunkProfileActivity());
 		});
 		await waitFor(() => expect(utils.getAllByRole("checkbox").map(ariaChecked)).toEqual([true, true]));
 		await act(async () => {
-			useSnapshotStore.setState({ activeChat: { id: TEST_CHAT, mode: "coauthor" } as unknown as ActiveChat });
+			useSnapshotStore.setState({ activeChat: wireChat({ id: brandId<ChatId>(TEST_CHAT), mode: "coauthor" }) });
 		});
 		await waitFor(() => expect(utils.getAllByRole("checkbox").map(ariaChecked)).toEqual([true, false, false, true, true, true, true]));
 		const replacementLore = makeLoreActivity();
@@ -1180,7 +1181,7 @@ describe("CoauthorCharacterForm", () => {
 		expect(before?.[0]?.outcome).toBe("awaiting");
 		first.unmount();
 		await act(async () => {
-			useSnapshotStore.setState({ activeChat: { id: "chat_other", mode: "coauthor" } as unknown as ActiveChat });
+			useSnapshotStore.setState({ activeChat: wireChat({ id: brandId<ChatId>("chat_other"), mode: "coauthor" }) });
 		});
 		const other = render(<CoauthorCharacterForm />);
 		await act(async () => {
@@ -1266,7 +1267,7 @@ describe("CoauthorCharacterForm", () => {
 		seedReviewing();
 		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeLoreActivity());
 
-		const fetchMock = mock((_u: unknown, _i: unknown) =>
+		const fetchMock = mock((_url: RequestInfo | URL, init?: RequestInit) =>
 			Promise.resolve({ ok: true, status: 200, json: async () => ({ character: makeCharacter(), corrections: [] }), text: async () => "" }),
 		);
 		globalThis.fetch = fetchMock as never;
@@ -1279,7 +1280,7 @@ describe("CoauthorCharacterForm", () => {
 		fireEvent.click(getByText("coauthor.review.apply"));
 		await waitFor(() => {
 			expect(fetchMock).toHaveBeenCalledTimes(1);
-			const call = fetchMock.mock.calls[0] as unknown as [unknown, RequestInit | undefined];
+			const call = fetchMock.mock.calls[0]!;
 			expect(String(call[0])).toContain("/coauthor/apply");
 			const body = JSON.parse(String(call[1]?.body ?? "{}"));
 			// loreBundle ships wholesale (both books + entries); profile/greeting omitted.
@@ -1322,7 +1323,7 @@ describe("CoauthorCharacterForm", () => {
 			},
 		});
 
-		const fetchMock = mock((_u: unknown, _i: unknown) =>
+		const fetchMock = mock((_url: RequestInfo | URL, init?: RequestInit) =>
 			Promise.resolve({ ok: true, status: 200, json: async () => ({ character: makeCharacter(), corrections: [] }), text: async () => "" }),
 		);
 		globalThis.fetch = fetchMock as never;
@@ -1333,7 +1334,7 @@ describe("CoauthorCharacterForm", () => {
 
 		await waitFor(() => {
 			expect(fetchMock).toHaveBeenCalledTimes(1);
-			const call = fetchMock.mock.calls[0] as unknown as [unknown, RequestInit | undefined];
+			const call = fetchMock.mock.calls[0]!;
 			const body = JSON.parse(String(call[1]?.body ?? "{}"));
 			expect(body.loreBundle.lorebooks).toEqual([]);
 			expect(body.loreBundle.entries).toHaveLength(1);
@@ -1347,7 +1348,7 @@ describe("CoauthorCharacterForm", () => {
 		seedReviewing();
 		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeLoreActivity());
 
-		const fetchMock = mock((_u: unknown, _i: unknown) =>
+		const fetchMock = mock((_url: RequestInfo | URL, init?: RequestInit) =>
 			Promise.resolve({ ok: true, status: 200, json: async () => ({ character: makeCharacter(), corrections: [] }), text: async () => "" }),
 		);
 		globalThis.fetch = fetchMock as never;
@@ -1379,7 +1380,7 @@ describe("CoauthorCharacterForm", () => {
 		seedReviewing();
 		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeLoreActivity());
 
-		const fetchMock = mock((_u: unknown, _i: unknown) =>
+		const fetchMock = mock((_url: RequestInfo | URL, init?: RequestInit) =>
 			Promise.resolve({ ok: true, status: 200, json: async () => ({ character: makeCharacter(), corrections: [] }), text: async () => "" }),
 		);
 		globalThis.fetch = fetchMock as never;
@@ -1392,7 +1393,7 @@ describe("CoauthorCharacterForm", () => {
 		fireEvent.click(getByText("coauthor.review.apply"));
 		await waitFor(() => {
 			expect(fetchMock).toHaveBeenCalledTimes(1);
-			const call = fetchMock.mock.calls[0] as unknown as [unknown, RequestInit | undefined];
+			const call = fetchMock.mock.calls[0]!;
 			const body = JSON.parse(String(call[1]?.body ?? "{}"));
 			// lb1 rejected → only lb2 + e2 ship; e1 is orphaned by its rejected parent
 			// and dropped (invalid child-without-parent prevention).
@@ -1450,7 +1451,7 @@ describe("CoauthorCharacterForm", () => {
 		seedReviewing();
 		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, twoHunkProfileActivity());
 
-		const fetchMock = mock((_u: unknown, _i: unknown) =>
+		const fetchMock = mock((_url: RequestInfo | URL, init?: RequestInit) =>
 			Promise.resolve({
 				ok: true,
 				status: 200,
@@ -1473,7 +1474,7 @@ describe("CoauthorCharacterForm", () => {
 		await waitFor(() => {
 			expect(fetchMock).toHaveBeenCalledTimes(1);
 		});
-		const call = fetchMock.mock.calls[0] as unknown as [unknown, RequestInit | undefined];
+		const call = fetchMock.mock.calls[0]!;
 		const body = String(call[1]?.body ?? "");
 		expect(body).toContain("profileMd");
 		// Rejected personality hunk → canonical personality preserved in the rebuilt profileMd.
@@ -1491,7 +1492,7 @@ describe("CoauthorCharacterForm", () => {
 		seedReviewing();
 		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, twoHunkProfileActivity());
 
-		const fetchMock = mock((_u: unknown, _i: unknown) =>
+		const fetchMock = mock((_url: RequestInfo | URL, init?: RequestInit) =>
 			Promise.resolve({ ok: true, status: 200, json: async () => ({ character: makeCharacter(), corrections: [] }), text: async () => "" }),
 		);
 		globalThis.fetch = fetchMock as never;
@@ -1502,7 +1503,7 @@ describe("CoauthorCharacterForm", () => {
 		await waitFor(() => {
 			expect(fetchMock).toHaveBeenCalledTimes(1);
 		});
-		const call = fetchMock.mock.calls[0] as unknown as [unknown, RequestInit | undefined];
+		const call = fetchMock.mock.calls[0]!;
 		const body = String(call[1]?.body ?? "");
 		// Wholesale: both proposed changes ship.
 		expect(body).toContain("Bold and direct.");
@@ -1533,7 +1534,7 @@ describe("CoauthorCharacterForm", () => {
 			args: { edits: [{ search: "A reserved arachnid weaver.", replace: "Bold and direct." }], summary: "sharpen personality" },
 		});
 
-		const fetchMock = mock((_u: unknown, _i: unknown) =>
+		const fetchMock = mock((_url: RequestInfo | URL, init?: RequestInit) =>
 			Promise.resolve({ ok: true, status: 200, json: async () => ({ character: makeCharacter({ description: "Bold and direct." }), corrections: [] }), text: async () => "" }),
 		);
 		globalThis.fetch = fetchMock as never;
@@ -1545,7 +1546,7 @@ describe("CoauthorCharacterForm", () => {
 
 		fireEvent.click(getByText("coauthor.review.apply"));
 		await waitFor(() => { expect(fetchMock).toHaveBeenCalledTimes(1); });
-		const call = fetchMock.mock.calls[0] as unknown as [unknown, RequestInit | undefined];
+		const call = fetchMock.mock.calls[0]!;
 		const body = String(call[1]?.body ?? "");
 		// The cumulative proposed profile ships (aggregated from `proposed`).
 		expect(body).toContain("profileMd");
@@ -1563,7 +1564,7 @@ describe("CoauthorCharacterForm", () => {
 		seedReviewing();
 		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, twoHunkProfileActivity());
 
-		const fetchMock = mock((_u: unknown, _i: unknown) =>
+		const fetchMock = mock((_url: RequestInfo | URL, init?: RequestInit) =>
 			Promise.resolve({ ok: true, status: 200, json: async () => ({ character: makeCharacter(), corrections: [] }), text: async () => "" }),
 		);
 		globalThis.fetch = fetchMock as never;
@@ -1579,7 +1580,7 @@ describe("CoauthorCharacterForm", () => {
 		await waitFor(() => {
 			expect(fetchMock).toHaveBeenCalledTimes(1);
 		});
-		const call = fetchMock.mock.calls[0] as unknown as [unknown, RequestInit | undefined];
+		const call = fetchMock.mock.calls[0]!;
 		const body = String(call[1]?.body ?? "");
 		// Everything reverted → canonical personality + scenario; none of the proposed.
 		expect(body).toContain("A reserved arachnid weaver.");

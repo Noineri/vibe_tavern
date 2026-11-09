@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
-import { normalizeInsightsConfig } from "@vibe-tavern/domain";
-import { wireCharacter } from "../../../test/wire-fixtures.js";
+import { brandId, type CharacterId } from "@vibe-tavern/domain";
+import { wireBranch, wireChat, wireChatListItem, wireCharacter, wireMessage } from "../../../test/wire-fixtures.js";
 import { useDomEnv } from "../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 import { installFramerMotionSeam } from "../../../test/framer-motion-seam.js";
@@ -137,25 +137,16 @@ function makeCharacter(): AppCharacter {
 }
 
 function makeMessage(id: string, role: "user" | "assistant", content: string): AppMessage {
-  return {
-    id, role, content,
-    createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z",
-    variants: [], selectedVariantIndex: null, modelId: null,
-  } as unknown as AppMessage;
+  return wireMessage(id, { role, authorType: role, content });
 }
 
 /** One co-author turn: user anchor u1 + two assistant parts (a1, a2). */
 function makeTurnSnapshot(): AppSnapshot {
   return {
-    chats: [{ id: CHAT, title: "Chat 1", characterId: "c1", characterName: "Char c1", subtitle: "", activeBranchLabel: "main", mode: "coauthor", messageCount: 3, updatedAt: "2026-01-01T00:00:00.000Z" }],
+    chats: [wireChatListItem({ id: brandId<ChatId>(CHAT), title: "Chat 1", characterId: brandId<CharacterId>("c1"), characterName: "Char c1", mode: "coauthor", messageCount: 3 })],
     allCharacters: [],
-    activeChat: {
-      id: CHAT,
-      title: "Chat 1",
-      characterId: "c1",
-      insightsConfig: normalizeInsightsConfig({}),
-    } as unknown as AppSnapshot["activeChat"],
-    activeBranch: { id: "b1", chatId: CHAT, label: "main" } as unknown as AppSnapshot["activeBranch"],
+    activeChat: wireChat({ id: brandId<ChatId>(CHAT), title: "Chat 1", characterId: brandId<CharacterId>("c1") }),
+    activeBranch: wireBranch(),
     branches: [],
     messages: [
       makeMessage("u1", "user", "Write the scene"),
@@ -166,7 +157,7 @@ function makeTurnSnapshot(): AppSnapshot {
     promptTrace: null,
     character: makeCharacter(),
     persona: null,
-  } as unknown as AppSnapshot;
+  };
 }
 
 beforeEach(async () => {
