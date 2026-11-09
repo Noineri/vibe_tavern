@@ -25,6 +25,7 @@ import type {
   ProviderModelSettingsRecord,
   ProviderProfileRecord,
 } from "../../api/types.js";
+import { wireProviderProfile } from "../../../test/wire-fixtures.js";
 import type { ProviderProbeResponse } from "@vibe-tavern/domain";
 
 // i18n is NOT mocked: renders mount a real LocaleProvider, so the badge and
@@ -72,26 +73,21 @@ beforeAll(async () => {
   ({ ProviderModal } = await import("./ProviderModal.js"));
 });
 
-function makeProfile(over: Record<string, unknown> = {}): ProviderProfileRecord {
-  return {
+function makeProfile(over: Partial<ProviderProfileRecord> = {}): ProviderProfileRecord {
+  return wireProviderProfile({
     id: "prof1",
     name: "Follow Test Profile",
     providerPreset: "openai",
     endpoint: "https://api.test/v1",
-    apiKey: null,
     hasStoredApiKey: false,
     defaultModel: "m-fav",
-    visionModel: null,
     isActive: true,
     bindPerModel: true,
     samplerSetId: "sset_base",
-    temperature: 0.7,
-    topP: 1, minP: 0, topK: 0, topA: 0, typicalP: null, tfsZ: null,
-    contextBudget: 16000, maxTokens: 4096, pinContextBudget: false,
-    tokenPadding: 0, generationMode: "chat",
-    cachedModels: { models: [] },
+    contextBudget: 16000,
+    cachedModels: { models: [], cachedAt: "2026-01-01T00:00:00.000Z" },
     ...over,
-  } as unknown as ProviderProfileRecord;
+  });
 }
 
 function makeFavorites(ids: string[]): FavoriteProviderModelRecord[] {

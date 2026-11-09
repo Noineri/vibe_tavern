@@ -17,6 +17,7 @@
  * Runner: bun:test with scoped happy-dom.
  */
 import { afterAll, afterEach, describe, it, expect, beforeAll, beforeEach, mock } from "bun:test";
+import { testFetch } from "@vibe-tavern/test-fetch";
 import { wireScript } from "../../../../test/wire-fixtures.js";
 import { useEffect, type ReactNode } from "react";
 import type { AppCharacterEntry, ScriptLinkRecord, ScriptRecord } from "../../../api/types.js";
@@ -278,7 +279,7 @@ const agentModeFetch = mock(async (input: RequestInfo | URL, init?: RequestInit)
 const realFetch = globalThis.fetch;
 
 beforeEach(() => {
-	globalThis.fetch = agentModeFetch as unknown as typeof globalThis.fetch;
+	globalThis.fetch = testFetch(agentModeFetch);
 });
 
 afterEach(() => {

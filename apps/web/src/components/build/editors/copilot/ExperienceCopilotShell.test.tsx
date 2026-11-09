@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, jest, mock } from "bun:test";
-import { wireUiSettings } from "../../../../../test/wire-fixtures.js";
+import { testFetch } from "@vibe-tavern/test-fetch";
+import { wireProviderProfile, wireUiSettings } from "../../../../../test/wire-fixtures.js";
 import type { ReactElement, ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { createInstance } from "i18next";
@@ -18,7 +19,6 @@ import { useAgentTurnStore, type AgentToolActivity } from "../../../../stores/ag
 import { useAgentReviewRoundStore } from "../../../../stores/agent-review-store.js";
 import { useAgentPendingReviewStore } from "../../../../stores/agent-pending-review-store.js";
 import { useBootstrapStore } from "../../../../stores/api-actions/bootstrap-actions.js";
-import type { ProviderProfileRecord } from "../../../../api/types.js";
 
 useDomEnv();
 
@@ -380,7 +380,7 @@ const realFetch = globalThis.fetch;
 const outcomesBeforeShellSuite = useAgentReviewOutcomeStore.getState().outcomesByThread;
 const supersededBeforeShellSuite = useAgentReviewOutcomeStore.getState().supersededByThread;
 beforeAll(async () => {
-  globalThis.fetch = fetchRouter as unknown as typeof globalThis.fetch;
+  globalThis.fetch = testFetch(fetchRouter);
   ({ render, fireEvent, waitFor, act } = await import("@testing-library/react"));
   ({ EditorView } = await import("@codemirror/view"));
   ({ EditorState } = await import("@codemirror/state"));
@@ -426,17 +426,23 @@ function msg(over: Partial<ExperienceCopilotMessageWire> = {}): ExperienceCopilo
 // Two profiles; p1 carries one tool-capable cached model so the REAL
 // `useProviderModels` hook serves the model list from cache (no fetch).
 const PROFILES = [
-  {
+  wireProviderProfile({
     id: "p1",
     name: "OpenAI Pro",
-    cachedModels: { models: [{ id: "m1", label: "Model One", contextLength: 128000, capabilities: { tools: true } }] },
-  },
-  {
+    cachedModels: {
+      models: [{ id: "m1", label: "Model One", contextLength: 128000, capabilities: { tools: true } }],
+      cachedAt: "2026-01-01T00:00:00.000Z",
+    },
+  }),
+  wireProviderProfile({
     id: "p2",
     name: "Anthropic",
-    cachedModels: { models: [{ id: "m2", label: "Model Two", contextLength: 200000, capabilities: { tools: true } }] },
-  },
-] as unknown as ProviderProfileRecord[];
+    cachedModels: {
+      models: [{ id: "m2", label: "Model Two", contextLength: 200000, capabilities: { tools: true } }],
+      cachedAt: "2026-01-01T00:00:00.000Z",
+    },
+  }),
+];
 
 function hasHiddenClass(el: HTMLElement): boolean {
   return el.className.split(/\s+/).includes("hidden");

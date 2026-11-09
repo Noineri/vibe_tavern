@@ -23,7 +23,8 @@
  * Runner: bun:test with scoped happy-dom.
  */
 import { afterAll, beforeAll, beforeEach, describe, it, expect, mock } from "bun:test";
-import { wireScript } from "../../../../test/wire-fixtures.js";
+import { testFetch } from "@vibe-tavern/test-fetch";
+import { wireProviderProfile, wireScript } from "../../../../test/wire-fixtures.js";
 import type { ReactNode } from "react";
 import { createInstance } from "i18next";
 import { I18nextProvider } from "react-i18next";
@@ -34,7 +35,6 @@ import { agentReviewEnvelopeSchema, buildScriptAgentReviewEnvelope, type AgentRe
 import { syncPersistedScriptAgentRound } from "../../../lib/script-agent-draft.js";
 import { isAgentThreadVisible } from "../../../lib/agent-run-visibility.js";
 import type { ScriptLinkRecord, ScriptRecord } from "../../../api/types.js";
-import type { ProviderProfileRecord } from "../../../api/types.js";
 import type { LinkTarget } from "../../shared/LinkBindingPopover.js";
 import type { ScriptAgentHostProps } from "./script-agent-host.js";
 import { useAgentTurnStore } from "../../../stores/agent-turn-store.js";
@@ -251,7 +251,7 @@ const outcomesBeforeSuite = useAgentReviewOutcomeStore.getState().outcomesByThre
 const supersededBeforeSuite = useAgentReviewOutcomeStore.getState().supersededByThread;
 const safetyBeforeSuite = useScriptSafetySettingsStore.getState().suppressImportWarnings;
 beforeAll(async () => {
-  globalThis.fetch = fetchRouter as unknown as typeof globalThis.fetch;
+  globalThis.fetch = testFetch(fetchRouter);
   ({ render, fireEvent, waitFor, act } = await import("@testing-library/react"));
   ({ AgentShell } = await import("../../shared/agent-shell/AgentShell.js"));
   // The script host self-registers (registerAgentHost("script")) as a module
@@ -288,12 +288,15 @@ function thread(id: string, scriptId: string): ExperienceCopilotThreadWire {
 // hook serves the model list from cache (no fetch) — the send path needs a
 // resolved provider + model or it toasts and never streams.
 const PROFILES = [
-  {
+  wireProviderProfile({
     id: "p1",
     name: "OpenAI Pro",
-    cachedModels: { models: [{ id: "m1", label: "Model One", contextLength: 128000, capabilities: { tools: true } }] },
-  },
-] as unknown as ProviderProfileRecord[];
+    cachedModels: {
+      models: [{ id: "m1", label: "Model One", contextLength: 128000, capabilities: { tools: true } }],
+      cachedAt: "2026-01-01T00:00:00.000Z",
+    },
+  }),
+];
 
 const BASE_CODE = "// code buffer\nconst keep = 1;\nconst tail = 2.";
 const PROPOSED_CODE = "// CODE v2\nconst keep = 1;\nconst tail = 22.";
@@ -334,7 +337,7 @@ function makeHostProps(script: ScriptRecord, isMobile: boolean, over: Partial<Sc
 
 beforeEach(() => {
   globalThis.fetch = realFetch;
-  globalThis.fetch = fetchRouter as unknown as typeof globalThis.fetch;
+  globalThis.fetch = testFetch(fetchRouter);
   serverReviews = new Map();
   runningThread = null; runReader = null; runFrames = []; detachedReaders = 0; onActiveRead = undefined;
   mobileOverride = false;
