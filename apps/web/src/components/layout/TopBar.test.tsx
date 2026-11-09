@@ -1,10 +1,11 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import * as Popover from "@radix-ui/react-popover";
-import { CHAT_MODE } from "@vibe-tavern/domain";
+import { brandId, CHAT_MODE } from "@vibe-tavern/domain";
 import type { AgentKindSettingsWire } from "@vibe-tavern/api-contracts";
+import type { ChatBranchId, ChatId } from "@vibe-tavern/domain";
 import { useDomEnv } from "../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
-import { wireUiSettings } from "../../../test/wire-fixtures.js";
+import { wireBranch, wireChat, wireUiSettings } from "../../../test/wire-fixtures.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useSidechatMobileStore } from "../../stores/sidechat-mobile-store.js";
 import { useSidechatOpenStore } from "../../stores/sidechat-open-store.js";
@@ -91,15 +92,22 @@ beforeAll(async () => {
   ({ TopBar } = await import("./TopBar.js"));
 });
 
-// ── Fixtures (the PlayMode.sidechat.test.tsx recipe) ─────────────────────────
+// ── Fixtures (wire factories — the ONE derivation of the snapshot rows;
+//    ids pinned to the values the erased literals carried) ────────────────────
 
 type ActiveChat = NonNullable<ReturnType<typeof useSnapshotStore.getState>["activeChat"]>;
 type ActiveBranch = NonNullable<ReturnType<typeof useSnapshotStore.getState>["activeBranch"]>;
 
-const CHAT_A = { id: "chat-a", mode: "rp" } as unknown as ActiveChat;
-const BRANCH_A = { id: "branch-a", chatId: "chat-a", label: "main" } as unknown as ActiveBranch;
-const CHAT_CO = { id: "chat-co", mode: "coauthor" } as unknown as ActiveChat;
-const BRANCH_CO = { id: "branch-co", chatId: "chat-co", label: "main" } as unknown as ActiveBranch;
+const CHAT_A: ActiveChat = wireChat({ id: brandId<ChatId>("chat-a") });
+const BRANCH_A: ActiveBranch = wireBranch({
+  id: brandId<ChatBranchId>("branch-a"),
+  chatId: brandId<ChatId>("chat-a"),
+});
+const CHAT_CO: ActiveChat = wireChat({ id: brandId<ChatId>("chat-co"), mode: CHAT_MODE.coauthor });
+const BRANCH_CO: ActiveBranch = wireBranch({
+  id: brandId<ChatBranchId>("branch-co"),
+  chatId: brandId<ChatId>("chat-co"),
+});
 
 function kindEntry(kind: string, servesChatModes: string[]): AgentKindSettingsWire {
   return {

@@ -13,13 +13,13 @@
  */
 import { beforeEach, describe, expect, it, mock } from "bun:test";
 import { forwardRef, type ReactNode } from "react";
-import type { ChatId } from "@vibe-tavern/domain";
-import type { AppCharacter, AppSnapshot, PersonaRecord } from "../../../api/types.js";
+import { brandId, type ChatId, type CharacterId } from "@vibe-tavern/domain";
+import type { PersonaRecord } from "../../../api/types.js";
 import type { CharacterImportMobileHandle } from "../../modals/import/CharacterImportMobile.js";
 import type { ChatImportMobileHandle } from "../../modals/import/ChatImportMobile.js";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
-import { wireUiSettings } from "../../../../test/wire-fixtures.js";
+import { wireCharacter, wireChat, wireUiSettings } from "../../../../test/wire-fixtures.js";
 
 useDomEnv({ failOnNetwork: true });
 
@@ -200,9 +200,14 @@ describe("Rail bottom panel — persona row", () => {
 		const chatPersona = makePersona("p9", "Chat Persona");
 		act(() => {
 			useSnapshotStore.setState({
-				character: { id: "c1", name: "Aria" } as unknown as AppCharacter,
+				// Snapshot rows ride the wire factories — the ONE derivation of the
+				// character/active-chat rows (ids pinned to the erased literals').
+				character: wireCharacter({ id: "c1", name: "Aria" }),
 				persona: chatPersona,
-				activeChat: { id: "ch1", characterId: "c1" } as unknown as NonNullable<AppSnapshot["activeChat"]>,
+				activeChat: wireChat({
+					id: brandId<ChatId>("ch1"),
+					characterId: brandId<CharacterId>("c1"),
+				}),
 			});
 		});
 		expect(labelOf(panelRows(openRail())[0])).toBe("Chat Persona");

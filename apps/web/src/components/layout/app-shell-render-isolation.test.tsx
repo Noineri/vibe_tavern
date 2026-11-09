@@ -43,13 +43,14 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import { testFetch } from "@vibe-tavern/test-fetch";
 import type { ReactNode } from "react";
-import { CHAT_MODE } from "@vibe-tavern/domain";
+import { brandId, CHAT_MODE } from "@vibe-tavern/domain";
 import type {
   AgentKindSettingsWire,
   ExperienceCopilotThreadWire,
 } from "@vibe-tavern/api-contracts";
+import type { ChatBranchId, ChatId } from "@vibe-tavern/domain";
 import { useDomEnv } from "../../../test/dom-env.js";
-import { wireUiSettings } from "../../../test/wire-fixtures.js";
+import { wireBranch, wireChat, wireProviderProfile, wireUiSettings } from "../../../test/wire-fixtures.js";
 import type { ProviderProfileRecord } from "../../api/types.js";
 import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
@@ -165,6 +166,8 @@ const fetchRouter = mock(async (input: RequestInfo | URL, init?: RequestInit): P
 });
 
 function chatThread(id: string): ExperienceCopilotThreadWire {
+  // The literal carries every member of the wire schema — the old cast was
+  // noise; the annotation alone types it.
   return {
     id,
     scriptId: null,
@@ -176,26 +179,36 @@ function chatThread(id: string): ExperienceCopilotThreadWire {
     metrics: null,
     contextLinks: [],
     todo: [],
-  } as unknown as ExperienceCopilotThreadWire;
+  };
 }
 
-// ── Store seeding (same fixtures as SidechatPanel.test.tsx) ─────────────────
+// ── Store seeding (same fixtures as SidechatPanel.test.tsx; the snapshot and
+//    provider rows ride the wire factories — the ONE derivation of those
+//    records; ids pinned to the values the erased literals carried) ──────────
 
 type ActiveChat = NonNullable<ReturnType<typeof useSnapshotStore.getState>["activeChat"]>;
 type ActiveBranch = NonNullable<ReturnType<typeof useSnapshotStore.getState>["activeBranch"]>;
 
-const CHAT_A = { id: "chat-a", mode: "rp" } as unknown as ActiveChat;
-const BRANCH_A = { id: "branch-a", chatId: "chat-a", label: "main" } as unknown as ActiveBranch;
+const CHAT_A: ActiveChat = wireChat({ id: brandId<ChatId>("chat-a") });
+const BRANCH_A: ActiveBranch = wireBranch({
+  id: brandId<ChatBranchId>("branch-a"),
+  chatId: brandId<ChatId>("chat-a"),
+});
 
-const PROFILES = [
-  {
+const PROFILES: ProviderProfileRecord[] = [
+  wireProviderProfile({
     id: "p1",
     name: "Active RP provider",
     isActive: true,
     defaultModel: "m1",
-    cachedModels: { models: [{ id: "m1", label: "Model One", contextLength: 128000, capabilities: { tools: true } }] },
-  },
-] as unknown as ProviderProfileRecord[];
+    cachedModels: {
+      models: [{ id: "m1", label: "Model One", contextLength: 128000, capabilities: { tools: true } }],
+      // The erased literal omitted this required member of the cached-models
+      // record; the reader (`profile.cachedModels.models`) never looked at it.
+      cachedAt: "2026-01-01T00:00:00.000Z",
+    },
+  }),
+];
 
 function kindEntry(kind: string, servesChatModes: string[]): AgentKindSettingsWire {
   return {

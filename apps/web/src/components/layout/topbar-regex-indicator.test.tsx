@@ -1,9 +1,13 @@
 import { beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
+import { brandId } from "@vibe-tavern/domain";
+import type { CharacterId, ChatId, RegexPresetId } from "@vibe-tavern/domain";
 import { useDomEnv } from "../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 import { installRadixPopoverSeam } from "../../../test/radix-popover-seam.js";
 import { installSnapshotStoreSeam } from "../../../test/snapshot-store-seam.js";
+import { wireCharacter, wireChat, wireRegexPreset } from "../../../test/wire-fixtures.js";
 import type { ReactNode } from "react";
+import type { RegexPresetRecord } from "../../api/types.js";
 
 useDomEnv();
 const { render } = await import("@testing-library/react");
@@ -64,23 +68,27 @@ installRadixPopoverSeam();
 installSnapshotStoreSeam();
 
 // RX-14 seam under test — what the indicator counts. Overridden per test.
-let mockResolvedPresets: Array<Record<string, unknown>> = [];
+// Typed as the real resolution row so the override needs no cast: the mock's
+// return IS `Awaited<ReturnType<typeof realRegexApi.resolveActiveRegexPresets>>`.
+let mockResolvedPresets: RegexPresetRecord[] = [];
 let mockResolveFails = false;
 mock.module("../../api/regex-api.js", () => ({
   ...realRegexApi,
   resolveActiveRegexPresets: async () => {
     if (mockResolveFails) throw new Error("network down");
-    return mockResolvedPresets as unknown as Awaited<ReturnType<typeof realRegexApi.resolveActiveRegexPresets>>;
+    return mockResolvedPresets;
   },
 }));
 
 beforeAll(() => {
   if (typeof window !== "undefined" && !window.matchMedia) {
-    window.matchMedia = (q: string) => ({
+    // The 7a annotation shape: the shim literal is checked against the real
+    // MediaQueryList type instead of casting the finished object to it.
+    window.matchMedia = (q: string): MediaQueryList => ({
       matches: false, media: q, onchange: null,
       addEventListener: NOOP, removeEventListener: NOOP,
       addListener: NOOP, removeListener: NOOP, dispatchEvent: () => false,
-    }) as unknown as MediaQueryList;
+    });
   }
 });
 
@@ -101,27 +109,10 @@ async function loadModules() {
   return { TopBar, hook };
 }
 
-function wirePreset(overrides: Record<string, unknown> = {}): Record<string, unknown> {
-  return {
-    id: "rx_1",
-    name: "Strip tags",
-    findRegex: "/x/g",
-    replaceString: "y",
-    trimStrings: [],
-    substituteRegex: 0,
-    disabled: false,
-    markdownOnly: false,
-    promptOnly: false,
-    runOnEdit: false,
-    minDepth: null,
-    maxDepth: null,
-    placement: [2],
-    isGlobal: true,
-    sortOrder: 0,
-    createdAt: 0,
-    updatedAt: 0,
-    ...overrides,
-  };
+/** Complete preset rows come from the wire factory (the ONE derivation of the
+ *  RegexPreset wire row); the file only pins the display names. */
+function wirePreset(overrides: Partial<RegexPresetRecord> = {}): RegexPresetRecord {
+  return wireRegexPreset({ name: "Strip tags", ...overrides });
 }
 
 /** Desktop TopBar (isMobile false via matchMedia shim) with the indicator slot. */
@@ -131,48 +122,26 @@ async function mountTopBar() {
   // it the indicator hook has no key and never fetches.
   const { useSnapshotStore } = await import("../../stores/snapshot-store.js");
   const { useChatStore } = await import("../../stores/chat-store.js");
+  // Snapshot rows ride the wire factories — the ONE derivation of the
+  // active-chat/character rows (the erased literal carried partial rows whose
+  // missing fields the compiler never saw; the factories carry production's
+  // persisted defaults instead).
   useSnapshotStore.getState().ingestSnapshot({
     chats: [],
     allCharacters: [],
     messages: [],
     summaries: [],
-    activeChat: {
-      id: "chat-1",
+    activeChat: wireChat({
+      id: brandId<ChatId>("chat-1"),
       title: "Chat 1",
-      characterId: "c1",
-      insightsConfig: { objectiveEnabled: false, trackerEnabled: false },
-    },
-    character: {
-      id: "c1",
+      characterId: brandId<CharacterId>("c1"),
+    }),
+    character: wireCharacter({
+      id: brandId<CharacterId>("c1"),
       name: "Test Char",
-      avatarExt: null,
-      avatarFullExt: null,
-      description: "",
-      scenario: "",
-      systemPrompt: "",
-      subtitle: "",
-      firstMessage: null,
-      mesExample: null,
-      mesExampleMode: "always",
-      mesExampleDepth: 4,
-      alternateGreetings: [],
-      postHistoryInstructions: null,
-      creatorNotes: null,
-      depthPrompt: null,
-      depthPromptDepth: null,
-      depthPromptRole: null,
-      tags: [],
-      avatarAssetId: null,
-      avatarFullAssetId: null,
-      avatarCropJson: null,
-      personalitySummary: null,
-      includeGalleryInPrompt: false,
-      includeAvatarInPrompt: false,
-      avatarDescription: null,
-      updatedAt: "2026-01-01T00:00:00.000Z",
-    },
+    }),
     persona: null,
-  } as unknown as import("../../api/types.js").AppSnapshot);
+  });
   useChatStore.getState().setActiveChatId("chat-1" as import("@vibe-tavern/domain").ChatId);
   const utils = render(<TopBar />);
   // Flush the async preset fetch so the indicator settles.
@@ -183,7 +152,7 @@ async function mountTopBar() {
 
 describe("TopBar — RX-14 global-regex indicator", () => {
   test("renders the enabled count when regex presets are active", async () => {
-    mockResolvedPresets = [wirePreset(), wirePreset({ id: "rx_2", name: "Mood" })];
+    mockResolvedPresets = [wirePreset(), wirePreset({ id: brandId<RegexPresetId>("rx_2"), name: "Mood" })];
     const { container } = await mountTopBar();
     const indicator = container.querySelector("[data-testid='topbar-regex-indicator']");
     expect(indicator).not.toBeNull();

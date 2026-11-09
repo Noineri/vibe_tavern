@@ -19,7 +19,7 @@
 import { describe, it, expect, mock, beforeEach, afterEach } from "bun:test";
 
 import { useDomEnv } from "../../../test/dom-env.js";
-import type { DetachWindow } from "./ExperienceDetachedWindow.js";
+import type { DetachWindow, DetachedExperienceDescriptor } from "./ExperienceDetachedWindow.js";
 import type { ExperienceLoopConfig } from "../../lib/experience-loop-host.js";
 
 useDomEnv();
@@ -145,24 +145,38 @@ const STORE_SESSION = {
   manifest: { name: "Hearts" },
 };
 
-/** A minimal fake opener window with a controllable location + open() result. */
+/** A minimal fake opener window with a controllable location + open() result.
+ *  The literal carries the full {@link DetachWindow} surface, so it types
+ *  directly — no erasure needed. */
 function fakeOpener(props: { pathname?: string; search?: string; open?: Window | null }): DetachWindow {
   return {
     location: { pathname: props.pathname ?? "/app", search: props.search ?? "", hash: "" },
     opener: null,
     // Pass through exactly — `null` means "popup blocked". (Do NOT coalesce,
-    // which would turn null into {}.)
-    open: () => props.open as Window | null,
-  } as unknown as DetachWindow;
+    // which would turn null into {}; an absent prop answers null too, the
+    // same "no window" answer the bridge checks.)
+    open: () => props.open ?? null,
+  };
 }
 
-/** A minimal fake popup window whose `opener` points at the given descriptor. */
+/**
+ * A minimal fake popup window whose `opener` points at the given descriptor.
+ * The parameter is deliberately `unknown`: half the pins below pass MALFORMED
+ * descriptors (missing required fields, junk realtimeConfig) and the function
+ * under test must reject them — the malformed shapes are unrepresentable as
+ * {@link DetachedExperienceDescriptor} on purpose. That makes the one narrowing
+ * here a sanctioned test-value edge: the runtime contract (only the stashed
+ * property is read) is exactly what the bridge does with `window.opener`.
+ */
 function fakePopup(openerDesc?: unknown): DetachWindow {
   return {
-    location: { pathname: "/app", search: "", hash: openerDesc ? "#experience=sess_42" : "" },
-    opener: openerDesc ? ({ __experienceDetachDescriptor: openerDesc } as unknown as DetachWindow["opener"]) : null,
+    location: { pathname: "/app", search: "", hash: openerDesc !== undefined ? "#experience=sess_42" : "" },
+    opener:
+      openerDesc !== undefined
+        ? { __experienceDetachDescriptor: openerDesc as DetachedExperienceDescriptor }
+        : null,
     open: () => null,
-  } as unknown as DetachWindow;
+  };
 }
 
 describe("openExperienceDetachedWindow — mechanism + popup-blocked fallback", () => {
@@ -170,7 +184,7 @@ describe("openExperienceDetachedWindow — mechanism + popup-blocked fallback", 
     let openedUrl = "";
     let openedFeatures = "";
     const handle = {} as Window;
-    const opener = {
+    const opener: DetachWindow = {
       location: { pathname: "/app", search: "?x=1", hash: "" },
       opener: null,
       open: (url?: string, _t?: string, features?: string) => {
@@ -178,7 +192,7 @@ describe("openExperienceDetachedWindow — mechanism + popup-blocked fallback", 
         openedFeatures = features ?? "";
         return handle;
       },
-    } as unknown as DetachWindow;
+    };
 
     const result = openExperienceDetachedWindow(DESCRIPTOR, opener);
 

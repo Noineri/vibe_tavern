@@ -24,14 +24,15 @@
 import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
 
 import type { ReactNode } from "react";
-import { brandId, type ChatBranch, type ChatBranchId, type ChatId } from "@vibe-tavern/domain";
-import type { ChatListItem } from "@vibe-tavern/api-contracts";
+import { brandId, type ChatBranch, type ChatBranchId, type ChatId, type ChatMode, type CharacterId } from "@vibe-tavern/domain";
 import type { ChatControllerActions } from "../../../hooks/use-chat-controller.js";
-import type { CharacterControllerActions } from "../../../hooks/use-character-controller.js";
+import type { CharacterControllerActions, ChatRemovalMode } from "../../../hooks/use-character-controller.js";
 import type { CharacterTab } from "../app-shell-types.js";
 import type { TFn } from "./section-types.js";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
+import { wireChatListItem } from "../../../../test/wire-fixtures.js";
+import { strictTestDouble } from "../../../../test/strict-test-double.js";
 
 useDomEnv();
 
@@ -78,23 +79,48 @@ function branchBadge(container: HTMLElement): HTMLElement | null {
 }
 
 async function renderSc21Flyout(setConfirmDestroy: ReturnType<typeof mock>) {
+  // The flyout's controller props are the full Chat/CharacterControllerActions
+  // interfaces; these SC-21 paths exercise only the branch members below. The
+  // strict double keeps every provided member compiler-checked and makes an
+  // unprovided member a labeled miss instead of a silent `undefined`.
+  const chat = strictTestDouble<ChatControllerActions>(
+    {
+      handleSwitchChat: mock((_id: ChatId) => Promise.resolve()),
+      handleActivateBranch: mock((_id: ChatBranchId) => Promise.resolve()),
+      handleFork: mock((_messageId?: string) => Promise.resolve()),
+      handleDeleteActiveBranch: mock(() => Promise.resolve()),
+      handleRenameBranch: mock((_id: ChatBranchId, _label: string) => Promise.resolve()),
+    },
+    "SidebarFlyout SC-21 chat controller",
+  );
+  const character = strictTestDouble<CharacterControllerActions>(
+    {
+      handleCreateChat: mock((_characterId?: string, _mode?: ChatMode) => Promise.resolve()),
+      // The REAL ChatRemovalMode union: the erased fixture returned a
+      // fixture-invented "keep" no production controller answers; nothing in
+      // this file's asserts reads the member, and "delete" (like "keep")
+      // computes clearsOnRemove === false.
+      getChatRemovalMode: mock((_chatId: ChatId): ChatRemovalMode => "delete"),
+    },
+    "SidebarFlyout SC-21 character controller",
+  );
   const view = render(
     <SidebarFlyout
       flyoutCharId="char-1"
       sidebarCollapsed={true}
       characterTabs={[{ id: "char-1", name: "Aria", subtitle: "", chatId: null, avatarAssetId: null, avatarCropJson: null, avatarExt: null, updatedAt: "" }]}
-      flyoutChats={[{ id: "chat-1", title: "Chat", characterId: "char-1", characterName: "Aria", subtitle: "", activeBranchLabel: "", mode: "rp", messageCount: 1, updatedAt: "" } as unknown as ChatListItem]}
+      flyoutChats={[wireChatListItem({ id: brandId<ChatId>("chat-1"), title: "Chat", characterId: brandId<CharacterId>("char-1"), characterName: "Aria", messageCount: 1 })]}
       chatQuery=""
       setChatQuery={() => {}}
-      activeChatId={"chat-1" as unknown as ChatId}
-      chat={{ handleSwitchChat: mock(), handleActivateBranch: mock(), handleFork: mock(), handleDeleteActiveBranch: mock(), handleRenameBranch: mock() } as unknown as ChatControllerActions}
-      character={{ handleCreateChat: mock(), getChatRemovalMode: mock(() => "keep") } as unknown as CharacterControllerActions}
+      activeChatId={brandId<ChatId>("chat-1")}
+      chat={chat}
+      character={character}
       setConfirmDestroy={setConfirmDestroy}
       branches={[
-        { id: "br-1", chatId: "chat-1", parentBranchId: null, forkedFromMessageId: null, label: "main", createdAt: "", messageCount: 1 },
-        { id: "br-2", chatId: "chat-1", parentBranchId: "br-1", forkedFromMessageId: null, label: "alt", createdAt: "", messageCount: 1 },
-      ] as unknown as ChatBranch[]}
-      activeBranchId={"br-2" as unknown as ChatBranchId}
+        { id: brandId<ChatBranchId>("br-1"), chatId: brandId<ChatId>("chat-1"), parentBranchId: null, forkedFromMessageId: null, label: "main", createdAt: "", messageCount: 1 },
+        { id: brandId<ChatBranchId>("br-2"), chatId: brandId<ChatId>("chat-1"), parentBranchId: brandId<ChatBranchId>("br-1"), forkedFromMessageId: null, label: "alt", createdAt: "", messageCount: 1 },
+      ]}
+      activeBranchId={brandId<ChatBranchId>("br-2")}
       setFlyoutCharId={() => {}}
       flyoutAvatarPos={{ top: 0, bottom: 10 }}
       t={(key: string) => key}
@@ -106,7 +132,7 @@ async function renderSc21Flyout(setConfirmDestroy: ReturnType<typeof mock>) {
 
 async function clickDeleteBranch(view: { baseElement: Element }): Promise<void> {
   const container = view.baseElement as HTMLElement;
-  const badge = branchBadge(container) ?? branchBadge(document.body as unknown as HTMLElement);
+  const badge = branchBadge(container) ?? branchBadge(document.body);
   if (!badge) throw new Error("branch badge missing — Popover.Content did not mount");
   fireEvent.click(badge);
   const root = view.baseElement as HTMLElement;
@@ -157,18 +183,15 @@ const TAB: CharacterTab = {
 	updatedAt: "2026-01-01T00:00:00Z",
 };
 
-const CHAT = {
+const CHAT = wireChatListItem({
 	id: CHAT_1,
 	title: "Moonlit Harbor",
-	characterId: "char-1",
+	characterId: brandId<CharacterId>("char-1"),
 	characterName: "Aria",
-	subtitle: "",
-	activeBranchLabel: "",
-	mode: "rp",
 	messageCount: 5,
 	lastMessageAt: "2026-01-01T00:00:00Z",
 	updatedAt: "2026-01-01T00:00:00Z",
-} as unknown as ChatListItem;
+});
 
 function makeBranch(id: ChatBranchId, label: string, parentBranchId: ChatBranchId | null): ChatBranch {
 	return { id, chatId: CHAT_1, parentBranchId, forkedFromMessageId: null, label, createdAt: "2026-01-01T00:00:00Z", messageCount: 5 } as ChatBranch;
@@ -179,13 +202,26 @@ const t: TFn = (key) => key;
 const TWO_BRANCHES = [makeBranch(BR_ROOT, "main", null), makeBranch(BR_ALT, "alt", BR_ROOT)];
 
 async function renderFlyout(opts: { activeBranchId?: ChatBranchId; branches?: ChatBranch[] } = {}) {
-	const chat = {
-		handleSwitchChat: mock(async (_id: ChatId): Promise<void> => {}),
-		handleActivateBranch: mock(async (_id: ChatBranchId): Promise<void> => {}),
-		handleRenameBranch: mock(async (_id: ChatBranchId, _label: string): Promise<void> => {}),
-		handleFork: mock(async (_messageId?: string): Promise<void> => {}),
-		handleDeleteActiveBranch: mock(async (): Promise<void> => {}),
-	};
+	// The flyout's controller props are the full Chat/CharacterControllerActions
+	// interfaces; these RD-2 paths exercise only the branch/fork members below.
+	// The strict double keeps every provided member compiler-checked and makes
+	// an unprovided member a labeled miss instead of a silent `undefined`.
+	const chat = strictTestDouble<ChatControllerActions>(
+		{
+			handleSwitchChat: mock(async (_id: ChatId): Promise<void> => {}),
+			handleActivateBranch: mock(async (_id: ChatBranchId): Promise<void> => {}),
+			handleRenameBranch: mock(async (_id: ChatBranchId, _label: string): Promise<void> => {}),
+			handleFork: mock(async (_messageId?: string): Promise<void> => {}),
+			handleDeleteActiveBranch: mock(async (): Promise<void> => {}),
+		},
+		"SidebarFlyout RD-2 chat controller",
+	);
+	const character = strictTestDouble<CharacterControllerActions>(
+		{
+			handleCreateChat: mock((_characterId?: string, _mode?: ChatMode): Promise<void> => Promise.resolve()),
+		},
+		"SidebarFlyout RD-2 character controller",
+	);
 	const setConfirmDestroy = mock();
 	// Radix Popper positions asynchronously after mount: render inside an async act so those
 	// state updates settle before the assertions (and do not leak as act warnings).
@@ -200,8 +236,8 @@ async function renderFlyout(opts: { activeBranchId?: ChatBranchId; branches?: Ch
 				chatQuery=""
 				setChatQuery={() => {}}
 				activeChatId={CHAT_1}
-				chat={chat as unknown as ChatControllerActions}
-				character={{ handleCreateChat: mock() } as unknown as CharacterControllerActions}
+				chat={chat}
+				character={character}
 				setConfirmDestroy={setConfirmDestroy}
 				branches={opts.branches ?? TWO_BRANCHES}
 				activeBranchId={opts.activeBranchId ?? BR_ROOT}

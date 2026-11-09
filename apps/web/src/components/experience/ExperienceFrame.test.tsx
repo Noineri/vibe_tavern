@@ -14,7 +14,7 @@
  * lifecycle and can read back the exact document bytes handed to the frame.
  */
 import { describe, it, expect, beforeAll, afterAll, afterEach } from "bun:test";
-import type { Window as HappyWindow } from "happy-dom";
+import type { DetachedWindowAPI } from "happy-dom";
 
 import { createRef } from "react";
 import { useDomEnv } from "../../../test/dom-env.js";
@@ -46,7 +46,13 @@ const createdBlobs: Blob[] = [];
 const revokedUrls: string[] = [];
 const realCreate = URL.createObjectURL;
 const realRevoke = URL.revokeObjectURL;
-const browserSettings = (window as unknown as HappyWindow).happyDOM.settings;
+// The registered global window IS a happy-dom Window (dom-env's
+// GlobalRegistrator installs one), but the DOM-lib `window` type cannot
+// express the `happyDOM` driver surface. Documented test-driver view: the
+// DOM window intersected with the happy-dom API actually installed at
+// runtime — the one narrowing this file needs to reach the settings object.
+type HappyDomGlobalWindow = typeof window & { happyDOM: DetachedWindowAPI };
+const browserSettings = (window as HappyDomGlobalWindow).happyDOM.settings;
 const originalIframeLoading = browserSettings.enableIframePageLoading;
 // CNR-8r: the phone-policy signal is the stylesheet-owned
 // --vt-hide-content-scrollbars root custom property (set only inside the

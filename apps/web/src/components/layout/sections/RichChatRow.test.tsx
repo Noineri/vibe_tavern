@@ -39,10 +39,11 @@ mock.module("../../shared/Tooltip.js", () => ({
   TooltipProvider: ({ children }: { children: ReactNode }) => children,
 }));
 
-import type { ChatListItem } from "@vibe-tavern/api-contracts";
+import { brandId, type ChatBranch, type ChatBranchId, type ChatId, type CharacterId } from "@vibe-tavern/domain";
 import type { ChatControllerActions } from "../../../hooks/use-chat-controller.js";
-import type { CharacterControllerActions } from "../../../hooks/use-character-controller.js";
-import type { ChatBranch, ChatBranchId } from "@vibe-tavern/domain";
+import type { CharacterControllerActions, ChatRemovalMode } from "../../../hooks/use-character-controller.js";
+import { wireChatListItem } from "../../../../test/wire-fixtures.js";
+import { strictTestDouble } from "../../../../test/strict-test-double.js";
 
 const { RichChatRow } = await import("./RichChatRow.js");
 
@@ -72,28 +73,28 @@ afterAll(() => {
   globalThis.fetch = originalFetch;
 });
 
-const chatItem = {
-  id: "chat-1",
+// The sidebar chat-list row rides the wire factory (the ONE derivation of the
+// ChatListItem wire shape) with this file's display pins kept.
+const chatItem = wireChatListItem({
+  id: brandId<ChatId>("chat-1"),
   title: "My Chat",
-  characterId: "char-1",
+  characterId: brandId<CharacterId>("char-1"),
   characterName: "Aria",
-  subtitle: "",
-  activeBranchLabel: "",
-  mode: "rp" as const,
   messageCount: 5,
-  updatedAt: "2026-01-01T00:00:00Z",
-} as unknown as ChatListItem;
+});
 
 function makeBranch(id: string, label: string, parent: string | null, count: number): ChatBranch {
+  // Complete ChatBranch literal — the row's `messageCount` is read by the
+  // popover body, so it stays a real member, not a completed default.
   return {
-    id,
-    chatId: "chat-1",
-    parentBranchId: parent,
+    id: brandId<ChatBranchId>(id),
+    chatId: brandId<ChatId>("chat-1"),
+    parentBranchId: parent === null ? null : brandId<ChatBranchId>(parent),
     forkedFromMessageId: null,
     label,
     createdAt: "2026-01-01T00:00:00Z",
     messageCount: count,
-  } as unknown as ChatBranch;
+  };
 }
 
 const TWO_BRANCHES = [
@@ -101,20 +102,34 @@ const TWO_BRANCHES = [
   makeBranch("br-2", "alt", "br-1", 2),
 ];
 
-function renderRow(opts: { isActive?: boolean; activeBranchId?: string; branches?: ChatBranch[]; removalMode?: "keep" | "clear" } = {}) {
-  const chat = {
-    handleSwitchChat: mock(),
-    handleActivateBranch: mock(),
-    handleRenameBranch: mock(),
-    handleFork: mock(),
-    handleDeleteActiveBranch: mock(),
-  };
-  const character = {
-    getChatRemovalMode: mock(() => opts.removalMode ?? "keep"),
-    handleRenameChat: mock(),
-    handleExportChatJsonl: mock(),
-    handleRemoveChat: mock(),
-  };
+// removalMode rides the REAL ChatRemovalMode union ("delete" | "clear"): the
+// erased fixture returned a fixture-invented "keep" the production controller
+// never answers. On every asserted path "delete" is observably identical to
+// "keep" (the row only checks `chatRemovalMode === "clear"`).
+function renderRow(opts: { isActive?: boolean; activeBranchId?: string; branches?: ChatBranch[]; removalMode?: ChatRemovalMode } = {}) {
+  // The row's controller props are the full Chat/CharacterControllerActions
+  // interfaces; this file exercises only the branch/chat-list members below.
+  // The strict double keeps every provided member compiler-checked and makes
+  // an unprovided member a labeled miss instead of a silent `undefined`.
+  const chat = strictTestDouble<ChatControllerActions>(
+    {
+      handleSwitchChat: mock((_chatId: ChatId) => Promise.resolve()),
+      handleActivateBranch: mock((_branchId: ChatBranchId) => Promise.resolve()),
+      handleRenameBranch: mock((_branchId: ChatBranchId, _label: string) => Promise.resolve()),
+      handleFork: mock((_messageId?: string) => Promise.resolve()),
+      handleDeleteActiveBranch: mock(() => Promise.resolve()),
+    },
+    "RichChatRow chat controller",
+  );
+  const character = strictTestDouble<CharacterControllerActions>(
+    {
+      getChatRemovalMode: mock((_chatId: ChatId): ChatRemovalMode => opts.removalMode ?? "delete"),
+      handleRenameChat: mock((_chatId: ChatId, _title: string) => Promise.resolve()),
+      handleExportChatJsonl: mock((_chatId: ChatId) => Promise.resolve()),
+      handleRemoveChat: mock((_chatId: ChatId) => Promise.resolve()),
+    },
+    "RichChatRow character controller",
+  );
   const setConfirmDestroy = mock();
   const result = render(
     <RichChatRow
@@ -122,8 +137,8 @@ function renderRow(opts: { isActive?: boolean; activeBranchId?: string; branches
       isActive={opts.isActive ?? true}
       branches={opts.branches ?? TWO_BRANCHES}
       activeBranchId={(opts.activeBranchId ?? "br-1") as ChatBranchId}
-      chat={chat as unknown as ChatControllerActions}
-      character={character as unknown as CharacterControllerActions}
+      chat={chat}
+      character={character}
       setConfirmDestroy={setConfirmDestroy}
     />,
   );

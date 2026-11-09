@@ -1,4 +1,4 @@
-import { describe, expect, test, mock, beforeEach } from "bun:test";
+import { describe, expect, test, mock, beforeEach, afterAll } from "bun:test";
 import React from "react";
 import { useDomEnv } from "../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
@@ -27,7 +27,12 @@ mock.module("../../lib/tts/voice-map-data.js", () => ({
 
 const { render, cleanup, fireEvent } = await import("@testing-library/react");
 const Tooltip = await import("@radix-ui/react-tooltip");
-const TooltipProvider = (Tooltip as unknown as { Provider: React.ComponentType<{ children: React.ReactNode }> }).Provider ?? (Tooltip as unknown as { TooltipProvider: React.ComponentType<{ children: React.ReactNode }> }).TooltipProvider ?? (({ children }: { children: React.ReactNode }) => React.createElement(React.Fragment, null, children));
+// @radix-ui/react-tooltip@1.4.1 exports Provider as a TYPED ALIAS of
+// TooltipProvider (dist/index.d.ts: `export { ..., TooltipProvider as Provider,
+// ..., TooltipProvider, ... }`), so the old
+// `Provider ?? TooltipProvider ?? passthrough` probe with its per-arm double
+// casts was dead defensive code — the real export typechecks directly.
+const TooltipProvider = Tooltip.Provider;
 const Popover = await import("@radix-ui/react-popover");
 const { TopBar } = await import("./TopBar.js");
 const { useTtsPlaybackStore } = await import("../../stores/tts-playback-store.js");
@@ -35,19 +40,33 @@ const { useTtsPlaybackStore } = await import("../../stores/tts-playback-store.js
 function renderWithTooltip(ui: React.ReactElement) {
   return render(
     React.createElement(
-      TooltipProvider as never,
+      TooltipProvider,
       null,
-      React.createElement((Popover as unknown as { Root: React.ComponentType<{ children: React.ReactNode }> }).Root as never, null, ui),
+      React.createElement(Popover.Root, null, ui),
     ),
   );
 }
 
+// Prevent TopBar's provider/preset hooks from fetching with null baseUrl in
+// happy-dom. Typed against the real fetch surface (the required `preconnect`
+// member rides along from the captured original — the whisper-worker shape),
+// so no erasure is needed on the install.
+const realFetch = globalThis.fetch;
+
 beforeEach(() => {
   useTtsPlaybackStore.setState({ autoNarrate: false, narrations: {}, rate: 1 });
   currentData = null;
-  // Prevent TopBar's provider/preset hooks from fetching with null baseUrl in happy-dom
-  (globalThis as unknown as { fetch: unknown }).fetch = mock(async () => new Response(JSON.stringify([]), { status: 200, headers: { "Content-Type": "application/json" } })) as never;
+  globalThis.fetch = Object.assign(
+    mock(async () => new Response(JSON.stringify([]), { status: 200, headers: { "Content-Type": "application/json" } })),
+    { preconnect: realFetch.preconnect },
+  );
   cleanup();
+});
+
+afterAll(() => {
+  // R3: the fetch double is restored after the last test — the captured
+  // original (dom-env's network guard) is the process-wide state again.
+  globalThis.fetch = realFetch;
 });
 
 describe("TopBar auto-narrate toggle", () => {

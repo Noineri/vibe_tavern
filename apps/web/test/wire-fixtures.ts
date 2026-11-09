@@ -15,9 +15,9 @@
  * callers override with their own `brandId<…>` values when a pin needs a
  * specific id.
  */
-import { brandId, normalizeAutoSummaryConfig, normalizeInsightsConfig, normalizeObjectiveState } from "@vibe-tavern/domain";
-import type { Attachment, ChatBranch, ChatBranchId, CharacterId, ChatId, MessageId, MessageVariantId, PromptPresetDto } from "@vibe-tavern/domain";
-import type { AppCharacter, AppMessage, AppSnapshot, ChatListItem, LoreEntryRecord, LorebookRecord, PersonaRecord, ProviderProfileRecord, ScriptRecord, UiSettingsRecord } from "../src/api/types.js";
+import { brandId, normalizeAutoSummaryConfig, normalizeInsightsConfig, normalizeObjectiveState, REGEX_PLACEMENT, REGEX_SUBSTITUTE } from "@vibe-tavern/domain";
+import type { Attachment, ChatBranch, ChatBranchId, CharacterId, ChatId, MessageId, MessageVariantId, PromptPresetDto, RegexPresetId } from "@vibe-tavern/domain";
+import type { AppCharacter, AppMessage, AppSnapshot, ChatListItem, LoreEntryRecord, LorebookRecord, PersonaRecord, ProviderProfileRecord, RegexPresetRecord, ScriptRecord, UiSettingsRecord } from "../src/api/types.js";
 import type { TtsProfileRecord } from "../src/api/tts-api.js";
 
 const EPOCH = "2026-01-01T00:00:00.000Z";
@@ -187,6 +187,33 @@ export function wireTtsProfile(overrides: Partial<TtsProfileRecord> = {}): TtsPr
 		lang: "en",
 		sortOrder: 0,
 		isDefault: false,
+		createdAt: EPOCH,
+		updatedAt: EPOCH,
+		...overrides,
+	};
+}
+
+/** Complete regex-preset row (the domain `RegexPreset`, regex-api.ts wire
+ *  shape): a global ST-parity rule with no profile binding and the placement
+ *  the indicator pins exercise — override what the pin needs. */
+export function wireRegexPreset(overrides: Partial<RegexPresetRecord> = {}): RegexPresetRecord {
+	return {
+		id: brandId<RegexPresetId>("rx_1"),
+		name: "Preset",
+		findRegex: "/x/g",
+		replaceString: "y",
+		trimStrings: [],
+		substituteRegex: REGEX_SUBSTITUTE.None,
+		disabled: false,
+		markdownOnly: false,
+		promptOnly: false,
+		runOnEdit: false,
+		minDepth: null,
+		maxDepth: null,
+		placement: [REGEX_PLACEMENT.AiOutput],
+		isGlobal: true,
+		sortOrder: 0,
+		profileId: null,
 		createdAt: EPOCH,
 		updatedAt: EPOCH,
 		...overrides,

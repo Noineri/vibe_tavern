@@ -92,6 +92,7 @@ mock.module("./ExperienceFrame.js", () => ({
 
 const { ExperienceModal } = await import("./ExperienceModal.js");
 import type { ExperienceActionOutcome } from "./ExperienceModal.js";
+import type { ExperienceActionDto } from "@vibe-tavern/api-contracts";
 
 const VISUAL = "<div id=\"g\">play</div>";
 
@@ -317,7 +318,11 @@ describe("ExperienceModal — session preservation on close", () => {
 describe("ExperienceModal — async action-outcome contract (seam #3)", () => {
   it("accepts an async onAction returning the outcome contract and renders", async () => {
     installUrlSpy();
-    const actionHandler = mock((_action: { requestId: string }) =>
+    // Typed by the REAL prop contract (`onAction: (action: ExperienceActionDto)
+    // => Promise<ExperienceActionOutcome>`) so the mock is directly assignable
+    // — the old cast targeted a `{ requestId }` param shape the component never
+    // declares, hiding the bare-Mock erasure twice over.
+    const actionHandler = mock((_action: ExperienceActionDto) =>
       Promise.resolve<ExperienceActionOutcome>({
         ok: true,
         revision: 7,
@@ -334,7 +339,7 @@ describe("ExperienceModal — async action-outcome contract (seam #3)", () => {
         sessionId="sess_1"
         initialRevision={5}
         view={{ state: {}, actions: [], revision: 5, status: "active" }}
-        onAction={actionHandler as unknown as (a: { requestId: string }) => Promise<ExperienceActionOutcome>}
+        onAction={actionHandler}
       />,
     );
     // The modal mounts with the async contract + authoritative view; the

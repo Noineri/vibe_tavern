@@ -32,6 +32,7 @@ import type { CharacterChatsSheetProps } from "./CharacterChatsSheet.js";
 import { formatRelativeTime, formatShortDate } from "../sidebar-utils.js";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
+import { strictTestDouble } from "../../../../test/strict-test-double.js";
 
 useDomEnv();
 
@@ -126,12 +127,19 @@ interface RenderOptions extends Partial<CharacterChatsSheetProps> {
 
 function renderSheet(opts: RenderOptions = {}) {
 	const { removalMode = "delete", ...props } = opts;
-	const character = {
-		handleRenameChat: mock(async (_chatId: ChatId, _title: string): Promise<void> => {}),
-		handleExportChatJsonl: mock(async (_chatId: ChatId): Promise<void> => {}),
-		handleRemoveChat: mock(async (_chatId: ChatId): Promise<void> => {}),
-		getChatRemovalMode: mock((_chatId: ChatId) => removalMode),
-	};
+	// The sheet's controller prop is the full 30-member CharacterControllerActions;
+	// this file exercises only the chat-list members below. The strict double
+	// keeps every provided member compiler-checked and makes an unprovided
+	// member a labeled miss instead of a silent `undefined` — no erasure.
+	const character = strictTestDouble<CharacterControllerActions>(
+		{
+			handleRenameChat: mock(async (_chatId: ChatId, _title: string): Promise<void> => {}),
+			handleExportChatJsonl: mock(async (_chatId: ChatId): Promise<void> => {}),
+			handleRemoveChat: mock(async (_chatId: ChatId): Promise<void> => {}),
+			getChatRemovalMode: mock((_chatId: ChatId) => removalMode),
+		},
+		"character-chats-panel character controller",
+	);
 	const chat = {
 		handleFork: mock(async (_messageId?: string): Promise<void> => {}),
 		handleDeleteActiveBranch: mock(async (): Promise<void> => {}),
@@ -153,7 +161,7 @@ function renderSheet(opts: RenderOptions = {}) {
 			withBranches={true}
 			emptyTitleKey="sidebar_send_a_message"
 			mode="rp"
-			character={character as unknown as CharacterControllerActions}
+			character={character}
 			chat={chat}
 			setConfirmDestroy={setConfirmDestroy}
 			openChatImport={openChatImport}
