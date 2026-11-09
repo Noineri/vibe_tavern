@@ -3,12 +3,30 @@
  * records from `src/api/types.ts`, so a field the server adds to a response
  * breaks this file once instead of every fixture. Spread a factory first, then
  * override only what the test pins.
+ *
+ * Session-side factories (step 7a of TYPE_SAFETY_CAST_DEBT_REPORT — the chat
+ * message cluster): the defaults mirror the wire funnels a real snapshot
+ * passes through — `mapChatDto` / `mapMessageDto` (services/api/src/runtime/
+ * session/session-runtime-dto.ts) for the row shapes, and the domain's own
+ * persisted-column normalizers (`normalizeAutoSummaryConfig`,
+ * `normalizeInsightsConfig`, `normalizeObjectiveState`) for the JSON columns,
+ * so a fixture carries the same defaults production writes. Branded ids are
+ * minted here at the fixture edge via `brandId` (the sanctioned boundary);
+ * callers override with their own `brandId<…>` values when a pin needs a
+ * specific id.
  */
-import type { AppCharacter, LoreEntryRecord, LorebookRecord, ProviderProfileRecord, ScriptRecord, UiSettingsRecord } from "../src/api/types.js";
+import { brandId, normalizeAutoSummaryConfig, normalizeInsightsConfig, normalizeObjectiveState } from "@vibe-tavern/domain";
+import type { ChatBranch, ChatBranchId, CharacterId, ChatId, MessageId, MessageVariantId } from "@vibe-tavern/domain";
+import type { AppCharacter, AppMessage, AppSnapshot, ChatListItem, LoreEntryRecord, LorebookRecord, PersonaRecord, ProviderProfileRecord, ScriptRecord, UiSettingsRecord } from "../src/api/types.js";
 
 const EPOCH = "2026-01-01T00:00:00.000Z";
 
-export function wireCharacter(): AppCharacter {
+/** The active-chat wire row (`mapChatDto` shape) — AppSnapshot's fields are Partial. */
+type AppChatDto = NonNullable<AppSnapshot["activeChat"]>;
+/** The wire message variant (`mapMessageDto` shape with its TC-4 count). */
+type AppMessageVariant = AppMessage["variants"][number];
+
+export function wireCharacter(overrides: Partial<AppCharacter> = {}): AppCharacter {
 	return {
 		id: "char-1",
 		name: "Character",
@@ -40,6 +58,7 @@ export function wireCharacter(): AppCharacter {
 		avatarDescription: null,
 		includeAvatarInPrompt: false,
 		includeGalleryInPrompt: false,
+		...overrides,
 	};
 }
 
@@ -244,5 +263,132 @@ export function wireLoreEntry(): LoreEntryRecord {
 		metadata: {},
 		createdAt: EPOCH,
 		updatedAt: EPOCH,
+	};
+}
+
+// ─── Session snapshot elements (step 7a) ──────────────────────────────
+
+/** Complete `PersonaRecord` — the wire persona row (wire-types.ts). */
+export function wirePersona(overrides: Partial<PersonaRecord> = {}): PersonaRecord {
+	return {
+		id: "persona-1",
+		name: "Persona",
+		description: "",
+		pronouns: null,
+		pronounForms: null,
+		avatarAssetId: null,
+		avatarFullAssetId: null,
+		avatarCropJson: null,
+		avatarExt: null,
+		avatarFullExt: null,
+		defaultForNewChats: false,
+		avatarDescription: null,
+		includeAvatarInPrompt: false,
+		updatedAt: EPOCH,
+		...overrides,
+	};
+}
+
+/** Complete sidebar `ChatListItem` (wire-types.ts) — `lastMessageAt` included
+ *  (drives the sidebar's "recent" sort; unread by the chat-surface pins). */
+export function wireChatListItem(overrides: Partial<ChatListItem> = {}): ChatListItem {
+	return {
+		id: brandId<ChatId>("chat-1"),
+		title: "Chat",
+		characterId: brandId<CharacterId>("c1"),
+		characterName: "Character",
+		subtitle: "",
+		activeBranchLabel: "main",
+		mode: "rp",
+		messageCount: 0,
+		lastMessageAt: EPOCH,
+		updatedAt: EPOCH,
+		...overrides,
+	};
+}
+
+/** Complete `ChatBranch` (domain entity) — `b1` on `chat-1`, matching the
+ *  session fixtures' default chat/branch pair. */
+export function wireBranch(overrides: Partial<ChatBranch> = {}): ChatBranch {
+	return {
+		id: brandId<ChatBranchId>("b1"),
+		chatId: brandId<ChatId>("chat-1"),
+		parentBranchId: null,
+		forkedFromMessageId: null,
+		label: "main",
+		createdAt: EPOCH,
+		...overrides,
+	};
+}
+
+/** Complete `ChatDto` (the active-chat row) — JSON columns ride the domain's
+ *  own normalizers so a fixture carries production's persisted defaults. */
+export function wireChat(overrides: Partial<AppChatDto> = {}): AppChatDto {
+	return {
+		id: brandId<ChatId>("chat-1"),
+		characterId: brandId<CharacterId>("c1"),
+		personaId: null,
+		title: "Chat",
+		status: "active",
+		mode: "rp",
+		activeBranchId: brandId<ChatBranchId>("b1"),
+		promptPresetId: null,
+		selectedGreetingIndex: 0,
+		coauthorContextLinks: [],
+		coauthorModuleId: null,
+		dynamicPrompt: "",
+		createdAt: EPOCH,
+		updatedAt: EPOCH,
+		summary: "",
+		messageHistoryLimit: 0,
+		autoSummaryConfig: normalizeAutoSummaryConfig({}),
+		insightsConfig: normalizeInsightsConfig({}),
+		insightsObjectiveState: normalizeObjectiveState({}),
+		...overrides,
+	};
+}
+
+/** Complete wire variant (`MessageVariantDto`): the required domain members
+ *  plus the TC-4 `tokenCount`. Fixture id convention `${messageId}-v${index}`
+ *  (production variant ids are unspeaking row ids; no pin reads them). */
+export function wireVariant(
+	messageId: string,
+	variantIndex: number,
+	overrides: Partial<AppMessageVariant> = {},
+): AppMessageVariant {
+	return {
+		id: brandId<MessageVariantId>(`${messageId}-v${variantIndex}`),
+		messageId: brandId<MessageId>(messageId),
+		variantIndex,
+		content: "",
+		isSelected: false,
+		finishReason: null,
+		createdAt: EPOCH,
+		tokenCount: 0,
+		...overrides,
+	};
+}
+
+/** Complete wire message (`MessageDto`): the `mapMessageDto` row shape.
+ *  `tokenCount: 0` is the TC-4 travel-with-the-message count — override when
+ *  a pin exercises context counters; the real funnel computes cl100k. */
+export function wireMessage(id: string, overrides: Partial<AppMessage> = {}): AppMessage {
+	return {
+		id: brandId<MessageId>(id),
+		chatId: brandId<ChatId>("chat-1"),
+		branchId: brandId<ChatBranchId>("b1"),
+		role: "assistant",
+		authorType: "assistant",
+		position: 0,
+		content: "",
+		state: "complete",
+		createdAt: EPOCH,
+		updatedAt: EPOCH,
+		variants: [],
+		selectedVariantIndex: null,
+		tokenCount: 0,
+		modelId: null,
+		sceneTracker: null,
+		...overrides,
 	};
 }

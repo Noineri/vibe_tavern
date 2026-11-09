@@ -1,5 +1,7 @@
 /**
  * THE one strict test-double seam (Wave B step 6 — TYPE_SAFETY_CAST_DEBT_REPORT).
+ * forks: 1 — apps/web/test/strict-test-double.ts (the web twin; apps/web cannot
+ * import services/api code, so the seam forked there with headers both ways).
  *
  * A partial DI fixture used to reach its consumer through `as unknown as
  * Store` — the DK-9 erasure class: the cast hid BOTH (a) which members the

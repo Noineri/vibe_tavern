@@ -1,6 +1,7 @@
 import { describe, test, expect, beforeAll, beforeEach, mock } from "bun:test";
-import { normalizeInsightsConfig, normalizeObjectiveState } from "@vibe-tavern/domain";
-import { wireCharacter } from "../../../test/wire-fixtures.js";
+import { brandId } from "@vibe-tavern/domain";
+import type { CharacterId } from "@vibe-tavern/domain";
+import { wireBranch, wireChat, wireChatListItem, wireCharacter, wireMessage, wirePersona, wireVariant } from "../../../test/wire-fixtures.js";
 import { useDomEnv } from "../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 import type { ReactNode } from "react";
@@ -89,12 +90,12 @@ let ChatStoreModule: typeof import("../../stores/chat-store.js");
 beforeAll(async () => {
   if (typeof window !== "undefined") {
     // Mobile viewport: the (max-width: 768px) query must match.
-    window.matchMedia = (q: string) => ({
+    window.matchMedia = (q: string): MediaQueryList => ({
       matches: q === "(max-width: 768px)",
       media: q, onchange: null,
       addEventListener: NOOP, removeEventListener: NOOP,
       addListener: NOOP, removeListener: NOOP, dispatchEvent: () => false,
-    }) as unknown as MediaQueryList;
+    });
     if (typeof (globalThis as { ResizeObserver?: unknown }).ResizeObserver === "undefined") {
       (globalThis as { ResizeObserver?: unknown }).ResizeObserver = class {
         observe() {}
@@ -126,61 +127,56 @@ async function loadModules() {
 // Factories (mirror message-block-isolation.test.tsx conventions).
 // ---------------------------------------------------------------------------
 
-import type { AppCharacter, AppMessage, AppSnapshot, AppPersona } from "../../api/types.js";
-import type { Attachment, ChatId } from "@vibe-tavern/domain";
+import type { AppCharacter, AppMessage, AppSnapshot } from "../../api/types.js";
+import type { Attachment } from "@vibe-tavern/domain";
+import type { ChatId } from "@vibe-tavern/domain";
 
 const asChatId = (id: string): ChatId => id as ChatId;
 
 function makeCharacter(id: string): AppCharacter {
-  return {
-    ...wireCharacter(),
-    id, name: `Char ${id}`, avatarExt: null, avatarFullExt: null, description: "", scenario: "",
-    systemPrompt: "", subtitle: "", firstMessage: null, mesExample: null,
-    mesExampleMode: "always", mesExampleDepth: 4, alternateGreetings: [],
-    postHistoryInstructions: null, creatorNotes: null, depthPrompt: null,
-    depthPromptDepth: null, depthPromptRole: null, tags: [], avatarAssetId: null,
-    avatarFullAssetId: null, avatarCropJson: null, personalitySummary: null,
-    includeGalleryInPrompt: false, includeAvatarInPrompt: false,
-    avatarDescription: null, updatedAt: "2026-01-01T00:00:00.000Z",
-  };
+  return wireCharacter({ id, name: `Char ${id}` });
 }
 
 function makeAssistantMessage(id: string, content = `msg ${id}`): AppMessage {
-  return {
-    id, role: "assistant", content,
-    createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z",
-    variants: [], selectedVariantIndex: null, modelId: null,
-  } as unknown as AppMessage;
+  return wireMessage(id, { content });
 }
 
 /** Assistant message with 3 variants — sentinel counter is "1/3". */
 function makeMultiVariantMessage(id: string): AppMessage {
-  return {
-    id, role: "assistant",
+  return wireMessage(id, {
     content: "variant-0",
-    createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z",
     variants: [
-      { variantIndex: 0, content: "variant-0", reasoning: null, reasoningDurationMs: null, isSelected: true },
-      { variantIndex: 1, content: "variant-1", reasoning: null, reasoningDurationMs: null, isSelected: false },
-      { variantIndex: 2, content: "variant-2", reasoning: null, reasoningDurationMs: null, isSelected: false },
+      wireVariant(id, 0, { content: "variant-0", isSelected: true }),
+      wireVariant(id, 1, { content: "variant-1" }),
+      wireVariant(id, 2, { content: "variant-2" }),
     ],
-    selectedVariantIndex: 0, modelId: null,
-  } as unknown as AppMessage;
+    selectedVariantIndex: 0,
+  });
 }
 
 function seed(messages: AppMessage[]): AppSnapshot {
   return {
-    chats: [{ id: "chat-1", title: "Chat 1", characterId: "c1", characterName: "Char c1", subtitle: "", activeBranchLabel: "main", mode: "rp", messageCount: messages.length, updatedAt: "2026-01-01T00:00:00.000Z" }],
+    chats: [wireChatListItem({
+      id: brandId<ChatId>(CHAT),
+      title: "Chat 1",
+      characterId: brandId<CharacterId>("c1"),
+      characterName: "Char c1",
+      messageCount: messages.length,
+    })],
     allCharacters: [],
-    activeChat: { id: "chat-1", title: "Chat 1", characterId: "c1", insightsConfig: normalizeInsightsConfig({}), insightsObjectiveState: normalizeObjectiveState({}) } as unknown as AppSnapshot["activeChat"],
-    activeBranch: { id: "b1", chatId: "chat-1", label: "main" } as unknown as AppSnapshot["activeBranch"],
+    activeChat: wireChat({
+      id: brandId<ChatId>(CHAT),
+      title: "Chat 1",
+      characterId: brandId<CharacterId>("c1"),
+    }),
+    activeBranch: wireBranch(),
     branches: [],
     messages,
     summaries: [],
     promptTrace: null,
     character: makeCharacter("c1"),
-    persona: { id: "p1", name: "Persona", avatarExt: null, description: "", avatarAssetId: null, avatarCropJson: null } as unknown as AppPersona,
-  } as unknown as AppSnapshot;
+    persona: wirePersona({ id: "p1", name: "Persona" }),
+  };
 }
 
 const CHAT = "chat-1";
@@ -317,18 +313,16 @@ describe("Mobile image-slot carousel — panels carry the image (IG-CF11)", () =
     const row = slotAtt("a-row", "asset-row");
     const v1 = slotAtt("a-1", "asset-1");
     const v2 = slotAtt("a-2", "asset-2");
-    return {
-      id: "m2", role: "assistant", content: "",
-      createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z",
+    return wireMessage("m2", {
       attachments: [v1],
       ...(withRowShadow ? { messageLevelAttachments: [row] } : {}),
       variants: [
-        { variantIndex: 0, content: "", reasoning: null, reasoningDurationMs: null, isSelected: false, attachmentsJson: null },
-        { variantIndex: 1, content: "", reasoning: null, reasoningDurationMs: null, isSelected: true, attachmentsJson: JSON.stringify([v1]) },
-        { variantIndex: 2, content: "", reasoning: null, reasoningDurationMs: null, isSelected: false, attachmentsJson: JSON.stringify([v2]) },
+        wireVariant("m2", 0, { attachmentsJson: null }),
+        wireVariant("m2", 1, { attachmentsJson: JSON.stringify([v1]), isSelected: true }),
+        wireVariant("m2", 2, { attachmentsJson: JSON.stringify([v2]) }),
       ],
-      selectedVariantIndex: 1, modelId: null,
-    } as unknown as AppMessage;
+      selectedVariantIndex: 1,
+    });
   }
 
   function imageSrcs(container: HTMLElement): string[] {
@@ -403,15 +397,13 @@ describe("Mobile image-slot carousel — panels carry the image (IG-CF11)", () =
   test("single-variant slot (no carousel): the standalone grid renders exactly one image", async () => {
     const { MessageBlock, snapshotStore, chatStore } = await loadModules();
     const only = slotAtt("a-row", "asset-row");
-    const slot = {
-      id: "m2", role: "assistant", content: "",
-      createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z",
+    const slot = wireMessage("m2", {
       attachments: [only],
       variants: [
-        { variantIndex: 0, content: "", reasoning: null, reasoningDurationMs: null, isSelected: true, attachmentsJson: null },
+        wireVariant("m2", 0, { attachmentsJson: null, isSelected: true }),
       ],
-      selectedVariantIndex: 0, modelId: null,
-    } as unknown as AppMessage;
+      selectedVariantIndex: 0,
+    });
     snapshotStore.useSnapshotStore.getState().ingestSnapshot(seed([makeAssistantMessage("m1"), slot]));
     chatStore.useChatStore.getState().setActiveChatId(asChatId(CHAT));
 

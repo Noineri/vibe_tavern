@@ -1,5 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
-import { wireCharacter } from "../../../test/wire-fixtures.js";
+import { brandId, normalizeInsightsConfig } from "@vibe-tavern/domain";
+import type { CharacterId, ChatId, RegexPresetId } from "@vibe-tavern/domain";
+import { wireBranch, wireCharacter, wireChat, wireChatListItem, wireMessage, wireVariant } from "../../../test/wire-fixtures.js";
 import { useDomEnv } from "../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 import { installFramerMotionSeam } from "../../../test/framer-motion-seam.js";
@@ -86,24 +88,24 @@ mock.module("../shared/Tooltip.js", () => ({
 installFramerMotionSeam();
 
 // RX-13 seam under test: what the display hook resolves. Overridden per test.
-let mockResolvedPresets: Array<Record<string, unknown>> = [];
+let mockResolvedPresets: Awaited<ReturnType<typeof realRegexApi.resolveActiveRegexPresets>> = [];
 let mockResolveFails = false;
 mock.module("../../api/regex-api.js", () => ({
   ...realRegexApi,
   resolveActiveRegexPresets: async () => {
     if (mockResolveFails) throw new Error("network down");
-    return mockResolvedPresets as unknown as Awaited<ReturnType<typeof realRegexApi.resolveActiveRegexPresets>>;
+    return mockResolvedPresets;
   },
 }));
 
 beforeAll(() => {
   if (typeof window !== "undefined") {
     if (!window.matchMedia) {
-      window.matchMedia = (q: string) => ({
+      window.matchMedia = (q: string): MediaQueryList => ({
         matches: false, media: q, onchange: null,
         addEventListener: NOOP, removeEventListener: NOOP,
         addListener: NOOP, removeListener: NOOP, dispatchEvent: () => false,
-      }) as unknown as MediaQueryList;
+      });
     }
     if (typeof (globalThis as { ResizeObserver?: unknown }).ResizeObserver === "undefined") {
       (globalThis as { ResizeObserver?: unknown }).ResizeObserver = class {
@@ -141,56 +143,50 @@ beforeEach(async () => {
   hook.invalidateActiveRegexPresets();
 });
 
-import type { AppCharacter, AppMessage, AppSnapshot } from "../../api/types.js";
-import type { ChatId } from "@vibe-tavern/domain";
+import type { AppCharacter, AppMessage, AppSnapshot, RegexPresetRecord } from "../../api/types.js";
 
 const CHAT = "chat-1" as ChatId;
 function makeCharacter(id: string): AppCharacter {
-  return {
-    ...wireCharacter(),
-    id, name: `Char ${id}`, avatarExt: null, avatarFullExt: null, description: "", scenario: "",
-    systemPrompt: "", subtitle: "", firstMessage: null, mesExample: null,
-    mesExampleMode: "always", mesExampleDepth: 4, alternateGreetings: [],
-    postHistoryInstructions: null, creatorNotes: null, depthPrompt: null,
-    depthPromptDepth: null, depthPromptRole: null, tags: [], avatarAssetId: null,
-    avatarFullAssetId: null, avatarCropJson: null, personalitySummary: null,
-    includeGalleryInPrompt: false, includeAvatarInPrompt: false,
-    avatarDescription: null, updatedAt: "2026-01-01T00:00:00.000Z",
-  };
+  return wireCharacter({ id, name: `Char ${id}` });
 }
 
 function makeAssistantMessage(id: string, content: string): AppMessage {
-  return {
-    id, role: "assistant", content,
-    createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z",
-    variants: [], selectedVariantIndex: null, modelId: null,
-  } as unknown as AppMessage;
+  return wireMessage(id, { content });
 }
 
 function seed(messages: AppMessage[]): AppSnapshot {
   return {
-    chats: [{ id: "chat-1", title: "Chat 1", characterId: "c1", characterName: "Char c1", subtitle: "", activeBranchLabel: "main", mode: "rp", messageCount: messages.length, updatedAt: "2026-01-01T00:00:00.000Z" }],
-    allCharacters: [],
-    activeChat: {
-      id: "chat-1",
+    chats: [wireChatListItem({
+      id: brandId<ChatId>("chat-1"),
       title: "Chat 1",
-      characterId: "c1",
-      insightsConfig: { objectiveEnabled: false, trackerEnabled: false },
-    } as unknown as AppSnapshot["activeChat"],
-    activeBranch: { id: "b1", chatId: "chat-1", label: "main" } as unknown as AppSnapshot["activeBranch"],
+      characterId: brandId<CharacterId>("c1"),
+      characterName: "Char c1",
+      messageCount: messages.length,
+    })],
+    allCharacters: [],
+    activeChat: wireChat({
+      id: brandId<ChatId>("chat-1"),
+      title: "Chat 1",
+      characterId: brandId<CharacterId>("c1"),
+      insightsConfig: normalizeInsightsConfig({ objectiveEnabled: false, trackerEnabled: false }),
+    }),
+    activeBranch: wireBranch(),
     branches: [],
     messages,
     summaries: [],
     promptTrace: null,
     character: makeCharacter("c1"),
     persona: null,
-  } as unknown as AppSnapshot;
+  };
 }
 
-/** Wire-format preset record as /api/regex/resolve-active returns it. */
-function wirePreset(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+/** Wire-format preset record as /api/regex/resolve-active returns it.
+ *  Completions the erasure hid: `profileId` (required), ISO-string timestamps
+ *  (the erased `createdAt: 0 / updatedAt: 0` numbers were invalid for the
+ *  wire's `Timestamp = string`). */
+function wirePreset(overrides: Partial<RegexPresetRecord> = {}): RegexPresetRecord {
   return {
-    id: "rx_1",
+    id: brandId<RegexPresetId>("rx_1"),
     name: "test",
     findRegex: "/secret/g",
     replaceString: "[redacted]",
@@ -205,8 +201,9 @@ function wirePreset(overrides: Record<string, unknown> = {}): Record<string, unk
     placement: [2],
     isGlobal: true,
     sortOrder: 0,
-    createdAt: 0,
-    updatedAt: 0,
+    profileId: null,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
     ...overrides,
   };
 }
@@ -236,14 +233,12 @@ describe("MessageBlock — RX-13 display regex seam", () => {
     });
     mockResolvedPresets = [wirePreset({ markdownOnly: true, replaceString: "{{char}} revealed" })];
     const mods = await loadModules();
-    const message = {
-      ...makeAssistantMessage("m1", "secret current"),
+    const message = wireMessage("m1", {
+      content: "secret current",
       selectedVariantIndex: 1,
-      variants: ["secret before", "secret current", "secret after"].map((content, variantIndex) => ({
-        id: `v-${variantIndex}`, variantIndex, content, isSelected: variantIndex === 1,
-        reasoning: null, reasoningDurationMs: null,
-      })),
-    } as unknown as AppMessage;
+      variants: ["secret before", "secret current", "secret after"].map((content, variantIndex) =>
+        wireVariant("m1", variantIndex, { content, isSelected: variantIndex === 1 })),
+    });
     mods.snapshotStore.useSnapshotStore.getState().ingestSnapshot(seed([message]));
     mods.chatStore.useChatStore.getState().setActiveChatId(CHAT);
     const view = render(<mods.MessageBlock messageId="m1" index={0} isFirstAssistant={false} isLast prevRole={null} />);

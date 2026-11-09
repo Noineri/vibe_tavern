@@ -37,7 +37,11 @@ mock.module("../../hooks/use-mobile.js", () => ({
 const { MessageShell } = await import("./MessageShell.js");
 const { fireEvent, render, cleanup } = await import("@testing-library/react");
 const Tooltip = await import("@radix-ui/react-tooltip");
-const TooltipProvider: React.ComponentType<{ children: React.ReactNode }> = (Tooltip as unknown as { Provider: React.ComponentType<{ children: React.ReactNode }> }).Provider ?? (Tooltip as unknown as { TooltipProvider: React.ComponentType<{ children: React.ReactNode }> }).TooltipProvider ?? (({ children }: { children: React.ReactNode }) => <>{children}</>);
+// @radix-ui/react-tooltip@1.4.1 exports `Provider` as a typed alias of
+// TooltipProvider (index.d.ts:97) — the real export IS the provider, so the
+// old multi-shape probe (Provider ?? TooltipProvider ?? passthrough) was dead
+// defensive code against imagined package shapes. Read the typed export.
+const TooltipProvider = Tooltip.Provider;
 
 type ShellProps = Parameters<typeof MessageShell>[0];
 
