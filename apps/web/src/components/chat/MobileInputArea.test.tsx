@@ -13,7 +13,7 @@ useDomEnv();
 
 // House i18n test pattern via the shared co-load seam: raw keys render as-is;
 // the context-meter pins read the bundled EN templates ("Context: {n}%",
-// "Context") â byte-identical to the previous hand-built values.
+// "Context") — byte-identical to the previous hand-built values.
 installI18nContextSeam({ interpolateKeys: ["context_usage_percent", "context_label"] });
 
 let act: typeof import("@testing-library/react").act;
@@ -192,7 +192,7 @@ describe("MobileInputArea context breakdown (via the model sheet)", () => {
 });
 
 // CNR-7e characterization, written BEFORE the thin-scrollbar opt-in: the
-// hand-rolled mobile growth â content height until 40% of the viewport, the
+// hand-rolled mobile growth — content height until 40% of the viewport, the
 // same node kept across draft changes, clear recomputes the height. The
 // opt-in must not disturb any of it.
 describe("MobileInputArea draft growth (CNR-7e)", () => {
@@ -231,7 +231,7 @@ describe("MobileInputArea draft growth (CNR-7e)", () => {
   });
 
   // New boundary (fails before the CNR-7e opt-in): the textarea IS the thin
-  // scroll-area viewport â no wrapper div, no Content node, native tab stop.
+  // scroll-area viewport — no wrapper div, no Content node, native tab stop.
   it("composes the native textarea as the 3px thin-viewport and mounts the track only on overflow", async () => {
     const view = render(<TooltipProvider><MobileInputArea data={makeData()} /></TooltipProvider>);
     await act(async () => {});
@@ -250,13 +250,13 @@ describe("MobileInputArea draft growth (CNR-7e)", () => {
       expect(el).not.toBeNull();
       return el;
     });
-    // CNR-8b: the 3px is no longer a track class â the thin variant marker on
+    // CNR-8b: the 3px is no longer a track class — the thin variant marker on
     // the ScrollArea root plus the track wiring carry it (styles.css owns the
     // geometry contract, pinned in scroll-area.test.tsx).
     expect(track.closest("[data-scroll-area]")!.getAttribute("data-scroll-area")).toBe("thin");
     expect(track.getAttribute("data-orientation")).toBe("vertical");
     // CNR-8n rider (owner ruling): the composer lane carries the ONE phone
-    // exception marker â its thumb stays visible on phones, everything else
+    // exception marker — its thumb stays visible on phones, everything else
     // hides (styles.css selector pinned in auto-textarea.test.tsx).
     expect(track.closest("[data-scroll-area]")!.hasAttribute("data-scroll-composer")).toBe(true);
     expect(textbox(view)).toBe(ta);

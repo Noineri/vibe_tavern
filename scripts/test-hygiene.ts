@@ -95,7 +95,11 @@ export const BUDGETS = {
 	// number contradicts the ratchet's direction. The worker's packet barred
 	// budget edits, so the supervisor locks the lower budget in the immediate
 	// follow-up commit.
-	asNever: 1240,
+	// 1238 (2026-11-09, TYPE-SAFETY sweep 7b): 2 `as never` sites died WITH
+	// their erased seed-tracker literals (message-edit-coordination +
+	// scene-zone — normalizeInsightsConfig accepts the literal cast-free);
+	// same law, same supervisor follow-up commit.
+	asNever: 1238,
 	/** Global `screen.` usage in apps/web test files (binds at import time). */
 	// 196 (2026-10-04): ratcheted to the merged tree's count after PR #51
 	// (provider-lists unification removed the forked pickers' screen usage;
