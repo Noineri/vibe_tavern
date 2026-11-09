@@ -53,6 +53,19 @@ describe("AFP-17 feed feedback", () => {
       const earlier = agentFeedPageFromMessages("T", Array.from({ length: 40 }, (_, i) => page(101 + i).messages[0]!), { head: initial.head }, 101);
       let calls = 0;
       const { view } = mount(async () => ++calls === 1 ? initial : earlier);
+      // AFP-17 (CI_WEB_TIMING_FLAKES_REPORT, run 42580831178): the enabled
+      // click precondition is a TWO-HOP settle — the feed data lands (rows +
+      // button in one commit), then the scroller-element attach re-render
+      // (scroll-area's useImperativeHandle → the core's attachScroller
+      // setState) flips the strip's disabled gate. On a loaded runner the
+      // conjunction of both hops outlived RTL's default 1s waitFor and the
+      // park died with the rows already visible (Expected: false, Received:
+      // true inside checkCallback). Park on the DATA terminal event first,
+      // drain the attach hop with the file's act-flush idiom, and only then
+      // park the unchanged click precondition — each waitFor targets ONE
+      // arrival; no timeout is widened.
+      await waitFor(() => expect(olderButton(view)).toBeDefined());
+      await act(async () => {});
       await waitFor(() => expect((olderButton(view) as HTMLButtonElement).disabled).toBe(false));
       const before = observer.mock.calls.at(-1)![0].firstItemIndex;
       expect(typeof before).toBe("number");
