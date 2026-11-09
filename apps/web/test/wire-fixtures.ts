@@ -174,47 +174,47 @@ export function wireProviderProfile(overrides: Partial<ProviderProfileRecord> = 
 /** Complete TTS profile row (tts-api.ts wire shape): a saved Kokoro row with
  *  a stored key and no provider link — override what the pin exercises. */
 export function wireTtsProfile(overrides: Partial<TtsProfileRecord> = {}): TtsProfileRecord {
-  return {
-    id: "tts-1",
-    name: "Profile",
-    backend: "kokoro",
-    config: {},
-    hasStoredApiKey: true,
-    providerRef: null,
-    autoKeyProviderName: null,
-    voiceId: "",
-    narratorVoiceId: null,
-    lang: "en",
-    sortOrder: 0,
-    isDefault: false,
-    createdAt: EPOCH,
-    updatedAt: EPOCH,
-    ...overrides,
-  };
+	return {
+		id: "tts-1",
+		name: "Profile",
+		backend: "kokoro",
+		config: {},
+		hasStoredApiKey: true,
+		providerRef: null,
+		autoKeyProviderName: null,
+		voiceId: "",
+		narratorVoiceId: null,
+		lang: "en",
+		sortOrder: 0,
+		isDefault: false,
+		createdAt: EPOCH,
+		updatedAt: EPOCH,
+		...overrides,
+	};
 }
 
 export function wireScript(): ScriptRecord {
-  return {
-    id: "script",
-    name: "",
-    description: "",
-    code: "",
-    enabled: true,
-    origin: "in_app",
-    firstEnabledAt: null,
-    scriptKind: "prompt",
-    creationIntentId: null,
-    scopeType: "global",
-    sortOrder: 0,
-    characterId: null,
-    personaId: null,
-    chatId: null,
-    defaultVisualId: null,
-    copilotProfileId: null,
-    extensions: {},
-    createdAt: EPOCH,
-    updatedAt: EPOCH,
-  };
+	return {
+		id: "script",
+		name: "",
+		description: "",
+		code: "",
+		enabled: true,
+		origin: "in_app",
+		firstEnabledAt: null,
+		scriptKind: "prompt",
+		creationIntentId: null,
+		scopeType: "global",
+		sortOrder: 0,
+		characterId: null,
+		personaId: null,
+		chatId: null,
+		defaultVisualId: null,
+		copilotProfileId: null,
+		extensions: {},
+		createdAt: EPOCH,
+		updatedAt: EPOCH,
+	};
 }
 
 export function wireLorebook(): LorebookRecord {
