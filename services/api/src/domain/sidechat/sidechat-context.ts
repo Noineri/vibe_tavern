@@ -464,43 +464,45 @@ async function loadLoreEntries(
  *  limit + the position map for the view's history placeholders). */
 type BranchMessageRow = { id: string; position: number };
 
-/** Resolve selected preset identities to message-owned RP reference views. */
+/** Resolve selected preset identities to message-owned RP reference views.
+ *  The returned snapshots are frozen onto the originating message at send
+ *  time and never re-resolved; later preset edits or deletion cannot rewrite them. */
 export async function resolveSidechatPromptAttachments(
-  deps: SidechatContextDeps,
-  threadId: ExperienceCopilotThreadId,
-  selections: readonly { presetId: string }[],
-  heldLoreEntryIds: ReadonlySet<string>,
+	deps: SidechatContextDeps,
+	threadId: ExperienceCopilotThreadId,
+	selections: readonly { presetId: string }[],
+	heldLoreEntryIds: ReadonlySet<string>,
 ): Promise<PromptAttachment[]> {
-  if (selections.length === 0) return [];
-  const thread = await deps.experienceCopilot.getById(threadId);
-  if (thread === null || !isChatOwnedAgentThread(thread) || thread.branchId === null) {
-    throw new RpSyncThreadNotChatOwnedError(threadId);
-  }
-  const chatId = brandId<ChatId>(thread.chatId);
-  const branchId = brandId<ChatBranchId>(thread.branchId);
-  const branchMessages: readonly BranchMessageRow[] = await deps.messages.getMessages(branchId);
-  const positionByMessageId = new Map(branchMessages.map((message) => [message.id, message.position]));
-  const snapshots: PromptAttachment[] = [];
-  for (const selection of selections) {
-    const preset = await deps.presets.getById(selection.presetId);
-    if (preset === null) continue;
-    const assembled = await deps.assembly.assembleForChat({
-      chatId, branchId, model: "", dryRun: true,
-      recentMessageLimit: branchMessages.length,
-      presetId: brandId<PromptPresetId>(selection.presetId),
-    });
-    const promptText = renderRpPromptView({
-      presetName: preset.name,
-      messages: mapFinalPayloadMessages(assembled.prompt.finalPayload, positionByMessageId, `preset ${selection.presetId} assembly`),
-      layers: assembled.prompt.layers,
-      heldLoreEntryIds,
-    });
-    // Empty payloads have no reference view and therefore no snapshot: the
-    // confirmed indicator must show only material actually included, just as
-    // for a dangling preset. The successful turn still consumes selection.
-    if (promptText !== null) snapshots.push({ presetId: selection.presetId, displayName: preset.name, promptText });
-  }
-  return snapshots;
+	if (selections.length === 0) return [];
+	const thread = await deps.experienceCopilot.getById(threadId);
+	if (thread === null || !isChatOwnedAgentThread(thread) || thread.branchId === null) {
+		throw new RpSyncThreadNotChatOwnedError(threadId);
+	}
+	const chatId = brandId<ChatId>(thread.chatId);
+	const branchId = brandId<ChatBranchId>(thread.branchId);
+	const branchMessages: readonly BranchMessageRow[] = await deps.messages.getMessages(branchId);
+	const positionByMessageId = new Map(branchMessages.map((message) => [message.id, message.position]));
+	const snapshots: PromptAttachment[] = [];
+	for (const selection of selections) {
+		const preset = await deps.presets.getById(selection.presetId);
+		if (preset === null) continue;
+		const assembled = await deps.assembly.assembleForChat({
+			chatId, branchId, model: "", dryRun: true,
+			recentMessageLimit: branchMessages.length,
+			presetId: brandId<PromptPresetId>(selection.presetId),
+		});
+		const promptText = renderRpPromptView({
+			presetName: preset.name,
+			messages: mapFinalPayloadMessages(assembled.prompt.finalPayload, positionByMessageId, `preset ${selection.presetId} assembly`),
+			layers: assembled.prompt.layers,
+			heldLoreEntryIds,
+		});
+		// Empty payloads have no reference view and therefore no snapshot: the
+		// confirmed indicator must show only material actually included, just as
+		// for a dangling preset. The successful turn still consumes selection.
+		if (promptText !== null) snapshots.push({ presetId: selection.presetId, displayName: preset.name, promptText });
+	}
+	return snapshots;
 }
 
 /** Map a frozen final payload (plain JSON — a dry assembly's response or a
