@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, test } from "bun:test";
-import { wireUiSettings, wireCharacter } from "../../../test/wire-fixtures.js";
-import type { ChatId, CharacterId } from "@vibe-tavern/domain";
+import { brandId } from "@vibe-tavern/domain";
+import { wireBranch, wireChat, wireUiSettings, wireCharacter } from "../../../test/wire-fixtures.js";
+import type { ChatBranchId, ChatId, CharacterId, PersonaId } from "@vibe-tavern/domain";
 import type { AppSnapshot } from "../../api/types.js";
 import { useChatStore } from "../chat-store.js";
 import { useSnapshotStore } from "../snapshot-store.js";
@@ -28,28 +29,17 @@ function snapshot(id: string, personaName = "Persona"): AppSnapshot {
       },
     ],
     allCharacters: [],
-    activeChat: {
+    activeChat: wireChat({
       id: typedId,
       title: `Chat ${id}`,
-      characterId: "char-1",
-      personaId: "persona-1",
+      characterId: characterId("char-1"),
+      personaId: brandId<PersonaId>("persona-1"),
       promptPresetId: null,
-      activeBranchId: "branch-1",
-      selectedGreetingIndex: 0,
-      status: "active",
-      createdAt: "2026-01-01T00:00:00.000Z",
-      updatedAt: "2026-01-01T00:00:00.000Z",
-    } as unknown as AppSnapshot["activeChat"],
-    activeBranch: {
-      id: "branch-1",
-      chatId: typedId,
-      label: "main",
-      rootMessageId: null,
-      parentBranchId: null,
-      forkedFromMessageId: null,
-      createdAt: "2026-01-01T00:00:00.000Z",
-      updatedAt: "2026-01-01T00:00:00.000Z",
-    } as unknown as AppSnapshot["activeBranch"],
+      activeBranchId: brandId<ChatBranchId>("branch-1"),
+    }),
+    // `ChatBranch` has no `rootMessageId`/`updatedAt` — those two erased-cast
+    // members were dead on the wire shape and nothing reads them here.
+    activeBranch: wireBranch({ id: brandId<ChatBranchId>("branch-1"), chatId: typedId, label: "main" }),
     branches: [],
     messages: [],
     summaries: [],

@@ -1,19 +1,34 @@
 import { beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
-import type { ChatId } from "@vibe-tavern/domain";
-import type { AppSnapshot } from "../../api/types.js";
+import { brandId } from "@vibe-tavern/domain";
+import type { ChatId, CharacterId } from "@vibe-tavern/domain";
+import type { ImportJsonResponse } from "../../api/types.js";
+import { wireBranch, wireCharacter, wireChat, wireChatListItem } from "../../../test/wire-fixtures.js";
 import { useChatStore } from "../chat-store.js";
 import { useSnapshotStore } from "../snapshot-store.js";
 
-// Mock only `createCharacter` (the RPC); every other character-api export stays
-// real (spread) so unrelated actions in this module are unaffected.
-const createCharacterMock = mock();
-const fetchBootstrapMock = mock(async () => undefined);
-const importJsonMock = mock(async () => ({ } as unknown as Awaited<ReturnType<typeof import("../../api/import-api.js").importJson>>));
-const invalidateActiveRegexPresetsSpy = mock();
 const realCharacterApi = await import("../../api/character-api.js");
 const realBootstrapActions = await import("./bootstrap-actions.js");
 const realActiveRegexPresets = await import("../../hooks/use-active-regex-presets.js");
 const realImportApi = await import("../../api/import-api.js");
+
+/** Complete lean-path `ImportJsonResponse` (ImportResult): `snapshot` omitted
+ *  and `characterId` absent — the shape the lean mass-import path returns, and
+ *  exactly what the erased `{}` mock pretended to be without carrying. */
+function importResult(): ImportJsonResponse {
+	return {
+		activeChatId: brandId<ChatId>("chat-imported"),
+		imported: { kind: "character", name: "Imported", fileName: "card.json", warningCount: 0, warnings: [] },
+	};
+}
+
+// Mock only `createCharacter` (the RPC); every other character-api export stays
+// real (spread) so unrelated actions in this module are unaffected. Each mock
+// wraps the REAL function so stubbed bodies are checked against the real wire
+// signature (the 7f PromptManagerModal idiom).
+const createCharacterMock = mock(realCharacterApi.createCharacter);
+const fetchBootstrapMock = mock(realBootstrapActions.fetchBootstrapAction);
+const importJsonMock = mock(realImportApi.importJson);
+const invalidateActiveRegexPresetsSpy = mock(realActiveRegexPresets.invalidateActiveRegexPresets);
 
 mock.module("../../api/character-api.js", () => ({
 	...realCharacterApi,
@@ -47,26 +62,29 @@ const chatId = (id: string) => id as ChatId;
  * activeChat IS the new chat. `ingestSnapshot`'s absence-pipeline only writes
  * fields that are present, so this partial shape is safe.
  */
-function newChatSnapshot(newChatId: string): AppSnapshot {
+/**
+ * Minimal snapshot for the NEW chat — mirrors the backend `createFromScratch`
+ * return shape (`snapshot = getSnapshot(createdChatId)`), so the snapshot's
+ * activeChat IS the new chat. Typed against the RPC response (no annotation,
+ * so the mock's wire type checks every member); `ingestSnapshot`'s
+ * absence-pipeline only writes fields that are present, and the fresh-scrape
+ * empties match the just-cleared store, so the completions are inert.
+ */
+function newChatSnapshot(newChatId: string) {
 	const id = chatId(newChatId);
+	const newCharacterId = brandId<CharacterId>("char-new");
 	return {
-		chats: [
-			{
-				id,
-				title: "New Chat",
-				characterId: "char-new",
-				characterName: "New",
-				subtitle: "",
-				activeBranchLabel: "main",
-				mode: "rp",
-				messageCount: 0,
-				lastMessageAt: "2026-01-01T00:00:00.000Z",
-				updatedAt: "2026-01-01T00:00:00.000Z",
-			},
-		],
-		activeChat: { id, characterId: "char-new" } as unknown as AppSnapshot["activeChat"],
-		character: { id: "char-new", name: "New" } as unknown as AppSnapshot["character"],
-	} as unknown as AppSnapshot;
+		chats: [wireChatListItem({ id, title: "New Chat", characterId: newCharacterId, characterName: "New" })],
+		allCharacters: [],
+		activeChat: wireChat({ id, title: "New Chat", characterId: newCharacterId }),
+		activeBranch: wireBranch(),
+		branches: [],
+		messages: [],
+		summaries: [],
+		promptTrace: null,
+		character: wireCharacter({ id: "char-new", name: "New" }),
+		persona: null,
+	};
 }
 
 beforeEach(() => {
@@ -74,7 +92,7 @@ beforeEach(() => {
 	fetchBootstrapMock.mockReset();
 	fetchBootstrapMock.mockResolvedValue(undefined);
 	importJsonMock.mockReset();
-	importJsonMock.mockResolvedValue({ } as unknown as Awaited<ReturnType<typeof import("../../api/import-api.js").importJson>>);
+	importJsonMock.mockResolvedValue(importResult());
 	invalidateActiveRegexPresetsSpy.mockReset();
 	useSnapshotStore.getState().clear();
 	useChatStore.getState().setActiveChatId(null);
@@ -86,8 +104,9 @@ describe("createCharacterAction", () => {
 		useChatStore.getState().setActiveChatId(chatId("prior-chat"));
 
 		createCharacterMock.mockResolvedValue({
+			...importResult(),
+			activeChatId: chatId("new-chat"),
 			snapshot: newChatSnapshot("new-chat"),
-			activeChatId: "new-chat",
 		});
 
 		await createCharacterAction({ name: "New" });

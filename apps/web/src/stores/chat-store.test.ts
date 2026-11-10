@@ -14,8 +14,8 @@
  * which is what makes attachment-only sends bind Dice exactly like prose.
  */
 import { beforeEach, describe, expect, test } from "bun:test";
-import { brandId, type DiceRollId, type DiceRollSnapshot } from "@vibe-tavern/domain";
-import type { AppSnapshot } from "../api/types.js";
+import { brandId, normalizeInsightsConfig, type ChatBranchId, type ChatId, type DiceRollId, type DiceRollSnapshot } from "@vibe-tavern/domain";
+import { wireBranch, wireChat } from "../../test/wire-fixtures.js";
 import { useChatStore } from "./chat-store.js";
 import { useSnapshotStore } from "./snapshot-store.js";
 import { useDiceStore } from "./dice-store.js";
@@ -51,16 +51,20 @@ function makeRoll(overrides: Partial<DiceRollSnapshot> = {}): DiceRollSnapshot {
 
 function seedSnapshot(opts: { diceEnabled?: boolean; diceMode?: "normal" | "immersive" } = {}): void {
   useSnapshotStore.setState({
-    activeChat: {
-      id: C1,
-      insightsConfig: {
+    activeChat: wireChat({
+      id: brandId<ChatId>(C1),
+      // The Insights toggles ride the production normalizer so the config
+      // carries the persisted defaults (diceScriptIds/bindings) the erased
+      // cast left undefined — the dice reader reads diceEnabled/diceMode,
+      // both preserved verbatim.
+      insightsConfig: normalizeInsightsConfig({
         objectiveEnabled: false,
         trackerEnabled: false,
         diceEnabled: opts.diceEnabled ?? true,
         diceMode: opts.diceMode ?? "normal",
-      },
-    } as unknown as AppSnapshot["activeChat"],
-    activeBranch: { id: B1, chatId: C1, label: "main" } as unknown as AppSnapshot["activeBranch"],
+      }),
+    }),
+    activeBranch: wireBranch({ id: brandId<ChatBranchId>(B1), chatId: brandId<ChatId>(C1) }),
   });
 }
 

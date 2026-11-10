@@ -16,7 +16,7 @@
  * specific id.
  */
 import { brandId, normalizeAutoSummaryConfig, normalizeInsightsConfig, normalizeObjectiveState, REGEX_PLACEMENT, REGEX_SUBSTITUTE } from "@vibe-tavern/domain";
-import type { Attachment, ChatBranch, ChatBranchId, CharacterId, ChatId, MessageId, MessageVariantId, PromptPresetDto, RegexPresetId } from "@vibe-tavern/domain";
+import type { AssemblePromptResponse, Attachment, ChatBranch, ChatBranchId, CharacterId, ChatId, MessageId, MessageVariantId, PromptPresetDto, RegexPresetId } from "@vibe-tavern/domain";
 import type { AppCharacter, AppMessage, AppSnapshot, ChatListItem, LoreEntryRecord, LorebookRecord, PersonaRecord, ProviderProfileRecord, RegexPresetRecord, ScriptRecord, UiSettingsRecord } from "../src/api/types.js";
 import type { TtsProfileRecord } from "../src/api/tts-api.js";
 
@@ -362,6 +362,22 @@ export function wirePromptPreset(overrides: Partial<PromptPresetDto> = {}): Prom
 		createdAt: EPOCH,
 		updatedAt: EPOCH,
 		...overrides,
+	};
+}
+
+/** Complete `AssemblePromptResponse` (domain api-types.ts): a preview with no
+ *  layers whose token accounting carries only `total` — the one member the
+ *  trace/preview consumers pin. The remaining required members ride as empty
+ *  collections, exactly the shape an empty-context assembly produces; override
+ *  fields a pin exercises. */
+export function wirePromptPreview(tokenTotal: number): AssemblePromptResponse {
+	return {
+		layers: [],
+		tokenAccounting: { total: tokenTotal },
+		activatedLoreEntries: [],
+		scriptInjections: [],
+		retrievedMemories: [],
+		finalPayload: {},
 	};
 }
 

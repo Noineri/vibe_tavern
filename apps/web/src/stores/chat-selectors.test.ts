@@ -11,7 +11,9 @@
  * These tests pin the selection predicate against all three sources.
  */
 import { beforeEach, describe, expect, test } from "bun:test";
-import type { ChatBranchId, ChatId, PromptTraceRecordDto, AssemblePromptResponse } from "@vibe-tavern/domain";
+import { brandId } from "@vibe-tavern/domain";
+import type { ChatBranchId, ChatId, MessageId, PromptTraceRecordDto, AssemblePromptResponse } from "@vibe-tavern/domain";
+import { wirePromptPreview } from "../../test/wire-fixtures.js";
 import { useSnapshotStore } from "./snapshot-store.js";
 import { useTraceHistoryStore, type TraceHistoryEntry } from "./trace-history-store.js";
 import { useContextPreviewStore, type ContextPreviewEntry } from "./context-preview-store.js";
@@ -50,23 +52,25 @@ function makeTrace(id: string, branchId: ChatBranchId, tokenTotal: number): Prom
 		id,
 		chatId,
 		branchId,
-		messageId: "msg-1" as never,
+		messageId: brandId<MessageId>("msg-1"),
 		createdAt: "2026-01-01T00:00:00Z",
 		model: "test-model",
 		presetName: "test-preset",
 		latencyMs: 0,
-		tokenAccounting: { total: tokenTotal } as never,
+		tokenAccounting: { total: tokenTotal },
 		layers: [],
-		finalPayload: null as never,
+		// `finalPayload` is `Record<string, unknown>` — the erased literal's null
+		// was a hidden type lie; nothing in these tests reads it.
+		finalPayload: {},
 		activatedLoreEntries: [],
 		activatedLoreDetail: [],
 		retrievedMemories: [],
 		scriptInjections: [],
-	} as unknown as PromptTraceRecordDto;
+	};
 }
 
-const previewA = { layers: [], tokenAccounting: { total: 50 } } as unknown as AssemblePromptResponse;
-const previewB = { layers: [], tokenAccounting: { total: 10 } } as unknown as AssemblePromptResponse;
+const previewA = wirePromptPreview(50);
+const previewB = wirePromptPreview(10);
 
 /** Seed the trace-history cache with a success entry for (chatId, branchId). */
 function seedTraceCache(branchId: ChatBranchId, traces: PromptTraceRecordDto[]): TraceHistoryEntry {

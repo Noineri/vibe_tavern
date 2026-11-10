@@ -11,7 +11,8 @@
  * mock.module being process-global).
  */
 import { describe, test, expect, beforeEach, mock } from "bun:test";
-import type { PromptTraceRecordDto } from "@vibe-tavern/domain";
+import { brandId } from "@vibe-tavern/domain";
+import type { ChatBranchId, ChatId, MessageId, PromptTraceRecordDto } from "@vibe-tavern/domain";
 
 // Capture the real module before registering the mock, then spread it so every
 // unrelated export remains genuine. `mockFetch` is a plain `let`; tests mutate
@@ -31,11 +32,24 @@ const { useTraceHistoryStore } = await import("./trace-history-store.js");
 
 function makeTrace(id: string, branchId: string): PromptTraceRecordDto {
   return {
-    id, chatId: "chat-1" as never, branchId: branchId as never, messageId: "m" as never,
-    createdAt: "2026-01-01T00:00:00Z", model: "m", presetName: "p", latencyMs: 1,
-    tokenAccounting: { total: 1 } as never, layers: [], finalPayload: null as never,
-    activatedLoreEntries: [], activatedLoreDetail: [], retrievedMemories: [], scriptInjections: [],
-  } as unknown as PromptTraceRecordDto;
+    id,
+    chatId: brandId<ChatId>("chat-1"),
+    branchId: brandId<ChatBranchId>(branchId),
+    messageId: brandId<MessageId>("m"),
+    createdAt: "2026-01-01T00:00:00Z",
+    model: "m",
+    presetName: "p",
+    latencyMs: 1,
+    tokenAccounting: { total: 1 },
+    layers: [],
+    // `finalPayload` is `Record<string, unknown>` — the erased literal's null
+    // was a hidden type lie; nothing in these tests reads it.
+    finalPayload: {},
+    activatedLoreEntries: [],
+    activatedLoreDetail: [],
+    retrievedMemories: [],
+    scriptInjections: [],
+  };
 }
 
 const entry = (branchId: string) =>

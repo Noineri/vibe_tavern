@@ -1,5 +1,7 @@
 import { beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
+import { brandId } from "@vibe-tavern/domain";
 import type { ChatBranchId, ChatId, CharacterId } from "@vibe-tavern/domain";
+import { wireBranch, wireChat, wireMessage } from "../../../test/wire-fixtures.js";
 import type { AppSnapshot, ChatListItem } from "../../api/types.js";
 import { useChatStore } from "../chat-store.js";
 import { useSnapshotStore } from "../snapshot-store.js";
@@ -10,24 +12,26 @@ import { useContextPreviewStore } from "../context-preview-store.js";
 // Mocks for the deleteChatAction tests below. `deleteChat` returns the
 // backend's ChatListResponse ({ chats }); the fire-and-forget bootstrap is
 // stubbed so it can't race the assertion. Other chat-api exports stay real
-// (spread), so the switchModeAction tests in this file are unaffected.
-const deleteChatMock = mock();
-const forkBranchMock = mock();
-const forkBranchSidechatMock = mock();
-const generateObjectiveTasksMock = mock();
-const generateReplyMock = mock();
-const sendChatMessageMock = mock();
-const startCompletionRefreshMock = mock();
-const fetchBootstrapMock = mock(async () => undefined);
+// (spread), so the switchModeAction tests in this file are unaffected. Each
+// mock wraps the REAL function so `mockResolvedValue` bodies are checked
+// against the real wire signature (the 7f PromptManagerModal idiom).
 const realInsightsCompletionActions = await import("./insights-completion-actions.js");
 const realBootstrapActions = await import("./bootstrap-actions.js");
 const realChatApi = await import("../../api/chat-api.js");
 const realAgentChatApi = await import("../../api/agent-chat-api.js");
-
-const updateChatDynamicPromptMock = mock();
-const selectMessageVariantMock = mock();
-const toastErrorMock = mock();
 const realSonner = await import("sonner");
+
+const deleteChatMock = mock(realChatApi.deleteChat);
+const forkBranchMock = mock(realChatApi.forkBranch);
+const forkBranchSidechatMock = mock(realAgentChatApi.forkBranchSidechat);
+const generateObjectiveTasksMock = mock(realChatApi.generateObjectiveTasks);
+const generateReplyMock = mock(realChatApi.generateReply);
+const sendChatMessageMock = mock(realChatApi.sendChatMessage);
+const startCompletionRefreshMock = mock(realInsightsCompletionActions.startInsightsCompletionRefreshFromSnapshot);
+const updateChatDynamicPromptMock = mock(realChatApi.updateChatDynamicPrompt);
+const selectMessageVariantMock = mock(realChatApi.selectMessageVariant);
+const fetchBootstrapMock = mock(realBootstrapActions.fetchBootstrapAction);
+const toastErrorMock = mock(realSonner.toast.error);
 
 mock.module("./insights-completion-actions.js", () => ({
   ...realInsightsCompletionActions,
@@ -97,17 +101,22 @@ function listItem(id: string, mode: "rp" | "coauthor", charId = "char-1", lastMe
  */
 function seed(chats: ChatListItem[], activeId: string | null = null): void {
   const active = activeId ? chats.find((c) => c.id === chatId(activeId)) ?? null : null;
-  const snap = {
+  const snap: AppSnapshot = {
     chats,
     ...(active
-      ? { activeChat: { id: active.id, characterId: active.characterId, mode: active.mode } }
+      ? { activeChat: wireChat({ id: active.id, characterId: active.characterId, mode: active.mode }) }
       : {}),
-  } as unknown as AppSnapshot;
+  };
   useSnapshotStore.getState().ingestSnapshot(snap);
 }
 
 beforeEach(() => {
   deleteChatMock.mockReset();
+  // The bootstrap stub must be (re)installed every test: with the typed mock
+  // the impl starts as the REAL fetchBootstrapAction, and a fire-and-forget
+  // `void fetchBootstrapAction()` (deleteChatAction) would hit the gateway.
+  fetchBootstrapMock.mockReset();
+  fetchBootstrapMock.mockResolvedValue(undefined);
   forkBranchMock.mockReset();
   forkBranchSidechatMock.mockReset();
   generateObjectiveTasksMock.mockReset();
@@ -130,7 +139,7 @@ describe("committed assistant completion refresh", () => {
     // `variants` is required on the wire (AppMessage derives from the RPC
     // type); the ingest path reads it (IG-CF10 shadow stamp) — the double
     // must carry a minimal array to honor the contract.
-    const snapshot = { messages: [{ id: "msg_1", variants: [] }] } as unknown as AppSnapshot;
+    const snapshot: AppSnapshot = { messages: [wireMessage("msg_1")] };
     sendChatMessageMock.mockResolvedValueOnce(snapshot);
 
     await sendChatMessageAction(chatId("chat-1"), "Hello");
@@ -144,31 +153,27 @@ describe("committed assistant completion refresh", () => {
     // hydration path (syncCommittedCoauthorTurn → extractPersistedCoauthorActivities)
     // must reconstruct the SAME name+input+output shape the streaming path builds.
     const editArgs = { edits: [{ search: "old", replace: "new" }], summary: "Updated examples" };
-    const snapshot = {
-      activeChat: { id: chatId("chat-1"), characterId: characterId("char-1"), mode: "coauthor" },
+    const snapshot: AppSnapshot = {
+      activeChat: wireChat({ id: chatId("chat-1"), characterId: characterId("char-1"), mode: "coauthor" }),
       messages: [
-        { id: "user_1", role: "user", content: "edit examples", variants: [] },
-        {
-          id: "assistant_call",
-          role: "assistant",
+        wireMessage("user_1", { role: "user", authorType: "user", content: "edit examples" }),
+        wireMessage("assistant_call", {
           content: "",
-          variants: [],
           toolCalls: [{ id: "call_1", name: "edit_examples", args: editArgs }],
-        },
-        {
-          id: "tool_1",
+        }),
+        wireMessage("tool_1", {
           role: "tool",
-          variants: [],
-          toolCallId: "call_1",
+          authorType: "tool",
           content: JSON.stringify({
             target: "profile",
             proposed: "# EXAMPLES\nUpdated",
             summary: "Updated examples",
           }),
-        },
-        { id: "assistant_final", role: "assistant", content: "Done", variants: [] },
+          toolCallId: "call_1",
+        }),
+        wireMessage("assistant_final", { content: "Done" }),
       ],
-    } as unknown as AppSnapshot;
+    };
     sendChatMessageMock.mockResolvedValueOnce(snapshot);
     useCoauthorTurnStore.getState().upsertActivity("chat-1", {
       toolCallId: "old_call",
@@ -192,7 +197,7 @@ describe("committed assistant completion refresh", () => {
   });
 
   test("starts the scoped refresh after a non-streaming generate-reply snapshot is ingested", async () => {
-    const snapshot = { messages: [{ id: "msg_2", variants: [] }] } as unknown as AppSnapshot;
+    const snapshot: AppSnapshot = { messages: [wireMessage("msg_2")] };
     generateReplyMock.mockResolvedValueOnce(snapshot);
 
     await generateReplyAction(chatId("chat-1"));
@@ -209,7 +214,7 @@ describe("generateObjectiveTasksAction", () => {
 
     const pending = generateObjectiveTasksAction(chatId("chat-1"), controller.signal);
     controller.abort();
-    resolveRequest({ activeChat: { id: chatId("stale-chat") } } as unknown as AppSnapshot);
+    resolveRequest({ activeChat: wireChat({ id: chatId("stale-chat") }) });
     await pending;
 
     expect(useSnapshotStore.getState().activeChat).toBeNull();
@@ -248,11 +253,11 @@ describe("forkBranchAction copySidechat (SC-21)", () => {
    *  with a snapshot whose active branch (the copy TARGET) is `targetId`. */
   function seedForkBranches(sourceId: string, targetId: string): void {
     useSnapshotStore.getState().ingestSnapshot({
-      activeBranch: { id: sourceId, chatId: chatId("chat-1") },
-    } as unknown as AppSnapshot);
+      activeBranch: wireBranch({ id: brandId<ChatBranchId>(sourceId) }),
+    });
     forkBranchMock.mockResolvedValueOnce({
-      activeBranch: { id: targetId, chatId: chatId("chat-1") },
-    } as unknown as AppSnapshot);
+      activeBranch: wireBranch({ id: brandId<ChatBranchId>(targetId) }),
+    });
   }
 
   test("without the flag the sidechat is never copied (today's flow)", async () => {
@@ -285,8 +290,8 @@ describe("forkBranchAction copySidechat (SC-21)", () => {
 
   test("two rapid flagged forks ride one request: one fork, one copy", async () => {
     useSnapshotStore.getState().ingestSnapshot({
-      activeBranch: { id: "br-1", chatId: chatId("chat-1") },
-    } as unknown as AppSnapshot);
+      activeBranch: wireBranch({ id: brandId<ChatBranchId>("br-1") }),
+    });
     let resolveFork: (snapshot: AppSnapshot) => void = () => {};
     forkBranchMock.mockImplementationOnce(() => new Promise<AppSnapshot>((resolve) => { resolveFork = resolve; }));
     forkBranchSidechatMock.mockResolvedValueOnce({ copiedThreads: [] });
@@ -294,7 +299,7 @@ describe("forkBranchAction copySidechat (SC-21)", () => {
     const first = forkBranchAction(chatId("chat-1"), "message-1", { copySidechat: true });
     const duplicate = forkBranchAction(chatId("chat-1"), "message-1", { copySidechat: true });
     expect(forkBranchMock).toHaveBeenCalledTimes(1);
-    resolveFork({ activeBranch: { id: "br-2", chatId: chatId("chat-1") } } as unknown as AppSnapshot);
+    resolveFork({ activeBranch: wireBranch({ id: brandId<ChatBranchId>("br-2") }) });
     await Promise.all([first, duplicate]);
 
     expect(forkBranchMock).toHaveBeenCalledTimes(1);
@@ -416,7 +421,7 @@ describe("deleteChatAction", () => {
     // Backend returns the post-delete chats list (ChatListResponse) — this is
     // the ghost-chat fix: delete previously returned 204 with no body, so the
     // list refresh relied on a racy fire-and-forget bootstrap.
-    deleteChatMock.mockResolvedValue({ chats: [listItem("c2", "rp")] } as unknown as AppSnapshot);
+    deleteChatMock.mockResolvedValue({ chats: [listItem("c2", "rp")] });
     await deleteChatAction(chatId("c1"));
 
     const state = useSnapshotStore.getState();
@@ -433,9 +438,9 @@ describe("selectVariantAction (ordered per-message persist)", () => {
   function gateCalls(): Array<{ promise: Promise<unknown>; resolve(): void }> {
     const gates: Array<{ promise: Promise<unknown>; resolve(): void }> = [];
     selectMessageVariantMock.mockImplementation(() => {
-      let resolve!: (value: unknown) => void;
-      const promise = new Promise<unknown>((res) => { resolve = res; });
-      gates.push({ promise, resolve: () => resolve(undefined) });
+      let resolve!: (value: AppSnapshot) => void;
+      const promise = new Promise<AppSnapshot>((res) => { resolve = res; });
+      gates.push({ promise, resolve: () => { resolve({}); } });
       return promise;
     });
     return gates;
@@ -487,7 +492,7 @@ describe("selectVariantAction (ordered per-message persist)", () => {
 
   test("a failed POST toasts and never poisons the queue — the next swipe still persists", async () => {
     selectMessageVariantMock.mockImplementationOnce(() => Promise.reject(new Error("server restarted")));
-    selectMessageVariantMock.mockImplementation(async () => undefined);
+    selectMessageVariantMock.mockImplementation(async () => ({}));
     const failed = selectVariantAction(chatId("c3"), "m1", 1);
     const next = selectVariantAction(chatId("c3"), "m1", 0);
     await Promise.all([failed, next]);
@@ -499,10 +504,10 @@ describe("selectVariantAction (ordered per-message persist)", () => {
 
 describe("updateChatDynamicPromptAction", () => {
   test("ingests the snapshot and invalidates the active context preview through syncSnapshot", async () => {
-    const snapshot = {
-      activeChat: { id: chatId("chat-1"), characterId: characterId("char-1"), mode: "rp", dynamicPrompt: "per-chat content" },
-      activeBranch: { id: "branch-1", chatId: chatId("chat-1") },
-    } as unknown as AppSnapshot;
+    const snapshot: AppSnapshot = {
+      activeChat: wireChat({ id: chatId("chat-1"), characterId: characterId("char-1"), mode: "rp", dynamicPrompt: "per-chat content" }),
+      activeBranch: wireBranch({ id: brandId<ChatBranchId>("branch-1") }),
+    };
     updateChatDynamicPromptMock.mockResolvedValueOnce(snapshot);
     useContextPreviewStore.setState({
       entries: {

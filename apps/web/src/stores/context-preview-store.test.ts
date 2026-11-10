@@ -13,6 +13,7 @@
  */
 import { describe, test, expect, beforeEach, mock } from "bun:test";
 import type { AssemblePromptResponse } from "@vibe-tavern/domain";
+import { wirePromptPreview } from "../../test/wire-fixtures.js";
 
 type FetchImpl = (chatId: string, branchId: string, signal?: AbortSignal) => Promise<{ target: { chatId: string; branchId: string }; preview: AssemblePromptResponse | null }>;
 let mockFetch: FetchImpl | null = null;
@@ -26,9 +27,9 @@ mock.module("../api/chat-api.js", () => {
 });
 const { useContextPreviewStore } = await import("./context-preview-store.js");
 
-function makePreview(total: number): AssemblePromptResponse {
-  return { layers: [], tokenAccounting: { total } } as unknown as AssemblePromptResponse;
-}
+// The one preview derivation lives in wire-fixtures (shared with
+// chat-selectors.test.ts) — this file only aliases it.
+const makePreview = wirePromptPreview;
 function resp(branchId: string, preview: AssemblePromptResponse | null) {
   return { target: { chatId: "chat-1", branchId }, preview };
 }

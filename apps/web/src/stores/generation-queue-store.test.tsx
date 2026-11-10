@@ -1,8 +1,11 @@
 import { describe, test, expect, beforeEach, afterAll } from "bun:test";
 import { Profiler, type ProfilerOnRenderCallback } from "react";
-import type { AppMessage, AppSnapshot } from "../api/types.js";
+import { brandId } from "@vibe-tavern/domain";
+import type { MessageVariantId } from "@vibe-tavern/domain";
+import type { AppSnapshot } from "../api/types.js";
 
 import { useDomEnv } from "../../test/dom-env.js";
+import { wireMessage, wireVariant } from "../../test/wire-fixtures.js";
 import {
   useGenerationQueueStore,
   useQueueCount,
@@ -47,7 +50,11 @@ function enq(chatId: string, messageId: string, model: string) {
 function setVisibleTarget(variantIds: string[]): void {
   useSnapshotStore.setState({
     messageOrder: ["m1"],
-    messagesById: { m1: { id: "m1", variants: variantIds.map((id, variantIndex) => ({ id, variantIndex })) } } as unknown as Record<string, AppMessage>,
+    messagesById: {
+      m1: wireMessage("m1", {
+        variants: variantIds.map((id, variantIndex) => wireVariant("m1", variantIndex, { id: brandId<MessageVariantId>(id) })),
+      }),
+    },
   });
 }
 
