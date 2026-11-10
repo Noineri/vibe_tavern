@@ -838,6 +838,30 @@ describe("sidechat-host — prompt preset pins (SC-23d)", () => {
     );
   });
 
+  it("reloads pending links and renders confirmed snapshots without resurrecting consumed chips", async () => {
+    seedStores({}, [presetFixture("pp1", "Deep RP")]);
+    const first = renderSidechat();
+    await flushSessionLoad();
+    const ta = openMention(first.getByTestId, "@Deep");
+    await waitFor(() => expect(mentionOptions()).toHaveLength(1));
+    fireEvent.keyDown(ta, { key: "Enter" });
+    await waitFor(() => expect(router.contextLinks).toEqual([{ targetType: "prompt_preset", targetId: "pp1" }]));
+    first.unmount();
+
+    const pending = renderSidechat(router.contextLinks);
+    await waitFor(() => expect(pending.getByTestId("copilot-context-pill-prompt_preset-pp1")).toBeTruthy());
+    pending.unmount();
+
+    // The server has consumed the pending link and returned the persisted message.
+    router.contextLinks = [];
+    router.messages = [{ id: "stored-user", threadId: "sidechat-thread-1", role: "user", content: "Discuss.", toolCallsJson: null, toolCallId: null, reasoning: null, reasoningDurationMs: null, createdAt: "2026-01-01T00:00:00Z", promptAttachments: [{ presetId: "pp1", displayName: "Stored RP", promptText: "<rp_prompt>saved</rp_prompt>" }] }];
+    const confirmed = renderSidechat(router.contextLinks);
+    await waitFor(() => expect(confirmed.getByText("Stored RP")).toBeTruthy());
+    expect(confirmed.queryByTestId("copilot-context-pill-prompt_preset-pp1")).toBeNull();
+    fireEvent.click(confirmed.getByRole("button", { name: /prompt_attachment_view/ }));
+    await waitFor(() => expect(confirmed.getByTestId("sent-file-summary-scroll").textContent).toBe("<rp_prompt>saved</rp_prompt>"));
+  });
+
   it("unpinning a preset PATCHes the filtered set and removes its chip", async () => {
     seedStores({}, [presetFixture("pp1", "Deep RP")]);
     router.activeThread = {

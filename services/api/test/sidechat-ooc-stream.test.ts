@@ -390,6 +390,48 @@ describe("streamSidechatTurn (SC-4b)", () => {
     expect((await stores.experienceCopilot.listMessages(threadId))[0]!.promptAttachments).toEqual([snapshot]);
   });
 
+  it("seats copied and branch-specific snapshots only in their own branch history", async () => {
+    const { threadId, chatId, branchId } = await makeSidechatThread();
+    const opening = await stores.messages.addMessage({ chatId, branchId, role: "user", authorType: "user", content: "Opening" });
+    const shared = await stores.presets.create({ name: "Shared", systemPrompt: "SHARED-BRANCH-SNAPSHOT" });
+    const own = await stores.presets.create({ name: "Original", systemPrompt: "ORIGINAL-BRANCH-SNAPSHOT" });
+    const forkOnly = await stores.presets.create({ name: "Fork", systemPrompt: "FORK-BRANCH-SNAPSHOT" });
+    await drainTurn(threadId, "Shared message", undefined, undefined, [{ presetId: shared.id }]);
+    const fork = await stores.chats.forkBranch(chatId, opening.id, "fork");
+    const copied = await stores.experienceCopilot.forkChatThreadToBranch(threadId, fork.id, {
+      eventPayload: (_kind, payloadJson) => ({ payloadJson }),
+      frontierJson: (json) => json,
+      trailingEvent: { kind: "branch_forked", payload: { at: 0 } },
+    });
+    expect(copied).not.toBeNull();
+    await drainTurn(threadId, "Original message", undefined, undefined, [{ presetId: own.id }]);
+    await drainTurn(copied!.id, "Fork message", undefined, undefined, [{ presetId: forkOnly.id }]);
+    expect(occurrences(promptText(), "SHARED-BRANCH-SNAPSHOT")).toBe(1);
+    expect(occurrences(promptText(), "FORK-BRANCH-SNAPSHOT")).toBe(1);
+    expect(promptText()).not.toContain("ORIGINAL-BRANCH-SNAPSHOT");
+    expect(messageIndexContaining("Shared message")).toBe(messageIndexContaining("SHARED-BRANCH-SNAPSHOT"));
+    expect(messageIndexContaining("Fork message")).toBe(messageIndexContaining("FORK-BRANCH-SNAPSHOT"));
+    await drainTurn(threadId, "Original again");
+    expect(occurrences(promptText(), "SHARED-BRANCH-SNAPSHOT")).toBe(1);
+    expect(occurrences(promptText(), "ORIGINAL-BRANCH-SNAPSHOT")).toBe(1);
+    expect(promptText()).not.toContain("FORK-BRANCH-SNAPSHOT");
+    expect(messageIndexContaining("Original message")).toBe(messageIndexContaining("ORIGINAL-BRANCH-SNAPSHOT"));
+  });
+
+  it("isolates prompt snapshots between sessions of the same chat and branch", async () => {
+    const { threadId, chatId, branchId } = await makeSidechatThread();
+    const first = await stores.presets.create({ name: "First session", systemPrompt: "FIRST-SESSION-SNAPSHOT" });
+    const second = await stores.presets.create({ name: "Second session", systemPrompt: "SECOND-SESSION-SNAPSHOT" });
+    await drainTurn(threadId, "First session message", undefined, undefined, [{ presetId: first.id }]);
+    const other = await stores.experienceCopilot.startNewChatSession(chatId, branchId, "sidechat-ooc");
+    await drainTurn(other.id, "Second session message", undefined, undefined, [{ presetId: second.id }]);
+    expect(occurrences(promptText(), "SECOND-SESSION-SNAPSHOT")).toBe(1);
+    expect(promptText()).not.toContain("FIRST-SESSION-SNAPSHOT");
+    await drainTurn(threadId, "Return to first session");
+    expect(occurrences(promptText(), "FIRST-SESSION-SNAPSHOT")).toBe(1);
+    expect(promptText()).not.toContain("SECOND-SESSION-SNAPSHOT");
+  });
+
   it("consumes an empty rendered selection without claiming an attachment", async () => {
     const { threadId } = await makeSidechatThread();
     const preset = await stores.presets.create({ name: "Empty render", systemPrompt: "EMPTY-RENDER-MARKER" });
@@ -652,6 +694,25 @@ describe("streamSidechatTurn after a compaction (SC-8c)", () => {
 		await service.compact({ threadId });
 		return { threadId, chatId, branchId };
 	}
+
+	it("folds the snapshot with its message and leaves no orphan in the provider window", async () => {
+		const { threadId } = await makeSidechatThread();
+		const preset = await stores.presets.create({ name: "Compacted preset", systemPrompt: "COMPACTED-PROMPT-SNAPSHOT" });
+		await drainTurn(threadId, "Question with snapshot", undefined, undefined, [{ presetId: preset.id }]);
+		for (let turn = 2; turn <= 5; turn++) await drainTurn(threadId, `Question ${turn}`);
+		let summarizerInput = "";
+		const service = makeCompactionService(async (input) => {
+			summarizerInput = JSON.stringify(input);
+			return { text: "COMPACTION-DIGEST", providerResponse: {} };
+		});
+		await service.compact({ threadId });
+		expect(summarizerInput).toContain("Question with snapshot");
+		expect(summarizerInput).toContain("COMPACTED-PROMPT-SNAPSHOT");
+		await drainTurn(threadId, "After compaction");
+		expect(promptText()).toContain("COMPACTION-DIGEST");
+		expect(promptText()).not.toContain("Question with snapshot");
+		expect(promptText()).not.toContain("COMPACTED-PROMPT-SNAPSHOT");
+	});
 
 	it("a turn after compaction assembles without the guard firing (was: the SC-4d count-check throw)", async () => {
 		const { threadId, chatId, branchId } = await makeCompactedThread();
