@@ -104,7 +104,12 @@ export const BUDGETS = {
 	// Popover.Root probe arms + the erased fetch install — the batch replaced
 	// the probes with direct typed package exports); same law, same
 	// supervisor follow-up commit.
-	asNever: 1235,
+	// 1227 (2026-11-10, TYPE-SAFETY sweep 8a): 8 `as never` sites died WITH
+	// their erased constructs — 3 in chat-selectors.test.ts makeTrace and 5 in
+	// trace-history-store.test.ts makeTrace (both trace DTOs completed to the
+	// real PromptTraceRecordDto with brandId'd ids, killing the member-level
+	// never-spells); same law, same supervisor follow-up commit.
+	asNever: 1227,
 	/** Global `screen.` usage in apps/web test files (binds at import time). */
 	// 196 (2026-10-04): ratcheted to the merged tree's count after PR #51
 	// (provider-lists unification removed the forked pickers' screen usage;
