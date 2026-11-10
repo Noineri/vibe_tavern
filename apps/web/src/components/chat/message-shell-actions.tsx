@@ -186,8 +186,6 @@ export function DesktopMessageActions(props: {
 export function MobileMessageActions(props: {
   aiEditTooltip: string;
   canAiEdit: boolean;
-  aiAnnotateTooltip?: string;
-  canAiAnnotate?: boolean;
   branchLabel: string;
   canBranch: boolean;
   canContinue?: boolean;
@@ -209,7 +207,6 @@ export function MobileMessageActions(props: {
   variantCount: number;
   variantControls?: ReactNode;
   onAiEdit: () => void;
-  onAiAnnotate?: () => void;
   onBranch: () => void;
   onContinue?: () => void;
   onNarrate?: () => void;
@@ -220,12 +217,12 @@ export function MobileMessageActions(props: {
   onResend: () => void;
 }) {
   const {
-    aiEditTooltip, canAiEdit, aiAnnotateTooltip, canAiAnnotate,
+    aiEditTooltip, canAiEdit,
     branchLabel, canBranch, canContinue, continueTooltip, canRegenerate, canResend, canSwitchVariant,
     imageMenu, discussMenu,
     isBusy, isBranching, isGreeting, isUser, regenLabel, resendLabel,
     variantControls,
-    onAiEdit, onAiAnnotate, onBranch, onContinue, onNarrate, narrating, narrateTooltip, narrateStopTooltip, onRegenerate, onResend,
+    onAiEdit, onBranch, onContinue, onNarrate, narrating, narrateTooltip, narrateStopTooltip, onRegenerate, onResend,
   } = props;
 
   // SC-18c (owner 2026-10-21): the assistant row fits the swipe switcher plus
@@ -278,12 +275,6 @@ export function MobileMessageActions(props: {
         )}
         {canAiEdit && (
           <button type="button" aria-label={aiEditTooltip} disabled={isBusy} className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-lg text-t3 active:bg-s2 disabled:cursor-default disabled:opacity-40 [&_svg]:h-5 [&_svg]:w-5" onClick={() => { if (!isBusy) onAiEdit(); }} title={aiEditTooltip}>
-            <Icons.Sparkles />
-          </button>
-        )}
-        {/* TPE-14: greeting-only "prepare for narration" entry (mobile row). */}
-        {canAiAnnotate && onAiAnnotate && (
-          <button type="button" aria-label={aiAnnotateTooltip} data-testid="mobile-annotate-btn" disabled={isBusy} className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-lg text-t3 active:bg-s2 disabled:cursor-default disabled:opacity-40 [&_svg]:h-5 [&_svg]:w-5" onClick={() => { if (!isBusy) onAiAnnotate(); }} title={aiAnnotateTooltip}>
             <Icons.Sparkles />
           </button>
         )}

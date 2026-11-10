@@ -593,8 +593,6 @@ export function MessageShell(props: MessageShellProps) {
             <MobileMessageActions
               aiEditTooltip={tDynamic("message_ai_editor_tooltip")}
               canAiEdit={canAiEdit}
-              aiAnnotateTooltip={tDynamic("message_ai_editor_mode_annotate")}
-              canAiAnnotate={canAiAnnotate}
               branchLabel={branchLabel}
               canBranch={canBranch}
               canContinue={canContinue}
@@ -613,7 +611,6 @@ export function MessageShell(props: MessageShellProps) {
               selectedVariantIndex={selectedVariantIndex}
               variantCount={variantCount}
               onAiEdit={actions.onAiEdit}
-              onAiAnnotate={onAiAnnotate}
               onBranch={actions.onBranch}
               onContinue={actions.onContinue}
               onNarrate={actions.onNarrate}
