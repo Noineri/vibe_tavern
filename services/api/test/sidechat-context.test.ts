@@ -26,7 +26,7 @@ import { PromptAssemblyService } from "../src/domain/prompt/prompt-assembly-serv
 import { StaticPromptResolver } from "../src/domain/prompt/prompt-resolver.js";
 import { RegexHookService } from "../src/domain/regex/regex-hook-service.js";
 import { syncBeforeUserMessage, type RpSyncDeps } from "../src/domain/sidechat/rp-sync.js";
-import { loadSidechatContext, mapTimelineEvent, type SidechatContextDeps } from "../src/domain/sidechat/sidechat-context.js";
+import { loadSidechatContext, resolveSidechatPromptAttachments, mapTimelineEvent, type SidechatContextDeps } from "../src/domain/sidechat/sidechat-context.js";
 import { renderTimelineEvent } from "../src/domain/sidechat/sidechat-xml.js";
 
 /**
@@ -580,7 +580,8 @@ describe("loadSidechatContext pinned prompt presets (SC-23c)", () => {
 		]);
 
 		const pkg = await loadSidechatContext(contextDeps, threadId);
-		const view = pkg.staticPackage;
+		expect(pkg.staticPackage).not.toContain("<rp_prompt");
+		const view = (await resolveSidechatPromptAttachments(contextDeps, threadId, [{ presetId: preset.id }], pkg.heldLoreEntryIds))[0]!.promptText;
 
 		// The wrapper names the pinned preset.
 		expect(view).toContain('<rp_prompt preset="Agentic Narrator">');
@@ -643,7 +644,8 @@ describe("loadSidechatContext pinned prompt presets (SC-23c)", () => {
 		]);
 
 		const pkg = await loadSidechatContext(contextDeps, threadId);
-		const view = pkg.staticPackage;
+		expect(pkg.staticPackage).not.toContain("<rp_prompt");
+		const view = (await resolveSidechatPromptAttachments(contextDeps, threadId, [{ presetId: preset.id }], pkg.heldLoreEntryIds))[0]!.promptText;
 		// The <rp_prompt> block only — the package's own <active_lore> section
 		// legitimately shows the held entry's text (SC-3b); the VIEW is what
 		// collapses it.
@@ -672,14 +674,16 @@ describe("loadSidechatContext pinned prompt presets (SC-23c)", () => {
 			{ targetType: "prompt_preset", targetId: preset.id },
 		]);
 
-		const first = await loadSidechatContext(contextDeps, threadId);
-		expect(first.staticPackage).toContain("PRESET-MAIN You are Sable's grim narrator.");
+		const firstContext = await loadSidechatContext(contextDeps, threadId);
+		const first = (await resolveSidechatPromptAttachments(contextDeps, threadId, [{ presetId: preset.id }], firstContext.heldLoreEntryIds))[0]!.promptText;
+		expect(first).toContain("PRESET-MAIN You are Sable's grim narrator.");
 
 		// The owner's loop: edit the block, ask again.
 		await stores.presets.update(preset.id, { systemPrompt: "PRESET-REVISED You are a laconic narrator." });
-		const second = await loadSidechatContext(contextDeps, threadId);
-		expect(second.staticPackage).toContain("PRESET-REVISED You are a laconic narrator.");
-		expect(second.staticPackage).not.toContain("PRESET-MAIN");
+		const secondContext = await loadSidechatContext(contextDeps, threadId);
+		const second = (await resolveSidechatPromptAttachments(contextDeps, threadId, [{ presetId: preset.id }], secondContext.heldLoreEntryIds))[0]!.promptText;
+		expect(second).toContain("PRESET-REVISED You are a laconic narrator.");
+		expect(second).not.toContain("PRESET-MAIN");
 	});
 
 	it("a deleted (dangling) preset is skipped — never a 400 on the turn", async () => {
@@ -697,6 +701,7 @@ describe("loadSidechatContext pinned prompt presets (SC-23c)", () => {
 
 		const pkg = await loadSidechatContext(contextDeps, threadId);
 		expect(pkg.staticPackage).not.toContain("<rp_prompt");
+		expect(await resolveSidechatPromptAttachments(contextDeps, threadId, [{ presetId: "preset_never_existed" }], pkg.heldLoreEntryIds)).toEqual([]);
 		// The rest of the package still renders.
 		expect(pkg.staticPackage).toContain('<character name="Theron">');
 	});
@@ -730,8 +735,9 @@ describe("loadSidechatContext pinned prompt presets (SC-23c)", () => {
 		// rewrite the cooldown bookkeeping for this later turn; two loads prove
 		// the row stays frozen.
 		const before = (await stores.chats.getBranch(branchId))!.loreActivationState;
-		await loadSidechatContext(contextDeps, threadId);
-		await loadSidechatContext(contextDeps, threadId);
+		const context = await loadSidechatContext(contextDeps, threadId);
+		await resolveSidechatPromptAttachments(contextDeps, threadId, [{ presetId: preset.id }], context.heldLoreEntryIds);
+		await resolveSidechatPromptAttachments(contextDeps, threadId, [{ presetId: preset.id }], context.heldLoreEntryIds);
 		const after = (await stores.chats.getBranch(branchId))!.loreActivationState;
 		expect(after).toEqual(before);
 

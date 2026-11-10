@@ -406,6 +406,7 @@ export function useAgentController(
             // SC-18: the sidechat host maps its pending variant chips here;
             // absent = not sent (the schema caps the list at 64 pairs).
             ...(opts?.attachedVariants !== undefined ? { attachedVariants: opts.attachedVariants } : {}),
+            ...(opts?.promptAttachments !== undefined ? { promptAttachments: opts.promptAttachments } : {}),
           },
           {
             signal: controller.signal,

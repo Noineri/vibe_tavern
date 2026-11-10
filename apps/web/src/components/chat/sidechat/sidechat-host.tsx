@@ -242,10 +242,13 @@ registerAgentHost({
     const base = ctx.bridge.session?.buildSendOptions() ?? {};
     const triple = chatOwnerTriple(ctx.owner);
     const pending = readPendingVariantAttachments(triple.chatId, triple.branchId);
-    if (pending.length === 0) return base;
+    const promptAttachments = (ctx.contextLinks ?? [])
+      .filter((link) => link.targetType === "prompt_preset")
+      .map((link) => ({ presetId: link.targetId }));
     return {
       ...base,
-      attachedVariants: pending.map((chip) => ({ messageId: chip.messageId, variantId: chip.variantId })),
+      ...(pending.length ? { attachedVariants: pending.map((chip) => ({ messageId: chip.messageId, variantId: chip.variantId })) } : {}),
+      ...(promptAttachments.length ? { promptAttachments } : {}),
     };
   },
   // SC-18: a successful send clears the pending chips, a failed (or

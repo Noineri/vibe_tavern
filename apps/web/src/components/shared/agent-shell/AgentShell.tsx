@@ -2,8 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { toast } from "sonner";
 import type {
   AgentThreadEventWire,
-  ExperienceCopilotContextLink,
-  ExperienceCopilotContextTargetType,
   ExperienceCopilotMessageWire,
   ExperienceCopilotThreadWire,
 } from "@vibe-tavern/api-contracts";
@@ -38,7 +36,7 @@ import { useAgentInputPrefill } from "./use-agent-input-prefill.js";
 import { useAgentCallDirector } from "./use-agent-call-director.js";
 import { AgentShellTabButton } from "./AgentShellTabButton.js";
 import { AgentShellDesktopTwoPane } from "./desktop-two-pane.js";
-import type { AgentContextPillItem } from "./AgentContextPills.js";
+import { useAgentContextLinks } from "./use-agent-context-links.js";
 
 /**
  * AgentShell (AGENT_SHELL_PLAN AS-6b2) — the GENERIC two-pane agent surface
@@ -137,10 +135,6 @@ function AgentShellSession({
   const [sessions, setSessions] = useState<ExperienceCopilotThreadWire[]>([]);
   const [sessionLoading, setSessionLoading] = useState(true);
   const [sessionError, setSessionError] = useState<string | null>(null);
-  // ── Pinned context (CX-6) ───────────────────────────────────────────────
-  // The thread's contextLinks (from every thread wire that arrives) + the
-  // merged mention catalog. Pins are optimistically PATCHed (full-replace).
-  const [contextLinks, setContextLinks] = useState<ExperienceCopilotContextLink[]>([]);
   const [mentionCatalog, setMentionCatalog] = useState<MentionAutocompleteItem[]>([]);
   // ── Session checklist todo (TAG-8, restored PM-7) ──────────────────────
   // The thread wire's `todo` — the session checklist living BESIDE the plan.
@@ -249,58 +243,8 @@ function AgentShellSession({
     return [...characters, ...mentionCatalog, ...presetCatalog];
   }, [allCharacters, mentionCatalog, presetCatalog]);
 
-  // Pills: resolve each link's display label from the catalog; a dangling
-  // target (deleted entity) falls back to the raw id.
-  const pinnedContext = useMemo<AgentContextPillItem[]>(
-    () =>
-      contextLinks.map((l) => ({
-        targetType: l.targetType,
-        targetId: l.targetId,
-        label: catalog.find((c) => c.targetType === l.targetType && c.id === l.targetId)?.label ?? l.targetId,
-      })),
-    [contextLinks, catalog],
-  );
-
-  // Optimistic full-replace PATCH: the pills update immediately; on failure
-  // they revert to the previous set and a toast surfaces (the next turn would
-  // otherwise run with server-state ≠ UI).
-  const handleSetContextLinks = useCallback(
-    (next: ExperienceCopilotContextLink[]) => {
-      if (!threadId) return;
-      const prev = contextLinks;
-      setContextLinks(next);
-      void transport.setContextLinks(threadId, next).catch(() => {
-        setContextLinks(prev);
-        toast.error(t("copilot_context_pin_error"));
-      });
-    },
-    [threadId, contextLinks, transport, t],
-  );
-
-  const handlePinContext = useCallback(
-    (item: MentionAutocompleteItem) => {
-      if (contextLinks.length >= 64) return; // schema max — the PATCH would 400
-      if (contextLinks.some((l) => l.targetType === item.targetType && l.targetId === item.id)) return; // already pinned
-      // Narrow cast: the catalog is built in this shell from the six fixed
-      // target types only (see the catalog effect and the sidechat-gated
-      // preset fold), so the generic MentionAutocompleteItem.targetType is
-      // always a valid link type here.
-      handleSetContextLinks([
-        ...contextLinks,
-        { targetType: item.targetType as ExperienceCopilotContextTargetType, targetId: item.id },
-      ]);
-    },
-    [contextLinks, handleSetContextLinks],
-  );
-
-  const handleUnpinContext = useCallback(
-    (targetType: string, targetId: string) => {
-      handleSetContextLinks(
-        contextLinks.filter((l) => !(l.targetType === targetType && l.targetId === targetId)),
-      );
-    },
-    [contextLinks, handleSetContextLinks],
-  );
+  const { contextLinks, setContextLinks, pinnedContext, handlePinContext, handleUnpinContext } =
+    useAgentContextLinks(threadId, transport, catalog);
 
   // ── Toolbar modal open state (AP-27: the gear opens the settings summary,
   //  the profile modal is its child now) ───────────────────────────────────
@@ -506,6 +450,7 @@ function AgentShellSession({
     owner,
     scriptId,
     threadId,
+    contextLinks,
     isSending: ctrl.isSending,
     hostProps,
     bridge,

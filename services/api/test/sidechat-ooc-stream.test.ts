@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, beforeEach, afterAll } from "bun:test";
+import { describe, it, expect, beforeAll, beforeEach, afterAll, spyOn } from "bun:test";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -266,6 +266,7 @@ async function drainTurn(
 	content: string,
 	depsOverride?: SidechatStreamDeps,
 	attachedVariants?: readonly AttachedVariantPair[],
+	promptAttachments?: { presetId: string }[],
 ): Promise<Array<{ event: string; data: string }>> {
 	const chunks: Array<{ event: string; data: string }> = [];
 	for await (const chunk of streamSidechatTurn(
@@ -274,6 +275,7 @@ async function drainTurn(
 			content,
 			providerProfileId: "prov_1",
 			...(attachedVariants !== undefined ? { attachedVariants: [...attachedVariants] } : {}),
+			...(promptAttachments !== undefined ? { promptAttachments } : {}),
 		},
 		depsOverride ?? deps,
 	)) {
@@ -349,6 +351,87 @@ const SIX_SEGMENT_KEYS = ["context", "story_plan", "rp_summaries", "rp_messages"
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
 describe("streamSidechatTurn (SC-4b)", () => {
+  it("freezes the selected preset on its user message and keeps it after edits and deletion", async () => {
+    const { threadId } = await makeSidechatThread("The tavern door opens.");
+    const preset = await stores.presets.create({
+      name: "Pinned discussion preset",
+      systemPrompt: "PINNED-PRESET-V1 Narrate the scene around {{char}}.",
+      postHistoryInstructions: "PINNED-POST-HISTORY Keep the scene open.",
+      advancedMode: true,
+      mergeConsecutiveRoles: false,
+      customInjections: [{ identifier: "audit", name: "Audit", content: "PINNED-CUSTOM Keep the atmosphere grounded.", role: "user" }],
+      promptOrder: [{ identifier: "audit", enabled: true, kind: "custom", zone: "in_chat", depth: 2 }],
+    });
+    const links = [{ targetType: "prompt_preset" as const, targetId: preset.id }, { targetType: "character" as const, targetId: characterId }];
+    await stores.experienceCopilot.setContextLinks(threadId, links);
+    const chunks = await drainTurn(threadId, "Discuss the attached preset.", undefined, undefined, [{ presetId: preset.id }]);
+    expect(chunks.some((chunk) => chunk.event === "finish")).toBe(true);
+    const rows = await stores.experienceCopilot.listMessages(threadId);
+    const snapshot = rows.find((row) => row.content === "Discuss the attached preset.")!.promptAttachments![0]!;
+    expect(snapshot.presetId).toBe(preset.id);
+    expect(snapshot.displayName).toBe("Pinned discussion preset");
+    expect(snapshot.promptText).toContain('<rp_prompt preset="Pinned discussion preset">');
+    for (const marker of ["PINNED-PRESET-V1 Narrate the scene around Theron.", "PINNED-POST-HISTORY Keep the scene open.", "PINNED-CUSTOM Keep the atmosphere grounded."]) {
+      expect(snapshot.promptText).toContain(marker);
+      expect(occurrences(promptText(), marker)).toBe(1);
+    }
+    expect(systemMessageText()).not.toContain("PINNED-PRESET-V1");
+    expect(messageIndexContaining("Discuss the attached preset.")).toBe(messageIndexContaining("PINNED-PRESET-V1"));
+    expect(await stores.experienceCopilot.getContextLinks(threadId)).toEqual([links[1]!]);
+    await stores.presets.update(preset.id, { systemPrompt: "PINNED-PRESET-V2 Use shorter sentences." });
+    await drainTurn(threadId, "Discuss the revised preset.");
+    expect(occurrences(promptText(), "PINNED-PRESET-V1")).toBe(1);
+    expect(promptText()).not.toContain("PINNED-PRESET-V2");
+    await stores.presets.delete(preset.id);
+    await stores.experienceCopilot.setContextLinks(threadId, []);
+    await drainTurn(threadId, "The preset was removed.");
+    expect(occurrences(promptText(), "PINNED-PRESET-V1")).toBe(1);
+    expect(promptText()).toContain(snapshot.promptText);
+    expect((await stores.experienceCopilot.listMessages(threadId))[0]!.promptAttachments).toEqual([snapshot]);
+  });
+
+  it("consumes an empty rendered selection without claiming an attachment", async () => {
+    const { threadId } = await makeSidechatThread();
+    const preset = await stores.presets.create({ name: "Empty render", systemPrompt: "EMPTY-RENDER-MARKER" });
+    await stores.experienceCopilot.setContextLinks(threadId, [{ targetType: "prompt_preset", targetId: preset.id }]);
+    const assembly = deps.context.assembly;
+    const original = assembly.assembleForChat.bind(assembly);
+    const spy = spyOn(assembly, "assembleForChat").mockImplementation(async (input) => {
+      const result = await original(input);
+      return { ...result, prompt: { ...result.prompt, finalPayload: { ...result.prompt.finalPayload, messages: [] } } };
+    });
+    try {
+      await drainTurn(threadId, "Empty selected", undefined, undefined, [{ presetId: preset.id }]);
+    } finally {
+      spy.mockRestore();
+    }
+    const row = (await stores.experienceCopilot.listMessages(threadId))[0]!;
+    expect(row.promptAttachments).toBeUndefined();
+    expect(promptText()).not.toContain("EMPTY-RENDER-MARKER");
+    expect(await stores.experienceCopilot.getContextLinks(threadId)).toEqual([]);
+  });
+
+  it("consumes dangling selections and a stale PATCH leaves an inert pending link", async () => {
+    const { threadId } = await makeSidechatThread();
+    const preset = await stores.presets.create({ name: "Resurrected", systemPrompt: "RESURRECTED-MARKER" });
+    const link = { targetType: "prompt_preset" as const, targetId: preset.id };
+    const dangling = { targetType: "prompt_preset" as const, targetId: "preset_deleted" };
+    await stores.experienceCopilot.setContextLinks(threadId, [link, dangling]);
+    await drainTurn(threadId, "Consume selections", undefined, undefined, [{ presetId: preset.id }, { presetId: dangling.targetId }]);
+    expect(await stores.experienceCopilot.getContextLinks(threadId)).toEqual([]);
+    const first = (await stores.experienceCopilot.listMessages(threadId))[0]!;
+    expect(first.promptAttachments).toHaveLength(1);
+    await stores.experienceCopilot.setContextLinks(threadId, [link]);
+    await drainTurn(threadId, "Pending alone is inert");
+    expect(occurrences(promptText(), "RESURRECTED-MARKER")).toBe(1);
+    expect(messageIndexContaining("RESURRECTED-MARKER")).toBe(messageIndexContaining("Consume selections"));
+    expect(await stores.experienceCopilot.getContextLinks(threadId)).toEqual([link]);
+    await drainTurn(threadId, "Send it again", undefined, undefined, [{ presetId: preset.id }]);
+    expect(occurrences(promptText(), "RESURRECTED-MARKER")).toBe(2);
+    expect(messageIndexContaining("Send it again")).toBeGreaterThan(messageIndexContaining("Consume selections"));
+    expect(await stores.experienceCopilot.getContextLinks(threadId)).toEqual([]);
+  });
+
 	it("a turn syncs the RP branch before the user message, assembles base prompt + package, and persists the reply", async () => {
 		const { threadId } = await makeSidechatThread("The tavern door swings open.");
 

@@ -65,6 +65,7 @@ function createFakeStore(thread: ExperienceCopilotThread): ExperienceCopilotStor
         threadId: thread.id,
         role: input.role,
         content: input.content ?? "",
+        ...(input.promptAttachments ? { promptAttachments: input.promptAttachments } : {}),
         toolCallsJson: input.toolCallsJson ?? null,
         toolCallId: input.toolCallId ?? null,
         createdAt: new Date(Date.now() + counter * 1000).toISOString(),
@@ -381,6 +382,7 @@ describe("streamScriptAgentTurn - SC-17 attachedVariants", () => {
           attachedVariants: [
             { messageId: "msg_anywhere", variantId: "mvar_anywhere" },
           ],
+          promptAttachments: [{ presetId: "preset_ignored" }],
         },
         makeDeps(store),
       ),
@@ -391,5 +393,7 @@ describe("streamScriptAgentTurn - SC-17 attachedVariants", () => {
     // no validation of the (foreign) pairs: the field is inert for the kind.
     expect(promptText()).toContain("STORED-CODE-MARKER");
     expect(promptText()).not.toContain("msg_anywhere");
+    expect(promptText()).not.toContain("preset_ignored");
+    expect((await store.listMessages("thread_1"))[0]!.promptAttachments).toBeUndefined();
   });
 });

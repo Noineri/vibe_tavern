@@ -6,6 +6,7 @@ import {
 	type ChatId,
 	type ExperienceCopilotThreadId,
 	type PromptPresetId,
+	type PromptAttachment,
 	isRecord,
 	normalizeSceneTrackerConfig,
 	SCENE_PROMPT_FORMAT,
@@ -14,7 +15,6 @@ import type {
 	CharacterStore,
 	ChatStore,
 	ChatSummaryStore,
-	CopilotContextLink,
 	ExperienceCopilotStore,
 	MessageStore,
 	PresetStore,
@@ -129,18 +129,6 @@ import { renderAgentPlanSection } from "../agent-plan/agent-plan-prompt.js";
  *   `rp_summary` event is ever written — so editing, disabling or deleting a
  *   summary in the RP chat changes what the sidechat sees on its next turn,
  *   in place.
- * - Pinned prompt presets (SC-23c): while the thread carries a
- *   `prompt_preset` context link, EVERY turn re-assembles the thread's chat +
- *   branch DRY with that preset (`assembleForChat({ presetId, dryRun: true })`
- *   — the per-request override, never the chat's own preset; dryRun advances
- *   no lore timer and no script state) and renders the payload through the
- *   shared RP prompt view (`rp-prompt-view.ts`) against the sidechat's held
- *   set — the branch's active lore ids — into a trailing `<rp_prompt>` static
- *   section. The discussion is «edit the block, ask again»: an edited preset
- *   block shows on the NEXT turn because nothing is cached. A deleted preset
- *   is a dangling link, skipped like every other dangling target — never a
- *   400 on the turn. Without a pin NOTHING changes (owner decision 1 holds
- *   by default; the pin is the whole point of the arm).
  *
  * Must stay true: NO store writes anywhere (the lore activation inside
  * buildPipelineContext runs dryRun, like every sidechat read); the RP prompt
@@ -359,20 +347,7 @@ export async function loadSidechatContext(
 
 	const sceneSection = renderCurrentSceneSection(await loadCurrentSceneText(deps, chat, branchId));
 
-	// SC-23c: the pinned-preset RP prompt views — one trailing section per
-	// pinned link, re-assembled dry on EVERY load (see the module doc).
-	const presetViews = await loadPinnedPresetViews(
-		deps,
-		thread.contextLinks,
-		chatId,
-		branchId,
-		branchMessages,
-		heldLoreEntryIds,
-	);
-
-	// Static package (SC-4d): the five settled sections (+ any pinned-preset
-	// RP prompt views, SC-23c) only — no timeline section exists anymore; the
-	// timeline walk below feeds the MESSAGE FLOW.
+	// Static package: prompt snapshots ride their originating message, not this context.
 	const sections = [
 		characterSection,
 		personaSection,
@@ -380,7 +355,6 @@ export async function loadSidechatContext(
 		objectivesSection,
 		storyPlanSection,
 		sceneSection,
-		...presetViews,
 	];
 	const staticPackage = sections.filter((section): section is string => section !== null).join("\n\n");
 
@@ -490,47 +464,43 @@ async function loadLoreEntries(
  *  limit + the position map for the view's history placeholders). */
 type BranchMessageRow = { id: string; position: number };
 
-/** Render one `<rp_prompt>` view per pinned `prompt_preset` link, in link
- *  order: a dangling preset id (deleted) skips the pin — never a 400 on the
- *  turn, the same skip every other dangling context-link target gets. Each
- *  view comes from a DRY whole-branch assembly with THAT preset — the
- *  per-request override (never the chat's own preset, never a chat write),
- *  re-run on every call so an edited block shows on the next turn. */
-async function loadPinnedPresetViews(
-	deps: SidechatContextDeps,
-	links: readonly CopilotContextLink[],
-	chatId: ChatId,
-	branchId: ChatBranchId,
-	branchMessages: readonly BranchMessageRow[],
-	heldLoreEntryIds: ReadonlySet<string>,
-): Promise<string[]> {
-	const presetLinks = links.filter((link) => link.targetType === "prompt_preset");
-	if (presetLinks.length === 0) return [];
-	const positionByMessageId = new Map(branchMessages.map((message) => [message.id, message.position]));
-	const views: string[] = [];
-	for (const link of presetLinks) {
-		const preset = await deps.presets.getById(link.targetId);
-		if (preset === null) continue;
-		const assembled = await deps.assembly.assembleForChat({
-			chatId,
-			branchId,
-			model: "",
-			dryRun: true,
-			// The SC-2a whole-branch window — the same limit the loader's own
-			// buildPipelineContext call passes, so the view's history
-			// placeholders carry the branch's real positions.
-			recentMessageLimit: branchMessages.length,
-			presetId: brandId<PromptPresetId>(link.targetId),
-		});
-		const view = renderRpPromptView({
-			presetName: preset.name,
-			messages: mapFinalPayloadMessages(assembled.prompt.finalPayload, positionByMessageId, `preset ${link.targetId} assembly`),
-			layers: assembled.prompt.layers,
-			heldLoreEntryIds,
-		});
-		if (view !== null) views.push(view);
-	}
-	return views;
+/** Resolve selected preset identities to message-owned RP reference views. */
+export async function resolveSidechatPromptAttachments(
+  deps: SidechatContextDeps,
+  threadId: ExperienceCopilotThreadId,
+  selections: readonly { presetId: string }[],
+  heldLoreEntryIds: ReadonlySet<string>,
+): Promise<PromptAttachment[]> {
+  if (selections.length === 0) return [];
+  const thread = await deps.experienceCopilot.getById(threadId);
+  if (thread === null || !isChatOwnedAgentThread(thread) || thread.branchId === null) {
+    throw new RpSyncThreadNotChatOwnedError(threadId);
+  }
+  const chatId = brandId<ChatId>(thread.chatId);
+  const branchId = brandId<ChatBranchId>(thread.branchId);
+  const branchMessages: readonly BranchMessageRow[] = await deps.messages.getMessages(branchId);
+  const positionByMessageId = new Map(branchMessages.map((message) => [message.id, message.position]));
+  const snapshots: PromptAttachment[] = [];
+  for (const selection of selections) {
+    const preset = await deps.presets.getById(selection.presetId);
+    if (preset === null) continue;
+    const assembled = await deps.assembly.assembleForChat({
+      chatId, branchId, model: "", dryRun: true,
+      recentMessageLimit: branchMessages.length,
+      presetId: brandId<PromptPresetId>(selection.presetId),
+    });
+    const promptText = renderRpPromptView({
+      presetName: preset.name,
+      messages: mapFinalPayloadMessages(assembled.prompt.finalPayload, positionByMessageId, `preset ${selection.presetId} assembly`),
+      layers: assembled.prompt.layers,
+      heldLoreEntryIds,
+    });
+    // Empty payloads have no reference view and therefore no snapshot: the
+    // confirmed indicator must show only material actually included, just as
+    // for a dangling preset. The successful turn still consumes selection.
+    if (promptText !== null) snapshots.push({ presetId: selection.presetId, displayName: preset.name, promptText });
+  }
+  return snapshots;
 }
 
 /** Map a frozen final payload (plain JSON — a dry assembly's response or a

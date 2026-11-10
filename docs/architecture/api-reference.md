@@ -1426,7 +1426,7 @@ The stream route resolves the thread's kind BEFORE sending SSE headers, and the 
 | `GET /api/experience-copilot/:threadId/context` | Context-meter metrics + auto-compact flag |
 | `PATCH /api/experience-copilot/:threadId/context` | `{ autoCompact?: boolean }` |
 | `GET /api/experience-copilot/:threadId/context-links` | Pinned context entities |
-| `PATCH /api/experience-copilot/:threadId/context-links` | Set links (`setCopilotContextLinksSchema`) — resolved by id at assembly time, never stored copies. `prompt_preset` links (SC-23c, the sidechat's `<rp_prompt>` view) are chat-owned-thread-only: a script/draft thread gets the typed 400 `preset_link_not_chat_owned` |
+| `PATCH /api/experience-copilot/:threadId/context-links` | Set links (`setCopilotContextLinksSchema`) — ordinary pins resolve by id at assembly time. `prompt_preset` links are pending sidechat selections, not delivered until carried by a send; they are chat-owned-thread-only: a script/draft thread gets the typed 400 `preset_link_not_chat_owned` |
 | `POST /api/experience-copilot/:threadId/compact` | Manual compaction; optional `{ providerProfileId?, model? }` (defaults to the thread's last pair) |
 
 ### Message attachments
@@ -1554,9 +1554,16 @@ Body-less except `story-plan`'s optional `{ enableAutoCheck }`; the proposal pay
 
 **Fork body:** `{ targetBranchId }`. **Response:** `{ copiedThreads: [{ threadId, agentKind }] }` — the kinds the store actually had ACTIVE source threads for. The fork point comes from the target branch row (`parent_branch_id` must name the source): a target that is not a child is the 400 `target_branch_not_child_of_source`, a target that already has an active same-kind thread the 400 `target_branch_thread_active` (nothing is copied, the existing conversation stays). The copy re-keys id references onto the fork's new message ids, so the copy's first RP sync appends nothing for the copied history; frozen text is untouched. A missing chat/branch on either side is a 404.
 
-### Stream field (sidechat threads)
+### Stream fields (sidechat threads)
 
 `POST /api/experience-copilot/:threadId/stream` gains `attachedVariants?: Array<{ messageId, variantId }>` — RP variants attached to this sidechat turn as plain pairs; only the `sidechat-ooc` kind reads the field (the other kinds ignore it entirely). The request never carries a `selected` marker — the server reads the RP's own selection at freeze time. A message or variant outside the thread's own chat + branch is the typed 400 `attached_variant_not_in_branch` and nothing is frozen (the user message is not persisted). The pinned-context `PATCH /api/experience-copilot/:threadId/context-links` is reused as-is for the sidechat's `@` pins (characters, personas, lorebooks, scripts, skills), resolved by id at assembly time like every kind's.
+
+The send body may also carry `promptAttachments?: Array<{ presetId: string }>` (identity only); only `sidechat-ooc` reads it, including the Director profile.
+Before dispatch, each existing selected preset is dry-assembled into an `<rp_prompt>` reference view and persisted on the originating user message as `{ presetId, displayName, promptText }`.
+The frozen text rides that message in the discussion history, subject to normal history-window and compaction rules; editing or deleting the preset or removing a pending chip cannot rewrite it.
+Dangling preset IDs are skipped without failing the turn.
+On successful completion, the sent preset identities are removed from the currently stored pending links, without affecting other link types; legacy links are not backfilled onto old messages.
+A later stale full-replace PATCH can reintroduce a pending link, but a pending link alone never delivers preset material.
 
 ---
 

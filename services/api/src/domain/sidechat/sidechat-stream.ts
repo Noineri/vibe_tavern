@@ -89,7 +89,7 @@
 import { streamText, hasToolCall, type ToolSet } from "ai";
 import type { LanguageModel } from "ai";
 import type { ProviderProfile, AppDb, ExperienceCopilotStore, ExperienceCopilotThread } from "@vibe-tavern/db";
-import type { AgentPlan, AgentPlanOwner } from "@vibe-tavern/domain";
+import type { AgentPlan, AgentPlanOwner, PromptAttachment } from "@vibe-tavern/domain";
 import { brandId, type ChatBranchId, type ChatId } from "@vibe-tavern/domain";
 import type { CopilotProfile, ExperienceCopilotContextLink } from "@vibe-tavern/api-contracts";
 import type { ProviderFetch } from "../providers/provider-fetch-factory.js";
@@ -136,6 +136,7 @@ import { attachVariantsBeforeUserMessage, type VariantAttachDeps } from "./sidec
 import type { AttachedVariantPair, RpBranchView } from "./rp-branch-view.js";
 import {
   loadSidechatContext,
+  resolveSidechatPromptAttachments,
   type SidechatContextDeps,
   type SidechatContextPackage,
 } from "./sidechat-context.js";
@@ -316,7 +317,7 @@ export async function* streamSidechatTurn(
   const seams: AgentStreamSeams<
     ExperienceCopilotStreamRequest,
     ExperienceCopilotThread,
-    SidechatContextPackage,
+    SidechatContextPackage & { promptAttachments: PromptAttachment[] },
     CopilotProfile,
     SidechatAssembledPrompt
   > = {
@@ -335,8 +336,12 @@ export async function* streamSidechatTurn(
       const loaded = await loadSidechatTurnContext(deps, thread.id, request.attachedVariants);
       turnBranchView = loaded.branchView;
       turnHeldLoreEntryIds = loaded.heldLoreEntryIds;
-      return loaded;
+      const promptAttachments = isAgentContentTurn(request)
+        ? await resolveSidechatPromptAttachments(deps.context, thread.id, request.promptAttachments ?? [], loaded.heldLoreEntryIds)
+        : [];
+      return { ...loaded, promptAttachments };
     },
+    userPromptAttachments: (context) => context.promptAttachments,
 
     // ── Agent profile: sidechat threads are ALWAYS chat-owned (the kind
     //  owns its threads), so the chat chain is the only path — the SC-0f
@@ -562,5 +567,20 @@ export async function* streamSidechatTurn(
 
   const streamDeps = buildSidechatCoreDeps(deps, () => autoCompactPressure);
 
-  yield* streamAgentTurn(request, streamDeps, seams, signal);
+  for await (const event of streamAgentTurn(request, streamDeps, seams, signal)) {
+    if (event.event === "finish" && isAgentContentTurn(request) && request.promptAttachments?.length) {
+      const finish = JSON.parse(event.data) as { finishReason?: string };
+      if (finish.finishReason !== "error") {
+        const carried = new Set(request.promptAttachments.map((item) => item.presetId));
+        const links = await deps.store.getContextLinks(request.threadId);
+        // Cleanup consumes only links present now. An older full-replace PATCH
+        // may reintroduce a pending selection, but it is inert until a future
+        // send carries it: saved snapshots never depend on session links.
+        await deps.store.setContextLinks(request.threadId, links.filter(
+          (link) => link.targetType !== "prompt_preset" || !carried.has(link.targetId),
+        ));
+      }
+    }
+    yield event;
+  }
 }
