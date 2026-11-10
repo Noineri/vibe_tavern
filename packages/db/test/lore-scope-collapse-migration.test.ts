@@ -16,7 +16,6 @@ import { describe, expect, test } from "bun:test";
 import { mkdtemp, mkdir, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import type { Database } from "bun:sqlite";
 
 import { createDb, type AppDb } from "../src/db-connection.js";
 
@@ -91,8 +90,10 @@ async function runCommittedMigration(db: AppDb, migrationFile: string): Promise<
   return statements.length;
 }
 
-const q = (db: AppDb, sql: string) =>
-  db.all(sql) as unknown as Array<Record<string, unknown>>;
+// Raw-SQL row boundary: each caller's SELECT projection is the row type at
+// drizzle's all<T> seam.
+const q = <T extends Record<string, unknown> = Record<string, unknown>>(db: AppDb, sql: string) =>
+  db.all<T>(sql);
 
 describe("migration 0062 — lore scope collapse 4 → 3 (data-only)", () => {
   test("flips character/persona to entity on lorebooks AND scripts, losing no row, FK, or junction binding", async () => {
@@ -146,7 +147,7 @@ describe("migration 0062 — lore scope collapse 4 → 3 (data-only)", () => {
     expect(q(db, "SELECT COUNT(*) n FROM lorebooks WHERE scope_type IN ('character','persona')")[0].n).toBe(0);
     expect(q(db, "SELECT COUNT(*) n FROM scripts WHERE scope_type IN ('character','persona')")[0].n).toBe(0);
 
-    (db as unknown as { $client: Database }).$client.close();
+    db.$client.close();
 
     // And the FULL journal still applies on top of this state: 0107 turns the
     // entity homes into links and drops the home-owner columns without losing

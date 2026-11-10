@@ -122,7 +122,7 @@ describe("createDb rebuild-migration safety", () => {
 
     expect(countLorebooks(dbPath)).toBe(1);
     expect((await store.listEntries(lb.id)).length).toBe(2);
-    (db as unknown as { $client: Database }).$client.close();
+    db.$client.close();
 
     // 2. Simulate the failure state: un-stamp the rebuild migration.
     // This is exactly what happened in production — migrate() never stamped it.
@@ -149,7 +149,7 @@ describe("createDb rebuild-migration safety", () => {
     db = await createDb(dbPath, folder);
     const afterStore = new LorebookStore(db, { clock: testClock, idGenerator: testIdGen, content: null });
     const survivingEntries = await afterStore.listEntries(lb.id);
-    (db as unknown as { $client: Database }).$client.close();
+    db.$client.close();
     expect(survivingEntries.length).toBe(2);
     // The explicit tri-state values survive the rebuild byte-for-byte.
     const byTitle = new Map(survivingEntries.map(e => [e.title, e.useGroupScoring]));

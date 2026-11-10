@@ -19,7 +19,7 @@ const BUSY_TIMEOUT_MS = 5_000;
 describe("createDb: busy_timeout", () => {
 	test("createDb connections wait instead of throwing instantly on write contention", async () => {
 		const db = await createDb(":memory:");
-		const raw = (db as unknown as { $client: Database }).$client;
+		const raw = db.$client;
 		const pragma = raw.prepare("PRAGMA busy_timeout").get() as { timeout: number };
 		expect(pragma.timeout).toBe(BUSY_TIMEOUT_MS);
 		raw.close();

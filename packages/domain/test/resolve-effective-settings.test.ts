@@ -111,7 +111,7 @@ describe("resolveEffectiveSettings", () => {
     // undefined keys, so the parsed object never carries them. Simulate that
     // round-trip to lock the contract that "absent = inherit".
     const base = makeBase({ temperature: 1, topP: 0.9 });
-    const rawOverlay = { temperature: 0.7, topP: undefined } as unknown as ModelSettingsOverlay;
+    const rawOverlay: ModelSettingsOverlay = { temperature: 0.7, topP: undefined };
     const roundTripped = JSON.parse(JSON.stringify(rawOverlay)) as ModelSettingsOverlay;
     const effective = resolveEffectiveSettings(base, roundTripped);
     expect(effective.temperature).toBe(0.7); // set

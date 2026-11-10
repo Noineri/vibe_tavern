@@ -12,7 +12,6 @@
  * install has zero presets, so `ensureDefault()` exercises the seed path.
  */
 import { describe, test, expect, beforeEach } from "bun:test";
-import { Database } from "bun:sqlite";
 import { createDb } from "../src/db-connection.js";
 import { PresetStore } from "../src/stores/preset-store.js";
 import type { StoreClock, StoreIdGenerator } from "../src/persistence.js";
@@ -169,7 +168,7 @@ describe("PresetStore — delete() FK diagnostics (PRESET_COPY_DELETE_CORRUPTION
     // (SQLite cannot retroactively change an FK; only a table rebuild can).
     // The real schema's three preset FKs are all SET NULL, so they cannot block
     // a delete; this synthetic blocker stands in for the stale-FK case.
-    const client = (db as unknown as { $client: Database }).$client;
+    const client = db.$client;
     client.exec(
       'CREATE TABLE test_preset_blocker (child_id TEXT PRIMARY KEY, preset_id TEXT NOT NULL REFERENCES prompt_presets(id))',
     );

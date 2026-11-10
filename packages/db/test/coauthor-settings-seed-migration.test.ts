@@ -66,7 +66,7 @@ async function buildPreSeedFolder(): Promise<string> {
 }
 
 function rawClient(db: Awaited<ReturnType<typeof createDb>>): Database {
-  return (db as unknown as { $client: Database }).$client;
+  return db.$client;
 }
 
 function insertProvider(client: Database, id: string): void {

@@ -19,9 +19,10 @@ import { enableTestDbTemplate } from "../src/db-template.js";
 enableTestDbTemplate();
 
 /** The raw bun:sqlite handle behind a drizzle AppDb (same access pattern the
- *  migration tests use; drizzle's $client is not part of the public type). */
+ *  migration tests use; drizzle types it as `& { $client: TClient }` on the
+ *  driver's return intersection). */
 function rawClient(db: AppDb): Database {
-  return (db as unknown as { $client: Database }).$client;
+  return db.$client;
 }
 
 function sqliteMasterRows(sqlite: Database): unknown[] {

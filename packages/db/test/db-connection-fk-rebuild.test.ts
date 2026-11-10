@@ -139,7 +139,7 @@ describe("drizzle-orm #5782 defense — FK-off-around-migrate", () => {
     // and restores ON in finally.
     await writeMigrationsFolder(folder, true);
     const db = await createDb(dbPath, folder);
-    (db as unknown as { $client: Database }).$client.close();
+    db.$client.close();
 
     // THE FIX: child rows survived the rebuild.
     expect(childCount(dbPath)).toBe(2);

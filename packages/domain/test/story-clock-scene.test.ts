@@ -55,10 +55,12 @@ describe("findSceneClockField", () => {
   });
 
   it("ignores markers on nested fields (top-level placement only, mirroring the validator)", () => {
-    const dsl = {
+    // Nested markers are type-legal (each node carries its own clock member) —
+    // the reader's top-level-only rule is the behavior under test.
+    const dsl: SceneTrackerDsl = {
       box: { $type: "object", properties: { hidden: { $type: "number", clock: "day" } } },
       list: { $type: "array", items: { $type: "string", clock: "part" } },
-    } as unknown as SceneTrackerDsl;
+    };
     expect(findSceneClockField(dsl, "day")).toBeNull();
     expect(findSceneClockField(dsl, "part")).toBeNull();
   });

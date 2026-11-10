@@ -340,12 +340,14 @@ describe("clock marker DSL (semantic story clock marks)", () => {
   });
 
   it("rejects a marker inside an object property or an array item (top-level only)", () => {
-    const nestedObject = {
+    // Type-legal nested markers (each node carries its own clock member) — the
+    // zod validator's top-level rule is the behavior under test.
+    const nestedObject: SceneTrackerDsl = {
       box: { $type: "object", properties: { day: { $type: "number", clock: "day" } } },
-    } as unknown as SceneTrackerDsl;
-    const nestedArray = {
+    };
+    const nestedArray: SceneTrackerDsl = {
       list: { $type: "array", items: { $type: "string", clock: "part" } },
-    } as unknown as SceneTrackerDsl;
+    };
     for (const dsl of [nestedObject, nestedArray]) {
       const result = sceneTrackerDslSchema.safeParse(dsl);
       expect(result.success).toBe(false);
@@ -597,7 +599,9 @@ describe("sceneTrackerConfigSchema", () => {
   });
 
   it("XML format rejects keys that are not valid XML names and names them", () => {
-    const schema = { "first name": { $type: "string" }, "123": { $type: "number" }, ok: { $type: "string" } } as unknown as SceneTrackerDsl;
+    // Invalid XML keys are valid SceneTrackerDsl keys (plain Record) — the XML
+    // check is a separate validator concern.
+    const schema: SceneTrackerDsl = { "first name": { $type: "string" }, "123": { $type: "number" }, ok: { $type: "string" } };
     const result = sceneTrackerConfigSchema.safeParse({ promptFormat: "xml", schema });
     expect(result.success).toBe(false);
     if (!result.success) {
@@ -610,7 +614,7 @@ describe("sceneTrackerConfigSchema", () => {
   });
 
   it("JSON format allows any string key (the XML check is XML-only)", () => {
-    const schema = { "first name": { $type: "string" }, "$x": { $type: "number" } } as unknown as SceneTrackerDsl;
+    const schema: SceneTrackerDsl = { "first name": { $type: "string" }, "$x": { $type: "number" } };
     expect(sceneTrackerConfigSchema.safeParse({ promptFormat: "json", schema }).success).toBe(true);
   });
 });

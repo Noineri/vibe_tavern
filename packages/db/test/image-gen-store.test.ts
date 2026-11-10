@@ -481,8 +481,13 @@ describe('ImageGenStore links (character bindings)', () => {
 		test('an apiKey smuggled into an overlay is stripped on write (IG-1 secret rule)', async () => {
 			const { store } = await setup();
 			const profile = await store.create(baseInput());
-			// Simulate a caller that stuffs the key into the JSON blob.
-			const dirty = { steps: 30, apiKey: 'sk-secret' } as unknown as import('@vibe-tavern/domain').ImageGenModelSettingsOverlay;
+			// Simulate a caller that stuffs the key into the JSON blob: the smuggled
+			// member is NOT part of the overlay type, so the typed view carries it
+			// explicitly — the exact hostile wire shape, compiler-visible.
+			const dirty: import('@vibe-tavern/domain').ImageGenModelSettingsOverlay & { apiKey?: string } = {
+				steps: 30,
+				apiKey: 'sk-secret',
+			};
 			await store.upsertModelSettings(profile.id, 'sd_xl', dirty);
 			const row = await store.getModelSettings(profile.id, 'sd_xl');
 			expect(row?.settings).toEqual({ steps: 30 });

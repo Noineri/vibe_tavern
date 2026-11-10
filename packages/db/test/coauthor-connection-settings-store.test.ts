@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from "bun:test";
-import { PROVIDER_PROFILE_GENERATION_DEFAULTS } from "@vibe-tavern/domain";
+import { PROVIDER_PROFILE_GENERATION_DEFAULTS, type ModelSettingsOverlay } from "@vibe-tavern/domain";
 import { createDb } from "../src/db-connection.js";
 import { coauthorConnectionSettings } from "../src/db-schema.js";
 import { CoauthorConnectionSettingsStore } from "../src/stores/coauthor-connection-settings-store.js";
@@ -149,8 +149,14 @@ describe("single-source defaults (RP new-connection ↔ provider store)", () => 
     // Minimal create — every generation field falls back to the shared constant.
     const profile = await providers.create({ name: "Fresh", ...BASE_CREATE });
 
-    for (const [field, value] of Object.entries(PROVIDER_PROFILE_GENERATION_DEFAULTS)) {
-      expect((profile as unknown as Record<string, unknown>)[field]).toEqual(value);
+    // Typed-entries seam: Object.entries widens keys to string (TS limitation);
+    // the constant's keys are exactly keyof ModelSettingsOverlay, and every one
+    // of them is a StoredProviderProfileRecord member — the invariant the loop
+    // asserts.
+    type DefaultsEntry = [field: keyof ModelSettingsOverlay, value: Required<ModelSettingsOverlay>[keyof ModelSettingsOverlay]];
+    const defaults = Object.entries(PROVIDER_PROFILE_GENERATION_DEFAULTS) as DefaultsEntry[];
+    for (const [field, value] of defaults) {
+      expect(profile[field]).toEqual(value);
     }
   });
 });

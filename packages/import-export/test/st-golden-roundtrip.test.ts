@@ -25,7 +25,6 @@ import { join } from "node:path";
 import {
   exportLorebookToSt,
   importStLorebookJson,
-  type StExportLoreEntry,
   type StExportLorebook,
   type StLorebookNormalized,
 } from "../src/lorebooks/st-lorebook.js";
@@ -155,7 +154,10 @@ describe("golden ST world-info parity probe (step 29)", () => {
       overflowAlert: normalized.overflowAlert,
       characterStrategy: normalized.characterStrategy,
     };
-    const entries = bundle.entries as unknown as StExportLoreEntry[];
+    // The bundle's entries are domain LoreEntry[] — the export contract
+    // (st-lorebook.ts "StExportLoreEntry") was shaped to accept them directly,
+    // no caller-side cast.
+    const entries = bundle.entries;
     const exported = exportLorebookToSt(book, entries, { create_date: 0 });
     const st = exported.entries["0"] as Record<string, unknown>;
 

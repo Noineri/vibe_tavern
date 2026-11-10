@@ -66,9 +66,10 @@ describe("prompt_trace_chunk_refs chunk_id index (LONG_CHAT_PERFORMANCE_REPORT s
 
 	test("a fresh DB carries the index (the test template rides the new migration)", async () => {
 		const db = await createDb(":memory:", undefined, { realMigrations: true });
-		const rows = db.all(
+		// Raw-SQL row boundary: the SELECT's projection at drizzle's all<T> seam.
+		const rows = db.all<{ name: string }>(
 			sql`SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'prompt_trace_chunk_refs'`,
-		) as unknown as Array<{ name: string }>;
+		);
 		expect(rows.map((r) => r.name)).toContain("idx_prompt_trace_chunk_refs_chunk");
 	});
 });

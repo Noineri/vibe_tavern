@@ -81,7 +81,7 @@ describe("createDb DROP-column awareness — repair must not re-add a dropped co
 
 		await writeFolder(folder, false);
 		const db = await createDb(dbPath, folder);
-		(db as unknown as { $client: Database }).$client.close();
+		db.$client.close();
 
 		expect(hasColumn(dbPath, "transitional")).toBe(true);
 	});
@@ -107,7 +107,7 @@ describe("createDb DROP-column awareness — repair must not re-add a dropped co
 		// column, then repairMissingTables + ensureAlterColumns must NOT re-add it.
 		await writeFolder(folder, true);
 		const db = await createDb(dbPath, folder);
-		(db as unknown as { $client: Database }).$client.close();
+		db.$client.close();
 
 		// THE FIX: the dropped column stays dropped.
 		expect(hasColumn(dbPath, "transitional")).toBe(false);
@@ -135,7 +135,7 @@ describe("createDb DROP-column awareness — repair must not re-add a dropped co
 		corrupt.close();
 
 		const db = await createDb(dbPath, folder);
-		(db as unknown as { $client: Database }).$client.close();
+		db.$client.close();
 
 		const check = new Database(dbPath);
 		const repairedTable = check.prepare(
@@ -150,7 +150,7 @@ describe("createDb DROP-column awareness — repair must not re-add a dropped co
 		const dir = await mkdtemp(join(tmpdir(), "vt-drop-aware-project-"));
 		const dbPath = join(dir, "test.db");
 		const db = await createDb(dbPath);
-		(db as unknown as { $client: Database }).$client.close();
+		db.$client.close();
 
 		const conn = new Database(dbPath);
 		const columns = conn.prepare(`PRAGMA table_info("characters")`).all() as { name: string }[];

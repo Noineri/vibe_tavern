@@ -23,7 +23,6 @@ import { describe, expect, test } from "bun:test";
 import { mkdtemp, mkdir, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import type { Database } from "bun:sqlite";
 
 import { createDb, type AppDb } from "../src/db-connection.js";
 import { LorebookStore } from "../src/stores/lorebook-store.js";
@@ -274,7 +273,9 @@ async function assertParticipation(stores: { lorebooks: LorebookStore; scripts: 
 }
 
 function columnsOf(db: AppDb, table: string): string[] {
-  const rows = db.all(`PRAGMA table_info(${table})`) as unknown as Array<{ name: string }>;
+  // Raw-SQL row boundary: PRAGMA table_info's projection names the row type at
+  // drizzle's all<T> seam.
+  const rows = db.all<{ name: string }>(`PRAGMA table_info(${table})`);
   return rows.map((r) => r.name);
 }
 
@@ -284,8 +285,10 @@ function columnsOf(db: AppDb, table: string): string[] {
 async function readDbFixtures(db: AppDb): Promise<OwnerFixture[]> {
   const out: OwnerFixture[] = [];
   type Row = { id: string; scope_type: string; character_id: string | null; persona_id: string | null; chat_id: string | null; enabled: number };
-  const lbRows = db.all("SELECT id, scope_type, character_id, persona_id, chat_id, enabled FROM lorebooks") as unknown as Row[];
-  const lbLinks = db.all("SELECT lorebook_id, target_type, target_id FROM lorebook_links") as unknown as Array<{ lorebook_id: string; target_type: string; target_id: string }>;
+  // Raw-SQL row boundaries: each SELECT's projection is the row type at the
+  // drizzle all<T> seam.
+  const lbRows = db.all<Row>("SELECT id, scope_type, character_id, persona_id, chat_id, enabled FROM lorebooks");
+  const lbLinks = db.all<{ lorebook_id: string; target_type: string; target_id: string }>("SELECT lorebook_id, target_type, target_id FROM lorebook_links");
   for (const r of lbRows) {
     out.push({
       id: r.id,
@@ -298,8 +301,8 @@ async function readDbFixtures(db: AppDb): Promise<OwnerFixture[]> {
     });
   }
   type ScRow = Row & { script_kind: string };
-  const scRows = db.all("SELECT id, scope_type, character_id, persona_id, chat_id, enabled, script_kind FROM scripts") as unknown as ScRow[];
-  const scLinks = db.all("SELECT script_id, target_type, target_id FROM script_links") as unknown as Array<{ script_id: string; target_type: string; target_id: string }>;
+  const scRows = db.all<ScRow>("SELECT id, scope_type, character_id, persona_id, chat_id, enabled, script_kind FROM scripts");
+  const scLinks = db.all<{ script_id: string; target_type: string; target_id: string }>("SELECT script_id, target_type, target_id FROM script_links");
   for (const r of scRows) {
     out.push({
       id: r.id,
@@ -351,7 +354,7 @@ describe("migration 0107 — owners become links, participation identical", () =
       expect([...fromDb.diceScripts].sort(), `pre-migration ${ctx.chatId}: dice script set`).toEqual([...expected.diceScripts].sort());
       expect([...fromDb.participatingScripts].sort(), `pre-migration ${ctx.chatId}: participating script set`).toEqual([...expected.participatingScripts].sort());
     }
-    (preDb as unknown as { $client: Database }).$client.close();
+    preDb.$client.close();
 
     // Phase D: apply the full journal (0107) on the SAME database file via the
     // real createDb path — the exact upgrade a user's database goes through.
@@ -364,8 +367,9 @@ describe("migration 0107 — owners become links, participation identical", () =
     // Every entity-scoped home became a link (deduped); non-entity homes were
     // NOT copied (they never participated); original links survive verbatim.
     const expectedLinks = expectedPostMigrationLinks();
-    const lbLinks = postDb.all("SELECT lorebook_id, target_type, target_id FROM lorebook_links ORDER BY lorebook_id, target_type, target_id") as unknown as Array<Record<string, string>>;
-    const scLinks = postDb.all("SELECT script_id, target_type, target_id FROM script_links ORDER BY script_id, target_type, target_id") as unknown as Array<Record<string, string>>;
+    // Raw-SQL row boundary: the link-table projection at the drizzle all<T> seam.
+    const lbLinks = postDb.all<Record<string, string>>("SELECT lorebook_id, target_type, target_id FROM lorebook_links ORDER BY lorebook_id, target_type, target_id");
+    const scLinks = postDb.all<Record<string, string>>("SELECT script_id, target_type, target_id FROM script_links ORDER BY script_id, target_type, target_id");
     const lbExpected = FIXTURES.filter((f) => f.kind === "lorebook").flatMap((f) => expectedLinks[f.id].map((l) => ({ lorebook_id: f.id, target_type: l.type, target_id: l.id })));
     const scExpected = FIXTURES.filter((f) => f.kind === "script").flatMap((f) => expectedLinks[f.id].map((l) => ({ script_id: f.id, target_type: l.type, target_id: l.id })));
     expect(lbLinks).toEqual(lbExpected.sort((a, b) => `${a.lorebook_id}${a.target_type}${a.target_id}`.localeCompare(`${b.lorebook_id}${b.target_type}${b.target_id}`)));
@@ -378,7 +382,7 @@ describe("migration 0107 — owners become links, participation identical", () =
     }
 
     // No fixture row was lost.
-    expect((postDb.all("SELECT COUNT(*) n FROM lorebooks") as unknown as Array<{ n: number }>)[0].n).toBe(FIXTURES.filter((f) => f.kind === "lorebook").length);
-    expect((postDb.all("SELECT COUNT(*) n FROM scripts") as unknown as Array<{ n: number }>)[0].n).toBe(FIXTURES.filter((f) => f.kind === "script").length);
+    expect(postDb.all<{ n: number }>("SELECT COUNT(*) n FROM lorebooks")[0].n).toBe(FIXTURES.filter((f) => f.kind === "lorebook").length);
+    expect(postDb.all<{ n: number }>("SELECT COUNT(*) n FROM scripts")[0].n).toBe(FIXTURES.filter((f) => f.kind === "script").length);
   });
 });

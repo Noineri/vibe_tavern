@@ -45,7 +45,7 @@ CREATE TABLE \`repair_target\` (\`id\` integer PRIMARY KEY NOT NULL);`;
     raw.close();
 
     const db = await createDb(dbPath, migrationsFolder);
-    (db as unknown as { $client: Database }).$client.close();
+    db.$client.close();
 
     const verify = new Database(dbPath, { readonly: true });
     const repaired = verify
@@ -130,7 +130,7 @@ CREATE TABLE \`repair_target\` (\`id\` integer PRIMARY KEY NOT NULL);`;
     raw.close();
 
     const db = await createDb(dbPath, migrationsFolder);
-    (db as unknown as { $client: Database }).$client.close();
+    db.$client.close();
 
     const verify = new Database(dbPath, { readonly: true });
     const columns = verify.query("PRAGMA table_info('message_variants')").all() as { name: string }[];

@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import {
   buildContextSearchIndex,
   DEFAULT_SEARCH_LIMIT,
+  type ContextSearchResult,
   type IndexedContextRecord,
 } from "../src/context-search-index.js";
 
@@ -149,7 +150,10 @@ describe("buildContextSearchIndex — DTO contract", () => {
   test("results never expose body content", () => {
     const idx = buildContextSearchIndex(corpus);
     for (const r of idx.search("aria")) {
-      expect((r as unknown as Record<string, unknown>).body).toBeUndefined();
+      // Privacy-contract probe: `body` is deliberately absent from the DTO
+      // (indexed, never returned); the widened view exists only to read the
+      // forbidden member and pin its absence.
+      expect((r as ContextSearchResult & { body?: unknown }).body).toBeUndefined();
     }
     idx.dispose();
   });

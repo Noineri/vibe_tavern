@@ -2,18 +2,16 @@ import { describe, expect, test } from "bun:test";
 import type { PronounForms } from "@vibe-tavern/domain";
 import { PRESET_PRONOUN_FORMS, resolvePronounForms } from "../src/pronoun-forms.js";
 import { createFullMacroEngine } from "../src/macro-registry.js";
-import type { PromptVariableContext } from "../src/prompt-variable-context.js";
+import { buildPromptVariableContext, type PromptVariableContext } from "../src/prompt-variable-context.js";
 
-/** Minimal variable context — only `persona` matters for the pronoun macros. */
+/** Minimal variable context — only `persona` matters for the pronoun macros
+ *  (plus `{{user}}`'s pinned "User"); the rest of the shape comes from the
+ *  production builder, not a second hand-written derivation. */
 function ctx(persona: PromptVariableContext["persona"]): PromptVariableContext {
-  return {
+  return buildPromptVariableContext({
     names: { userName: "User", charName: "Assistant" },
     persona,
-    character: { name: "", description: "", personality: null, scenario: null },
-    prompt: { system: "", jailbreak: "", summary: "", tools: "", prefill: null, authorsNote: null, authorsNoteDepth: null, customInjections: [], promptOrder: [], original: null, contextBudget: null, maxResponseTokens: null },
-    chat: { messages: [], messageIds: [] },
-    runtime: { contextBudget: null, maxPromptTokens: null },
-  } as unknown as PromptVariableContext;
+  });
 }
 
 describe("PRESET_PRONOUN_FORMS", () => {

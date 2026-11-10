@@ -299,33 +299,35 @@ describe("findInvalidXmlKeys", () => {
   });
 
   it("flags root keys that are not valid XML names (space / leading digit / sigil)", () => {
+    // Invalid XML keys are perfectly valid SceneTrackerDsl keys (the DSL is a
+    // plain Record — the XML check is a separate validator concern).
     const dsl: SceneTrackerDsl = {
       "first name": { $type: "string" },
       "123abc": { $type: "number" },
       "$sigil": { $type: "boolean" },
       ok: { $type: "string" },
-    } as unknown as SceneTrackerDsl;
+    };
     expect(findInvalidXmlKeys(dsl)).toEqual(["first name", "123abc", "$sigil"]);
   });
 
   it("recurses into nested object properties with dotted paths", () => {
     const dsl: SceneTrackerDsl = {
       location: { $type: "object", properties: { room: { $type: "string" }, "bad key": { $type: "string" } } },
-    } as unknown as SceneTrackerDsl;
+    };
     expect(findInvalidXmlKeys(dsl)).toEqual(["location.bad key"]);
   });
 
   it("recurses into array item object properties", () => {
     const dsl: SceneTrackerDsl = {
       party: { $type: "array", items: { $type: "object", properties: { name: { $type: "string" }, "bad key": { $type: "string" } } } },
-    } as unknown as SceneTrackerDsl;
+    };
     expect(findInvalidXmlKeys(dsl)).toEqual(["party.bad key"]);
   });
 
   it("returns nothing for JSON-irrelevant schemas (any key is JSON-valid)", () => {
     // The check is XML-only; this just confirms the helper is pure and does not
     // depend on any promptFormat — the caller gates on format.
-    const dsl: SceneTrackerDsl = { "totally fine for json": { $type: "string" } } as unknown as SceneTrackerDsl;
+    const dsl: SceneTrackerDsl = { "totally fine for json": { $type: "string" } };
     expect(findInvalidXmlKeys(dsl)).toEqual(["totally fine for json"]);
   });
 });

@@ -95,7 +95,7 @@ describe("PresetStore — generationFormat column (LS-3a)", () => {
     const created = await store.create({ name: "Broken" });
     // Raw bun:sqlite handle via drizzle's $client (same seam as the other
     // db tests) — raw SQL is test-only; stores are the only production path.
-    const raw = (db as unknown as { $client: import("bun:sqlite").Database }).$client;
+    const raw = db.$client;
     raw.prepare("UPDATE prompt_presets SET generation_format_json = '{not json' WHERE id = ?").run(created.id);
     const reread = await store.getById(created.id);
     expect(reread?.generationFormat).toBeUndefined();

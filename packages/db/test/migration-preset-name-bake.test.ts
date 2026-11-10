@@ -75,7 +75,7 @@ describe("0026 message_variant_preset_name bake migration", () => {
 
     // 1. Fresh DB at the pre-bake schema (message_variants.preset_id present).
     let db = await createDb(dbPath, preFolder);
-    (db as unknown as { $client: Database }).$client.close();
+    db.$client.close();
 
     // 2. Seed via a raw FK-off connection: a live preset, a message chain, and
     //    two variants — one referencing the live preset, one an orphaned id.
@@ -102,7 +102,7 @@ describe("0026 message_variant_preset_name bake migration", () => {
     // 3. Apply 0026 by re-running createDb with the FULL (real) migrations
     //    folder. 0000…0025 are already stamped, so drizzle runs only 0026.
     db = await createDb(dbPath, REAL_DRIZZLE);
-    const client = (db as unknown as { $client: Database }).$client;
+    const client = db.$client;
 
     // 4a. Backfill: the live-preset variant got the preset's NAME; the orphan
     //     (whose preset_id matched nothing) got NULL — its history is gone,

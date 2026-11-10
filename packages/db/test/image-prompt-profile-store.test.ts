@@ -73,13 +73,16 @@ describe('ImagePromptProfileStore', () => {
     const { store } = await setup();
     await store.ensureDefaultImagePromptProfile();
     // Bogus input shape cast in — the store must filter it, not persist it.
-    const bogus = {
-      'not-a-mode|pony': { body: 'x' },
-      'portrait|not-a-family': { body: 'x' },
-      'portrait|prose': 'flat-string-payload',
-      'no-separator': { body: 'x' },
-      'negative|prose': { body: 'ok', qualityText: 42 as unknown as string },
-    } as never;
+    // A hand-written request body is exactly how a NUMBER reaches the
+    // string-typed qualityText in production: the JSON.parse boundary names
+    // the wire seam (single narrowing; the never-spell below stays budgeted).
+    const bogus = JSON.parse(`{
+      "not-a-mode|pony": { "body": "x" },
+      "portrait|not-a-family": { "body": "x" },
+      "portrait|prose": "flat-string-payload",
+      "no-separator": { "body": "x" },
+      "negative|prose": { "body": "ok", "qualityText": 42 }
+    }`) as never;
     const profile = await store.createImagePromptProfile({ name: 'Dirty', overrides: bogus });
     expect(profile.overrides).toEqual({});
   });

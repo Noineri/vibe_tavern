@@ -133,7 +133,7 @@ function stampCount(dbPath: string, hash: string): number {
  *  raw keeps the fixture pinned to exactly the legacy shape under test). */
 async function buildLegacyNullDb(dbPath: string, folders: SyntheticFolders): Promise<void> {
   const db = await createDb(dbPath, folders.folderBase);
-  (db as unknown as { $client: Database }).$client.close();
+  db.$client.close();
   const raw = openRaw(dbPath);
   raw.run(
     "INSERT INTO lorebooks (id, name, scope_type, created_at, updated_at) VALUES ('lb1', 'Null-fix lorebook', 'global', '2026-09-04', '2026-09-04')",
@@ -165,7 +165,7 @@ describe("createDb rebuild NULL pre-repair + gap-repair (0059 class)", () => {
     expect(info.total).toBe(1);
     // And it was migrate() that applied it — stamped once, in-order.
     expect(stampCount(dbPath, folders.rebuildHash)).toBe(1);
-    (db as unknown as { $client: Database }).$client.close();
+    db.$client.close();
   });
 
   test("gap-repair re-applies a rebuild the watermark skipped (owner's 0059 state)", async () => {
@@ -192,7 +192,7 @@ describe("createDb rebuild NULL pre-repair + gap-repair (0059 class)", () => {
     expect(info.total).toBe(1); // the entry survived the repair
     expect(stampCount(dbPath, folders.rebuildHash)).toBe(1); // repaired + stamped
 
-    (db as unknown as { $client: Database }).$client.close();
+    db.$client.close();
     const probe = new Database(dbPath, { readonly: true });
     const titles = probe.query("SELECT title FROM lore_entries").all() as { title: string }[];
     probe.close();
@@ -206,7 +206,7 @@ describe("createDb rebuild NULL pre-repair + gap-repair (0059 class)", () => {
 
     // Fresh DB on the full folder: baseline + rebuild + marker all applied.
     const db = await createDb(dbPath, folders.folderFull);
-    (db as unknown as { $client: Database }).$client.close();
+    db.$client.close();
     const raw = openRaw(dbPath);
     raw.run(
       "INSERT INTO lorebooks (id, name, scope_type, created_at, updated_at) VALUES ('lb2', 'Healthy lorebook', 'global', '2026-09-04', '2026-09-04')",
@@ -223,7 +223,7 @@ describe("createDb rebuild NULL pre-repair + gap-repair (0059 class)", () => {
     // the gap-repair must no-op. A wrongful re-apply would hit "index already
     // exists" inside its transaction and throw, so no-throw is the guard.
     const again = await createDb(dbPath, folders.folderFull);
-    (again as unknown as { $client: Database }).$client.close();
+    again.$client.close();
 
     const probe = new Database(dbPath, { readonly: true });
     const kept = probe.query("SELECT content_hash FROM lore_entries WHERE title = 'healthy'").get() as { content_hash: string };

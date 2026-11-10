@@ -65,7 +65,7 @@ describe("0123 coauthor_modules sort_order backfill (ML-5)", () => {
 
     // 1. Fresh DB at the pre-0123 schema (no sort_order column).
     let db = await createDb(dbPath, preFolder);
-    (db as unknown as { $client: Database }).$client.close();
+    db.$client.close();
 
     // 2. Seed legacy modules: three distinct created_at values inserted OUT of
     //    chronological order (insertion order must not decide), plus a tied
@@ -92,7 +92,7 @@ describe("0123 coauthor_modules sort_order backfill (ML-5)", () => {
     //    folder. Everything before 0123 is already stamped, so drizzle runs
     //    only 0123 (ALTER + the ROW_NUMBER backfill).
     db = await createDb(dbPath, REAL_DRIZZLE);
-    const client = (db as unknown as { $client: Database }).$client;
+    const client = db.$client;
 
     // 4. Backfill: created_at ASC numbering, id ASC inside the tie.
     const rows = client
