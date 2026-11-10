@@ -3,16 +3,27 @@ import { decorateCoauthorFavorites, resolveCoauthorBinding } from "./coauthor-pr
 import type { CoauthorConnectionSettingsRecord, ProviderProfileRecord, FavoriteProviderModelRecord } from "../api/types.js";
 
 function makeProfile(over: Partial<ProviderProfileRecord> = {}): ProviderProfileRecord {
+  // Complete ClientProviderProfileRecord — every member below is a real one.
+  // The erased literal carried `apiKey` (the client projection has no such
+  // member — the server keeps the key and returns `hasStoredApiKey`) and
+  // `sortOrder` (no such member on the record); both were invisible fictions
+  // the erasure hid. Values differing from the wire defaults are kept
+  // explicitly; no assertion reads either dropped member.
   return {
     id: "prof_1",
     name: "Alpha",
     providerPreset: "openaiCompat",
+    coauthorTransport: "chat_completions",
+    generationMode: "chat",
     endpoint: "http://localhost/v1",
-    apiKey: "sk-test",
     defaultModel: "gpt-4o",
+    visionModel: null,
     contextBudget: 16000,
     pinContextBudget: false,
+    tokenPadding: 0,
     bindPerModel: true,
+    modelFreeOnly: false,
+    modelGroupByOwner: false,
     maxTokens: 2000,
     temperature: 1,
     topP: 1,
@@ -21,6 +32,12 @@ function makeProfile(over: Partial<ProviderProfileRecord> = {}): ProviderProfile
     topA: 0,
     typicalP: 1,
     tfsZ: 1,
+    adaptiveTarget: -1,
+    adaptiveDecay: 0.9,
+    dynatempRange: 0,
+    dynatempExponent: 1,
+    topNSigma: 0,
+    smoothingFactor: 0,
     repeatLastN: 0,
     mirostat: 0,
     mirostatTau: 5,
@@ -28,41 +45,67 @@ function makeProfile(over: Partial<ProviderProfileRecord> = {}): ProviderProfile
     dryMultiplier: 0,
     dryBase: 1.75,
     dryAllowedLength: 2,
+    dryPenaltyLastN: -1,
     drySequenceBreakers: [],
     xtcThreshold: 0.1,
     xtcProbability: 0,
     frequencyPenalty: 0,
     presencePenalty: 0,
     repetitionPenalty: 1,
+    unifiedLinear: 1,
+    unifiedQuad: 0,
+    unifiedConf: 0,
+    repetitionPenaltySlope: 0,
+    phraseRepPen: "off",
+    thinkingMode: "auto",
     stopSequences: [],
+    bannedStrings: [],
     logitBias: [],
     seed: null,
     reasoningEffort: "auto",
     showReasoning: false,
     streamResponse: true,
     customSamplers: true,
+    proxyMode: "inherit",
+    proxyId: null,
+    samplerSetId: null,
+    generationFormat: null,
     isActive: true,
-    visionModel: null,
-    sortOrder: 0,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    hasStoredApiKey: true,
     ...over,
-  } as unknown as ProviderProfileRecord;
+  };
 }
 
 function makeFavorite(modelId: string): FavoriteProviderModelRecord {
-  return { id: `fav_${modelId}`, profileId: "prof_1", modelId, label: null, sortOrder: 0 } as unknown as FavoriteProviderModelRecord;
+  // Complete FavoriteProviderModelRecord: the erased literal used `profileId`
+  // (the real member is `providerProfileId`) and invented `sortOrder`; it
+  // omitted the required `scope`/`contextLength`/`createdAt`. None is read —
+  // decorateCoauthorFavorites joins on `modelId` and spreads the rest.
+  return {
+    id: `fav_${modelId}`,
+    providerProfileId: "prof_1",
+    modelId,
+    scope: "rp",
+    label: null,
+    contextLength: null,
+    createdAt: "2026-01-01",
+  };
 }
 
 /** The bound connection's `coauthor_connection_settings` row (CG-1/CG-2) —
  *  the model source the binding now reads instead of the retired global
  *  `ui_settings` model column (dropped by CG-5). */
 function makeRow(modelName: string | null): CoauthorConnectionSettingsRecord {
+  // Every member below is real; the old erasure was pure noise.
   return {
     providerProfileId: "prof_coauthor",
     modelName,
     settings: { temperature: 0.5, maxTokens: 1234, contextBudget: 5000, pinContextBudget: true },
     createdAt: "2026-01-01",
     updatedAt: "2026-01-01",
-  } as unknown as CoauthorConnectionSettingsRecord;
+  };
 }
 
 describe("resolveCoauthorBinding", () => {

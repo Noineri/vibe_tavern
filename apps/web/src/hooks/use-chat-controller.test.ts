@@ -14,13 +14,13 @@
  */
 import { describe, test, expect, beforeEach, mock } from "bun:test";
 
-import { brandId, type ChatId } from "@vibe-tavern/domain";
+import { brandId, type ChatId, type PromptPresetId } from "@vibe-tavern/domain";
 import type { CoauthorLoreBundle, RegenerateOverride } from "@vibe-tavern/api-contracts";
-import type { AppSnapshot, DiceRollSnapshot, ExperienceQueuedAttachmentView } from "../api/types.js";
+import type { DiceRollSnapshot, ExperienceQueuedAttachmentView } from "../api/types.js";
 import type { ExperienceScopeState } from "../stores/experience-store.js";
-import type { BootstrapData } from "../stores/api-actions/bootstrap-actions.js";
 import type { GenerationMetadata } from "../lib/generation-metadata.js";
 import { useDomEnv } from "../../test/dom-env.js";
+import { wireChat, wirePromptPreset, wireUiSettings } from "../../test/wire-fixtures.js";
 
 useDomEnv();
 
@@ -278,8 +278,16 @@ describe("useChatController — handleRegenerateMessage (non-stream)", () => {
 		let resolveSend!: () => void;
 		sendChatMessageAction.mockImplementation(() => new Promise<void>((resolve) => { resolveSend = resolve; }));
 		useChatStore.setState({ draft: "hello" });
-		useSnapshotStore.setState({ activeChat: { id: CHAT, mode: "rp", promptPresetId: "preset-1" } as unknown as AppSnapshot["activeChat"] });
-		useBootstrapStore.setState({ data: { promptPresets: [{ id: "preset-1", name: "Quick preset" }], uiSettings: { userMessageCount: 0 } } as unknown as BootstrapData });
+		useSnapshotStore.setState({ activeChat: wireChat({ id: CHAT, mode: "rp", promptPresetId: brandId<PromptPresetId>("preset-1") }) });
+		useBootstrapStore.setState({
+			data: {
+				initialChatId: null, snapshot: null, isFirstRun: false, allCharacters: [],
+				promptPresets: [wirePromptPreset({ id: "preset-1", name: "Quick preset" })],
+				uiSettings: wireUiSettings(),
+				agentKindSettings: {},
+				isArmServer: false,
+			},
+		});
 		const { result } = renderHook(() => useChatController());
 
 		let pending!: Promise<void>;

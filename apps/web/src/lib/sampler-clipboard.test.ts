@@ -177,11 +177,11 @@ describe("sampler clipboard round-trip", () => {
     // A malicious or stale clipboard blob might include name/endpoint.
     // The schema strips them (identity fields not in modelSettingsOverlaySchema),
     // but even if they slip through, applySamplerPresetFields doesn't touch them.
+    // The hostile blob is typed as the overlay partial INTERSECTED with the
+    // identity field it carries — no erasure, the extra key stays visible.
+    const hostile: Partial<ModelSettingsOverlay> & { name: string } = { temperature: 0.5, name: "hacked" };
     const { updater, form: target } = recordingUpdater(makeForm({ name: "my-profile" }));
-    applySamplerPresetFields(
-      { temperature: 0.5, name: "hacked" } as unknown as Partial<ModelSettingsOverlay>,
-      updater,
-    );
+    applySamplerPresetFields(hostile, updater);
     expect(target.temperature).toBe(0.5);
     expect(target.name).toBe("my-profile"); // unchanged — name is not in the apply list
   });
@@ -285,14 +285,14 @@ describe("overlayDivergesFromSet (LS-5 dirty dot)", () => {
     const { updater, form: target } = recordingUpdater(makeForm());
     // Apply (copy-on-select).
     applySamplerPresetFields(parsed.data as Partial<ModelSettingsOverlay>, updater);
-    expect(overlayDivergesFromSet(parsed.data as Partial<ModelSettingsOverlay>, target as unknown as ModelSettingsOverlay)).toBe(false);
+    expect(overlayDivergesFromSet(parsed.data as Partial<ModelSettingsOverlay>, target)).toBe(false);
 
     // The user nudges a knob → dirty.
     target.temperature = 0.5;
-    expect(overlayDivergesFromSet(parsed.data as Partial<ModelSettingsOverlay>, target as unknown as ModelSettingsOverlay)).toBe(true);
+    expect(overlayDivergesFromSet(parsed.data as Partial<ModelSettingsOverlay>, target)).toBe(true);
 
     // Re-select / 🔄 (re-apply) → the dot clears.
     target.temperature = 1.31;
-    expect(overlayDivergesFromSet(parsed.data as Partial<ModelSettingsOverlay>, target as unknown as ModelSettingsOverlay)).toBe(false);
+    expect(overlayDivergesFromSet(parsed.data as Partial<ModelSettingsOverlay>, target)).toBe(false);
   });
 });

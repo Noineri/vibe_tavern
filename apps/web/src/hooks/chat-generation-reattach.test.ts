@@ -1,9 +1,10 @@
 /** Real app attachment/controller/HTTP/parser/stores; only fetch is doubled. */
 import { afterAll, beforeEach, expect, test } from "bun:test";
-import { brandId, type ChatId } from "@vibe-tavern/domain";
+import { brandId, normalizeInsightsConfig, type CharacterId, type ChatBranchId, type ChatId } from "@vibe-tavern/domain";
 import type { ChatGenerationOperation } from "@vibe-tavern/api-contracts";
 import type { AppSnapshot, ProviderProfileRecord } from "../api/types.js";
 import { useDomEnv } from "../../test/dom-env.js";
+import { wireBranch, wireCharacter, wireChat, wireMessage } from "../../test/wire-fixtures.js";
 
 useDomEnv();
 const { act, renderHook, waitFor } = await import("@testing-library/react");
@@ -29,11 +30,20 @@ afterAll(() => { globalThis.fetch = originalFetch; restores.forEach((restore) =>
 
 const A = brandId<ChatId>("reattach-a"), B = brandId<ChatId>("reattach-b");
 function snapshot(chatId: ChatId, mode: "rp" | "coauthor", content?: string): AppSnapshot {
-  return { activeChat: { id: chatId, characterId: "character", mode, insightsConfig: { objectiveEnabled: false, trackerEnabled: false } },
-    character: { id: "character", name: "Character" }, activeBranch: { id: `branch-${chatId}`, chatId },
-    messages: [{ id: "user", chatId, branchId: `branch-${chatId}`, role: "user", content: "Committed request", variants: [] },
-      ...(content ? [{ id: "assistant", chatId, branchId: `branch-${chatId}`, role: "assistant", content, variants: [], selectedVariantIndex: null }] : [])],
-  } as unknown as AppSnapshot;
+  return {
+    activeChat: wireChat({
+      id: chatId,
+      characterId: brandId<CharacterId>("character"),
+      mode,
+      insightsConfig: normalizeInsightsConfig({ objectiveEnabled: false, trackerEnabled: false }),
+    }),
+    character: wireCharacter({ id: "character", name: "Character" }),
+    activeBranch: wireBranch({ id: brandId<ChatBranchId>(`branch-${chatId}`), chatId }),
+    messages: [
+      wireMessage("user", { chatId, branchId: brandId<ChatBranchId>(`branch-${chatId}`), role: "user", authorType: "user", content: "Committed request" }),
+      ...(content ? [wireMessage("assistant", { chatId, branchId: brandId<ChatBranchId>(`branch-${chatId}`), role: "assistant", content })] : []),
+    ],
+  };
 }
 const frame = (id: number, event: string, data: unknown) => `id: ${id}\nevent: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
 function deferred<T>() {

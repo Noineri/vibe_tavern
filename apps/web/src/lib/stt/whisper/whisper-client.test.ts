@@ -108,17 +108,55 @@ describe("WhisperSttClient.load", () => {
   test("progress events re-arm the watchdog and reach subscribers", async () => {
     // Assert timer ownership directly: a 25ms real sleep inside a 30ms window
     // races a busy worker and can reject before the second progress event.
-    const timers = new Map<unknown, () => void>();
+    const timers = new Map<object, () => void>();
     let sequence = 0;
-    // Opaque handles are used only by clearTimeout here, across DOM/Bun/Node
-    // overloads; the fake does not implement a runtime Timer object's methods.
-    const schedule = spyOn(globalThis, "setTimeout").mockImplementation(((handler: unknown) => {
-      const id = ++sequence as unknown as ReturnType<typeof setTimeout>;
+    // Member-for-member inert Timer handle (step 8b): the global setTimeout
+    // returns an opaque handle (bun `Timer` / node `Timeout` / DOM `number` —
+    // the merged globals declare all three), so the spy fabricates a Timer per
+    // call instead of erasing a numeric id into it. The handle is consumed
+    // only by the clearTimeout spy (and identity pins below); every Timer
+    // member returns the handle itself, `[Symbol.toPrimitive]` the sequence
+    // number.
+    const fakeTimer = (id: number): Timer => {
+      const timer: Timer = {
+        ref: () => timer,
+        unref: () => timer,
+        hasRef: () => true,
+        refresh: () => timer,
+        [Symbol.toPrimitive]: () => id,
+      };
+      return timer;
+    };
+    // The fake's type is the surface the whisper client drives: a
+    // single-delay fn returning an opaque bun `Timer` handle. The spy TARGET
+    // is the narrowed timer-globals view below — the merge of THREE global
+    // setTimeout declarations (node Timeout with a deferred conditional rest /
+    // bun Timer / DOM number) and their `__promisify__` namespaces cannot be
+    // related by any writable impl under this TS 7.1 beta, so the spies run
+    // through that view instead of the merged global type.
+    function fakeSetTimeout(handler: Bun.TimerHandler, timeout?: number): Timer {
       if (typeof handler !== "function") throw new Error("Expected a watchdog callback");
-      timers.set(id, () => handler());
+      const id = fakeTimer(++sequence);
+      timers.set(id, handler);
       return id;
-    }) as unknown as typeof setTimeout);
-    const cancel = spyOn(globalThis, "clearTimeout").mockImplementation((id) => { if (id !== undefined) timers.delete(id); });
+    }
+    // The spy target is the documented test-driver view of the timer globals
+    // (the sound-alerts `Window & {…}` precedent): narrowed to the surface the
+    // whisper client drives — a single-delay fn returning an opaque bun
+    // `Timer` handle, and a clearTimeout accepting it. Narrowing is what makes
+    // the merge of THREE global setTimeout declarations (node Timeout with a
+    // deferred conditional rest / bun Timer / DOM number) and their
+    // `__promisify__` namespaces — which no writable impl can relate to under
+    // this TS 7.1 beta — unnecessary: the double is fully typed against the
+    // ONE surface production actually drives.
+    const timerGlobals = globalThis as Omit<typeof globalThis, "setTimeout" | "clearTimeout"> & {
+      setTimeout: (handler: Bun.TimerHandler, timeout?: number) => Timer;
+      clearTimeout: (id?: Timer | number | string) => void;
+    };
+    const schedule = spyOn(timerGlobals, "setTimeout").mockImplementation(fakeSetTimeout);
+    const cancel = spyOn(timerGlobals, "clearTimeout").mockImplementation((id) => {
+      if (id !== undefined && typeof id !== "number" && typeof id !== "string") timers.delete(id);
+    });
     const { client, worker } = makeClient();
     const seen: unknown[] = [];
     client.onLoadProgress((p) => seen.push(p.data));

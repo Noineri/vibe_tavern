@@ -2,6 +2,8 @@ import { afterAll, beforeEach, expect, mock, spyOn, test } from "bun:test";
 import { brandId, type ChatId, type AgentThreadOwner } from "@vibe-tavern/domain";
 import { useDomEnv } from "../../test/dom-env.js";
 import { installI18nContextSeam } from "../../test/i18n-context-seam.js";
+import { TestEventSource } from "../../test/event-source-seam.js";
+import { toastClickEvent } from "../../test/react-event-seam.js";
 useDomEnv();
 const { renderHook, waitFor, act } = await import("@testing-library/react");
 const { toast } = await import("sonner");
@@ -23,16 +25,25 @@ let language = "en";
 installI18nContextSeam({ custom: { t: (key, values) => JSON.stringify({ key, values, language }) } });
 const { useAgentRunEvents } = await import("./use-agent-run-events.js");
 
-class Source {
+/** The agent-run channel adapter over THE EventSource seam
+ *  (../../test/event-source-seam.ts): `emit(payload)`/`raw(data)` deliver on
+ *  the one kind `useAgentRunEvents` registers ("agent.run"), preserving this
+ *  suite's call shapes; the seam supplies the EventSource-assignable member
+ *  set, array-bucket listeners and real-MessageEvent delivery. `instances`
+ *  shadows the seam static (the beforeEach reset writes an OWN property on
+ *  this subclass — the constructor must push to the array this suite reads). */
+class Source extends TestEventSource {
   static instances: Source[] = [];
-  listeners = new Map<string, EventListener>();
-  closed = false;
-  constructor(readonly url: string) { Source.instances.push(this); }
-  addEventListener(name: string, listener: EventListener) { this.listeners.set(name, listener); }
-  removeEventListener(name: string, listener: EventListener) { if (this.listeners.get(name) === listener) this.listeners.delete(name); }
-  close() { this.closed = true; }
-  emit(payload: unknown) { this.raw(JSON.stringify(payload)); }
-  raw(data: string) { this.listeners.get("agent.run")?.(new MessageEvent("agent.run", { data })); }
+  constructor(url: string | URL) {
+    super(url);
+    Source.instances.push(this);
+  }
+  emit(payload: unknown): void {
+    super.raw("agent.run", JSON.stringify(payload));
+  }
+  raw(data: string): void {
+    super.raw("agent.run", data);
+  }
 }
 const originalSource = globalThis.EventSource;
 const tokenKey = "vibe_mobile_token";
@@ -73,7 +84,7 @@ beforeEach(() => {
   Source.instances = [];
   success.mockClear(); info.mockClear(); error.mockClear();
   for (const open of opens.values()) { open.mockClear(); open.mockImplementation(async () => {}); }
-  globalThis.EventSource = Source as unknown as typeof EventSource;
+  globalThis.EventSource = Source;
 });
 afterAll(() => {
   restoreStores();
@@ -112,7 +123,7 @@ for (const kind of kinds) {
       Source.instances[0]!.emit(event);
       const action = success.mock.calls[0]![1]!.action;
       if (typeof action !== "object" || action === null || !("onClick" in action)) throw new Error("No Open action");
-      await action.onClick(new MouseEvent("click") as unknown as Parameters<typeof action.onClick>[0]);
+      await action.onClick(toastClickEvent());
       expect(opens.get(kind)!).toHaveBeenCalledWith(event.owner);
       expect([...opens.values()].reduce((count, open) => count + open.mock.calls.length, 0)).toBe(1);
     } finally { h.unmount(); }
@@ -148,7 +159,7 @@ test("the authenticated channel survives rerenders/locale changes, and cleanup r
   localStorage.setItem(tokenKey, "test token");
   const h = renderHook(() => useAgentRunEvents());
   const source = Source.instances[0]!;
-  const late = source.listeners.get("agent.run")!;
+  const late = source.listeners.get("agent.run")![0]!;
   try {
     expect(source.url).toContain("/api/agent-runs/events?token=test%20token");
     language = "ru"; h.rerender();
@@ -169,7 +180,7 @@ test("a failed Open action reports the existing request error instead of rejecti
     Source.instances[0]!.emit(notification());
     const action = success.mock.calls[0]![1]!.action;
     if (typeof action !== "object" || action === null || !("onClick" in action)) throw new Error("No Open action");
-    await action.onClick(new MouseEvent("click") as unknown as Parameters<typeof action.onClick>[0]);
+    await action.onClick(toastClickEvent());
     expect(error).toHaveBeenCalledWith("Destination no longer exists");
   } finally { h.unmount(); }
 });
@@ -192,7 +203,7 @@ for (const [state, level] of [["finished", success], ["failed", error]] as const
       expect(level).toHaveBeenCalledTimes(1);
       const action = level.mock.calls[0]![1]!.action;
       if (typeof action !== "object" || !action || !("onClick" in action)) throw new Error("No Open action");
-      await action.onClick(new MouseEvent("click") as unknown as Parameters<typeof action.onClick>[0]);
+      await action.onClick(toastClickEvent());
       expect(String(useChatStore.getState().activeChatId)).toBe("coauthor-chat");
       expect(useChatStore.getState().selectedCharacterId).toBe("coauthor-character");
       expect(useNavigationStore.getState().mode).toBe("play");
@@ -251,7 +262,7 @@ test("ready discovers running chats after reload and reconnect without overwriti
   globalThis.fetch = Object.assign(() => new Promise<Response>((resolve) => { releases.push(resolve); }), { preconnect: originalFetch.preconnect });
   const h = renderHook(() => useAgentRunEvents());
   const source = Source.instances[0]!;
-  const ready = () => source.listeners.get("ready")!(new MessageEvent("ready", { data: "{}" }));
+  const ready = () => source.listeners.get("ready")![0]!(new MessageEvent("ready", { data: "{}" }));
   try {
     ready();
     await act(async () => { releases[0]!(Response.json([replyEvent("started"), coauthorEvent("started"), notification("script", "started")])); });
@@ -283,7 +294,7 @@ test("a background RP reply uses the header name and Open navigates to its exact
     expect(JSON.parse(String(success.mock.calls[0]![0]))).toEqual({ key: "chat_new_reply_toast", values: { name: "Reply header character" }, language: "en" });
     const action = success.mock.calls[0]![1]!.action;
     if (typeof action !== "object" || !action || !("onClick" in action)) throw new Error("No Open action");
-    await action.onClick(new MouseEvent("click") as unknown as Parameters<typeof action.onClick>[0]);
+    await action.onClick(toastClickEvent());
     expect(String(useChatStore.getState().activeChatId)).toBe("rp-chat");
     expect(useChatRunActivityStore.getState().ready).toEqual({});
     expect(useChatStore.getState().selectedCharacterId).toBe("rp-character");

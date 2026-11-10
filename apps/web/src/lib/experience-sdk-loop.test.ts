@@ -11,10 +11,17 @@
  */
 import { describe, expect, test } from "bun:test";
 import { useDomEnv } from "../../test/dom-env.js";
-import { ExperienceHostBridge, type BridgePort } from "./experience-bridge.js";
+import { ExperienceHostBridge } from "./experience-bridge.js";
 import { VIBE_EXPERIENCE_SDK_SOURCE } from "./experience-sdk.js";
 
 useDomEnv();
+
+/** The realtime commit claim `onRoundCommit` relays (experience-bridge.ts) —
+ *  the bridge commits THIS shape, so captures are typed as it, not as
+ *  Record<string, unknown> through an erasure. */
+type RoundCommitClaim = Parameters<
+  NonNullable<ConstructorParameters<typeof ExperienceHostBridge>[0]["onRoundCommit"]>
+>[0];
 
 interface SdkHarness {
   connect: (onView: (v: unknown) => void) => LoopExperience;
@@ -148,7 +155,7 @@ describe("SDK loop surface — host bridge auto-forward", () => {
       onAction: () => {},
       onModelRequest: (r) => received.push(r),
     });
-    bridge.bindHostPort(channel.port1 as unknown as BridgePort);
+    bridge.bindHostPort(channel.port1);
     const h = createHarness();
     h.deliverWindowMessage({ kind: "port", port: channel.port2 });
     bridge.sendHello();
@@ -170,7 +177,7 @@ describe("SDK loop surface — host bridge auto-forward", () => {
       onAction: () => {},
       onModelRequest: (r) => received.push(r),
     });
-    bridge.bindHostPort(channel.port1 as unknown as BridgePort);
+    bridge.bindHostPort(channel.port1);
     const h = createHarness();
     h.deliverWindowMessage({ kind: "port", port: channel.port2 });
     // No hello yet → the SDK has no nonce → no auto-forward.
@@ -181,14 +188,14 @@ describe("SDK loop surface — host bridge auto-forward", () => {
 
   test("vt-loop:finish auto-commits as round_commit with score/summary", async () => {
     const channel = new MessageChannel();
-    const commits: Array<Record<string, unknown>> = [];
+    const commits: RoundCommitClaim[] = [];
     const bridge = new ExperienceHostBridge({
       sessionId: "sess_rt",
       initialRevision: 0,
       onAction: () => {},
-      onRoundCommit: (c) => commits.push(c as unknown as Record<string, unknown>),
+      onRoundCommit: (c) => commits.push(c),
     });
-    bridge.bindHostPort(channel.port1 as unknown as BridgePort);
+    bridge.bindHostPort(channel.port1);
     const h = createHarness();
     h.deliverWindowMessage({ kind: "port", port: channel.port2 });
     bridge.sendHello();
@@ -219,7 +226,7 @@ describe("SDK loop surface — host bridge auto-forward", () => {
       initialRevision: 0,
       onAction: () => {},
     });
-    bridge.bindHostPort(channel.port1 as unknown as BridgePort);
+    bridge.bindHostPort(channel.port1);
     const h = createHarness();
     const results = h.listenLoop("vt-loop:model-result");
     h.deliverWindowMessage({ kind: "port", port: channel.port2 });

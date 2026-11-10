@@ -21,9 +21,10 @@
  */
 import { describe, it, expect, beforeEach, mock } from "bun:test";
 import type { ModelSettingsOverlay } from "@vibe-tavern/domain";
-import type { CoauthorConnectionSettingsRecord, ProviderProfileRecord, UiSettingsRecord } from "../api/types.js";
+import type { CoauthorConnectionSettingsRecord, ProviderProfileRecord } from "../api/types.js";
 
 import { useDomEnv } from "../../test/dom-env.js";
+import { wireProviderProfile, wireUiSettings } from "../../test/wire-fixtures.js";
 
 useDomEnv();
 
@@ -57,7 +58,8 @@ const { useBootstrapStore } = await import("../stores/api-actions/bootstrap-acti
 const { COAUTHOR_GENERATION_DEFAULTS } = await import("@vibe-tavern/domain");
 const { useCoauthorProviderBinding } = await import("./use-coauthor-provider-binding.js");
 
-/** A stored connection row — `settings` partial like the CG-1 seed writes. */
+/** A stored connection row — `settings` partial like the CG-1 seed writes.
+ *  Every field below is a real CoauthorConnectionSettingsRecord member. */
 function makeRow(modelName: string | null, settings: ModelSettingsOverlay = {}): CoauthorConnectionSettingsRecord {
   return {
     providerProfileId: "p1",
@@ -68,12 +70,9 @@ function makeRow(modelName: string | null, settings: ModelSettingsOverlay = {}):
   };
 }
 
-function makeUiSettings(): UiSettingsRecord {
-  return {
-    id: "default", theme: "dark", chatFontSize: 15, uiFontSize: 14, messageWidth: 700, language: "en",
-    activePromptPresetId: null, aiAssistantProviderId: null, aiAssistantModelName: null,
-    coauthorProviderId: "p1", updatedAt: "2026-01-01",
-  } as unknown as UiSettingsRecord;
+function makeUiSettings() {
+  // THE UiSettingsRecord derivation (wire-fixtures) with this suite's binding.
+  return { ...wireUiSettings(), coauthorProviderId: "p1" };
 }
 
 function seedBinding(row: CoauthorConnectionSettingsRecord | null | undefined, defaultModel: string | null = "profile-default") {
@@ -87,13 +86,10 @@ function seedBinding(row: CoauthorConnectionSettingsRecord | null | undefined, d
   });
   useProviderDataStore.setState({
     profiles: [
-      {
-        id: "p1",
-        isActive: false,
-        defaultModel,
-        // cachedModels keeps useProviderModels on its cache path (no network).
-        cachedModels: { models: [{ id: "row-model", label: "Row Model", contextLength: 32000 }] },
-      } as unknown as ProviderProfileRecord,
+      // THE wire-profile derivation; cachedModels keeps useProviderModels on
+      // its cache path (no network) — the reader (use-provider-models.ts:46)
+      // touches only .models, so the required `cachedAt` is inert.
+      wireProviderProfile({ id: "p1", isActive: false, defaultModel, cachedModels: { models: [{ id: "row-model", label: "Row Model", contextLength: 32000 }], cachedAt: "2026-01-01T00:00:00.000Z" } }),
     ],
     // Pre-seeding the row cache keeps the mount loader silent and makes the
     // seeded row exactly what quickSwitch/saveBinding read back.

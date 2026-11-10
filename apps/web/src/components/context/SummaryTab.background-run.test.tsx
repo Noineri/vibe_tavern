@@ -4,6 +4,7 @@ import type { ChatId } from "@vibe-tavern/domain";
 import type { ChatSummaryRecord } from "../../api/types.js";
 import type { ManualSummaryRunState } from "@vibe-tavern/api-contracts";
 import { useDomEnv } from "../../../test/dom-env.js";
+import { TestEventSource } from "../../../test/event-source-seam.js";
 
 useDomEnv();
 const { act, fireEvent, render, waitFor } = await import("@testing-library/react");
@@ -43,47 +44,12 @@ function parkedResponse() {
   releases.push(() => gate.resolve(Response.json(null)));
   return gate;
 }
-// Member-for-member EventSource stand-in (the SSE boundary the hook opens):
-// the class IS assignable to `typeof EventSource`, so the global install
-// needs no cast. addEventListener keeps only function listeners (the only
-// kind use-chat-events registers); inert defaults for the members the hook
-// never reads (readyState/withCredentials/on*). The listener param carries
-// the MessageEvent-flavored member because lib.dom's redeclared
-// EventSource.addEventListener overloads compare contravariantly against a
-// bare EventListener.
-type SourceListener = (ev: MessageEvent) => unknown;
-class NetworkEvents extends EventTarget implements EventSource {
-  static readonly CONNECTING = 0;
-  static readonly OPEN = 1;
-  static readonly CLOSED = 2;
-  static instances: NetworkEvents[] = [];
-  readonly url: string;
-  readonly readyState = 0;
-  readonly withCredentials = false;
-  readonly CONNECTING = 0;
-  readonly OPEN = 1;
-  readonly CLOSED = 2;
-  onopen: ((this: EventSource, ev: Event) => unknown) | null = null;
-  onmessage: ((this: EventSource, ev: MessageEvent) => unknown) | null = null;
-  onerror: ((this: EventSource, ev: Event) => unknown) | null = null;
-  listeners = new Map<string, SourceListener>();
-  closed = false;
-  constructor(url?: string | URL) {
-    super();
-    this.url = String(url ?? "");
-    NetworkEvents.instances.push(this);
-  }
-  addEventListener(type: string, listener: EventListener | ((this: EventSource, ev: MessageEvent) => unknown) | EventListenerObject | null, options?: boolean | AddEventListenerOptions): void {
-    if (typeof listener === "function") this.listeners.set(type, listener);
-  }
-  removeEventListener(type: string, listener: EventListener | ((this: EventSource, ev: MessageEvent) => unknown) | EventListenerObject | null, options?: boolean | EventListenerOptions): void {
-    this.listeners.delete(type);
-  }
-  close() { this.closed = true; }
-  emit(kind: string, payload: Record<string, unknown> = {}) {
-    this.listeners.get(kind)?.(new MessageEvent(kind, { data: JSON.stringify(payload) }));
-  }
-}
+// THE EventSource seam (../../../test/event-source-seam.ts) — this file's 7e
+// inline stand-in became the shared derivation in step 8b (the three hooks
+// suites joined the same boundary), so the class lives there now. Same
+// member-for-member shape: assignable to `typeof EventSource`, real
+// MessageEvent delivery, per-instance addEventListener call tracking.
+const NetworkEvents = TestEventSource;
 function summary(id = "old", chatId = "chat"): ChatSummaryRecord {
   return {
     id, chatId, branchId: "branch", label: id, content: `${id} memory`,

@@ -15,18 +15,24 @@ useDomEnv();
 
 let hookHeight = -1;
 
-class MockResizeObserver {
+/** Member-for-member ResizeObserver stand-in (step 8b): implements the real
+ *  interface (observe/unobserve/disconnect) with a ResizeObserverCallback-typed
+ *  callback, so the globalThis install needs no cast. The hook registers
+ *  `() => setHeight(el.offsetHeight)` — it ignores the entries/observer args —
+ *  and never unobserves, so unobserve is inert by contract. */
+class MockResizeObserver implements ResizeObserver {
   static instances: MockResizeObserver[] = [];
   static teardowns = 0;
-  callback: () => void;
+  callback: ResizeObserverCallback;
   observed: Element | null = null;
-  constructor(callback: () => void) {
+  constructor(callback: ResizeObserverCallback) {
     this.callback = callback;
     MockResizeObserver.instances.push(this);
   }
   observe(el: Element) {
     this.observed = el;
   }
+  unobserve(_el: Element) {}
   disconnect() {
     MockResizeObserver.teardowns += 1;
   }
@@ -47,7 +53,7 @@ function useElementHeightProbe(): [React.RefObject<HTMLDivElement | null>, numbe
 describe("useElementHeight", () => {
   it("measures synchronously on mount, follows ResizeObserver callbacks, tears down on unmount", async () => {
     const originalRO = globalThis.ResizeObserver;
-    globalThis.ResizeObserver = MockResizeObserver as unknown as typeof ResizeObserver;
+    globalThis.ResizeObserver = MockResizeObserver;
     const { render, cleanup, act } = await import("@testing-library/react");
 
     const { getByTestId, unmount } = render(<Probe />);
@@ -62,14 +68,14 @@ describe("useElementHeight", () => {
     // RO callback fires.
     Object.defineProperty(probe, "offsetHeight", { value: 42, configurable: true });
     await act(async () => {
-      MockResizeObserver.instances[0]?.callback();
+      MockResizeObserver.instances[0]?.callback([], MockResizeObserver.instances[0]!);
     });
     expect(hookHeight).toBe(42);
 
     // Shrink (chips disappeared) → 0 clearance again.
     Object.defineProperty(probe, "offsetHeight", { value: 0, configurable: true });
     await act(async () => {
-      MockResizeObserver.instances[0]?.callback();
+      MockResizeObserver.instances[0]?.callback([], MockResizeObserver.instances[0]!);
     });
     expect(hookHeight).toBe(0);
 

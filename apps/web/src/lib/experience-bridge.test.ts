@@ -43,6 +43,10 @@ function baseOpts(over: Partial<ExperienceHostBridgeOptions>): ExperienceHostBri
   } as ExperienceHostBridgeOptions;
 }
 type ExperienceHostBridgeOptions = ConstructorParameters<typeof ExperienceHostBridge>[0];
+/** The realtime commit claim `onRoundCommit` relays (experience-bridge.ts) —
+ *  the bridge commits THIS shape, so captures are typed as it, not as
+ *  Record<string, unknown> through an erasure. */
+type RoundCommitClaim = Parameters<NonNullable<ExperienceHostBridgeOptions["onRoundCommit"]>>[0];
 
 function viewAt(revision: number) {
   return {
@@ -254,7 +258,7 @@ describe("ExperienceHostBridge ↔ VibeExperience SDK — live parity", () => {
     const bridge = new ExperienceHostBridge(
       baseOpts({ onReady: () => (ready = true), onAction: (a) => actions.push(a) }),
     );
-    bridge.bindHostPort(channel.port1 as unknown as BridgePort);
+    bridge.bindHostPort(channel.port1);
 
     // Frame SDK on the harness, handed port2 via the window 'port' message.
     const harness = createSdkHarness();
@@ -297,7 +301,7 @@ describe("ExperienceHostBridge ↔ VibeExperience SDK — live parity", () => {
     const channel = new MessageChannel();
     const seenViews: unknown[] = [];
     const bridge = new ExperienceHostBridge(baseOpts({ onAction: () => {} }));
-    bridge.bindHostPort(channel.port1 as unknown as BridgePort);
+    bridge.bindHostPort(channel.port1);
     const harness = createSdkHarness();
     harness.deliverWindowMessage({ kind: "port", port: channel.port2 });
     (harness.window.VibeExperience as { connect: (f: (v: unknown) => void) => void }).connect((v) =>
@@ -596,7 +600,7 @@ describe("IR-90E: Conversation visual ↔ real bridge round-trip", () => {
     const bridge = new ExperienceHostBridge(
       baseOpts({ onReady: () => (ready = true), onAction: (a) => actions.push(a) }),
     );
-    bridge.bindHostPort(channel.port1 as unknown as BridgePort);
+    bridge.bindHostPort(channel.port1);
 
     // Frame harness with the REAL Messenger visual.
     const harness = createConversationHarness();
@@ -678,7 +682,7 @@ describe("IR-90E: Conversation visual ↔ real bridge round-trip", () => {
     const channel = new MessageChannel();
     let ready = false;
     const bridge = new ExperienceHostBridge(baseOpts({ onReady: () => (ready = true), onAction: () => {} }));
-    bridge.bindHostPort(channel.port1 as unknown as BridgePort);
+    bridge.bindHostPort(channel.port1);
     const harness = createConversationHarness();
     harness.deliverWindowMessage({ kind: "port", port: channel.port2 });
 
@@ -766,8 +770,8 @@ describe("ExperienceHostBridge — realtime model/commit dispatch", () => {
   });
 
   it("forwards round_commit verbatim (status/finalState/log/score/summary)", () => {
-    const commits: Array<Record<string, unknown>> = [];
-    const bridge = new ExperienceHostBridge(baseOpts({ onRoundCommit: (c) => commits.push(c as unknown as Record<string, unknown>) }));
+    const commits: RoundCommitClaim[] = [];
+    const bridge = new ExperienceHostBridge(baseOpts({ onRoundCommit: (c) => commits.push(c) }));
     const log = [{ kind: "round_started", seed: 1 }];
     bridge.handleMessage({
       v: 1,

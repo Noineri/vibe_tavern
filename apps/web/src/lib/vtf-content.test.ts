@@ -15,10 +15,14 @@ import { test, expect } from "bun:test";
 import { packMonolith, unpackMonolith } from "@vibe-tavern/db/codecs";
 import type { AppCharacter } from "../api/types.js";
 import { appCharacterToVtfContent } from "./vtf-content.js";
+import { wireCharacter } from "../../test/wire-fixtures.js";
 
-/** Minimal AppCharacter with the fields the projection reads. */
+/** AppCharacter with the fields the projection reads — the wire factory
+ *  completes the rest. The erased literal carried `createdAt`, which the
+ *  client AppCharacter wire shape does not have (an invented member the
+ *  erasure hid); the projection and every assertion below are createdAt-blind. */
 function makeChar(over: Partial<AppCharacter> = {}): AppCharacter {
-  return {
+  return wireCharacter({
     id: "char_1",
     name: "Silvius",
     description: "Silver-haired and watchful.",
@@ -36,10 +40,9 @@ function makeChar(over: Partial<AppCharacter> = {}): AppCharacter {
     depthPromptRole: "system",
     systemPrompt: "Respond in second person.",
     tags: ["modern", "werewolf"],
-    createdAt: "2026-01-01T00:00:00Z",
     updatedAt: "2026-01-01T00:00:00Z",
     ...over,
-  } as unknown as AppCharacter;
+  });
 }
 
 test("projects every AppCharacter field onto VtfCharacterContent", () => {

@@ -12,6 +12,7 @@ useDomEnv();
  * Non-/api and foreign-origin calls pass through untouched.
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
+import { testFetch } from "@vibe-tavern/test-fetch";
 
 const { useSessionStore } = await import("../stores/session-store.js");
 const { saveMobileToken, clearMobileToken } = await import("../lib/mobile-token.js");
@@ -28,7 +29,10 @@ function installFetchMock(status: number): CapturedCall[] {
       headers: { "Content-Type": "application/json" },
     });
   });
-  globalThis.fetch = fake as unknown as typeof globalThis.fetch;
+  // THE step-5 fetch seam: bun's Mock is not a plain `(input, init) => Promise<Response>`
+  // (and lacks `preconnect`), so the install goes through the one cast-free
+  // derivation; call tracking stays on the `fake` variable.
+  globalThis.fetch = testFetch(fake);
   return calls;
 }
 

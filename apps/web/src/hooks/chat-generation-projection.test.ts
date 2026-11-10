@@ -3,6 +3,7 @@ import { brandId, type ChatBranchId, type ChatId } from "@vibe-tavern/domain";
 import type { ChatGenerationOperation } from "@vibe-tavern/api-contracts";
 import type { AppSnapshot } from "../api/types.js";
 import { useDomEnv } from "../../test/dom-env.js";
+import { wireBranch, wireChat, wireMessage } from "../../test/wire-fixtures.js";
 
 useDomEnv();
 const { act, renderHook } = await import("@testing-library/react");
@@ -19,10 +20,14 @@ const chatId = brandId<ChatId>("projection-chat");
 const branchA = brandId<ChatBranchId>("branch-a"), branchB = brandId<ChatBranchId>("branch-b");
 function seed(mode: "rp" | "coauthor", ending: "user" | "assistant" = "assistant") {
   useSnapshotStore.getState().clear();
-  useSnapshotStore.getState().ingestSnapshot({ activeChat: { id: chatId, mode }, activeBranch: { id: branchA, chatId }, messages: [
-    { id: "user", chatId, branchId: branchA, role: "user", content: "Request", variants: [] },
-    ...(ending === "assistant" ? [{ id: "assistant", chatId, branchId: branchA, role: "assistant", content: "Old reply", variants: [] }] : []),
-  ] } as unknown as AppSnapshot);
+  useSnapshotStore.getState().ingestSnapshot({
+    activeChat: wireChat({ id: chatId, mode }),
+    activeBranch: wireBranch({ id: branchA, chatId }),
+    messages: [
+      wireMessage("user", { chatId, branchId: branchA, role: "user", authorType: "user", content: "Request" }),
+      ...(ending === "assistant" ? [wireMessage("assistant", { chatId, branchId: branchA, content: "Old reply" })] : []),
+    ],
+  });
   useChatStore.setState({ activeChatId: chatId, generations: {} });
 }
 function probe() {

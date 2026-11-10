@@ -24,7 +24,8 @@ import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 
 import { useDomEnv } from "../../test/dom-env.js";
 import { mocked } from "../../test/mock-utils.js";
-import type { AppSnapshot } from "../api/types.js";
+import { wireChat } from "../../test/wire-fixtures.js";
+import { brandId, type ChatId } from "@vibe-tavern/domain";
 
 useDomEnv();
 
@@ -52,7 +53,7 @@ beforeAll(async () => {
 
 const setActiveChat = (mode: "rp" | "coauthor") =>
 	useSnapshotStore.setState({
-		activeChat: { id: "c1", mode } as unknown as AppSnapshot["activeChat"],
+		activeChat: wireChat({ id: brandId<ChatId>("c1"), mode }),
 	});
 
 const baseProps: ShellSurfaceProps = {

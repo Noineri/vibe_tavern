@@ -62,7 +62,7 @@ async function createHarness(): Promise<SdkHarness> {
   // binds port1, the frame receives port2 as a window message, hello rides
   // the port, the SDK replies ready. Handshake completes before any dispatch.
   const channel = new MessageChannel();
-  bridge.bindHostPort(channel.port1 as unknown as Parameters<ExperienceHostBridge["bindHostPort"]>[0]);
+  bridge.bindHostPort(channel.port1);
 
   const harness: SdkHarness = {
     connect: sdk.connect,

@@ -14,6 +14,7 @@
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { useDomEnv } from "../../test/dom-env.js";
+import { inertView } from "../../test/react-event-seam.js";
 import type React from "react";
 
 useDomEnv();
@@ -30,31 +31,106 @@ beforeAll(async () => {
   ({ useImageZoomPan } = await import("./use-image-zoom-pan.js"));
 });
 
+// ── Member-for-member React TouchEvent doubles (step 8b) ───────────────────
+// The hook reads only `event.touches` (length + clientX/clientY), so the
+// Touch points are member-for-member inert Touch rows (a real target from the
+// happy-dom document) and the event carries the FULL required TouchEvent
+// member set with inert defaults — the compiler checks the member set here.
+
+function touchRow(point: { clientX: number; clientY: number }): Touch {
+  return {
+    identifier: 0,
+    target: document.body,
+    clientX: point.clientX,
+    clientY: point.clientY,
+    screenX: point.clientX,
+    screenY: point.clientY,
+    pageX: point.clientX,
+    pageY: point.clientY,
+    radiusX: 0,
+    radiusY: 0,
+    rotationAngle: 0,
+    force: 0,
+  };
+}
+
+/** The touch-list double: an array carries `length` + the numeric indexer +
+ *  `[Symbol.iterator]` (both the React and the native TouchList shapes), with
+ *  the two named accessors on top — `item` returning `Touch` satisfies React's
+ *  non-null view and the native's nullable one alike. */
+function touchListDouble(
+	points: Array<{ clientX: number; clientY: number }>,
+): TouchList & { item(index: number): Touch; identifiedTouch(identifier: number): Touch } {
+	const row = (index: number): Touch =>
+		touchRow(points[Math.max(0, Math.min(index, points.length - 1))] ?? { clientX: 0, clientY: 0 });
+	return Object.assign(points.map(touchRow), {
+		item: (index: number) => row(index),
+		identifiedTouch: (identifier: number) => row(identifier),
+	});
+}
+
+function touchEvent(touches: Array<{ clientX: number; clientY: number }>): React.TouchEvent {
+  const list = touchListDouble(touches);
+  return {
+    // The NATIVE touch event is a member-for-member inert double over a real
+    // Event base (happy-dom ships no TouchEvent constructor) — the hook reads
+    // only the SYNTHETIC's touches, never the native one.
+    nativeEvent: Object.assign(new Event("touchmove"), {
+      altKey: false,
+      ctrlKey: false,
+      metaKey: false,
+      shiftKey: false,
+      touches: list,
+      targetTouches: list,
+      changedTouches: list,
+      detail: 0,
+      view: window,
+      which: 0,
+      initUIEvent: () => {},
+    }),
+    currentTarget: document.createElement("div"),
+    target: document.body,
+    bubbles: false,
+    cancelable: true,
+    defaultPrevented: false,
+    eventPhase: 0,
+    isTrusted: false,
+    preventDefault() {},
+    isDefaultPrevented: () => false,
+    stopPropagation() {},
+    isPropagationStopped: () => false,
+    persist() {},
+    timeStamp: 0,
+    type: "touchmove",
+    detail: 0,
+    view: inertView(),
+    touches: list,
+    targetTouches: list,
+    changedTouches: list,
+    altKey: false,
+    ctrlKey: false,
+    metaKey: false,
+    shiftKey: false,
+    getModifierState: () => false,
+  };
+}
+
 /** Two-finger touch event at the given client coordinates. */
 function touch2(x1: number, y1: number, x2: number, y2: number): React.TouchEvent {
-  return {
-    touches: [
-      { clientX: x1, clientY: y1 },
-      { clientX: x2, clientY: y2 },
-    ],
-    preventDefault() {},
-  } as unknown as React.TouchEvent;
+  return touchEvent([
+    { clientX: x1, clientY: y1 },
+    { clientX: x2, clientY: y2 },
+  ]);
 }
 
 /** Single-finger touch event. */
 function touch1(x: number, y: number): React.TouchEvent {
-  return {
-    touches: [{ clientX: x, clientY: y }],
-    preventDefault() {},
-  } as unknown as React.TouchEvent;
+  return touchEvent([{ clientX: x, clientY: y }]);
 }
 
 /** touchend/touchcancel with the given fingers still on screen. */
 function touchEnd(remaining: Array<{ clientX: number; clientY: number }>): React.TouchEvent {
-  return {
-    touches: remaining,
-    preventDefault() {},
-  } as unknown as React.TouchEvent;
+  return touchEvent(remaining);
 }
 
 /** Explicit fitted geometry, centered at (50, 0), with no global layout patch. */

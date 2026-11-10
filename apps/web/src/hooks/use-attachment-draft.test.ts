@@ -1,8 +1,9 @@
 import { afterAll, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
-import type { ChangeEvent, ClipboardEvent, DragEvent } from "react";
+import type { BaseSyntheticEvent, ChangeEvent, ClipboardEvent, DragEvent } from "react";
 import type { Attachment } from "@vibe-tavern/domain";
 import { toast } from "sonner";
 import { useDomEnv } from "../../test/dom-env.js";
+import { inertView } from "../../test/react-event-seam.js";
 import { useAttachmentDraft, VALID_AUDIO_TYPES } from "./use-attachment-draft.js";
 import type { AttachmentDraftOptions, DraftAttachmentKind } from "./use-attachment-draft.js";
 
@@ -20,6 +21,173 @@ afterAll(() => errors.mockRestore());
 
 function image(name = "photo.png") {
   return new File(["pixels"], name, { type: "image/png" });
+}
+
+// ── Member-for-member React synthetic doubles (step 8b) ────────────────────
+// The hook handlers are invoked directly (renderHook — no element to dispatch
+// through), so each factory builds the FULL required member set of its React
+// synthetic event with inert propagation defaults; the compiler checks the
+// member set at the definition sites. DOM-typed surfaces are real happy-dom
+// objects where one exists (the file <input> element) or member-for-member
+// doubles over the DataTransfer/FileList interfaces (happy-dom's DataTransfer
+// derives `types` from item MIMEs — a real browser carries the "Files" type
+// this hook pins, so `types` must be fabricable).
+
+function fileListDouble(files: File[]): FileList {
+  return Object.assign([...files], { item: (index: number) => files[index] ?? null });
+}
+
+function dataTransferItemDouble(file: File | null, kind: string, type: string): DataTransferItem {
+  return { kind, type, getAsFile: () => file, getAsString: (_callback) => {}, webkitGetAsEntry: () => null };
+}
+
+function dataTransferDouble(items: DataTransferItem[], types: string[], files: File[]): DataTransfer {
+  const list = Object.assign(items, {
+    add: () => null,
+    clear() {},
+    item: (index: number) => items[index] ?? null,
+    remove() {},
+  });
+  return {
+    dropEffect: "none",
+    effectAllowed: "none",
+    files: fileListDouble(files),
+    items: list,
+    types,
+    clearData() {},
+    getData: () => "",
+    setData() {},
+    setDragImage() {},
+  };
+}
+
+/** The BaseSyntheticEvent core every React synthetic carries — shared by the
+ *  factories below (currentTarget: EventTarget & Element matches the
+ *  SyntheticEvent<T = Element> default; each factory adds its type's own
+ *  members). */
+type SyntheticEventCore = Omit<BaseSyntheticEvent<Event, EventTarget & Element, EventTarget>, "target">;
+function syntheticBase(type: string): SyntheticEventCore {
+  return {
+    nativeEvent: new Event(type),
+    currentTarget: document.createElement("div"),
+    bubbles: false,
+    cancelable: true,
+    defaultPrevented: false,
+    eventPhase: 0,
+    isTrusted: false,
+    preventDefault() {},
+    isDefaultPrevented: () => false,
+    stopPropagation() {},
+    isPropagationStopped: () => false,
+    persist() {},
+    timeStamp: 0,
+    type,
+  };
+}
+
+/** Drop/drag event over the given transfer surface — `types: ["Files"]` drives
+ *  the drag flag, `files` the drop. The NATIVE drag event is a member-for-member
+ *  inert double over a real Event base (happy-dom ships no DragEvent
+ *  constructor) — the hook reads only the SYNTHETIC's dataTransfer, never the
+ *  native one. */
+function dragEvent(types: string[], files: File[]): DragEvent {
+  return {
+    ...syntheticBase("drop"),
+    nativeEvent: Object.assign(new Event("drop"), {
+      altKey: false,
+      button: 0,
+      buttons: 0,
+      clientX: 0,
+      clientY: 0,
+      ctrlKey: false,
+      getModifierState: () => false,
+      metaKey: false,
+      movementX: 0,
+      movementY: 0,
+      pageX: 0,
+      pageY: 0,
+      relatedTarget: null,
+      screenX: 0,
+      screenY: 0,
+      shiftKey: false,
+      layerX: 0,
+      layerY: 0,
+      offsetX: 0,
+      offsetY: 0,
+      x: 0,
+      y: 0,
+      detail: 0,
+      view: window,
+      which: 0,
+      initUIEvent: () => {},
+      initMouseEvent: () => {},
+      dataTransfer: dataTransferDouble([], [], []),
+    }),
+    target: document.createElement("div"),
+    detail: 0,
+    view: inertView(),
+    altKey: false,
+    button: 0,
+    buttons: 0,
+    clientX: 0,
+    clientY: 0,
+    ctrlKey: false,
+    getModifierState: () => false,
+    metaKey: false,
+    movementX: 0,
+    movementY: 0,
+    pageX: 0,
+    pageY: 0,
+    relatedTarget: null,
+    screenX: 0,
+    screenY: 0,
+    shiftKey: false,
+    dataTransfer: dataTransferDouble(files.map((file) => dataTransferItemDouble(file, "file", file.type)), types, files),
+  };
+}
+
+function pasteEvent(files: File[], text = false) {
+  const preventDefault = mock();
+  const items = [
+    ...files.map((file) => dataTransferItemDouble(file, "file", file.type)),
+    ...(text ? [dataTransferItemDouble(null, "string", "text/plain")] : []),
+  ];
+  const event: ClipboardEvent<HTMLTextAreaElement> = {
+    ...syntheticBase("paste"),
+    // The tracked mock IS the event's preventDefault — the hook's
+    // "captured only when files were accepted" pin asserts on it.
+    preventDefault,
+    // happy-dom's ClipboardEvent constructor exists; its native type only adds
+    // `clipboardData` to Event — an inert transfer surface matches it.
+    nativeEvent: Object.assign(new Event("paste"), {
+      clipboardData: dataTransferDouble([], [], []),
+    }),
+    // The synthetic's ClipboardEvent<T> carries target/currentTarget typed
+    // EventTarget & T — the textarea the paste lands in.
+    currentTarget: document.createElement("textarea"),
+    target: document.createElement("textarea"),
+    clipboardData: dataTransferDouble(items, [], []),
+  };
+  return { preventDefault, event };
+}
+
+/** A real file <input> carrying the given selection — the surface
+ *  onFileInputChange reads (currentTarget.files, currentTarget.value).
+ *  happy-dom refuses `value = "selected"` on a file input, so the seeded
+ *  selection string is an own-instance property shadowing the accessor; the
+ *  hook's `value = ""` clear still lands on it. */
+function fileInputEvent(files: File[]): ChangeEvent<HTMLInputElement> {
+  const target = document.createElement("input");
+  target.type = "file";
+  Object.defineProperty(target, "files", { value: fileListDouble(files), configurable: true });
+  Object.defineProperty(target, "value", { value: "selected", writable: true, configurable: true });
+  return {
+    ...syntheticBase("change"),
+    // The hook reads BOTH currentTarget.files and currentTarget.value — the
+    // input element must carry the synthetic's currentTarget too.
+    currentTarget: target,
+    target,
+  };
 }
 
 function seed(id: number): Attachment {
@@ -42,17 +210,6 @@ function setup({ count = 0, allowedKinds = ["image", "audio", "file"], upload, s
   };
   const hook = renderHook(() => useAttachmentDraft(options, uploadMock));
   return { ...hook, upload: uploadMock, add, remove, attachments: () => attachments, options };
-}
-
-function drop(files: File[]) {
-  return { preventDefault: mock(), dataTransfer: { files } } as unknown as DragEvent;
-}
-
-function paste(files: File[], text = false) {
-  const preventDefault = mock();
-  const items: Array<{ kind: string; type: string; getAsFile: () => File | null }> = files.map((file) => ({ kind: "file", type: file.type, getAsFile: () => file }));
-  if (text) items.push({ kind: "string", type: "text/plain", getAsFile: () => null });
-  return { preventDefault, event: { preventDefault, clipboardData: { items } } as unknown as ClipboardEvent<HTMLTextAreaElement> };
 }
 
 describe("shared composer attachment draft (CA-1d)", () => {
@@ -96,7 +253,7 @@ describe("shared composer attachment draft (CA-1d)", () => {
 
   test("four existing plus a three-file drop uploads one and reports the limit once", async () => {
     const env = setup({ count: 4 });
-    act(() => env.result.current.handleDrop(drop([image("one.png"), image("two.png"), image("three.png")])));
+    act(() => env.result.current.handleDrop(dragEvent([], [image("one.png"), image("two.png"), image("three.png")])));
     await waitFor(() => expect(env.attachments()).toHaveLength(5));
     expect(env.upload).toHaveBeenCalledTimes(1);
     expect(env.attachments().at(-1)?.name).toBe("one.png");
@@ -158,7 +315,7 @@ describe("shared composer attachment draft (CA-1d)", () => {
 
   test("paste takes both image and text-file items, leaving string items alone", async () => {
     const env = setup();
-    const event = paste([image(), new File(["notes"], "notes.md")], true);
+    const event = pasteEvent([image(), new File(["notes"], "notes.md")], true);
     env.result.current.handlePaste(event.event);
     await waitFor(() => expect(env.attachments()).toHaveLength(2));
     expect(event.preventDefault).toHaveBeenCalledTimes(1);
@@ -167,7 +324,7 @@ describe("shared composer attachment draft (CA-1d)", () => {
 
   test("plain text paste is never captured or uploaded", async () => {
     const env = setup();
-    const event = paste([], true);
+    const event = pasteEvent([], true);
     env.result.current.handlePaste(event.event);
     await env.result.current.addFiles([]);
     expect(env.upload).not.toHaveBeenCalled();
@@ -177,7 +334,7 @@ describe("shared composer attachment draft (CA-1d)", () => {
   test("image/file consumers refuse audio, and do not capture audio-only paste", async () => {
     const env = setup({ allowedKinds: ["image", "file"] });
     const file = new File(["audio"], "note.webm", { type: "audio/webm" });
-    const event = paste([file], true);
+    const event = pasteEvent([file], true);
     env.result.current.handlePaste(event.event);
     await env.result.current.addFiles([file]);
     expect(env.upload).not.toHaveBeenCalled();
@@ -201,9 +358,9 @@ describe("shared composer attachment draft (CA-1d)", () => {
 
   test("multi-select picker takes all files in order and clears the input", async () => {
     const env = setup();
-    const target = { files: [image("one.png"), image("two.png")], value: "selected" };
-    env.result.current.onFileInputChange({ currentTarget: target } as unknown as ChangeEvent<HTMLInputElement>);
-    expect(target.value).toBe("");
+    const event = fileInputEvent([image("one.png"), image("two.png")]);
+    env.result.current.onFileInputChange(event);
+    expect(event.currentTarget.value).toBe("");
     await env.result.current.addFiles([]);
     expect(env.attachments().map((attachment) => attachment.name)).toEqual(["one.png", "two.png"]);
   });
@@ -230,7 +387,7 @@ describe("shared composer attachment draft (CA-1d)", () => {
 
   test("drag flag follows file drag, leave and drop; removal delegates to the consumer", async () => {
     const env = setup({ count: 1 });
-    const event = { preventDefault: mock(), dataTransfer: { types: ["Files"], files: [] } } as unknown as DragEvent;
+    const event = dragEvent(["Files"], []);
     act(() => env.result.current.handleDragOver(event));
     expect(env.result.current.isDragOver).toBe(true);
     act(() => env.result.current.handleDragLeave(event));

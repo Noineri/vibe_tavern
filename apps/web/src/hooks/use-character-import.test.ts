@@ -24,8 +24,11 @@
  * first, only the specific fns are overridden).
  */
 import { test, expect, beforeEach, mock } from "bun:test";
+import { brandId, type ChatId } from "@vibe-tavern/domain";
 
 import { useDomEnv } from "../../test/dom-env.js";
+import { strictTestDouble } from "../../test/strict-test-double.js";
+import type { RpcData } from "../api/unwrap.js";
 
 useDomEnv();
 
@@ -51,15 +54,100 @@ const importCharacterAction = mock((_input: { fileName: string; jsonText?: strin
 // the Hono `$post` arg pins the EXACT wire body per transport. The client mock
 // is registered BEFORE any transitive import-api load so the api module binds
 // to the fake (mock.module does not rewire already-loaded live bindings).
-const importJsonPost = mock((..._args: unknown[]) =>
-	Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ activeChatId: "chat-1" }), text: () => Promise.resolve("") }));
-const importBatchPost = mock((..._args: unknown[]) =>
-	Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ results: [] }), text: () => Promise.resolve("") }));
-
+//
+// Typed mocks over the REAL $post signatures (the 8a idiom — impl applied at
+// construction, so the real client never fires) returning member-for-member
+// hono ClientResponse doubles: every interface member present, inert except
+// ok/status/json — exactly what unwrapRpc reads. redirect/clone return the
+// double itself (hono's Response type is ClientResponse<unknown>; the DOM
+// Response lacks `redirect`). The json bodies are complete endpoint outputs
+// (ImportResult's snapshot is optional under the lean path; the seeded rows
+// ride the sanctioned brandId fixture edge).
 const realClientModule = await import("../api/client.js");
-const fakeImportClient = {
-	api: { import: { json: { $post: importJsonPost }, batch: { $post: importBatchPost } } },
-} as unknown as typeof realClientModule.client;
+type JsonImportRpcResponse = Awaited<ReturnType<typeof realClientModule.client.api.import.json.$post>>;
+type BatchImportRpcResponse = Awaited<ReturnType<typeof realClientModule.client.api.import.batch.$post>>;
+
+function jsonImportOkResponse(body: RpcData<typeof realClientModule.client.api.import.json.$post>): JsonImportRpcResponse {
+	let self!: JsonImportRpcResponse;
+	self = {
+		body: null,
+		bodyUsed: false,
+		ok: true,
+		redirected: false,
+		status: 200,
+		statusText: "OK",
+		type: "default",
+		headers: new Headers(),
+		url: "",
+		redirect: () => self,
+		clone: () => self,
+		bytes: async () => new Uint8Array(),
+		json: async () => body,
+		text: async () => "",
+		blob: async () => new Blob(),
+		formData: async () => new FormData(),
+		arrayBuffer: async () => new ArrayBuffer(0),
+	};
+	return self;
+}
+
+function batchImportOkResponse(body: RpcData<typeof realClientModule.client.api.import.batch.$post>): BatchImportRpcResponse {
+	let self!: BatchImportRpcResponse;
+	self = {
+		body: null,
+		bodyUsed: false,
+		ok: true,
+		redirected: false,
+		status: 200,
+		statusText: "OK",
+		type: "default",
+		headers: new Headers(),
+		url: "",
+		redirect: () => self,
+		clone: () => self,
+		bytes: async () => new Uint8Array(),
+		json: async () => body,
+		text: async () => "",
+		blob: async () => new Blob(),
+		formData: async () => new FormData(),
+		arrayBuffer: async () => new ArrayBuffer(0),
+	};
+	return self;
+}
+
+const importJsonPost = mock(realClientModule.client.api.import.json.$post).mockImplementation(async () =>
+	jsonImportOkResponse({
+		activeChatId: brandId<ChatId>("chat-1"),
+		imported: { kind: "character", name: "Test", fileName: "card.png", warningCount: 0, warnings: [] },
+	}));
+const importBatchPost = mock(realClientModule.client.api.import.batch.$post).mockImplementation(async () =>
+	batchImportOkResponse({ results: [] }));
+
+const fakeImportClient = strictTestDouble<typeof realClientModule.client>(
+	{
+		api: {
+			import: {
+				// $url/$path and the three ST-directory routes are the REAL proxy
+				// members (never called by the transports; their generic
+				// signatures pass through verbatim — any re-spell would fight
+				// hono's typed-URL templates).
+				json: {
+					$post: importJsonPost,
+					$url: realClientModule.client.api.import.json.$url,
+					$path: realClientModule.client.api.import.json.$path,
+				},
+				batch: {
+					$post: importBatchPost,
+					$url: realClientModule.client.api.import.batch.$url,
+					$path: realClientModule.client.api.import.batch.$path,
+				},
+				"st-scan": realClientModule.client.api.import["st-scan"],
+				"st-directory": realClientModule.client.api.import["st-directory"],
+			},
+		},
+	},
+	"fakeImportClient",
+);
 mock.module("../api/client.js", () => ({ ...realClientModule, client: fakeImportClient }));
 
 const realCharacterApi = await import("../api/character-api.js");
