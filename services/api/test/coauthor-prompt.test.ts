@@ -7,6 +7,7 @@ import { serializeProfileMd } from "@vibe-tavern/db";
 import { trackerTemplateSchema } from "@vibe-tavern/api-contracts";
 import type { CoauthorEditorState } from "@vibe-tavern/api-contracts";
 import { makeCharacterRow } from "./copilot-test-builders.js";
+import { makeChatRow } from "./insights-test-builders.js";
 import { coauthorToolInputSchema } from "./provider-boundary-test-builders.js";
 
 /**
@@ -44,7 +45,7 @@ function makeLoaders(overrides?: Partial<{
   });
 
   return {
-    getChat: async () => (overrides?.chat ?? { id: "chat_test", coauthorModuleId: null }) as any,
+    getChat: async () => makeChatRow(overrides?.chat ?? { id: "chat_test" }),
     getMessages: async () => overrides?.messages ?? [],
     getCharacter: async () => character,
     getProfileMdText: async () => overrides?.profileMd ?? "---\nname: Test\n---\n# PERSONALITY\nA test character.\n",

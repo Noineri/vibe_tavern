@@ -16,6 +16,7 @@
  * adopted in step-6 batch 6f; this builder is the only remaining derivation.
  */
 import type { RuntimeApi } from "../src/api/contract/runtime-api.js";
+import type { DomainErrorPayload } from "../src/shared/errors.js";
 import { strictTestDouble, type PartialMembers } from "./strict-test-double.js";
 
 export function makeRuntimeApi(
@@ -68,3 +69,11 @@ export function makeRuntimeApi(
 		label,
 	);
 }
+
+/** The DomainError → JSON envelope the shared onError mapping emits
+ *  (domainErrorToJson): the wire error body route suites assert on. The
+ *  details payload is required here because every structured error these
+ *  suites pin carries one (the asserts read it); `kind`/`message` mirror
+ *  {@link DomainErrorPayload} at its wire fidelity.
+ *  fork note: replaces the per-file HttpErrorBody locals (3 sites, 2026-11-11). */
+export type HttpErrorBody = { error: DomainErrorPayload & { details: Record<string, unknown> } };

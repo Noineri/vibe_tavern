@@ -8,7 +8,18 @@ import { normalizeProviderType, resolveSamplerSet, PROVIDER_TYPE } from "@vibe-t
 
 const originalFetch = globalThis.fetch;
 let mockFetch: ReturnType<typeof mock>;
-let lastRequest: { url: string; headers: Record<string, string>; body: any } | null = null;
+/** The Interactions wire body — the request @ai-sdk/google's
+ *  GoogleInteractionsLanguageModel assembles. The SDK exports no type for
+ *  it, so the suite declares the fields it characterizes here. */
+interface InteractionsRequestBody {
+	model: string;
+	input: unknown;
+	previous_interaction_id?: string;
+	generation_config?: Record<string, unknown>;
+	stream?: boolean;
+}
+
+let lastRequest: { url: string; headers: Record<string, string>; body: InteractionsRequestBody } | null = null;
 
 function profile() {
   return {

@@ -49,7 +49,7 @@ async function createTestRuntime() {
 		chatId: coChat.activeChat.id as ChatId,
 		stores,
 		cleanup: async () => {
-			try { await rm(tmpDir, { recursive: true, force: true }); } catch {}
+			try { await rm(tmpDir, { recursive: true, force: true }); } catch { /* best-effort teardown: the test has finished asserting; a locked or already-removed tmp dir must not fail it */ }
 		},
 	};
 }

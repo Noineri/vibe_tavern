@@ -11,6 +11,7 @@ import type {
   PromptAssemblyService,
 } from "../src/domain/prompt/prompt-assembly-service.js";
 import { makeExecutorPrompt } from "./provider-boundary-test-builders.js";
+import { makeChatRow } from "./insights-test-builders.js";
 import { strictTestDouble } from "./strict-test-double.js";
 
 /**
@@ -103,7 +104,7 @@ describe("CoauthorModeStrategy.assemble", () => {
       chatId: "chat_test" as never,
       model: "test-model",
       loaders: {
-        getChat: async () => ({ coauthorModuleId: null } as any),
+        getChat: async () => makeChatRow({ id: "chat_test" }),
         getMessages: async () => [],
         getCharacter: async () => ({ id: "char_test", firstMessage: "x", alternateGreetings: [] } as never),
         getProfileMdText: async () => "---\nname: Test\n---\n# PERSONALITY\nx\n",

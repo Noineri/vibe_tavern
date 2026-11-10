@@ -20,13 +20,14 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { createStoreContainer, type StoreContainer, type ExperienceVisualRow } from "@vibe-tavern/db";
-import type { ExperienceCapability } from "@vibe-tavern/domain";
+import { createStoreContainer, type ExperienceChatConfigRow, type ExperienceEffectRow, type ExperienceVisualRow, type StoreContainer } from "@vibe-tavern/db";
+import type { ExperienceCapability, ExperiencePublicReport } from "@vibe-tavern/domain";
 import {
 	isDomainError,
 	httpStatusForDomainError,
 	domainErrorToJson,
 	DomainError,
+	type DomainErrorKind,
 } from "../src/shared/errors.js";
 import { createExperienceRoutes } from "../src/api/routes/experience.js";
 import { ExperienceAdapter } from "../src/api/adapters/experience-adapter.js";
@@ -36,8 +37,21 @@ import { ExperienceReplayService } from "../src/domain/interactive/experience-re
 import { ExperienceContextService, type ExperienceChatLifecycleSeam } from "../src/domain/interactive/experience-context-service.js";
 import { ExperienceModelEffectService } from "../src/domain/interactive/experience-model-effect-service.js";
 import { createProviderProfileService } from "../src/domain/providers/provider-profile-service.js";
-import type { ExperienceRuntimeApi } from "../src/api/contract/runtime-api.js";
-import { strictTestDouble } from "./strict-test-double.js";
+import type {
+	ExperienceActionResponse,
+	ExperienceContextStatusDto,
+	ExperienceEffectRunResponse,
+	ExperiencePromptOverrideDto,
+	ExperiencePromptOverridesResponse,
+	ExperienceQueuedAttachmentResponse,
+	ExperienceRuntimeApi,
+	ExperienceSessionResponse,
+} from "../src/api/contract/runtime-api.js";
+import type { ExperienceQueuedAttachmentView } from "../src/domain/interactive/experience-service.js";
+import type { ExperienceReportStatus } from "../src/domain/interactive/experience-report-service.js";
+import type { ExperienceRoundConfigResponseDto } from "@vibe-tavern/api-contracts";
+import { strictTestDouble, type PartialMembers } from "./strict-test-double.js";
+import type { HttpErrorBody } from "./routes-test-builders.js";
 
 /** Mount experience routes with the production DomainError → status mapping
  *  (shared helpers, not duplicated logic) so integration tests observe the real
@@ -53,48 +67,106 @@ function mount(runtime: ExperienceRuntimeApi) {
 	return app;
 }
 
-async function jsonBody(res: Response): Promise<any> {
+/** Typed JSON wire read: the type argument IS the pinned response shape
+ *  (JSON.parse itself carries no type). Each call names the REAL contract
+ *  DTO the endpoint promises. */
+async function jsonBody<T>(res: Response): Promise<T> {
 	return JSON.parse(await res.text());
 }
+
+
+/** The queued-attachment wire as the read/queue endpoints return it on a
+ *  properly queued attachment: the public report envelope is parsed there
+ *  (a null publicReport is the malformed-storage defense, never produced
+ *  on these paths). */
+type QueuedAttachmentWire = ExperienceQueuedAttachmentView & { publicReport: ExperiencePublicReport };
+
+/** The report-status wire while an attachment is queued (the mid-lifecycle
+ *  reads below): queuedAttachment answers non-null there; the cleared state
+ *  is pinned by the toBeNull assert on the plain DTO. */
+type ReportStatusWire = ExperienceReportStatus & { queuedAttachment: ExperienceQueuedAttachmentView };
+
+/** The prompt-override wire once a layer IS persisted (the write responses
+ *  and the post-write GET): the written layers answer non-null. The
+ *  no-override state (both layers null) is pinned by the toBeNull asserts
+ *  on the plain DTO. */
+type PromptOverridesWire = ExperiencePromptOverridesResponse & {
+	global: ExperiencePromptOverrideDto;
+	character: ExperiencePromptOverrideDto;
+};
 
 // ─── 1. HTTP layer (stub runtime) ────────────────────────────────────────────
 
 /** A recording stub: every method captures its call + can be programmed to throw. */
-function stubRuntime(throws?: { kind: any; message: string }): { runtime: ExperienceRuntimeApi; calls: Record<string, any[]> } {
-	const calls: Record<string, any[]> = {};
-	const rec = (name: string) => (calls[name] ??= []);
+/** Per-method recording bags the stub fills via rec(): property names mirror
+ *  the push sites; every payload type derives from the REAL contract method
+ *  (one source: ExperienceRuntimeApi). A method the routes never call reads
+ *  `undefined` — pinned by the never-called asserts below. */
+type RecordedCalls = {
+	getExperienceConfig: { chatId: string }[];
+	updateExperienceConfig: { chatId: string; body: Parameters<ExperienceRuntimeApi["updateExperienceConfig"]>[1] }[];
+	listExperienceVisuals: { scopeType: string; ownerId?: string }[];
+	getExperienceVisual: { id: string }[];
+	createExperienceVisual: { body: Parameters<ExperienceRuntimeApi["createExperienceVisual"]>[0] }[];
+	updateExperienceVisual: { id: string; patch: Parameters<ExperienceRuntimeApi["updateExperienceVisual"]>[1] }[];
+	deleteExperienceVisual: { id: string }[];
+	startExperienceSession: { chatId: string; body: Parameters<ExperienceRuntimeApi["startExperienceSession"]>[1] }[];
+	getExperienceSession: { sessionId: string }[];
+	endExperienceSession: { sessionId: string; body: Parameters<ExperienceRuntimeApi["endExperienceSession"]>[1] }[];
+	submitExperienceAction: { sessionId: string; action: Parameters<ExperienceRuntimeApi["submitExperienceAction"]>[1]; signal?: AbortSignal }[];
+	getExperienceView: { sessionId: string; participantId?: string }[];
+	getExperienceActions: { sessionId: string; participantId?: string }[];
+	getActiveExperienceSession: { chatId: string; branchId: string }[];
+	getExperienceQueuedAttachment: { sessionId: string }[];
+	queueExperienceReport: { sessionId: string; body: Parameters<ExperienceRuntimeApi["queueExperienceReport"]>[1] }[];
+	getExperienceReportStatus: { sessionId: string }[];
+	undoExperienceSession: { sessionId: string; body: Parameters<ExperienceRuntimeApi["undoExperienceSession"]>[1] }[];
+	previewExperienceRecalculation: { sessionId: string; body: Parameters<ExperienceRuntimeApi["previewExperienceRecalculation"]>[1] }[];
+	getExperienceEffects: { sessionId: string }[];
+	captureExperienceContext: { sessionId: string; body: Parameters<ExperienceRuntimeApi["captureExperienceContext"]>[1]; signal?: AbortSignal }[];
+	getExperienceContextStatus: { sessionId: string }[];
+	getExperiencePromptOverrides: { sessionId: string }[];
+	updateExperienceGlobalOverride: { sessionId: string; body: Parameters<ExperienceRuntimeApi["updateExperienceGlobalOverride"]>[1] }[];
+	updateExperienceCharacterOverride: { sessionId: string; body: Parameters<ExperienceRuntimeApi["updateExperienceCharacterOverride"]>[1] }[];
+	commitExperienceRound: { sessionId: string; body: Parameters<ExperienceRuntimeApi["commitExperienceRound"]>[1] }[];
+	getExperienceRoundConfig: { sessionId: string }[];
+	runExperienceRoundModel: { body: Parameters<ExperienceRuntimeApi["runExperienceRoundModel"]>[0]; signal?: AbortSignal }[];
+};
+function stubRuntime(throws?: { kind: DomainErrorKind; message: string }): { runtime: ExperienceRuntimeApi; calls: RecordedCalls } {
+	const calls: RecordedCalls = Object.create(null);
+	const rec = <K extends keyof RecordedCalls>(name: K) => (calls[name] ??= []);
 	const maybeThrow = () => {
 		if (throws) throw new DomainError({ kind: throws.kind, message: throws.message });
 	};
-	const base = {
+	const base: PartialMembers<ExperienceRuntimeApi> = {
 		getExperienceConfig: async (chatId: string) => { rec("getExperienceConfig").push({ chatId }); maybeThrow(); return { id: "cfg", chatId, enabled: false, scriptId: null, scriptName: null, visualId: null, contextSourceCharacterId: null, contextSourceChatId: null, contextSourcePersonaId: null, capabilityGrants: [], contextMode: "none", launcherVisible: false, createdAt: "", updatedAt: "" }; },
-		updateExperienceConfig: async (chatId: string, body: any) => { rec("updateExperienceConfig").push({ chatId, body }); maybeThrow(); return { id: "cfg", chatId, enabled: !!body.enabled, scriptId: body.scriptId ?? null, scriptName: null, visualId: null, contextSourceCharacterId: body.contextSourceCharacterId ?? null, contextSourceChatId: body.contextSourceChatId ?? null, contextSourcePersonaId: body.contextSourcePersonaId ?? null, capabilityGrants: [], contextMode: "none", launcherVisible: false, createdAt: "", updatedAt: "" }; },
+		updateExperienceConfig: async (chatId: string, body: Parameters<ExperienceRuntimeApi["updateExperienceConfig"]>[1]) => { rec("updateExperienceConfig").push({ chatId, body }); maybeThrow(); return { id: "cfg", chatId, enabled: !!body.enabled, scriptId: body.scriptId ?? null, scriptName: null, visualId: null, contextSourceCharacterId: body.contextSourceCharacterId ?? null, contextSourceChatId: body.contextSourceChatId ?? null, contextSourcePersonaId: body.contextSourcePersonaId ?? null, capabilityGrants: [], contextMode: "none", launcherVisible: false, createdAt: "", updatedAt: "" }; },
 		listExperienceVisuals: async (scopeType: string, ownerId?: string) => { rec("listExperienceVisuals").push({ scopeType, ownerId }); maybeThrow(); return []; },
 		getExperienceVisual: async (id: string) => { rec("getExperienceVisual").push({ id }); maybeThrow(); return null; },
-		createExperienceVisual: async (body: any) => { rec("createExperienceVisual").push({ body }); maybeThrow(); return { id: "xv_1", ...body, sourceHash: "h", personaId: null, chatId: null, createdAt: "", updatedAt: "" }; },
-		updateExperienceVisual: async (id: string, patch: any) => { rec("updateExperienceVisual").push({ id, patch }); maybeThrow(); return { id, ...patch, sourceHash: "h" }; },
+		createExperienceVisual: async (body: Parameters<ExperienceRuntimeApi["createExperienceVisual"]>[0]) => { rec("createExperienceVisual").push({ body }); maybeThrow(); return { id: "xv_1", ...body, compatibleManifestIds: body.compatibleManifestIds ?? [], scopeType: body.scopeType ?? "global", characterId: body.characterId ?? null, personaId: null, chatId: null, sourceHash: "h", createdAt: "", updatedAt: "" }; },
+		updateExperienceVisual: async (id: string, patch: Parameters<ExperienceRuntimeApi["updateExperienceVisual"]>[1]) => { rec("updateExperienceVisual").push({ id, patch }); maybeThrow(); return { id, name: patch.name ?? "Viz", source: patch.source ?? "<visual/>", apiVersion: patch.apiVersion ?? 1, compatibleManifestIds: patch.compatibleManifestIds ?? [], scopeType: "global", characterId: null, personaId: null, chatId: null, sourceHash: "h", createdAt: "", updatedAt: "" }; },
 		deleteExperienceVisual: async (id: string) => { rec("deleteExperienceVisual").push({ id }); maybeThrow(); },
-		startExperienceSession: async (chatId: string, body: any) => { rec("startExperienceSession").push({ chatId, body }); maybeThrow(); return sessionResponse(chatId, body.branchId); },
+		startExperienceSession: async (chatId: string, body: Parameters<ExperienceRuntimeApi["startExperienceSession"]>[1]) => { rec("startExperienceSession").push({ chatId, body }); maybeThrow(); return sessionResponse(chatId, body.branchId); },
 		getExperienceSession: async (sessionId: string) => { rec("getExperienceSession").push({ sessionId }); maybeThrow(); return sessionResponse("c_1", "b_1", sessionId); },
-		endExperienceSession: async (sessionId: string, body: any) => { rec("endExperienceSession").push({ sessionId, body }); maybeThrow(); return null; },
-		submitExperienceAction: async (sessionId: string, action: any, signal?: AbortSignal) => { rec("submitExperienceAction").push({ sessionId, action, signal }); maybeThrow(); return { ...sessionResponse("c_1", "b_1", sessionId), events: [], await: "human" as const }; },
+		endExperienceSession: async (sessionId: string, body: Parameters<ExperienceRuntimeApi["endExperienceSession"]>[1]) => { rec("endExperienceSession").push({ sessionId, body }); maybeThrow(); return null; },
+		submitExperienceAction: async (sessionId: string, action: Parameters<ExperienceRuntimeApi["submitExperienceAction"]>[1], signal?: AbortSignal) => { rec("submitExperienceAction").push({ sessionId, action, signal }); maybeThrow(); return { ...sessionResponse("c_1", "b_1", sessionId), events: [], await: "human" as const }; },
 		getExperienceView: async (sessionId: string, participantId?: string) => { rec("getExperienceView").push({ sessionId, participantId }); maybeThrow(); return { state: { n: 0 }, actions: [], flavor: undefined, revision: 0, status: "active" as const }; },
 		getExperienceActions: async (sessionId: string, participantId?: string) => { rec("getExperienceActions").push({ sessionId, participantId }); maybeThrow(); return []; },
 		getActiveExperienceSession: async (chatId: string, branchId: string) => { rec("getActiveExperienceSession").push({ chatId, branchId }); maybeThrow(); return sessionResponse(chatId, branchId); },
 		getExperienceQueuedAttachment: async (sessionId: string) => { rec("getExperienceQueuedAttachment").push({ sessionId }); maybeThrow(); return null; },
-		queueExperienceReport: async (sessionId: string, body: any) => { rec("queueExperienceReport").push({ sessionId, body }); maybeThrow(); return { id: "xa_1", sessionId, chatId: "c_1", branchId: "b_1", sessionRevision: body.expectedRevision, queueRevision: 1, kind: "report", publicReport: { title: "T", events: [] }, rulesSourceHash: "h", visualSourceHash: null, createdAt: "", updatedAt: "" }; },
+		queueExperienceReport: async (sessionId: string, body: Parameters<ExperienceRuntimeApi["queueExperienceReport"]>[1]) => { rec("queueExperienceReport").push({ sessionId, body }); maybeThrow(); return { id: "xa_1", sessionId, chatId: "c_1", branchId: "b_1", sessionRevision: body.expectedRevision, queueRevision: 1, kind: "report", publicReport: { title: "T", events: [] }, rulesSourceHash: "h", visualSourceHash: null, createdAt: "", updatedAt: "" }; },
 		getExperienceReportStatus: async (sessionId: string) => { rec("getExperienceReportStatus").push({ sessionId }); maybeThrow(); return { revision: 0, reportFrontier: 0, pendingPublicEventCount: 0, queuedAttachment: null }; },
-		undoExperienceSession: async (sessionId: string, body: any) => { rec("undoExperienceSession").push({ sessionId, body }); maybeThrow(); return { ...sessionResponse("c_1", "b_1", sessionId), events: [], await: "human" as const }; },
-		previewExperienceRecalculation: async (sessionId: string, body: any) => { rec("previewExperienceRecalculation").push({ sessionId, body }); maybeThrow(); return { originalRulesHash: "h1", originalState: {}, originalRevision: 0, newManifestId: "m", newRulesHash: "h2", outcome: { ok: true as const, finalState: {}, cursor: 0, checkpoints: [] } }; },
+		undoExperienceSession: async (sessionId: string, body: Parameters<ExperienceRuntimeApi["undoExperienceSession"]>[1]) => { rec("undoExperienceSession").push({ sessionId, body }); maybeThrow(); return { ...sessionResponse("c_1", "b_1", sessionId), events: [], await: "human" as const }; },
+		previewExperienceRecalculation: async (sessionId: string, body: Parameters<ExperienceRuntimeApi["previewExperienceRecalculation"]>[1]) => { rec("previewExperienceRecalculation").push({ sessionId, body }); maybeThrow(); return { originalRulesHash: "h1", originalState: {}, originalRevision: 0, newManifestId: "m", newRulesHash: "h2", outcome: { ok: true as const, finalState: {}, cursor: 0, checkpoints: [] } }; },
 		getExperienceEffects: async (sessionId: string) => { rec("getExperienceEffects").push({ sessionId }); maybeThrow(); return []; },
-		captureExperienceContext: async (sessionId: string, body: any, signal?: AbortSignal) => { rec("captureExperienceContext").push({ sessionId, body, signal }); maybeThrow(); return { sessionId, mode: body.mode ?? "none", branchFrontierRevision: null, messageFrontierPosition: null, providerProfileId: null, modelId: null, sourceCharacterId: null, sourceChatId: null, sourcePersonaId: null, createdAt: "2025-01-01T00:00:00Z", updatedAt: "2025-01-01T00:00:00Z" }; },
+		captureExperienceContext: async (sessionId: string, body: Parameters<ExperienceRuntimeApi["captureExperienceContext"]>[1], signal?: AbortSignal) => { rec("captureExperienceContext").push({ sessionId, body, signal }); maybeThrow(); return { sessionId, mode: body.mode ?? "none", branchFrontierRevision: null, messageFrontierPosition: null, providerProfileId: null, modelId: null, sourceCharacterId: null, sourceChatId: null, sourcePersonaId: null, createdAt: "2025-01-01T00:00:00Z", updatedAt: "2025-01-01T00:00:00Z" }; },
 		getExperienceContextStatus: async (sessionId: string) => { rec("getExperienceContextStatus").push({ sessionId }); maybeThrow(); return null; },
 		getExperiencePromptOverrides: async (sessionId: string) => { rec("getExperiencePromptOverrides").push({ sessionId }); maybeThrow(); return { global: null, character: null }; },
-		updateExperienceGlobalOverride: async (sessionId: string, body: any) => { rec("updateExperienceGlobalOverride").push({ sessionId, body }); maybeThrow(); return { global: { scope: "global" as const, content: body.content, characterId: null, createdAt: "2025-01-01T00:00:00Z", updatedAt: "2025-01-01T00:00:00Z" }, character: null }; },
-		updateExperienceCharacterOverride: async (sessionId: string, body: any) => { rec("updateExperienceCharacterOverride").push({ sessionId, body }); maybeThrow(); return { global: null, character: { scope: "character" as const, content: body.content, characterId: "c_1", createdAt: "2025-01-01T00:00:00Z", updatedAt: "2025-01-01T00:00:00Z" } }; },
-		commitExperienceRound: async (sessionId: string, body: any) => { rec("commitExperienceRound").push({ sessionId, body }); maybeThrow(); return null; },
+		updateExperienceGlobalOverride: async (sessionId: string, body: Parameters<ExperienceRuntimeApi["updateExperienceGlobalOverride"]>[1]) => { rec("updateExperienceGlobalOverride").push({ sessionId, body }); maybeThrow(); return { global: { scope: "global" as const, content: body.content, characterId: null, createdAt: "2025-01-01T00:00:00Z", updatedAt: "2025-01-01T00:00:00Z" }, character: null }; },
+		updateExperienceCharacterOverride: async (sessionId: string, body: Parameters<ExperienceRuntimeApi["updateExperienceCharacterOverride"]>[1]) => { rec("updateExperienceCharacterOverride").push({ sessionId, body }); maybeThrow(); return { global: null, character: { scope: "character" as const, content: body.content, characterId: "c_1", createdAt: "2025-01-01T00:00:00Z", updatedAt: "2025-01-01T00:00:00Z" } }; },
+		commitExperienceRound: async (sessionId: string, body: Parameters<ExperienceRuntimeApi["commitExperienceRound"]>[1]) => { rec("commitExperienceRound").push({ sessionId, body }); maybeThrow(); return null; },
 		getExperienceRoundConfig: async (sessionId: string) => { rec("getExperienceRoundConfig").push({ sessionId }); maybeThrow(); return { rulesSource: "src", seed: 42, tickMs: 100, initialState: { t: 0 }, initialSettings: {}, participants: [] }; },
-		runExperienceRoundModel: async (body: any, signal?: AbortSignal) => { rec("runExperienceRoundModel").push({ body, signal }); maybeThrow(); return { seatId: body.seatId, ...(body.requestId !== undefined ? { requestId: body.requestId } : {}), result: { actionId: "move" } }; },
+		runExperienceRoundModel: async (body: Parameters<ExperienceRuntimeApi["runExperienceRoundModel"]>[0], signal?: AbortSignal) => { rec("runExperienceRoundModel").push({ body, signal }); maybeThrow(); return { seatId: body.seatId, ...(body.requestId !== undefined ? { requestId: body.requestId } : {}), result: { actionId: "move" } }; },
 	};
 	// The strict double keeps the stub's member shapes compiler-checked
 	// against the REAL runtime contract; a member the routes start reading
@@ -205,7 +277,7 @@ describe("Experience routes — HTTP layer (stub)", () => {
 			body: JSON.stringify({ contextSourceCharacterId: "char_9", contextSourceChatId: "chat_9", contextSourcePersonaId: "persona_9" }),
 		});
 		expect(put.status).toBe(200);
-		const body = await jsonBody(put);
+		const body = await jsonBody<ExperienceChatConfigRow>(put);
 		expect(body.contextSourceCharacterId).toBe("char_9");
 		expect(body.contextSourceChatId).toBe("chat_9");
 		expect(body.contextSourcePersonaId).toBe("persona_9");
@@ -219,7 +291,7 @@ describe("Experience routes — HTTP layer (stub)", () => {
 			body: JSON.stringify({ contextSourceCharacterId: null, contextSourceChatId: null, contextSourcePersonaId: null }),
 		});
 		expect(clear.status).toBe(200);
-		const cleared = await jsonBody(clear);
+		const cleared = await jsonBody<ExperienceChatConfigRow>(clear);
 		expect(cleared.contextSourceCharacterId).toBeNull();
 		expect(cleared.contextSourceChatId).toBeNull();
 		expect(cleared.contextSourcePersonaId).toBeNull();
@@ -250,7 +322,7 @@ describe("Experience routes — HTTP layer (stub)", () => {
 			body: JSON.stringify({ type: "inc", requestId: "r1", expectedRevision: 0 }),
 		});
 		expect(res.status).toBe(404);
-		const body = await jsonBody(res);
+		const body = await jsonBody<HttpErrorBody>(res);
 		expect(body.error.kind).toBe("NotFound");
 	});
 
@@ -291,7 +363,7 @@ describe("Experience routes — HTTP layer (stub)", () => {
 		const res = await app.request("/api/experience/sessions/s_1/attachment");
 		expect(res.status).toBe(200);
 		expect(calls.getExperienceQueuedAttachment[0]).toEqual({ sessionId: "s_1" });
-		const body = await jsonBody(res);
+		const body = await jsonBody<ExperienceQueuedAttachmentResponse>(res);
 		expect(body).toBeNull();
 	});
 
@@ -359,7 +431,7 @@ describe("Experience routes — HTTP layer (stub)", () => {
 		const okRes = await app.request("/api/experience/sessions/s_1/round/config");
 		expect(okRes.status).toBe(200);
 		expect(calls.getExperienceRoundConfig[0]).toEqual({ sessionId: "s_1" });
-		const body = await jsonBody(okRes);
+		const body = await jsonBody<ExperienceRoundConfigResponseDto>(okRes);
 		expect(body.tickMs).toBe(100);
 		expect(body.seed).toBe(42);
 
@@ -537,21 +609,21 @@ context.experience.register({
 			], settings: {} }),
 		});
 		expect(start.status).toBe(200);
-		const sid = (await jsonBody(start)).sessionId;
+		const sid = (await jsonBody<ExperienceSessionResponse>(start)).sessionId;
 		const arm = await app.request(`/api/experience/sessions/${sid}/actions`, {
 			method: "POST", headers: { "content-type": "application/json" },
 			body: JSON.stringify({ type: "arm", requestId: "r1", expectedRevision: 0, participantId: "human" }),
 		});
 		expect(arm.status).toBe(200);
 		const effects = await app.request(`/api/experience/sessions/${sid}/effects`);
-		const rows = await jsonBody(effects);
+		const rows = await jsonBody<ExperienceEffectRow[]>(effects);
 		const timer = (rows as { id: string; kind: string; status: string }[]).find((e) => e.kind === "timer");
 		expect(timer).toBeDefined();
 
 		// The HTTP path never runs a timer: 202, hostScheduled flag, row untouched.
 		const run = await app.request(`/api/experience/effects/${timer.id}/run`, { method: "POST" });
 		expect(run.status).toBe(202);
-		const body = await jsonBody(run);
+		const body = await jsonBody<ExperienceEffectRunResponse>(run);
 		expect(body.hostScheduled).toBe(true);
 		expect(body.delivered).toBe(false);
 		expect(body.effect.status).toBe("pending");
@@ -564,7 +636,7 @@ context.experience.register({
 			body: JSON.stringify({ branchId: "b_1", participants: [] }),
 		});
 		expect(res.status).toBe(404);
-		const body = await jsonBody(res);
+		const body = await jsonBody<HttpErrorBody>(res);
 		expect(body.error.details.code).toBe("chat_not_found");
 	});
 
@@ -577,7 +649,7 @@ context.experience.register({
 			body: JSON.stringify({ branchId, participants: [], settings: {} }),
 		});
 		expect(start.status).toBe(200);
-		const started = await jsonBody(start);
+		const started = await jsonBody<ExperienceSessionResponse & Record<string, unknown>>(start);
 		const sid = started.sessionId;
 		// Projected-only: response carries `view.state` (projected) and NO
 		// authoritative-state leak (no currentState/seed/authoritativeState keys).
@@ -591,7 +663,7 @@ context.experience.register({
 			body: JSON.stringify({ type: "inc", requestId: "r1", expectedRevision: 0 }),
 		});
 		expect(a1.status).toBe(200);
-		expect((await jsonBody(a1)).revision).toBe(1);
+		expect((await jsonBody<ExperienceActionResponse>(a1)).revision).toBe(1);
 
 		// Stale expectedRevision (0 again) → 409 stale_revision with currentRevision.
 		const stale = await app.request(`/api/experience/sessions/${sid}/actions`, {
@@ -599,7 +671,7 @@ context.experience.register({
 			body: JSON.stringify({ type: "inc", requestId: "r2", expectedRevision: 0 }),
 		});
 		expect(stale.status).toBe(409);
-		const staleBody = await jsonBody(stale);
+		const staleBody = await jsonBody<HttpErrorBody>(stale);
 		expect(staleBody.error.details.code).toBe("stale_revision");
 		expect(staleBody.error.details.currentRevision).toBe(1);
 
@@ -609,7 +681,7 @@ context.experience.register({
 			body: JSON.stringify({ type: "inc", requestId: "r1", expectedRevision: 0 }),
 		});
 		expect(dup.status).toBe(200);
-		expect((await jsonBody(dup)).revision).toBe(1);
+		expect((await jsonBody<ExperienceActionResponse>(dup)).revision).toBe(1);
 	});
 
 	test("an illegal action type is 422 illegal_action", async () => {
@@ -619,7 +691,7 @@ context.experience.register({
 			method: "POST", headers: { "content-type": "application/json" },
 			body: JSON.stringify({ branchId, participants: [] }),
 		});
-		const sid = (await jsonBody(start)).sessionId;
+		const sid = (await jsonBody<ExperienceSessionResponse>(start)).sessionId;
 		expect(sid, "start must succeed before the illegal action").toBeTruthy();
 
 		const illegal = await app.request(`/api/experience/sessions/${sid}/actions`, {
@@ -627,7 +699,7 @@ context.experience.register({
 			body: JSON.stringify({ type: "cheat", requestId: "r1", expectedRevision: 0 }),
 		});
 		expect(illegal.status).toBe(422);
-		expect((await jsonBody(illegal)).error.details.code).toBe("illegal_action");
+		expect((await jsonBody<HttpErrorBody>(illegal)).error.details.code).toBe("illegal_action");
 	});
 
 	test("capability_denied when a granted capability is not declared by the rules", async () => {
@@ -639,7 +711,7 @@ context.experience.register({
 			body: JSON.stringify({ branchId, participants: [] }),
 		});
 		expect(start.status).toBe(422);
-		const body = await jsonBody(start);
+		const body = await jsonBody<HttpErrorBody>(start);
 		expect(body.error.details.code).toBe("capability_denied");
 	});
 
@@ -650,17 +722,17 @@ context.experience.register({
 
 		const before = await app.request(`/api/chats/${chat.id}/experience/config`);
 		expect(before.status).toBe(200);
-		expect((await jsonBody(before)).enabled).toBe(false);
+		expect((await jsonBody<ExperienceChatConfigRow>(before)).enabled).toBe(false);
 
 		const patch = await app.request(`/api/chats/${chat.id}/experience/config`, {
 			method: "PUT", headers: { "content-type": "application/json" },
 			body: JSON.stringify({ enabled: true }),
 		});
 		expect(patch.status).toBe(200);
-		expect((await jsonBody(patch)).enabled).toBe(true);
+		expect((await jsonBody<ExperienceChatConfigRow>(patch)).enabled).toBe(true);
 
 		const after = await app.request(`/api/chats/${chat.id}/experience/config`);
-		expect((await jsonBody(after)).enabled).toBe(true);
+		expect((await jsonBody<ExperienceChatConfigRow>(after)).enabled).toBe(true);
 	});
 
 	test("config PUT persists and clears context-source fields through the real DB", async () => {
@@ -674,13 +746,13 @@ context.experience.register({
 			body: JSON.stringify({ contextSourceCharacterId: character.id, contextSourceChatId: chat.id, contextSourcePersonaId: persona.id }),
 		});
 		expect(put.status).toBe(200);
-		const putBody = await jsonBody(put);
+		const putBody = await jsonBody<ExperienceChatConfigRow>(put);
 		expect(putBody.contextSourceCharacterId).toBe(character.id);
 		expect(putBody.contextSourceChatId).toBe(chat.id);
 		expect(putBody.contextSourcePersonaId).toBe(persona.id);
 
 		const get = await app.request(`/api/chats/${chat.id}/experience/config`);
-		const getBody = await jsonBody(get);
+		const getBody = await jsonBody<ExperienceChatConfigRow>(get);
 		expect(getBody.contextSourceCharacterId).toBe(character.id);
 		expect(getBody.contextSourceChatId).toBe(chat.id);
 		expect(getBody.contextSourcePersonaId).toBe(persona.id);
@@ -690,7 +762,7 @@ context.experience.register({
 			body: JSON.stringify({ contextSourceCharacterId: null, contextSourceChatId: null, contextSourcePersonaId: null }),
 		});
 		expect(clear.status).toBe(200);
-		const cleared = await jsonBody(clear);
+		const cleared = await jsonBody<ExperienceChatConfigRow>(clear);
 		expect(cleared.contextSourceCharacterId).toBeNull();
 		expect(cleared.contextSourceChatId).toBeNull();
 		expect(cleared.contextSourcePersonaId).toBeNull();
@@ -703,20 +775,20 @@ context.experience.register({
 			body: JSON.stringify({ name: "Viz", source: "<visual/>", apiVersion: 1 }),
 		});
 		expect(created.status).toBe(200);
-		const v = await jsonBody(created);
+		const v = await jsonBody<ExperienceVisualRow>(created);
 		expect(v.name).toBe("Viz");
 
 		const fetched = await app.request(`/api/experience/visuals/${v.id}`);
 		expect(fetched.status).toBe(200);
-		expect((await jsonBody(fetched)).id).toBe(v.id);
+		expect((await jsonBody<ExperienceVisualRow>(fetched)).id).toBe(v.id);
 
 		const listed = await app.request("/api/experience/visuals?scopeType=global");
 		expect(listed.status).toBe(200);
-		expect((await jsonBody(listed)).length).toBeGreaterThanOrEqual(1);
+		expect((await jsonBody<ExperienceVisualRow[]>(listed)).length).toBeGreaterThanOrEqual(1);
 
 		const deleted = await app.request(`/api/experience/visuals/${v.id}`, { method: "DELETE" });
 		expect(deleted.status).toBe(200);
-		expect((await jsonBody(deleted)).ok).toBe(true);
+		expect((await jsonBody<{ ok: boolean }>(deleted)).ok).toBe(true);
 	});
 
 	test("restart returns a NEW session id with active status on the same branch", async () => {
@@ -728,7 +800,7 @@ context.experience.register({
 			body: JSON.stringify({ branchId, participants: [], settings: { difficulty: "hard" } }),
 		});
 		expect(start.status).toBe(200);
-		const started = await jsonBody(start);
+		const started = await jsonBody<ExperienceSessionResponse>(start);
 		const sid = started.sessionId;
 
 		const restart = await app.request(`/api/experience/sessions/${sid}/restart`, {
@@ -736,7 +808,7 @@ context.experience.register({
 			body: JSON.stringify({}),
 		});
 		expect(restart.status).toBe(200);
-		const restarted = await jsonBody(restart);
+		const restarted = await jsonBody<ExperienceSessionResponse>(restart);
 		expect(restarted.sessionId).not.toBe(sid);
 		expect(restarted.sessionId).toBeTruthy();
 		expect(restarted.status).toBe("active");
@@ -752,7 +824,7 @@ context.experience.register({
 			body: JSON.stringify({}),
 		});
 		expect(res.status).toBe(404);
-		const body = await jsonBody(res);
+		const body = await jsonBody<HttpErrorBody>(res);
 		expect(body.error.details.code).toBe("session_not_found");
 	});
 
@@ -765,7 +837,7 @@ context.experience.register({
 			body: JSON.stringify({ branchId, participants: [], settings: {} }),
 		});
 		expect(start.status).toBe(200);
-		const sid = (await jsonBody(start)).sessionId;
+		const sid = (await jsonBody<ExperienceSessionResponse>(start)).sessionId;
 
 		const disabled = await resources.updateConfig(chatId, { enabled: false });
 		expect(disabled.ok).toBe(true);
@@ -775,7 +847,7 @@ context.experience.register({
 			body: JSON.stringify({}),
 		});
 		expect(restart.status).toBe(409);
-		const body = await jsonBody(restart);
+		const body = await jsonBody<HttpErrorBody>(restart);
 		expect(body.error.details.code).toBe("not_enabled");
 	});
 });
@@ -790,11 +862,11 @@ describe("Experience routes — IR-70A session discovery (integration)", () => {
 			method: "POST", headers: { "content-type": "application/json" },
 			body: JSON.stringify({ branchId, participants: [], settings: {} }),
 		});
-		const sid = (await jsonBody(start)).sessionId;
+		const sid = (await jsonBody<ExperienceSessionResponse>(start)).sessionId;
 
 		const found = await app.request(`/api/chats/${chatId}/experience/session?branchId=${branchId}`);
 		expect(found.status).toBe(200);
-		const body = await jsonBody(found);
+		const body = await jsonBody<ExperienceSessionResponse>(found);
 		expect(body.sessionId).toBe(sid);
 		expect(body.chatId).toBe(chatId);
 		expect(body.branchId).toBe(branchId);
@@ -806,7 +878,7 @@ describe("Experience routes — IR-70A session discovery (integration)", () => {
 		const { app } = await setupIntegration();
 		const res = await app.request("/api/chats/unknown/experience/session?branchId=b_1");
 		expect(res.status).toBe(404);
-		expect((await jsonBody(res)).error.details.code).toBe("chat_not_found");
+		expect((await jsonBody<HttpErrorBody>(res)).error.details.code).toBe("chat_not_found");
 	});
 
 	test("wrong branch (belongs to another chat) is 404 branch_not_found", async () => {
@@ -816,7 +888,7 @@ describe("Experience routes — IR-70A session discovery (integration)", () => {
 		const otherChat = await stores.chats.createChat({ characterId: otherChar.id, title: "O" });
 		const res = await app.request(`/api/chats/${chatId}/experience/session?branchId=${otherChat.activeBranchId}`);
 		expect(res.status).toBe(404);
-		expect((await jsonBody(res)).error.details.code).toBe("branch_not_found");
+		expect((await jsonBody<HttpErrorBody>(res)).error.details.code).toBe("branch_not_found");
 	});
 
 	test("valid chat+branch with no active session is 404 no_active_session", async () => {
@@ -824,7 +896,7 @@ describe("Experience routes — IR-70A session discovery (integration)", () => {
 		const { chatId, branchId } = await seedChatAndScript(stores, resources, COUNTER_SOURCE);
 		const res = await app.request(`/api/chats/${chatId}/experience/session?branchId=${branchId}`);
 		expect(res.status).toBe(404);
-		expect((await jsonBody(res)).error.details.code).toBe("no_active_session");
+		expect((await jsonBody<HttpErrorBody>(res)).error.details.code).toBe("no_active_session");
 	});
 
 	test("missing branchId query is 400", async () => {
@@ -844,7 +916,7 @@ describe("Experience routes — IR-70C report lifecycle (real VM + DB + HTTP)", 
     });
     const start = await post(`/api/chats/${chatId}/experience/sessions`, { branchId });
     expect(start.status).toBe(200);
-    const sid = (await jsonBody(start)).sessionId;
+    const sid = (await jsonBody<ExperienceSessionResponse>(start)).sessionId;
     const base = `/api/experience/sessions/${sid}`;
     const initial = await stores.experiences.getQueuedAttachmentForSession(sid);
     if (!initial) throw new Error("expected start report");
@@ -862,12 +934,12 @@ describe("Experience routes — IR-70C report lifecycle (real VM + DB + HTTP)", 
     for (const body of [{ ...request, chatId: "foreign" }, { ...request, branchId: "foreign" }]) {
       const foreign = await clear(sid, body);
       expect(foreign.status).toBe(404);
-      expect((await jsonBody(foreign)).error.details.code).toBe("session_not_found");
+      expect((await jsonBody<HttpErrorBody>(foreign)).error.details.code).toBe("session_not_found");
     }
     expect((await clear("missing", request)).status).toBe(404);
     const stale = await clear(sid, { ...request, expectedRevision: 0 });
     expect(stale.status).toBe(409);
-    expect((await jsonBody(stale)).error.details.code).toBe("stale_revision");
+    expect((await jsonBody<HttpErrorBody>(stale)).error.details.code).toBe("stale_revision");
     for (const body of [{}, { ...request, expectedRevision: -1 }, { ...request, extra: true }]) {
       expect((await clear(sid, body)).status).toBe(400);
     }
@@ -875,7 +947,7 @@ describe("Experience routes — IR-70C report lifecycle (real VM + DB + HTTP)", 
     for (let i = 0; i < 2; i++) {
       const cleared = await clear(sid, request);
       expect(cleared.status).toBe(200);
-      expect(await jsonBody(cleared)).toEqual({ ok: true });
+      expect(await jsonBody<{ ok: boolean }>(cleared)).toEqual({ ok: true });
     }
     expect(await stores.experiences.getQueuedAttachmentForSession(sid)).toBeNull();
     expect(await stores.experiences.getAttachmentById(initial.id)).toEqual(boundBefore);
@@ -885,7 +957,7 @@ describe("Experience routes — IR-70C report lifecycle (real VM + DB + HTTP)", 
     expect((await post(`${base}/actions`, { type: "double", requestId: "clear-a2", expectedRevision: 1 })).status).toBe(200);
     const later = await post(`${base}/reports/queue`, { expectedRevision: 2 });
     expect(later.status).toBe(200);
-    expect((await jsonBody(later)).publicReport.events.map((event: { type: string }) => event.type)).toEqual(["advanced", "bonus"]);
+    expect((await jsonBody<QueuedAttachmentWire>(later)).publicReport.events.map((event: { type: string }) => event.type)).toEqual(["advanced", "bonus"]);
   });
 
 	// 2026-10-27 ERX-12: prose replaces projection JSON on new automatic starts.
@@ -897,7 +969,7 @@ describe("Experience routes — IR-70C report lifecycle (real VM + DB + HTTP)", 
 			body: JSON.stringify({ branchId, participants: [], settings: {} }),
 		});
 		expect(start.status).toBe(200);
-		const sid = (await jsonBody(start)).sessionId;
+		const sid = (await jsonBody<ExperienceSessionResponse>(start)).sessionId;
 		const attachment = await app.request(`/api/experience/sessions/${sid}/attachment`);
 		const raw = await attachment.text();
 		expect(raw).not.toContain("hiddenStateCheckpointJson");
@@ -917,22 +989,22 @@ describe("Experience routes — IR-70C report lifecycle (real VM + DB + HTTP)", 
 			method: "POST", headers: { "content-type": "application/json" },
 			body: JSON.stringify({ branchId, participants: [], settings: {} }),
 		});
-		const sid = (await jsonBody(start)).sessionId;
-		const original = await jsonBody(await app.request(`/api/experience/sessions/${sid}/attachment`));
+		const sid = (await jsonBody<ExperienceSessionResponse>(start)).sessionId;
+		const original = await jsonBody<QueuedAttachmentWire>(await app.request(`/api/experience/sessions/${sid}/attachment`));
 
 		const firstAction = await app.request(`/api/experience/sessions/${sid}/actions`, {
 			method: "POST", headers: { "content-type": "application/json" },
 			body: JSON.stringify({ type: "advance", requestId: "report-a1", expectedRevision: 0 }),
 		});
 		expect(firstAction.status).toBe(200);
-		let status = await jsonBody(await app.request(`/api/experience/sessions/${sid}/reports/status`));
+		let status = await jsonBody<ReportStatusWire>(await app.request(`/api/experience/sessions/${sid}/reports/status`));
 		expect(status.pendingPublicEventCount).toBe(1);
 
 		const queued = await app.request(`/api/experience/sessions/${sid}/reports/queue`, {
 			method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ expectedRevision: 1 }),
 		});
 		expect(queued.status).toBe(200);
-		const firstQueue = await jsonBody(queued);
+		const firstQueue = await jsonBody<QueuedAttachmentWire>(queued);
 		expect(firstQueue.id).toBe(original.id);
 		expect(firstQueue.queueRevision).toBe(2);
 		expect(JSON.stringify(firstQueue.publicReport)).not.toContain("PRIVATE_MARKER_70C");
@@ -940,21 +1012,21 @@ describe("Experience routes — IR-70C report lifecycle (real VM + DB + HTTP)", 
 		const retry = await app.request(`/api/experience/sessions/${sid}/reports/queue`, {
 			method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ expectedRevision: 1 }),
 		});
-		expect(await jsonBody(retry)).toEqual(firstQueue);
+		expect(await jsonBody<QueuedAttachmentWire>(retry)).toEqual(firstQueue);
 
 		const secondAction = await app.request(`/api/experience/sessions/${sid}/actions`, {
 			method: "POST", headers: { "content-type": "application/json" },
 			body: JSON.stringify({ type: "double", requestId: "report-a2", expectedRevision: 1 }),
 		});
 		expect(secondAction.status).toBe(200);
-		status = await jsonBody(await app.request(`/api/experience/sessions/${sid}/reports/status`));
+		status = await jsonBody<ReportStatusWire>(await app.request(`/api/experience/sessions/${sid}/reports/status`));
 		expect(status.pendingPublicEventCount).toBe(2);
 		expect(status.queuedAttachment.id).toBe(firstQueue.id);
 		expect(status.queuedAttachment.queueRevision).toBe(2);
 		const later = await app.request(`/api/experience/sessions/${sid}/reports/queue`, {
 			method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ expectedRevision: 2 }),
 		});
-		const laterBody = await jsonBody(later);
+		const laterBody = await jsonBody<QueuedAttachmentWire>(later);
 		expect(laterBody.id).toBe(firstQueue.id);
 		expect(laterBody.queueRevision).toBe(3);
 		expect(laterBody.publicReport.events.map((event: { type: string }) => event.type)).toEqual(["experience_started", "advanced", "advanced", "bonus"]);
@@ -962,7 +1034,7 @@ describe("Experience routes — IR-70C report lifecycle (real VM + DB + HTTP)", 
 			method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ expectedRevision: 1 }),
 		});
 		expect(stale.status).toBe(409);
-		status = await jsonBody(await app.request(`/api/experience/sessions/${sid}/reports/status`));
+		status = await jsonBody<ReportStatusWire>(await app.request(`/api/experience/sessions/${sid}/reports/status`));
 		expect(status.revision).toBe(2);
 		expect(status.queuedAttachment.queueRevision).toBe(3);
 	});
@@ -973,7 +1045,7 @@ describe("Experience routes — IR-70C report lifecycle (real VM + DB + HTTP)", 
 		const start = await app.request(`/api/chats/${chatId}/experience/sessions`, {
 			method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ branchId, participants: [], settings: {} }),
 		});
-		const sid = (await jsonBody(start)).sessionId;
+		const sid = (await jsonBody<ExperienceSessionResponse>(start)).sessionId;
 		const injected = await stores.experiences.applyTransition({
 			sessionId: sid, expectedRevision: 0, requestId: "strict-filter", kind: "system",
 			actorSnapshotJson: null, inputJson: null,
@@ -988,11 +1060,11 @@ describe("Experience routes — IR-70C report lifecycle (real VM + DB + HTTP)", 
 		});
 		expect(injected.ok).toBe(true);
 		const status = await app.request(`/api/experience/sessions/${sid}/reports/status`);
-		expect((await jsonBody(status)).pendingPublicEventCount).toBe(1);
+		expect((await jsonBody<ExperienceReportStatus>(status)).pendingPublicEventCount).toBe(1);
 		const queued = await app.request(`/api/experience/sessions/${sid}/reports/queue`, {
 			method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ expectedRevision: 1 }),
 		});
-		expect((await jsonBody(queued)).publicReport.events.map((event: { type: string }) => event.type)).toEqual(["experience_started", "valid_event"]);
+		expect((await jsonBody<QueuedAttachmentWire>(queued)).publicReport.events.map((event: { type: string }) => event.type)).toEqual(["experience_started", "valid_event"]);
 	});
 
 	test("rejects a queue with no unbound report and no public events without writing", async () => {
@@ -1002,8 +1074,8 @@ describe("Experience routes — IR-70C report lifecycle (real VM + DB + HTTP)", 
 			method: "POST", headers: { "content-type": "application/json" },
 			body: JSON.stringify({ branchId, participants: [], settings: {} }),
 		});
-		const sid = (await jsonBody(start)).sessionId;
-		const initial = await jsonBody(await app.request(`/api/experience/sessions/${sid}/attachment`));
+		const sid = (await jsonBody<ExperienceSessionResponse>(start)).sessionId;
+		const initial = await jsonBody<QueuedAttachmentWire>(await app.request(`/api/experience/sessions/${sid}/attachment`));
 		const message = await stores.messages.addMessage({ chatId, branchId, role: "user", authorType: "user", content: "bind" });
 		await stores.experiences.bindAttachment(initial.id, message.id);
 		const privateAction = await app.request(`/api/experience/sessions/${sid}/actions`, {
@@ -1015,8 +1087,8 @@ describe("Experience routes — IR-70C report lifecycle (real VM + DB + HTTP)", 
 			method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ expectedRevision: 1 }),
 		});
 		expect(queue.status).toBe(422);
-		expect((await jsonBody(queue)).error.details.code).toBe("no_public_events");
-		const status = await jsonBody(await app.request(`/api/experience/sessions/${sid}/reports/status`));
+		expect((await jsonBody<HttpErrorBody>(queue)).error.details.code).toBe("no_public_events");
+		const status = await jsonBody<ReportStatusWire>(await app.request(`/api/experience/sessions/${sid}/reports/status`));
 		expect(status.queuedAttachment).toBeNull();
 		expect(status.pendingPublicEventCount).toBe(0);
 		expect(status.reportFrontier).toBe(0);
@@ -1028,7 +1100,7 @@ describe("Experience routes — IR-70C report lifecycle (real VM + DB + HTTP)", 
 		const start = await app.request(`/api/chats/${chatId}/experience/sessions`, {
 			method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ branchId, participants: [], settings: {} }),
 		});
-		const sid = (await jsonBody(start)).sessionId;
+		const sid = (await jsonBody<ExperienceSessionResponse>(start)).sessionId;
 		const stale = await app.request(`/api/experience/sessions/${sid}/end`, {
 			method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ expectedRevision: 1 }),
 		});
@@ -1051,14 +1123,14 @@ describe("Experience routes — IR-70C report lifecycle (real VM + DB + HTTP)", 
 		const retry = await app.request(`/api/experience/sessions/${sid}/end`, {
 			method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ expectedRevision: 0 }),
 		});
-		expect(await jsonBody(retry)).toEqual(final);
+		expect(await jsonBody<QueuedAttachmentWire>(retry)).toEqual(final);
 		expect((await stores.experiences.getSteps(sid)).filter((step) => step.kind === "system")).toHaveLength(1);
 
 		const { chatId: rollbackChat, branchId: rollbackBranch } = await seedChatAndScript(stores, resources, COUNTER_SOURCE);
 		const rollbackStart = await app.request(`/api/chats/${rollbackChat}/experience/sessions`, {
 			method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ branchId: rollbackBranch, participants: [], settings: {} }),
 		});
-		const rollbackSid = (await jsonBody(rollbackStart)).sessionId;
+		const rollbackSid = (await jsonBody<ExperienceSessionResponse>(rollbackStart)).sessionId;
 		expect(() => stores.experiences.finishSessionWithFinalReport(rollbackSid, 0, {
 			kind: "report", publicEventsJson: '{"title":"x","events":[]}', hiddenStateCheckpointJson: '{"hidden":true}', rulesSourceHash: "h",
 		}, () => { throw new Error("injected finish failure"); })).toThrow("injected finish failure");
@@ -1076,11 +1148,11 @@ describe("Experience routes — IR-70A queued-attachment read (integration)", ()
 			method: "POST", headers: { "content-type": "application/json" },
 			body: JSON.stringify({ branchId, participants: [], settings: {} }),
 		});
-		const sid = (await jsonBody(start)).sessionId;
+		const sid = (await jsonBody<ExperienceSessionResponse>(start)).sessionId;
 
 		const res = await app.request(`/api/experience/sessions/${sid}/attachment`);
 		expect(res.status).toBe(200);
-		const body = await jsonBody(res);
+		const body = await jsonBody<QueuedAttachmentWire>(res);
 		expect(body.sessionRevision).toBe(0);
 		expect(body.publicReport.events[0].type).toBe("experience_started");
 	});
@@ -1092,7 +1164,7 @@ describe("Experience routes — IR-70A queued-attachment read (integration)", ()
 			method: "POST", headers: { "content-type": "application/json" },
 			body: JSON.stringify({ branchId, participants: [], settings: {} }),
 		});
-		const sid = (await jsonBody(start)).sessionId;
+		const sid = (await jsonBody<ExperienceSessionResponse>(start)).sessionId;
 
 		await stores.experiences.queueAttachment({
 			chatId, branchId, sessionId: sid,
@@ -1119,7 +1191,7 @@ describe("Experience routes — IR-70A queued-attachment read (integration)", ()
 		const { app } = await setupIntegration();
 		const res = await app.request("/api/experience/sessions/nonexistent/attachment");
 		expect(res.status).toBe(404);
-		expect((await jsonBody(res)).error.details.code).toBe("session_not_found");
+		expect((await jsonBody<HttpErrorBody>(res)).error.details.code).toBe("session_not_found");
 	});
 });
 
@@ -1134,7 +1206,7 @@ describe("Experience routes — IR-70D context capture (integration)", () => {
 			body: JSON.stringify({ branchId, participants: [], settings: {} }),
 		});
 		expect(start.status).toBe(200);
-		const sid = (await jsonBody(start)).sessionId;
+		const sid = (await jsonBody<ExperienceSessionResponse>(start)).sessionId;
 
 		const status = await app.request(`/api/experience/sessions/${sid}/context/status`);
 		expect(status.status).toBe(200);
@@ -1156,7 +1228,7 @@ describe("Experience routes — IR-70D context capture (integration)", () => {
 			body: JSON.stringify({ branchId, participants: [], settings: {} }),
 		});
 		expect(start.status).toBe(200);
-		const sid = (await jsonBody(start)).sessionId;
+		const sid = (await jsonBody<ExperienceSessionResponse>(start)).sessionId;
 
 		// Capture with current_branch mode.
 		const capture = await app.request(`/api/experience/sessions/${sid}/context/capture`, {
@@ -1189,7 +1261,7 @@ describe("Experience routes — IR-70D context capture (integration)", () => {
 		// Status now reflects the captured bundle.
 		const status = await app.request(`/api/experience/sessions/${sid}/context/status`);
 		expect(status.status).toBe(200);
-		const statusBody = await jsonBody(status);
+		const statusBody = await jsonBody<ExperienceContextStatusDto>(status);
 		expect(statusBody).not.toBeNull();
 		expect(statusBody.sessionId).toBe(sid);
 		expect(statusBody.mode).toBe("current_branch");
@@ -1204,7 +1276,7 @@ describe("Experience routes — IR-70D context capture (integration)", () => {
 			body: JSON.stringify({ branchId, participants: [], settings: {} }),
 		});
 		expect(start.status).toBe(200);
-		const sid = (await jsonBody(start)).sessionId;
+		const sid = (await jsonBody<ExperienceSessionResponse>(start)).sessionId;
 
 		// Capture is blocked.
 		const capture = await app.request(`/api/experience/sessions/${sid}/context/capture`, {
@@ -1212,13 +1284,13 @@ describe("Experience routes — IR-70D context capture (integration)", () => {
 			body: JSON.stringify({ mode: "none" }),
 		});
 		expect(capture.status).toBe(422);
-		const body = await jsonBody(capture);
+		const body = await jsonBody<HttpErrorBody>(capture);
 		expect(body.error.details.code).toBe("capability_denied");
 
 		// Status is also blocked.
 		const status = await app.request(`/api/experience/sessions/${sid}/context/status`);
 		expect(status.status).toBe(422);
-		expect((await jsonBody(status)).error.details.code).toBe("capability_denied");
+		expect((await jsonBody<HttpErrorBody>(status)).error.details.code).toBe("capability_denied");
 	});
 
 	test("request with unknown fields is 400 (strict schema)", async () => {
@@ -1229,7 +1301,7 @@ describe("Experience routes — IR-70D context capture (integration)", () => {
 			body: JSON.stringify({ branchId, participants: [], settings: {} }),
 		});
 		expect(start.status).toBe(200);
-		const sid = (await jsonBody(start)).sessionId;
+		const sid = (await jsonBody<ExperienceSessionResponse>(start)).sessionId;
 
 		const res = await app.request(`/api/experience/sessions/${sid}/context/capture`, {
 			method: "POST", headers: { "content-type": "application/json" },
@@ -1242,14 +1314,14 @@ describe("Experience routes — IR-70D context capture (integration)", () => {
 // ─── IR-70D: Prompt overrides (integration) ──────────────────────────────────
 
 describe("Experience routes — IR-70D prompt overrides (integration)", () => {
-	async function seedSessionWithModelGrant(app: any, stores: any, resources: any) {
+	async function seedSessionWithModelGrant(app: ReturnType<typeof mount>, stores: StoreContainer, resources: ExperienceResourceService) {
 		const { chatId, branchId } = await seedChatAndScript(stores, resources, CONTEXT_MODEL_SOURCE, ["rp_context", "model"]);
 		const start = await app.request(`/api/chats/${chatId}/experience/sessions`, {
 			method: "POST", headers: { "content-type": "application/json" },
 			body: JSON.stringify({ branchId, participants: [], settings: {} }),
 		});
 		expect(start.status).toBe(200);
-		return { sessionId: (await jsonBody(start)).sessionId, chatId };
+		return { sessionId: (await jsonBody<ExperienceSessionResponse>(start)).sessionId, chatId };
 	}
 
 	test("GET returns independent global + character layers (both null initially)", async () => {
@@ -1258,7 +1330,7 @@ describe("Experience routes — IR-70D prompt overrides (integration)", () => {
 
 		const res = await app.request(`/api/experience/sessions/${sid}/prompt-overrides`);
 		expect(res.status).toBe(200);
-		const body = await jsonBody(res);
+		const body = await jsonBody<ExperiencePromptOverridesResponse>(res);
 		expect(body.global).toBeNull();
 		expect(body.character).toBeNull();
 	});
@@ -1273,7 +1345,7 @@ describe("Experience routes — IR-70D prompt overrides (integration)", () => {
 			body: JSON.stringify({ content: "global instruction" }),
 		});
 		expect(gRes.status).toBe(200);
-		const gBody = await jsonBody(gRes);
+		const gBody = await jsonBody<PromptOverridesWire>(gRes);
 		expect(gBody.global).not.toBeNull();
 		expect(gBody.global.content).toBe("global instruction");
 		expect(gBody.global.scope).toBe("global");
@@ -1286,7 +1358,7 @@ describe("Experience routes — IR-70D prompt overrides (integration)", () => {
 			body: JSON.stringify({ content: "character instruction" }),
 		});
 		expect(cRes.status).toBe(200);
-		const cBody = await jsonBody(cRes);
+		const cBody = await jsonBody<PromptOverridesWire>(cRes);
 		expect(cBody.global).not.toBeNull();
 		expect(cBody.global.content).toBe("global instruction");
 		expect(cBody.character).not.toBeNull();
@@ -1297,7 +1369,7 @@ describe("Experience routes — IR-70D prompt overrides (integration)", () => {
 		// GET returns both layers independently.
 		const getRes = await app.request(`/api/experience/sessions/${sid}/prompt-overrides`);
 		expect(getRes.status).toBe(200);
-		const getBody = await jsonBody(getRes);
+		const getBody = await jsonBody<PromptOverridesWire>(getRes);
 		expect(getBody.global.content).toBe("global instruction");
 		expect(getBody.character.content).toBe("character instruction");
 	});
@@ -1324,12 +1396,12 @@ describe("Experience routes — IR-70D prompt overrides (integration)", () => {
 			body: JSON.stringify({ branchId, participants: [], settings: {} }),
 		});
 		expect(start.status).toBe(200);
-		const sid = (await jsonBody(start)).sessionId;
+		const sid = (await jsonBody<ExperienceSessionResponse>(start)).sessionId;
 
 		// GET denied.
 		const getRes = await app.request(`/api/experience/sessions/${sid}/prompt-overrides`);
 		expect(getRes.status).toBe(422);
-		expect((await jsonBody(getRes)).error.details.code).toBe("capability_denied");
+		expect((await jsonBody<HttpErrorBody>(getRes)).error.details.code).toBe("capability_denied");
 
 		// PUT global denied.
 		const gRes = await app.request(`/api/experience/sessions/${sid}/prompt-overrides/global`, {
@@ -1355,7 +1427,7 @@ describe("Experience routes — IR-70D prompt overrides (integration)", () => {
 			body: JSON.stringify({ content: "" }),
 		});
 		expect(res.status).toBe(200);
-		const body = await jsonBody(res);
+		const body = await jsonBody<PromptOverridesWire>(res);
 		expect(body.global.content).toBe("");
 	});
 });
@@ -1390,7 +1462,7 @@ describe("Experience routes — IR-70D prompt overrides (integration)", () => {
 		// GET session — same pinned snapshot.
 		const got = await app.request(`/api/experience/sessions/${sid}`);
 		expect(got.status).toBe(200);
-		const gotBody = await jsonBody(got);
+		const gotBody = await jsonBody<ExperienceSessionResponse>(got);
 		expect(gotBody.visualSource).toBe("<board id='v1'/>");
 		expect(gotBody.visualSourceHash).toBe(visual.sourceHash);
 		expect(gotBody.visualId).toBe(visual.id);
@@ -1398,7 +1470,7 @@ describe("Experience routes — IR-70D prompt overrides (integration)", () => {
 		// Active-session discovery — same pinned snapshot.
 		const found = await app.request(`/api/chats/${chatId}/experience/session?branchId=${branchId}`);
 		expect(found.status).toBe(200);
-		const foundBody = await jsonBody(found);
+		const foundBody = await jsonBody<ExperienceSessionResponse>(found);
 		expect(foundBody.visualSource).toBe("<board id='v1'/>");
 		expect(foundBody.visualSourceHash).toBe(visual.sourceHash);
 		expect(foundBody.visualId).toBe(visual.id);
@@ -1412,14 +1484,14 @@ describe("Experience routes — IR-70D prompt overrides (integration)", () => {
 			body: JSON.stringify({ branchId, participants: [], settings: {} }),
 		});
 		expect(start.status).toBe(200);
-		const started = await jsonBody(start);
+		const started = await jsonBody<ExperienceSessionResponse>(start);
 		expect(started.visualId).toBeNull();
 		expect(started.visualSource).toBeNull();
 		expect(started.visualSourceHash).toBeNull();
 		const sid = started.sessionId;
 
 		const got = await app.request(`/api/experience/sessions/${sid}`);
-		const gotBody = await jsonBody(got);
+		const gotBody = await jsonBody<ExperienceSessionResponse>(got);
 		expect(gotBody.visualId).toBeNull();
 		expect(gotBody.visualSource).toBeNull();
 		expect(gotBody.visualSourceHash).toBeNull();
@@ -1435,14 +1507,14 @@ describe("Experience routes — IR-70D prompt overrides (integration)", () => {
 			method: "POST", headers: { "content-type": "application/json" },
 			body: JSON.stringify({ branchId, participants: [], settings: {} }),
 		});
-		const sid = (await jsonBody(start)).sessionId;
+		const sid = (await jsonBody<ExperienceSessionResponse>(start)).sessionId;
 
 		const action = await app.request(`/api/experience/sessions/${sid}/actions`, {
 			method: "POST", headers: { "content-type": "application/json" },
 			body: JSON.stringify({ type: "inc", requestId: "r1", expectedRevision: 0 }),
 		});
 		expect(action.status).toBe(200);
-		const body = await jsonBody(action);
+		const body = await jsonBody<ExperienceActionResponse>(action);
 		expect(body.visualSource).toBe("<board id='v1'/>");
 		expect(body.visualSourceHash).toBe(visual.sourceHash);
 		expect(body.visualId).toBe(visual.id);

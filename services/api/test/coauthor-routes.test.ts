@@ -49,7 +49,7 @@ describe("CS-12 Coauthor module routes", () => {
 			setCoauthorModule: async (chatId, moduleId) => {
 				updatedChatId = chatId;
 				updatedModuleId = moduleId;
-				return {} as any;
+				return {};
 			},
 		});
 		const app = createChatRoutes(runtime);
@@ -68,7 +68,7 @@ describe("CS-12 Coauthor module routes", () => {
 		const runtime = mockChat({
 			setCoauthorModule: async (chatId, moduleId) => {
 				updatedModuleId = moduleId;
-				return {} as any;
+				return {};
 			},
 		});
 		const app = createChatRoutes(runtime);

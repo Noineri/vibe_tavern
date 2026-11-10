@@ -40,6 +40,8 @@ import {
 // The shipped starters live in apps/web (UI feature); the Try tab's derive call
 // discovers exactly these sources, so the discover tests pin them directly.
 import { RULES_STARTERS, getRulesStarter } from "../../../apps/web/src/lib/experience-rules-starters.js";
+import type { HttpErrorBody } from "./routes-test-builders.js";
+import type { ExperienceTestDiscoverData, ExperienceTestRunData, ExperienceTestSimulateData } from "../src/domain/interactive/experience-tester.js";
 
 // ─── Shared rules sources (real, runnable experience bodies) ─────────────────
 
@@ -633,7 +635,9 @@ function mount(runtime: ReturnType<typeof buildAdapter>) {
   return app;
 }
 
-async function jsonBody(res: Response): Promise<any> {
+/** Typed JSON wire read: the type argument IS the pinned response shape
+ *  (JSON.parse itself carries no type). */
+async function jsonBody<T>(res: Response): Promise<T> {
   return JSON.parse(await res.text());
 }
 
@@ -675,7 +679,7 @@ describe("Experience tester routes — integration (real adapter + kernel)", () 
       }),
     });
     expect(res.status).toBe(200);
-    const body = await jsonBody(res);
+    const body = await jsonBody<ExperienceTestRunData>(res);
     expect(body.revision).toBe(1);
     expect(body.finalState).toEqual({ count: 1 });
     expect(body.projection.state).toEqual({ count: 1 });
@@ -696,7 +700,7 @@ describe("Experience tester routes — integration (real adapter + kernel)", () 
       }),
     });
     expect(res.status).toBe(409);
-    const body = await jsonBody(res);
+    const body = await jsonBody<HttpErrorBody>(res);
     expect(body.error.details.code).toBe("stale_revision");
     expect(body.error.details.currentRevision).toBe(1);
   });
@@ -712,7 +716,7 @@ describe("Experience tester routes — integration (real adapter + kernel)", () 
       }),
     });
     expect(res.status).toBe(422);
-    expect((await jsonBody(res)).error.details.code).toBe("illegal_action");
+    expect((await jsonBody<HttpErrorBody>(res)).error.details.code).toBe("illegal_action");
   });
 
   test("an over-granted capability is 422 capability_denied", async () => {
@@ -726,7 +730,7 @@ describe("Experience tester routes — integration (real adapter + kernel)", () 
       }),
     });
     expect(res.status).toBe(422);
-    expect((await jsonBody(res)).error.details.code).toBe("capability_denied");
+    expect((await jsonBody<HttpErrorBody>(res)).error.details.code).toBe("capability_denied");
   });
 
   test("a discovery failure is 422 and surfaces the console on the error path", async () => {
@@ -737,7 +741,7 @@ describe("Experience tester routes — integration (real adapter + kernel)", () 
       body: JSON.stringify({ rulesCode: "(((" }),
     });
     expect(res.status).toBe(422);
-    const body = await jsonBody(res);
+    const body = await jsonBody<HttpErrorBody>(res);
     expect(body.error.details.code).toBe("vm_error");
     expect(body.error.details.kind).toBe("syntax");
     // The diagnostic surface preserves captured console on the error path.
@@ -755,7 +759,7 @@ describe("Experience tester routes — integration (real adapter + kernel)", () 
       }),
     });
     expect(res.status).toBe(200);
-    const body = await jsonBody(res);
+    const body = await jsonBody<ExperienceTestSimulateData>(res);
     expect(body.stopReason).toBe("completed");
     expect(body.iterations).toBe(3);
     expect(body.revision).toBe(3);
@@ -769,7 +773,7 @@ describe("Experience tester routes — integration (real adapter + kernel)", () 
       body: JSON.stringify({ rulesCode: getRulesStarter("card")?.source }),
     });
     expect(res.status).toBe(200);
-    const body = await jsonBody(res);
+    const body = await jsonBody<ExperienceTestDiscoverData>(res);
     expect(Object.keys(body)).toEqual(["definition"]);
     expect(body.definition.manifest.id).toBe("card");
     expect(body.definition.declaredCapabilities.map((c: { capability: string }) => c.capability)).toEqual([
@@ -785,7 +789,7 @@ describe("Experience tester routes — integration (real adapter + kernel)", () 
       }),
     });
     expect(run.status).toBe(200);
-    expect((await jsonBody(run)).definition).toEqual(body.definition);
+    expect((await jsonBody<ExperienceTestRunData>(run)).definition).toEqual(body.definition);
   });
 
   test("discover: broken source is 422 with the typed error and console on the error path", async () => {
@@ -796,7 +800,7 @@ describe("Experience tester routes — integration (real adapter + kernel)", () 
       body: JSON.stringify({ rulesCode: "(((" }),
     });
     expect(res.status).toBe(422);
-    const body = await jsonBody(res);
+    const body = await jsonBody<HttpErrorBody>(res);
     expect(body.error.details.code).toBe("vm_error");
     expect(body.error.details.kind).toBe("syntax");
     expect(Array.isArray(body.error.details.console)).toBe(true);

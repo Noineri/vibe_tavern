@@ -46,6 +46,9 @@ import { runExperienceTest } from "../src/domain/interactive/experience-tester.j
 import { ExperienceChatterService } from "../src/domain/interactive/experience-chatter-service.js";
 import type { ProviderProfileService } from "../src/domain/providers/provider-profile-service.js";
 import { strictTestDouble } from "./strict-test-double.js";
+import type { HttpErrorBody } from "./routes-test-builders.js";
+import type { ExperiencePlaygroundData } from "../src/domain/interactive/experience-playground.js";
+import type { ExperienceDefinition } from "../src/domain/interactive/experience-kernel.js";
 import type { StoredProviderProfileRecord } from "@vibe-tavern/domain";
 
 // ─── Shared rules sources (real, runnable experience bodies) ─────────────────
@@ -1054,7 +1057,13 @@ function mount(runtime: ReturnType<typeof buildAdapter>) {
   return app;
 }
 
-async function jsonBody(res: Response): Promise<any> {
+/** Typed JSON wire read: the type argument IS the pinned response shape
+ *  (JSON.parse itself carries no type). */
+/** The /start wire: the turn envelope carries the validated definition on
+ *  start; /advance omits it, so the advance read uses the plain DTO. */
+type PlaygroundStartWire = ExperiencePlaygroundData & { definition: ExperienceDefinition };
+
+async function jsonBody<T>(res: Response): Promise<T> {
   return JSON.parse(await res.text());
 }
 
@@ -1097,7 +1106,7 @@ describe("Experience playground routes — integration (real adapter + kernel)",
       }),
     });
     expect(startRes.status).toBe(200);
-    const started = await jsonBody(startRes);
+    const started = await jsonBody<PlaygroundStartWire>(startRes);
     expect(started.definition.manifest.id).toBe("counter");
     expect(started.revision).toBe(0);
     expect(started.stopReason).toBe("awaiting_human");
@@ -1112,7 +1121,7 @@ describe("Experience playground routes — integration (real adapter + kernel)",
       }),
     });
     expect(advanceRes.status).toBe(200);
-    const advanced = await jsonBody(advanceRes);
+    const advanced = await jsonBody<ExperiencePlaygroundData>(advanceRes);
     expect(advanced.revision).toBe(1);
     expect(advanced.state).toEqual({ count: 1 });
     expect(advanced.events.map((e: { type: string }) => e.type)).toEqual(["inc"]);
@@ -1121,7 +1130,7 @@ describe("Experience playground routes — integration (real adapter + kernel)",
 
   test("a stale expectedRevision is 409 stale_revision with currentRevision", async () => {
     const app = await setupPlaygroundApp();
-    const started = await jsonBody(
+    const started = await jsonBody<PlaygroundStartWire>(
       await app.request("/api/experience/playground/start", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -1145,14 +1154,14 @@ describe("Experience playground routes — integration (real adapter + kernel)",
       }),
     });
     expect(res.status).toBe(409);
-    const body = await jsonBody(res);
+    const body = await jsonBody<HttpErrorBody>(res);
     expect(body.error.details.code).toBe("stale_revision");
     expect(body.error.details.currentRevision).toBe(1);
   });
 
   test("an illegal action is 422 illegal_action", async () => {
     const app = await setupPlaygroundApp();
-    const started = await jsonBody(
+    const started = await jsonBody<PlaygroundStartWire>(
       await app.request("/api/experience/playground/start", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -1168,7 +1177,7 @@ describe("Experience playground routes — integration (real adapter + kernel)",
       }),
     });
     expect(res.status).toBe(422);
-    expect((await jsonBody(res)).error.details.code).toBe("illegal_action");
+    expect((await jsonBody<HttpErrorBody>(res)).error.details.code).toBe("illegal_action");
   });
 
   test("an over-granted capability is 422 capability_denied", async () => {
@@ -1183,7 +1192,7 @@ describe("Experience playground routes — integration (real adapter + kernel)",
       }),
     });
     expect(res.status).toBe(422);
-    expect((await jsonBody(res)).error.details.code).toBe("capability_denied");
+    expect((await jsonBody<HttpErrorBody>(res)).error.details.code).toBe("capability_denied");
   });
 
   test("a vm_error is 422 and surfaces the console on the error path", async () => {
@@ -1194,7 +1203,7 @@ describe("Experience playground routes — integration (real adapter + kernel)",
       body: JSON.stringify({ rulesCode: "(((", participants: [], capabilityGrants: [] }),
     });
     expect(res.status).toBe(422);
-    const body = await jsonBody(res);
+    const body = await jsonBody<HttpErrorBody>(res);
     expect(body.error.details.code).toBe("vm_error");
     expect(body.error.details.kind).toBe("syntax");
     expect(Array.isArray(body.error.details.console)).toBe(true);
