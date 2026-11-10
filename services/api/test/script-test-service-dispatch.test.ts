@@ -79,6 +79,13 @@ describe("testScript — prompt dispatch", () => {
       id: "s1",
       code: `context.character.scenario += " rain";`,
     });
+    // Tested input: a script whose scriptKind key is ABSENT — dispatch reads the
+    // VALUE (script-test-service.ts:116-122), so the absent key falls through to
+    // prompt. `delete` (not `= undefined`) keeps the key absent; the typed
+    // rest-destructure omit was tried and cannot thread storesWith →
+    // makeScriptRow (copilot-test-builders.ts:108 takes `scriptKind: string`;
+    // widening it to `string | undefined` is the sanctioned fix, out of this
+    // unit's single-file scope). Recorded type-gate survivor (step 13).
     // @ts-expect-error — deliberately omit scriptKind to simulate legacy/mock
     delete script.scriptKind;
     const result = await testScript(storesWith(script), { scriptId: "s1" });
