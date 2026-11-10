@@ -238,6 +238,8 @@ export const experienceCopilotStreamRequestSchema = z
     attachedVariants: z
       .array(z.object({ messageId: z.string().min(1), variantId: z.string().min(1) }).strict())
       .optional(),
+    // Identity only: the server resolves and freezes prompt text at send time.
+    promptAttachments: z.array(z.object({ presetId: z.string().min(1) }).strict()).optional(),
     reviewSnapshot: agentReviewSnapshotSchema.optional(),
     rulesSaved: z.boolean().optional(),
     visualSaved: z.boolean().optional(),
@@ -464,6 +466,11 @@ export const experienceCopilotMessageSchema = z.object({
   /** Server-owned stored shape, not send-input validation: preserve summaries,
    * visibility and provenance without a second attachment field list. */
   attachments: z.array(z.custom<Attachment>()).optional(),
+  promptAttachments: z.array(z.object({
+    presetId: z.string().min(1),
+    displayName: z.string(),
+    promptText: z.string(),
+  }).strict()).optional(),
   createdAt: z.string(),
 });
 export type ExperienceCopilotMessageWire = z.infer<typeof experienceCopilotMessageSchema>;

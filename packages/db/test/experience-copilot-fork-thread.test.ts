@@ -108,7 +108,8 @@ describe("ExperienceCopilotStore.forkChatThreadToBranch (SC-20)", () => {
     // for the drop-behavior call below, and the source.
     const { store } = await setup("chat_1", ["brnch_1", "brnch_2", "brnch_3"]);
     const thread = await store.startNewChatSession("chat_1", "brnch_1", "sidechat-ooc");
-    await store.appendMessage(thread.id, { role: "user", content: "one" });
+    const promptAttachments = [{ presetId: 'p', displayName: 'Preset', promptText: 'Frozen' }];
+    await store.appendMessage(thread.id, { role: "user", content: "one", promptAttachments });
     await store.appendContextEvent(thread.id, "rp_sync", { fromPosition: 0, toPosition: 0, messages: [] });
     await store.appendMessage(thread.id, { role: "assistant", content: "two" });
     await store.setContextLinks(thread.id, [{ targetType: "persona", targetId: "p1" }]);
@@ -136,6 +137,7 @@ describe("ExperienceCopilotStore.forkChatThreadToBranch (SC-20)", () => {
     // Messages and events copy with fresh ids; the frontier passes through
     // the identity hook; the trailing event rides the NEXT seq.
     const copiedMessages = await store.listMessages(copied!.id);
+    expect(copiedMessages[0]?.promptAttachments).toEqual(promptAttachments);
     expect(copiedMessages.map((message) => message.seq)).toEqual(sourceMessages.map((message) => message.seq));
     expect(copiedMessages.map((message) => message.id)).not.toEqual(sourceMessages.map((message) => message.id));
 

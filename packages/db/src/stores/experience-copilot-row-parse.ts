@@ -1,3 +1,5 @@
+import type { PromptAttachment } from '@vibe-tavern/domain';
+
 // Row-parse helpers for ExperienceCopilotStore's JSON columns (defensive,
 // never fatal) — extracted verbatim from experience-copilot-store.ts when that
 // file hit the arch-gate size cap (SIDECHAT_PLAN SC-1; the extraction is the
@@ -218,4 +220,27 @@ function parseContextLinks(text: string, threadId: string): CopilotContextLink[]
   }
 }
 
-export { parseContextMetrics, parseContextLinks, parseTodo };
+/** Corrupt snapshots are never reconstructed from mutable thread links. */
+function parsePromptAttachments(text: string | null, messageId: string): PromptAttachment[] {
+  if (!text) return [];
+  try {
+    const parsed: unknown = JSON.parse(text);
+    if (!Array.isArray(parsed)) {
+      console.error(`[experience-copilot-store] invalid prompt_attachments_json for message '${messageId}': not an array`);
+      return [];
+    }
+    const attachments: PromptAttachment[] = [];
+    for (const item of parsed) {
+      if (!item || typeof item !== 'object') continue;
+      const rec = item as Record<string, unknown>;
+      if (typeof rec.presetId !== 'string' || !rec.presetId || typeof rec.displayName !== 'string' || typeof rec.promptText !== 'string') continue;
+      attachments.push({ presetId: rec.presetId, displayName: rec.displayName, promptText: rec.promptText });
+    }
+    return attachments;
+  } catch (err) {
+    console.error(`[experience-copilot-store] malformed prompt_attachments_json for message '${messageId}':`, err);
+    return [];
+  }
+}
+
+export { parseContextMetrics, parseContextLinks, parseTodo, parsePromptAttachments };

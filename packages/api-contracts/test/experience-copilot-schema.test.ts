@@ -134,6 +134,13 @@ describe("experienceCopilotStreamRequestSchema (ER-6)", () => {
 
   // ─── SC-17: attached RP variants (the "discuss in the sidechat" wire arm) ───
 
+  test("prompt attachments accept identity only", () => {
+    const base = { content: 'Hello', providerProfileId: 'provider' };
+    expect(experienceCopilotStreamRequestSchema.parse({ ...base, promptAttachments: [{ presetId: 'preset' }] }).promptAttachments).toEqual([{ presetId: 'preset' }]);
+    expect(experienceCopilotStreamRequestSchema.safeParse({ ...base, promptAttachments: [{ presetId: '' }] }).success).toBe(false);
+    expect(experienceCopilotStreamRequestSchema.safeParse({ ...base, promptAttachments: [{ presetId: 'preset', promptText: 'untrusted' }] }).success).toBe(false);
+  });
+
   test("accepts attachedVariants as plain (messageId, variantId) pairs", () => {
     const parsed = experienceCopilotStreamRequestSchema.parse({
       content: "compare those takes",

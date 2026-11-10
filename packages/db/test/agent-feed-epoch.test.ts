@@ -133,7 +133,9 @@ describe('AFP-8 real migration and seek structure', () => {
     db = await createDb(path);
     client = db.$client;
     expect(epoch(client)).toBe(0);
-    expect(client.query('SELECT * FROM experience_copilot_messages').all()).toEqual(messages);
+    expect(client.query('SELECT * FROM experience_copilot_messages').all()).toEqual(
+      messages.map((message) => ({ ...message, prompt_attachments_json: null })),
+    );
     expect(client.query('SELECT * FROM agent_thread_context_events').all()).toEqual(events);
     expect(client.query('SELECT next_seq, rp_frontier_json, updated_at FROM experience_copilot_threads').get()).toEqual({
       next_seq: 42, rp_frontier_json: '{"lastPosition":7,"selected":{}}', updated_at: 'before',

@@ -7,7 +7,7 @@
 
 import { brandId, log, parseStoredAttachments, type ExperienceCopilotThreadId, type ExperienceCopilotMessageId, type AgentThreadContextEventId } from '@vibe-tavern/domain';
 import { experienceCopilotThreads, experienceCopilotMessages, agentThreadContextEvents } from '../db-schema.js';
-import { parseContextMetrics, parseContextLinks, parseTodo } from './experience-copilot-row-parse.js';
+import { parseContextMetrics, parseContextLinks, parseTodo, parsePromptAttachments } from './experience-copilot-row-parse.js';
 import type { AgentThreadContextEvent } from './agent-thread-context-events.js';
 import type { ExperienceCopilotThread, ExperienceCopilotMessage } from './experience-copilot-store.js';
 
@@ -36,6 +36,7 @@ export function mapThread(row: typeof experienceCopilotThreads.$inferSelect): Ex
 
 export function mapMessage(row: typeof experienceCopilotMessages.$inferSelect): ExperienceCopilotMessage {
   const attachments = parseStoredAttachments(row.attachmentsJson);
+  const promptAttachments = parsePromptAttachments(row.promptAttachmentsJson, row.id);
   return {
     id: brandId<ExperienceCopilotMessageId>(row.id),
     threadId: brandId<ExperienceCopilotThreadId>(row.threadId),
@@ -48,6 +49,7 @@ export function mapMessage(row: typeof experienceCopilotMessages.$inferSelect): 
     seq: row.seq,
     createdAt: row.createdAt,
     ...(attachments?.length ? { attachments } : {}),
+    ...(promptAttachments.length ? { promptAttachments } : {}),
   };
 }
 

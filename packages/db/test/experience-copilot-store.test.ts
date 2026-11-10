@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
 import { createDb } from "../src/db-connection.js";
-import { experienceCopilotThreads, characters, chats, chatBranches } from "../src/db-schema.js";
+import { experienceCopilotThreads, experienceCopilotMessages, characters, chats, chatBranches } from "../src/db-schema.js";
 import { ExperienceCopilotStore } from "../src/stores/experience-copilot-store.js";
 import { deriveThreadTitleFromFirstMessage } from "../src/stores/experience-copilot-auto-title.js";
 import type { CopilotContextMetrics } from "../src/stores/experience-copilot-row-parse.js";
@@ -24,6 +24,35 @@ async function setup() {
   const store = new ExperienceCopilotStore(db, { clock: makeClock(), idGenerator: idGen });
   return { db, store };
 }
+
+describe("ExperienceCopilotStore prompt attachments", () => {
+  test("snapshots round-trip per message without inferring legacy links", async () => {
+    const { db, store } = await setup();
+    const thread = await store.startNewSession('script');
+    await store.setContextLinks(thread.id, [{ targetType: 'prompt_preset', targetId: 'legacy' }]);
+    const legacy = await store.appendMessage(thread.id, { role: 'user', content: 'old' });
+    const snapshot = { presetId: 'preset', displayName: 'Original', promptText: 'resolved text' };
+    const saved = await store.appendMessage(thread.id, { role: 'user', content: 'new', promptAttachments: [snapshot] });
+    snapshot.promptText = 'changed later';
+    expect(saved.promptAttachments?.[0]?.promptText).toBe('resolved text');
+    const rows = await store.listMessages(thread.id);
+    expect(rows.find((row) => row.id === legacy.id)?.promptAttachments).toBeUndefined();
+    expect(rows.find((row) => row.id === saved.id)?.promptAttachments).toEqual([{ presetId: 'preset', displayName: 'Original', promptText: 'resolved text' }]);
+    const raw = await db.select().from(experienceCopilotMessages).where(eq(experienceCopilotMessages.id, saved.id)).get();
+    expect(JSON.parse(raw!.promptAttachmentsJson!)).toEqual(rows.find((row) => row.id === saved.id)?.promptAttachments);
+    expect((await store.getById(thread.id))?.contextLinks).toEqual([{ targetType: 'prompt_preset', targetId: 'legacy' }]);
+  });
+
+  test('malformed and wrong-shaped JSON cannot fabricate snapshots', async () => {
+    const { db, store } = await setup();
+    const thread = await store.startNewSession('script');
+    const message = await store.appendMessage(thread.id, { role: 'user' });
+    for (const json of ['not json', '{}', '[{"presetId":"x"}]']) {
+      await db.update(experienceCopilotMessages).set({ promptAttachmentsJson: json }).where(eq(experienceCopilotMessages.id, message.id)).run();
+      expect((await store.listMessages(thread.id))[0]?.promptAttachments).toBeUndefined();
+    }
+  });
+});
 
 describe("ExperienceCopilotStore", () => {
   test("startNewSession archives the prior active — only one active remains after two calls", async () => {

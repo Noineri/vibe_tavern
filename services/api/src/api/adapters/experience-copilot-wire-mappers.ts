@@ -60,6 +60,7 @@ export function toMessageWire(m: ExperienceCopilotMessage): ExperienceCopilotMes
     reasoningDurationMs: m.reasoningDurationMs,
     createdAt: m.createdAt,
     ...(m.attachments?.length ? { attachments: m.attachments } : {}),
+    ...(m.promptAttachments?.length ? { promptAttachments: m.promptAttachments } : {}),
   };
 }
 
