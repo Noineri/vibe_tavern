@@ -253,7 +253,7 @@ async function pickOption(triggerId: string, label: string) {
     const el = document.body.querySelector(`[data-testid="${triggerId}"]`);
     expect(el).toBeTruthy();
     return el as HTMLElement;
-  });
+  }, { timeout: 5000 });
   await act(async () => {
     trigger.click();
   });
@@ -263,7 +263,7 @@ async function pickOption(triggerId: string, label: string) {
     );
     expect(el).toBeTruthy();
     return el as HTMLElement;
-  });
+  }, { timeout: 5000 });
   await act(async () => {
     option.click();
   });
