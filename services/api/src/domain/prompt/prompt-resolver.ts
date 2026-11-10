@@ -4,6 +4,7 @@ import {
 	LOREBOOK_BINDING_KIND,
 } from "@vibe-tavern/db";
 import { countTokens } from "../../infrastructure/ai/tokenizer-service.js";
+import type { LoreScanInput } from "./prompt-assembly-resolver.js";
 import {
 	type ChatBranchId,
 	type ChatId,
@@ -168,27 +169,7 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 		};
 	}
 
-	async listActiveLoreEntries(input: {
-		chatId: ChatId;
-		branchId: ChatBranchId;
-		recentText: string;
-		scanMessages: Array<{ role: string; content: string }>;
-		/** Effective preset Author's Note, passed from prompt assembly (P15). */
-		authorsNote?: string;
-		/** Enabled summary texts, passed from prompt assembly (P15). */
-		summaries?: string[];
-		/** One-shot quiet-prompt text, passed from prompt assembly. */
-		quietPrompt?: string;
-		/** Turn clock override — the FULL branch count. Defaults to the scan
-		 * count only for direct test callers; production passes the branch total
-		 * so sticky/cooldown windows don't shift with prompt exclusions (P13). */
-		currentTurn?: number;
-		/** Resolve active entries without changing branch timed state. */
-		dryRun?: boolean;
-		maxContextTokens?: number;
-		/** One assembly-scoped namespace shared with the pipeline macro engine. */
-		macroVariableScope?: MacroVariableScope;
-	}): Promise<ActiveLoreEntriesResult> {
+	async listActiveLoreEntries(input: LoreScanInput): Promise<ActiveLoreEntriesResult> {
 		const chat = await this.stores.chats.getById(input.chatId);
 		if (!chat) return { entries: [], overflowedLorebooks: [], outletEntries: {} };
 

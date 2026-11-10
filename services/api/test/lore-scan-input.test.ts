@@ -50,7 +50,10 @@ function makeService(messages: ScanMessage[], options: {
     listActiveLoreEntries: async (input) => {
       options.onScanMessages(input.scanMessages);
       options.onLoreScanInput?.(input);
-      return { entries: [], overflowedLorebooks: [] };
+      // Complete ActiveLoreEntriesResult wire shape (outletEntries is
+      // required on the real result, entities.ts:385-391) â the erasure era
+      // returned a two-member shape production can never produce.
+      return { entries: [], overflowedLorebooks: [], outletEntries: {} };
     },
     listRetrievedMemories: async () => [],
     executeScripts: async () => ({

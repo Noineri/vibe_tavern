@@ -119,7 +119,19 @@ interface WorkspaceRun {
 	durationMs: number;
 }
 
-const toKey = (d: Diagnostic): string => `${d.file}:${d.code}:${d.message}`;
+// tsc embeds ABSOLUTE paths inside many diagnostic messages (import("N:/…"),
+// /home/runner/…) — the SAME error keyed on two machines (or two platforms in
+// CI) would otherwise produce different keys and surface as NEW (the CI-TTG-1
+// lesson, 2026-11-10: the gate's first linux run reported 13 phantom-NEW
+// errors that were all baselined-on-Windows, differing only by absolute path
+// inside the message). Normalize the repo ROOT out of every message so keys
+// are machine- and platform-independent.
+const ROOT_FORWARD = ROOT.split(path.sep).join("/");
+const ROOT_BACKSLASH = ROOT_FORWARD.split("/").join("\\");
+const normalizeMessage = (message: string): string =>
+	message.split(ROOT_FORWARD).join("<repo>").split(ROOT_BACKSLASH).join("<repo>");
+
+const toKey = (d: Diagnostic): string => `${d.file}:${d.code}:${normalizeMessage(d.message)}`;
 
 // ─── tsconfig include parsing (JSONC) ─────────────────────────────────────
 
