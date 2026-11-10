@@ -2,6 +2,7 @@ import { describe, expect, it, afterEach, mock } from "bun:test";
 import React from "react";
 import { useDomEnv } from "../../test/dom-env.js";
 import { installI18nContextSeam } from "../../test/i18n-context-seam.js";
+import { wireSttProfile } from "../../test/wire-fixtures.js";
 
 useDomEnv();
 
@@ -23,22 +24,9 @@ installI18nContextSeam({
 
 type SttRecord = import("../api/stt-api.js").SttProfileRecord;
 
-function makeRecord(overrides: Partial<SttRecord> = {}): SttRecord {
-  return {
-    id: "p1",
-    name: "Dictation",
-    backend: "openai-compat",
-    config: { endpoint: "https://api.openai.com/v1", model: "whisper-1" },
-    hasStoredApiKey: false,
-    autoKeyProviderName: null,
-    emotionAnnotation: false,
-    isDefault: false,
-    sortOrder: 0,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    ...overrides,
-  };
-}
+// The row fixture rides the shared wire factory (wireSttProfile — the ONE
+// SttProfileRecord derivation); tests override what they pin.
+const makeRecord = wireSttProfile;
 
 // Mutable store the mocked API closes over — changing it per test affects
 // the already-imported hook.
@@ -126,6 +114,8 @@ mock.module("../api/stt-api.js", () => ({
 const { act, cleanup, waitFor, render } = await import("@testing-library/react");
 const { useSttProfiles, toSttBackend } = await import("./use-stt-profiles.js");
 
+type SttProfilesHook = ReturnType<typeof useSttProfiles>;
+
 afterEach(async () => {
   await act(async () => {});
   cleanup();
@@ -166,7 +156,7 @@ describe("useSttProfiles — P2 draft auto-key hint", () => {
       { endpoint: "https://openrouter.ai/api/v1", hasStoredApiKey: true, name: "OpenRouter" },
       { endpoint: "https://generativelanguage.googleapis.com", hasStoredApiKey: true, name: "Gemini" },
     ];
-    let hook: any = null;
+    let hook: SttProfilesHook | null = null;
     function Probe() {
       hook = useSttProfiles();
       return null;
@@ -188,7 +178,7 @@ describe("useSttProfiles — P2 draft auto-key hint", () => {
   it("gemini draft: falls back to a stored-key gemini TTS profile when no provider matches", async () => {
     providerStore = [{ endpoint: "https://generativelanguage.googleapis.com", hasStoredApiKey: false, name: "GeminiNoKey" }];
     ttsStore = [{ backend: "gemini", hasStoredApiKey: true, name: "My Google TTS" }];
-    let hook: any = null;
+    let hook: SttProfilesHook | null = null;
     function Probe() {
       hook = useSttProfiles();
       return null;
@@ -205,7 +195,7 @@ describe("useSttProfiles — P2 draft auto-key hint", () => {
       { endpoint: "NanoGPT", hasStoredApiKey: false, name: "NoKey" },
       { endpoint: "https://nano-gpt.com/api/v1/", hasStoredApiKey: true, name: "NanoLLM" },
     ];
-    let hook: any = null;
+    let hook: SttProfilesHook | null = null;
     function Probe() {
       hook = useSttProfiles();
       return null;
@@ -234,7 +224,7 @@ describe("useSttProfiles — P2 draft auto-key hint", () => {
       { backend: "deepgram", hasStoredApiKey: true, name: "My Deepgram TTS" },
       { backend: "elevenlabs", hasStoredApiKey: true, name: "My ElevenLabs TTS" },
     ];
-    let hook: any = null;
+    let hook: SttProfilesHook | null = null;
     function Probe() {
       hook = useSttProfiles();
       return null;
@@ -261,7 +251,7 @@ describe("useSttProfiles — P2 draft auto-key hint", () => {
   it("native draft without a host provider falls back to the same-vendor TTS key", async () => {
     providerStore = [{ endpoint: "https://openrouter.ai/api/v1", hasStoredApiKey: true, name: "OR" }];
     ttsStore = [{ backend: "deepgram", hasStoredApiKey: true, name: "My Deepgram TTS" }];
-    let hook: any = null;
+    let hook: SttProfilesHook | null = null;
     function Probe() {
       hook = useSttProfiles();
       return null;
@@ -281,15 +271,15 @@ describe("useSttProfiles — CRUD", () => {
       makeRecord({ id: "p2", name: "Beta", backend: "whisper-browser" }),
     ];
 
-    let hook: any = null;
+    let hook: SttProfilesHook | null = null;
     function Probe() {
       hook = useSttProfiles();
       return null;
     }
     render(React.createElement(Probe));
     await waitFor(() => expect(hook?.profiles.length).toBe(2));
-    expect(hook?.loading).toBe(false);
-    expect(hook?.error).toBeNull();
+    expect(hook!.loading).toBe(false);
+    expect(hook!.error).toBeNull();
 
     hook!.select("p1");
     await waitFor(() => expect(hook!.editingId).toBe("p1"));
@@ -313,7 +303,7 @@ describe("useSttProfiles — CRUD", () => {
   it("save creates when form.id is null and updates when id exists; blank key is omitted", async () => {
     store = [makeRecord({ id: "p1", name: "Alpha", backend: "whisper-browser" })];
 
-    let hook: any = null;
+    let hook: SttProfilesHook | null = null;
     function Probe() {
       hook = useSttProfiles();
       return null;
@@ -352,7 +342,7 @@ describe("useSttProfiles — CRUD", () => {
     store = [makeRecord({ id: "p1", name: "Alpha", backend: "whisper-browser" })];
     failUpdate = true;
 
-    let hook: any = null;
+    let hook: SttProfilesHook | null = null;
     function Probe() {
       hook = useSttProfiles();
       return null;
@@ -374,7 +364,7 @@ describe("useSttProfiles — CRUD", () => {
       makeRecord({ id: "p2", name: "Beta", backend: "openai-compat" }),
     ];
 
-    let hook: any = null;
+    let hook: SttProfilesHook | null = null;
     function Probe() {
       hook = useSttProfiles();
       return null;
@@ -385,8 +375,8 @@ describe("useSttProfiles — CRUD", () => {
     await waitFor(() => expect(hook?.form?.id).toBe("p1"));
     await hook!.remove();
     await waitFor(() => expect(hook?.profiles.length).toBe(1));
-    expect(hook?.form).toBeNull();
-    expect(hook?.editingId).toBeNull();
+    expect(hook!.form).toBeNull();
+    expect(hook!.editingId).toBeNull();
   });
 
   it("setDefault calls the API and refreshes profiles", async () => {
@@ -394,7 +384,7 @@ describe("useSttProfiles — CRUD", () => {
       makeRecord({ id: "p1", isDefault: true }),
       makeRecord({ id: "p2", isDefault: false }),
     ];
-    let hook: any = null;
+    let hook: SttProfilesHook | null = null;
     function Probe() {
       hook = useSttProfiles();
       return null;
@@ -411,7 +401,7 @@ describe("useSttProfiles — CRUD", () => {
 
   it("defaultProfileId tracks the persisted default: null when none, moves with setDefault", async () => {
     store = [makeRecord({ id: "p1", isDefault: false }), makeRecord({ id: "p2", isDefault: false })];
-    let hook: any = null;
+    let hook: SttProfilesHook | null = null;
     function Probe() {
       hook = useSttProfiles();
       return null;
@@ -419,13 +409,13 @@ describe("useSttProfiles — CRUD", () => {
     render(React.createElement(Probe));
     await waitFor(() => expect(hook?.profiles.length).toBe(2));
     // No flagged row → null (the ImageGen effectiveActiveId `?? null` arm).
-    expect(hook?.defaultProfileId).toBeNull();
+    expect(hook!.defaultProfileId).toBeNull();
     await hook!.setDefault("p2");
     await waitFor(() => expect(hook?.defaultProfileId).toBe("p2"));
     // Moving the pointer leaves exactly one flagged row — the target.
     await hook!.setDefault("p1");
     await waitFor(() => expect(hook?.defaultProfileId).toBe("p1"));
-    expect(hook?.profiles.filter((p: SttRecord) => p.isDefault).map((p: SttRecord) => p.id)).toEqual(["p1"]);
+    expect(hook!.profiles.filter((p: SttRecord) => p.isDefault).map((p: SttRecord) => p.id)).toEqual(["p1"]);
     cleanup();
   });
 });
@@ -440,7 +430,7 @@ describe("useSttProfiles — backend switch + key lifecycle", () => {
         hasStoredApiKey: true,
       }),
     ];
-    let hook: any = null;
+    let hook: SttProfilesHook | null = null;
     function Probe() {
       hook = useSttProfiles();
       return null;
@@ -468,7 +458,7 @@ describe("useSttProfiles — backend switch + key lifecycle", () => {
 
   it("switching to a native backend prefills its doc-verified default model (SPE-4..6)", async () => {
     store = [makeRecord({ id: "p1", backend: "openai-compat", config: { endpoint: "https://api.example.com/v1", model: "whisper-1" } })];
-    let hook: any = null;
+    let hook: SttProfilesHook | null = null;
     function Probe() {
       hook = useSttProfiles();
       return null;
@@ -500,7 +490,7 @@ describe("useSttProfiles — backend switch + key lifecycle", () => {
         autoKeyProviderName: "OpenAI",
       }),
     ];
-    let hook: any = null;
+    let hook: SttProfilesHook | null = null;
     function Probe() {
       hook = useSttProfiles();
       return null;
@@ -515,7 +505,7 @@ describe("useSttProfiles — backend switch + key lifecycle", () => {
 describe("useSttProfiles — headerMode machine", () => {
   it("select -> view; startEdit -> edit; save returns to view; cancelEdit restores", async () => {
     store = [makeRecord({ id: "p1", name: "Alpha", backend: "whisper-browser" })];
-    let hook: any = null;
+    let hook: SttProfilesHook | null = null;
     function Probe() {
       hook = useSttProfiles();
       return null;
@@ -524,7 +514,7 @@ describe("useSttProfiles — headerMode machine", () => {
     await waitFor(() => expect(hook?.profiles.length).toBe(1));
     hook!.select("p1");
     await waitFor(() => expect(hook?.form?.id).toBe("p1"));
-    expect(hook?.headerMode).toBe("view");
+    expect(hook!.headerMode).toBe("view");
 
     hook!.startEdit();
     await waitFor(() => expect(hook?.headerMode).toBe("edit"));
@@ -532,8 +522,8 @@ describe("useSttProfiles — headerMode machine", () => {
     await waitFor(() => expect(hook?.dirty).toBe(true));
     hook!.cancelEdit();
     await waitFor(() => expect(hook?.headerMode).toBe("view"));
-    expect(hook?.form?.name).toBe("Alpha");
-    expect(hook?.dirty).toBe(false);
+    expect(hook!.form?.name).toBe("Alpha");
+    expect(hook!.dirty).toBe(false);
 
     hook!.save();
     await waitFor(() => expect(hook?.headerMode).toBe("view"));

@@ -19,6 +19,8 @@ import { brandId, normalizeAutoSummaryConfig, normalizeInsightsConfig, normalize
 import type { AssemblePromptResponse, Attachment, ChatBranch, ChatBranchId, CharacterId, ChatId, MessageId, MessageVariantId, PromptPresetDto, RegexPresetId } from "@vibe-tavern/domain";
 import type { AppCharacter, AppMessage, AppSnapshot, ChatListItem, LoreEntryRecord, LorebookRecord, PersonaRecord, ProviderProfileRecord, RegexPresetRecord, ScriptRecord, UiSettingsRecord } from "../src/api/types.js";
 import type { TtsProfileRecord } from "../src/api/tts-api.js";
+import type { SttProfileRecord } from "../src/api/stt-api.js";
+import type { ImageGenProfileRecord } from "../src/api/image-gen-api.js";
 
 const EPOCH = "2026-01-01T00:00:00.000Z";
 
@@ -187,6 +189,73 @@ export function wireTtsProfile(overrides: Partial<TtsProfileRecord> = {}): TtsPr
 		lang: "en",
 		sortOrder: 0,
 		isDefault: false,
+		createdAt: EPOCH,
+		updatedAt: EPOCH,
+		...overrides,
+	};
+}
+
+/** Complete STT profile row (stt-api.ts wire shape): a saved openai-compat
+ *  row with the whisper-1 config bag and no stored key — override what the
+ *  pin exercises.
+ *
+ *  forks: 3 — hand-rolled row factories pending adoption on next touch:
+ *  SttProfileEditor.test.tsx, SttSection.test.tsx, use-dictation.test.tsx. */
+export function wireSttProfile(overrides: Partial<SttProfileRecord> = {}): SttProfileRecord {
+	return {
+		id: "stt-1",
+		name: "Dictation",
+		backend: "openai-compat",
+		config: { endpoint: "https://api.openai.com/v1", model: "whisper-1" },
+		hasStoredApiKey: false,
+		autoKeyProviderName: null,
+		emotionAnnotation: false,
+		isDefault: false,
+		sortOrder: 0,
+		createdAt: EPOCH,
+		updatedAt: EPOCH,
+		...overrides,
+	};
+}
+
+/** Complete image-gen profile row (image-gen-api.ts wire shape): a saved
+ *  keyless a1111 row with the closed capability snapshot — override what
+ *  the pin exercises.
+ *
+ *  forks: 3 — hand-rolled row factories pending adoption on next touch:
+ *  ImageGenPane.test.tsx, ImageGenProfileEditor.test.tsx, ImageGenSection.test.tsx. */
+export function wireImageGenProfile(overrides: Partial<ImageGenProfileRecord> = {}): ImageGenProfileRecord {
+	return {
+		id: "ig-1",
+		name: "Forge local",
+		backend: "a1111",
+		presetId: undefined,
+		endpoint: "http://127.0.0.1:7860",
+		hasStoredApiKey: false,
+		autoKeyProviderName: null,
+		modelId: undefined,
+		defaultParams: {},
+		defaultParamsSetId: null,
+		modeSizePresets: {},
+		llmAssistEnabled: false,
+		llmProviderProfileId: undefined,
+		llmModelId: undefined,
+		assistRetryOnRefusal: false,
+		familySource: "none",
+		qualityLayerEnabled: false,
+		capabilities: {
+			supportsNegativePrompt: false,
+			supportsSamplers: false,
+			supportsSeed: false,
+			sizeSupport: { kind: "vendor-set", sizes: ["1024x1024"] },
+			noApiKey: false,
+			supportsLiveProgress: false,
+			localExecution: false,
+			supportsImg2img: false,
+			supportsInpaint: false,
+		},
+		isDefault: false,
+		sortOrder: 0,
 		createdAt: EPOCH,
 		updatedAt: EPOCH,
 		...overrides,

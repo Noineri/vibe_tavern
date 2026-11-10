@@ -1,6 +1,7 @@
 import { describe, expect, it, afterEach, mock } from "bun:test";
 import React from "react";
 import { useDomEnv } from "../../test/dom-env.js";
+import { wireImageGenProfile } from "../../test/wire-fixtures.js";
 
 useDomEnv();
 
@@ -30,33 +31,9 @@ function makeCaps(overrides: Partial<ImageGenRecord["capabilities"]> = {}): Imag
   };
 }
 
-function makeRecord(overrides: Partial<ImageGenRecord> = {}): ImageGenRecord {
-  return {
-    id: "p1",
-    name: "Forge local",
-    backend: "a1111",
-    presetId: undefined,
-    endpoint: "http://127.0.0.1:7860",
-    hasStoredApiKey: false,
-    autoKeyProviderName: null,
-    modelId: undefined,
-    defaultParams: {},
-    defaultParamsSetId: null,
-    modeSizePresets: {},
-    llmAssistEnabled: false,
-    assistRetryOnRefusal: false,
-    familySource: "none",
-    qualityLayerEnabled: false,
-    llmProviderProfileId: undefined,
-    llmModelId: undefined,
-    capabilities: makeCaps(),
-    isDefault: false,
-    sortOrder: 0,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    ...overrides,
-  };
-}
+// The row fixture rides the shared wire factory (wireImageGenProfile — the
+// ONE ImageGenProfileRecord derivation); tests override what they pin.
+const makeRecord = wireImageGenProfile;
 
 // Mutable store the mocked API closes over — changing it per test affects
 // the already-imported hook.
@@ -195,6 +172,8 @@ const { useImageProfiles } = await import("./use-image-profiles.js");
 const { toImageGenBackend } = await import("../components/settings/provider/imagegen/imagegen-form-helpers.js");
 const { IMAGE_GEN_BACKEND_CAPABILITIES, IMAGE_GEN_BACKENDS } = await import("@vibe-tavern/domain");
 
+type ImageProfilesHook = ReturnType<typeof useImageProfiles>;
+
 afterEach(async () => {
   await act(async () => {});
   cleanup();
@@ -241,15 +220,15 @@ describe("useImageProfiles — CRUD", () => {
       makeRecord({ id: "p1", name: "Alpha", backend: "openrouter", endpoint: "https://openrouter.ai/api/v1" }),
       makeRecord({ id: "p2", name: "Beta", backend: "a1111", hasStoredApiKey: true, modelId: "sd_xl" }),
     ];
-    let hook: any = null;
+    let hook: ImageProfilesHook | null = null;
     function Probe() {
       hook = useImageProfiles();
       return null;
     }
     render(React.createElement(Probe));
     await waitFor(() => expect(hook?.profiles.length).toBe(2));
-    expect(hook?.loading).toBe(false);
-    expect(hook?.error).toBeNull();
+    expect(hook!.loading).toBe(false);
+    expect(hook!.error).toBeNull();
 
     hook!.select("p2");
     await waitFor(() => expect(hook!.editingId).toBe("p2"));
@@ -263,11 +242,11 @@ describe("useImageProfiles — CRUD", () => {
 
     hook!.setForm({ name: "Beta-2" });
     await waitFor(() => expect(hook?.dirty).toBe(true));
-    expect(hook?.form?.name).toBe("Beta-2");
+    expect(hook!.form?.name).toBe("Beta-2");
   });
 
   it("startCreate seeds the caller's name/backend with the static capability snapshot", async () => {
-    let hook: any = null;
+    let hook: ImageProfilesHook | null = null;
     function Probe() {
       hook = useImageProfiles();
       return null;
@@ -291,7 +270,7 @@ describe("useImageProfiles — CRUD", () => {
 
   it("save creates when form.id is null; blank key sends undefined; capabilities ride the payload", async () => {
     store = [makeRecord({ id: "p1", name: "Alpha" })];
-    let hook: any = null;
+    let hook: ImageProfilesHook | null = null;
     function Probe() {
       hook = useImageProfiles();
       return null;
@@ -326,7 +305,7 @@ describe("useImageProfiles — CRUD", () => {
 
   it("save updates when id exists and rewrites the capability mirror on a backend switch", async () => {
     store = [makeRecord({ id: "p1", name: "Alpha", backend: "a1111" })];
-    let hook: any = null;
+    let hook: ImageProfilesHook | null = null;
     function Probe() {
       hook = useImageProfiles();
       return null;
@@ -359,7 +338,7 @@ describe("useImageProfiles — CRUD", () => {
   it("save failure sets error", async () => {
     store = [makeRecord({ id: "p1", name: "Alpha" })];
     failUpdate = true;
-    let hook: any = null;
+    let hook: ImageProfilesHook | null = null;
     function Probe() {
       hook = useImageProfiles();
       return null;
@@ -377,7 +356,7 @@ describe("useImageProfiles — CRUD", () => {
 
   it("remove deletes the selected profile and clears selection", async () => {
     store = [makeRecord({ id: "p1", name: "Alpha" }), makeRecord({ id: "p2", name: "Beta" })];
-    let hook: any = null;
+    let hook: ImageProfilesHook | null = null;
     function Probe() {
       hook = useImageProfiles();
       return null;
@@ -388,8 +367,8 @@ describe("useImageProfiles — CRUD", () => {
     await waitFor(() => expect(hook?.form?.id).toBe("p1"));
     await hook!.remove();
     await waitFor(() => expect(hook?.profiles.length).toBe(1));
-    expect(hook?.form).toBeNull();
-    expect(hook?.editingId).toBeNull();
+    expect(hook!.form).toBeNull();
+    expect(hook!.editingId).toBeNull();
   });
 
   // IF-7a: the unbound arm of the sets row — payload merges into the form's
@@ -397,7 +376,7 @@ describe("useImageProfiles — CRUD", () => {
   // pointer-only clear keeps the values (the setModelSamplerSetBinding rule).
   it("applyBaseSamplerSet merges payload + points defaultParamsSetId; save PATCHes the pointer; null-clear keeps values", async () => {
     store = [makeRecord({ id: "p1", name: "Alpha", backend: "a1111" })];
-    let hook: any = null;
+    let hook: ImageProfilesHook | null = null;
     function Probe() {
       hook = useImageProfiles();
       return null;
@@ -408,14 +387,14 @@ describe("useImageProfiles — CRUD", () => {
     await waitFor(() => expect(hook?.form?.id).toBe("p1"));
 
     act(() => hook!.applyBaseSamplerSet("set-a", { steps: 30, sampler: "Euler a" }));
-    expect(hook?.form?.defaultParams).toEqual({ steps: 30, sampler: "Euler a" });
-    expect(hook?.form?.defaultParamsSetId).toBe("set-a");
-    expect(hook?.dirty).toBe(true);
+    expect(hook!.form?.defaultParams).toEqual({ steps: 30, sampler: "Euler a" });
+    expect(hook!.form?.defaultParamsSetId).toBe("set-a");
+    expect(hook!.dirty).toBe(true);
 
     // Pointer-only clear: values stay (copy-on-select, never a live link).
     act(() => hook!.applyBaseSamplerSet(null));
-    expect(hook?.form?.defaultParams).toEqual({ steps: 30, sampler: "Euler a" });
-    expect(hook?.form?.defaultParamsSetId).toBe(null);
+    expect(hook!.form?.defaultParams).toEqual({ steps: 30, sampler: "Euler a" });
+    expect(hook!.form?.defaultParamsSetId).toBe(null);
 
     // Re-point and save — the update PATCH carries the pointer.
     act(() => hook!.applyBaseSamplerSet("set-a"));
@@ -429,7 +408,7 @@ describe("useImageProfiles — CRUD", () => {
   // base verbatim — the stock sets' whole point.
   it("applyBaseSamplerSet carries the grown payload fields (scheduler, vae, hires) into defaultParams", async () => {
     store = [makeRecord({ id: "p1", name: "Alpha", backend: "a1111" })];
-    let hook: any = null;
+    let hook: ImageProfilesHook | null = null;
     function Probe() {
       hook = useImageProfiles();
       return null;
@@ -449,7 +428,7 @@ describe("useImageProfiles — CRUD", () => {
         hires: { enabled: false, upscaler: "R-ESRGAN 4x+ Anime6B", scale: 1.5, denoisingStrength: 0.35 },
       }),
     );
-    expect(hook?.form?.defaultParams).toEqual({
+    expect(hook!.form?.defaultParams).toEqual({
       sampler: "euler_sde",
       scheduler: "simple",
       steps: 30,
@@ -457,8 +436,8 @@ describe("useImageProfiles — CRUD", () => {
       vae: "qwen_image_vae.safetensors",
       hires: { enabled: false, upscaler: "R-ESRGAN 4x+ Anime6B", scale: 1.5, denoisingStrength: 0.35 },
     });
-    expect(hook?.form?.defaultParamsSetId).toBe("set-anima");
-    expect(hook?.dirty).toBe(true);
+    expect(hook!.form?.defaultParamsSetId).toBe("set-anima");
+    expect(hook!.dirty).toBe(true);
   });
 });
 
@@ -476,7 +455,7 @@ describe("useImageProfiles — backend switch hygiene", () => {
         modeSizePresets: { portrait: { width: 832, height: 1248 } },
       }),
     ];
-    let hook: any = null;
+    let hook: ImageProfilesHook | null = null;
     function Probe() {
       hook = useImageProfiles();
       return null;
@@ -505,7 +484,7 @@ describe("useImageProfiles — backend switch hygiene", () => {
 describe("useImageProfiles — models / samplers / draft", () => {
   it("fetchSavedModels caches per profile and maps the 404 null to an error", async () => {
     store = [makeRecord({ id: "p1", name: "Alpha" })];
-    let hook: any = null;
+    let hook: ImageProfilesHook | null = null;
     function Probe() {
       hook = useImageProfiles();
       return null;
@@ -518,7 +497,7 @@ describe("useImageProfiles — models / samplers / draft", () => {
     const models = await hook!.fetchSavedModels();
     expect(models?.length).toBe(2);
     await waitFor(() => expect(hook?.modelsByProfile.p1?.length).toBe(2));
-    expect(hook?.error).toBeNull();
+    expect(hook!.error).toBeNull();
 
     await hook!.fetchSavedModels("missing");
     await waitFor(() => expect(hook?.error).toBe("Image-gen profile not found"));
@@ -589,7 +568,7 @@ describe("useImageProfiles — models / samplers / draft", () => {
     samplersMock.mockImplementationOnce(async () => {
       throw new Error("Image-gen sampler list failed: 400 Bad Request: sampler listing not supported");
     });
-    let hook: any = null;
+    let hook: ImageProfilesHook | null = null;
     function Probe() {
       hook = useImageProfiles();
       return null;
@@ -605,26 +584,26 @@ describe("useImageProfiles — models / samplers / draft", () => {
     // per-profile status; `error` stays clean.
     await hook!.fetchSamplers();
     await waitFor(() => expect(hook?.samplerStatusByProfile.p1).toBe("offline"));
-    expect(hook?.error).toBeNull();
-    expect(hook?.samplersByProfile.p1).toBeUndefined();
+    expect(hook!.error).toBeNull();
+    expect(hook!.samplersByProfile.p1).toBeUndefined();
 
     // Recovery (the status chip's re-check): refetch flips online + caches.
     const samplers = await hook!.fetchSamplers();
     expect(samplers?.length).toBe(2);
     await waitFor(() => expect(hook?.samplerStatusByProfile.p1).toBe("online"));
-    expect(hook?.samplersByProfile.p1?.length).toBe(2);
-    expect(hook?.error).toBeNull();
+    expect(hook!.samplersByProfile.p1?.length).toBe(2);
+    expect(hook!.error).toBeNull();
 
     // Unknown-profile nulls STILL surface in `error` and draw no conclusion
     // in the status (owner decision: profile-not-found stays an error).
     await hook!.fetchSamplers("missing");
     await waitFor(() => expect(hook?.error).toBe("Image-gen profile not found"));
-    expect(hook?.samplerStatusByProfile.missing).toBe("unknown");
+    expect(hook!.samplerStatusByProfile.missing).toBe("unknown");
   });
 
   it("fetchSchedulers caches per profile (PG-3); failures leave the cache + error + connectivity status untouched", async () => {
     store = [makeRecord({ id: "p1", name: "Alpha", backend: "a1111" })];
-    let hook: any = null;
+    let hook: ImageProfilesHook | null = null;
     function Probe() {
       hook = useImageProfiles();
       return null;
@@ -638,8 +617,8 @@ describe("useImageProfiles — models / samplers / draft", () => {
     expect(schedulers?.length).toBe(2);
     await waitFor(() => expect(hook?.schedulersByProfile.p1?.length).toBe(2));
     // Options data only: no connectivity conclusion, no shared error.
-    expect(hook?.samplerStatusByProfile.p1).toBeUndefined();
-    expect(hook?.error).toBeNull();
+    expect(hook!.samplerStatusByProfile.p1).toBeUndefined();
+    expect(hook!.error).toBeNull();
 
     // A failed fetch returns null and paints NOTHING anywhere.
     schedulersMock.mockImplementationOnce(async () => {
@@ -647,18 +626,18 @@ describe("useImageProfiles — models / samplers / draft", () => {
     });
     const failed = await hook!.fetchSchedulers();
     expect(failed).toBeNull();
-    expect(hook?.error).toBeNull();
-    expect(hook?.samplerStatusByProfile.p1).toBeUndefined();
+    expect(hook!.error).toBeNull();
+    expect(hook!.samplerStatusByProfile.p1).toBeUndefined();
 
     // Unknown profile: null, still no shared error (unlike fetchSamplers —
     // a scheduler miss is not a load conclusion).
     expect(await hook!.fetchSchedulers("missing")).toBeNull();
-    expect(hook?.error).toBeNull();
+    expect(hook!.error).toBeNull();
   });
 
   it("fetchSidecars caches per profile; a failure raises the per-profile hint flag, a later success clears it (T3 parity)", async () => {
     store = [makeRecord({ id: "p1", name: "Alpha", backend: "comfyui" })];
-    let hook: any = null;
+    let hook: ImageProfilesHook | null = null;
     function Probe() {
       hook = useImageProfiles();
       return null;
@@ -673,9 +652,9 @@ describe("useImageProfiles — models / samplers / draft", () => {
     const sidecars = await hook!.fetchSidecars();
     expect(sidecars?.encoders.length).toBe(1);
     await waitFor(() => expect(hook?.sidecarsByProfile.p1?.encoders.length).toBe(1));
-    expect(hook?.sidecarsFailedByProfile.p1).toBe(false);
-    expect(hook?.samplerStatusByProfile.p1).toBeUndefined();
-    expect(hook?.error).toBeNull();
+    expect(hook!.sidecarsFailedByProfile.p1).toBe(false);
+    expect(hook!.samplerStatusByProfile.p1).toBeUndefined();
+    expect(hook!.error).toBeNull();
 
     // Failure: null + the per-profile flag (the pane's hint input) — the
     // cache, error, and connectivity status stay untouched.
@@ -685,8 +664,8 @@ describe("useImageProfiles — models / samplers / draft", () => {
     const failed = await hook!.fetchSidecars();
     expect(failed).toBeNull();
     await waitFor(() => expect(hook?.sidecarsFailedByProfile.p1).toBe(true));
-    expect(hook?.error).toBeNull();
-    expect(hook?.samplerStatusByProfile.p1).toBeUndefined();
+    expect(hook!.error).toBeNull();
+    expect(hook!.samplerStatusByProfile.p1).toBeUndefined();
 
     // Recovery: a successful refetch clears the flag.
     await hook!.fetchSidecars();
@@ -695,7 +674,7 @@ describe("useImageProfiles — models / samplers / draft", () => {
 
   it("IF-20: a snapshot answer fills the caches and records its time; a live answer clears it", async () => {
     store = [makeRecord({ id: "p1", name: "Alpha", backend: "comfyui" })];
-    let hook: any = null;
+    let hook: ImageProfilesHook | null = null;
     function Probe() {
       hook = useImageProfiles();
       return null;
@@ -711,15 +690,15 @@ describe("useImageProfiles — models / samplers / draft", () => {
     await hook!.fetchSavedModels();
     await hook!.fetchSidecars();
     await waitFor(() => expect(hook?.modelsSnapshotAtByProfile.p1).toBe(at));
-    expect(hook?.modelsByProfile.p1).toEqual([{ id: "saved", label: "Saved" }]);
-    expect(hook?.sidecarsSnapshotAtByProfile.p1).toBe(at);
+    expect(hook!.modelsByProfile.p1).toEqual([{ id: "saved", label: "Saved" }]);
+    expect(hook!.sidecarsSnapshotAtByProfile.p1).toBe(at);
     // A snapshot is data, not a failure: the failed flag stays clear.
-    expect(hook?.sidecarsFailedByProfile.p1).toBe(false);
+    expect(hook!.sidecarsFailedByProfile.p1).toBe(false);
 
     await hook!.fetchSavedModels();
     await hook!.fetchSidecars();
     await waitFor(() => expect(hook?.modelsSnapshotAtByProfile.p1).toBeNull());
-    expect(hook?.sidecarsSnapshotAtByProfile.p1).toBeNull();
+    expect(hook!.sidecarsSnapshotAtByProfile.p1).toBeNull();
   });
 
   it("IG-21: draftAutoKeyProviderName mirrors the server cascade (saved name wins; drafts match by rule; keyless providers never match)", async () => {
@@ -737,7 +716,7 @@ describe("useImageProfiles — models / samplers / draft", () => {
       makeRecord({ id: "p3", name: "Wrong endpoint", backend: "openai-images", endpoint: "https://images.gate.test/v1" }),
       makeRecord({ id: "p4", name: "Local", backend: "a1111", endpoint: "http://127.0.0.1:7860" }),
     ];
-    let hook: any = null;
+    let hook: ImageProfilesHook | null = null;
     function Probe() {
       hook = useImageProfiles();
       return null;
@@ -776,7 +755,7 @@ describe("useImageProfiles — models / samplers / draft", () => {
 
   it("MR-3: a keyless nanogpt draft auto-matches the provider key by exact endpoint (mirror)", async () => {
     store = [makeRecord({ id: "p1", name: "Alpha", backend: "openrouter", endpoint: "https://openrouter.ai/api/v1" })];
-    let hook: any = null;
+    let hook: ImageProfilesHook | null = null;
     function Probe() {
       hook = useImageProfiles();
       return null;
@@ -805,7 +784,7 @@ describe("useImageProfiles — models / samplers / draft", () => {
 
   it("fetchDraftModels sends the live form config with the typed key inside it", async () => {
     store = [makeRecord({ id: "p1", name: "Alpha", backend: "openrouter", endpoint: "https://openrouter.ai/api/v1" })];
-    let hook: any = null;
+    let hook: ImageProfilesHook | null = null;
     function Probe() {
       hook = useImageProfiles();
       return null;
@@ -847,14 +826,14 @@ describe("useImageProfiles — models / samplers / draft", () => {
       threw = true;
     }
     expect(threw).toBe(true);
-    expect(hook?.error).toBeNull();
+    expect(hook!.error).toBeNull();
   });
 });
 
 describe("useImageProfiles — activateProfile (MR-12)", () => {
   it("persists server-first, flips the session pointer on success, reloads the flag", async () => {
     store = [makeRecord({ id: "p1", name: "Cloud" }), makeRecord({ id: "p2", name: "Comfy" })];
-    let hook: any = null;
+    let hook: ImageProfilesHook | null = null;
     function Probe() {
       hook = useImageProfiles();
       return null;
@@ -867,8 +846,8 @@ describe("useImageProfiles — activateProfile (MR-12)", () => {
     expect(setDefaultMock).toHaveBeenCalledWith("p2");
     // The reloaded list carries the moved flag (the ★ rows + resolver source).
     await waitFor(() => expect(hook!.profiles.find((p: ImageGenRecord) => p.id === "p2")?.isDefault).toBe(true));
-    expect(hook?.profiles.find((p: ImageGenRecord) => p.id === "p1")?.isDefault).toBe(false);
-    expect(hook?.error).toBeNull();
+    expect(hook!.profiles.find((p: ImageGenRecord) => p.id === "p1")?.isDefault).toBe(false);
+    expect(hook!.error).toBeNull();
   });
 
   it("a failed PUT lands in the shared error surface and flips no pointer", async () => {
@@ -876,7 +855,7 @@ describe("useImageProfiles — activateProfile (MR-12)", () => {
     setDefaultMock.mockImplementationOnce(async () => {
       throw new Error("route down");
     });
-    let hook: any = null;
+    let hook: ImageProfilesHook | null = null;
     function Probe() {
       hook = useImageProfiles();
       return null;
@@ -893,7 +872,7 @@ describe("useImageProfiles — activateProfile (MR-12)", () => {
 describe("useImageProfiles — headerMode machine", () => {
   it("select -> view; startEdit -> edit; save returns to view; cancelEdit restores", async () => {
     store = [makeRecord({ id: "p1", name: "Alpha" })];
-    let hook: any = null;
+    let hook: ImageProfilesHook | null = null;
     function Probe() {
       hook = useImageProfiles();
       return null;
@@ -902,7 +881,7 @@ describe("useImageProfiles — headerMode machine", () => {
     await waitFor(() => expect(hook?.profiles.length).toBe(1));
     hook!.select("p1");
     await waitFor(() => expect(hook?.form?.id).toBe("p1"));
-    expect(hook?.headerMode).toBe("view");
+    expect(hook!.headerMode).toBe("view");
 
     hook!.startEdit();
     await waitFor(() => expect(hook?.headerMode).toBe("edit"));
@@ -910,8 +889,8 @@ describe("useImageProfiles — headerMode machine", () => {
     await waitFor(() => expect(hook?.dirty).toBe(true));
     hook!.cancelEdit();
     await waitFor(() => expect(hook?.headerMode).toBe("view"));
-    expect(hook?.form?.name).toBe("Alpha");
-    expect(hook?.dirty).toBe(false);
+    expect(hook!.form?.name).toBe("Alpha");
+    expect(hook!.dirty).toBe(false);
 
     await hook!.save();
     await waitFor(() => expect(hook?.headerMode).toBe("view"));

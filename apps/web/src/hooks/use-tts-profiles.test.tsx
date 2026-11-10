@@ -2,6 +2,7 @@ import { describe, expect, it, afterEach, mock } from "bun:test";
 import React from "react";
 import { useDomEnv } from "../../test/dom-env.js";
 import { installI18nContextSeam } from "../../test/i18n-context-seam.js";
+import { wireTtsProfile } from "../../test/wire-fixtures.js";
 
 useDomEnv();
 
@@ -32,25 +33,9 @@ installI18nContextSeam({
 
 type TtsRecord = import("../api/tts-api.js").TtsProfileRecord;
 
-function makeRecord(overrides: Partial<TtsRecord> = {}): TtsRecord {
-  return {
-    id: "p1",
-    name: "Voice One",
-    backend: "kokoro",
-    config: {},
-    voiceId: "af_heart",
-    narratorVoiceId: null,
-    hasStoredApiKey: false,
-    providerRef: null,
-    autoKeyProviderName: null,
-    lang: "en",
-    sortOrder: 0,
-    isDefault: false,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    ...overrides,
-  };
-}
+// The row fixture rides the shared wire factory (wireTtsProfile — the ONE
+// TtsProfileRecord derivation); tests override what they pin.
+const makeRecord = wireTtsProfile;
 
 // Mutable store that the mocked API closes over — changing it per test affects the already-imported hook
 let store: TtsRecord[] = [];
@@ -116,6 +101,8 @@ mock.module("../api/provider-api.js", () => ({
 const { act, cleanup, waitFor, render } = await import("@testing-library/react");
 const { useTtsProfiles } = await import("./use-tts-profiles.js");
 
+type TtsProfilesHook = ReturnType<typeof useTtsProfiles>;
+
 afterEach(async () => {
   await act(async () => {});
   cleanup();
@@ -159,7 +146,7 @@ describe("useTtsProfiles", () => {
       { endpoint: "https://openrouter.ai/api/v1", hasStoredApiKey: true, name: "OpenRouter" },
     ];
     store = [];
-    let hook: any = null;
+    let hook: TtsProfilesHook | null = null;
     function Probe() {
       hook = useTtsProfiles();
       return null;
@@ -186,15 +173,15 @@ describe("useTtsProfiles", () => {
   it("loads profiles on mount and supports select + startCreate", async () => {
     store = [makeRecord({ id: "p1", name: "Alpha", backend: "kokoro" }), makeRecord({ id: "p2", name: "Beta", backend: "gemini" })];
 
-    let hook: any = null;
+    let hook: TtsProfilesHook | null = null;
     function Probe() {
       hook = useTtsProfiles();
       return null;
     }
     render(React.createElement(Probe));
     await waitFor(() => expect(hook?.profiles.length).toBe(2));
-    expect(hook?.loading).toBe(false);
-    expect(hook?.error).toBeNull();
+    expect(hook!.loading).toBe(false);
+    expect(hook!.error).toBeNull();
 
     hook!.select("p1");
     await waitFor(() => expect(hook!.editingId).toBe("p1"));
@@ -218,7 +205,7 @@ describe("useTtsProfiles", () => {
   it("save creates a new profile when form.id is null and updates when id exists", async () => {
     store = [makeRecord({ id: "p1", name: "Alpha", backend: "kokoro" })];
 
-    let hook: any = null;
+    let hook: TtsProfilesHook | null = null;
     function Probe() {
       hook = useTtsProfiles();
       return null;
@@ -250,7 +237,7 @@ describe("useTtsProfiles", () => {
     store = [makeRecord({ id: "p1", name: "Alpha", backend: "kokoro" })];
     failUpdate = true;
 
-    let hook: any = null;
+    let hook: TtsProfilesHook | null = null;
     function Probe() {
       hook = useTtsProfiles();
       return null;
@@ -269,7 +256,7 @@ describe("useTtsProfiles", () => {
   it("remove deletes the selected profile and clears selection", async () => {
     store = [makeRecord({ id: "p1", name: "Alpha", backend: "kokoro" }), makeRecord({ id: "p2", name: "Beta", backend: "gemini" })];
 
-    let hook: any = null;
+    let hook: TtsProfilesHook | null = null;
     function Probe() {
       hook = useTtsProfiles();
       return null;
@@ -280,13 +267,13 @@ describe("useTtsProfiles", () => {
     await waitFor(() => expect(hook?.form?.id).toBe("p1"));
     await hook!.remove();
     await waitFor(() => expect(hook?.profiles.length).toBe(1));
-    expect(hook?.form).toBeNull();
-    expect(hook?.editingId).toBeNull();
+    expect(hook!.form).toBeNull();
+    expect(hook!.editingId).toBeNull();
   });
 
   it("backend switch resets config and voiceId (kokoro defaults af_heart)", async () => {
     store = [makeRecord({ id: "p1", name: "Alpha", backend: "kokoro", config: { speed: 1.5 }, voiceId: "af_heart" })];
-    let hook: any = null;
+    let hook: TtsProfilesHook | null = null;
     function Probe() {
       hook = useTtsProfiles();
       return null;
@@ -309,7 +296,7 @@ describe("useTtsProfiles", () => {
 
   it("narratorVoiceId round-trips through select/startCreate/backend-switch/save", async () => {
     store = [makeRecord({ id: "p1", name: "Alpha", backend: "kokoro", narratorVoiceId: "af_bella" })];
-    let hook: any = null;
+    let hook: TtsProfilesHook | null = null;
     function Probe() {
       hook = useTtsProfiles();
       return null;
@@ -348,7 +335,7 @@ describe("useTtsProfiles", () => {
 
   it("save passes config and voiceId through create and update", async () => {
     store = [];
-    let hook: any = null;
+    let hook: TtsProfilesHook | null = null;
     function Probe() {
       hook = useTtsProfiles();
       return null;
@@ -381,7 +368,7 @@ describe("useTtsProfiles", () => {
 
   it("startCreate defaults to kokoro + af_heart", async () => {
     store = [];
-    let hook: any = null;
+    let hook: TtsProfilesHook | null = null;
     function Probe() {
       hook = useTtsProfiles();
       return null;
@@ -412,7 +399,7 @@ describe("useTtsProfiles — hasStoredApiKey lifecycle (F2b)", () => {
       }),
       makeRecord({ id: "p2", backend: "gemini", config: {}, hasStoredApiKey: false }),
     ];
-    let hook: any = null;
+    let hook: TtsProfilesHook | null = null;
     function Probe() {
       hook = useTtsProfiles();
       return null;
@@ -439,7 +426,7 @@ describe("useTtsProfiles — hasStoredApiKey lifecycle (F2b)", () => {
         hasStoredApiKey: true,
       }),
     ];
-    let hook: any = null;
+    let hook: TtsProfilesHook | null = null;
     function Probe() {
       hook = useTtsProfiles();
       return null;
@@ -459,7 +446,7 @@ describe("useTtsProfiles — hasStoredApiKey lifecycle (F2b)", () => {
 describe("useTtsProfiles — TE2-10 editor screen machine (headerMode, LLM mechanism)", () => {
   it("select() -> view; setForm keeps view; save() from edit -> view; startCreate/startEdit -> edit; cancelEdit -> view", async () => {
     store = [makeRecord({ id: "p1", name: "Alpha", backend: "kokoro" })];
-    let hook: any = null;
+    let hook: TtsProfilesHook | null = null;
     function Probe() {
       hook = useTtsProfiles();
       return null;
@@ -467,34 +454,34 @@ describe("useTtsProfiles — TE2-10 editor screen machine (headerMode, LLM mecha
     render(React.createElement(Probe));
     await waitFor(() => expect(hook?.profiles.length).toBe(1));
     // No form yet — the modal shows the empty placeholder, not the editor.
-    expect(hook?.form).toBeNull();
+    expect(hook!.form).toBeNull();
     hook!.select("p1");
     await waitFor(() => expect(hook?.form?.id).toBe("p1"));
     // Selecting a SAVED profile opens in view mode (the base card), not the form.
-    expect(hook?.headerMode).toBe("view");
-    expect(hook?.dirty).toBe(false);
+    expect(hook!.headerMode).toBe("view");
+    expect(hook!.dirty).toBe(false);
     // Config-section edits (voice, tuning) mark dirty but do NOT open the
     // connection form screen — LLM mechanism: the edit screen is a separate
     // menu entered only via Edit settings / New.
     hook!.setForm({ name: "Alpha-2" });
     await waitFor(() => expect(hook?.dirty).toBe(true));
-    expect(hook?.headerMode).toBe("view");
+    expect(hook!.headerMode).toBe("view");
     // Edit settings opens the connection screen.
     hook!.startEdit();
     await waitFor(() => expect(hook?.headerMode).toBe("edit"));
     // Save returns to the view card.
     await hook!.save();
     await waitFor(() => expect(hook?.headerMode).toBe("view"));
-    expect(hook?.dirty).toBe(false);
+    expect(hook!.dirty).toBe(false);
     // New profile opens straight in edit mode.
     hook!.startCreate();
     await waitFor(() => expect(hook?.form?.id).toBeNull());
-    expect(hook?.headerMode).toBe("edit");
+    expect(hook!.headerMode).toBe("edit");
     // Canceling a NEW profile drops the draft entirely (form null — the
     // modal placeholder), view mode.
     hook!.cancelEdit();
     await waitFor(() => expect(hook?.form).toBeNull());
-    expect(hook?.headerMode).toBe("view");
+    expect(hook!.headerMode).toBe("view");
     // Canceling an EDIT of a saved profile restores the saved values.
     hook!.select("p1");
     await waitFor(() => expect(hook?.form?.id).toBe("p1"));
@@ -504,14 +491,14 @@ describe("useTtsProfiles — TE2-10 editor screen machine (headerMode, LLM mecha
     await waitFor(() => expect(hook?.dirty).toBe(true));
     hook!.cancelEdit();
     await waitFor(() => expect(hook?.headerMode).toBe("view"));
-    expect(hook?.form?.name).toBe("Alpha-2");
-    expect(hook?.dirty).toBe(false);
+    expect(hook!.form?.name).toBe("Alpha-2");
+    expect(hook!.dirty).toBe(false);
     cleanup();
   });
 
   it("setDefault() calls the API and refreshes profiles", async () => {
     store = [makeRecord({ id: "p1", isDefault: true }), makeRecord({ id: "p2", isDefault: false })];
-    let hook: any = null;
+    let hook: TtsProfilesHook | null = null;
     function Probe() {
       hook = useTtsProfiles();
       return null;
@@ -524,7 +511,7 @@ describe("useTtsProfiles — TE2-10 editor screen machine (headerMode, LLM mecha
     await waitFor(() => expect(setDefaultMock).toHaveBeenCalled());
     expect(setDefaultMock.mock.calls[0][0]).toBe("p2");
     await waitFor(() => expect(hook?.profiles.find((p: TtsRecord) => p.id === "p2")?.isDefault).toBe(true));
-    expect(hook?.profiles.find((p: TtsRecord) => p.id === "p1")?.isDefault).toBe(false);
+    expect(hook!.profiles.find((p: TtsRecord) => p.id === "p1")?.isDefault).toBe(false);
     // The chat-side voice-map snapshot was invalidated (the actual bug).
     expect(refreshVoiceMapMock).toHaveBeenCalled();
     cleanup();
@@ -532,7 +519,7 @@ describe("useTtsProfiles — TE2-10 editor screen machine (headerMode, LLM mecha
 
   it("defaultProfileId tracks the persisted default: null when none, moves with setDefault", async () => {
     store = [makeRecord({ id: "p1", isDefault: false }), makeRecord({ id: "p2", isDefault: false })];
-    let hook: any = null;
+    let hook: TtsProfilesHook | null = null;
     function Probe() {
       hook = useTtsProfiles();
       return null;
@@ -540,19 +527,19 @@ describe("useTtsProfiles — TE2-10 editor screen machine (headerMode, LLM mecha
     render(React.createElement(Probe));
     await waitFor(() => expect(hook?.profiles.length).toBe(2));
     // No flagged row → null (the ImageGen effectiveActiveId `?? null` arm).
-    expect(hook?.defaultProfileId).toBeNull();
+    expect(hook!.defaultProfileId).toBeNull();
     await hook!.setDefault("p2");
     await waitFor(() => expect(hook?.defaultProfileId).toBe("p2"));
     // Moving the pointer leaves exactly one flagged row — the target.
     await hook!.setDefault("p1");
     await waitFor(() => expect(hook?.defaultProfileId).toBe("p1"));
-    expect(hook?.profiles.filter((p: TtsRecord) => p.isDefault).map((p: TtsRecord) => p.id)).toEqual(["p1"]);
+    expect(hook!.profiles.filter((p: TtsRecord) => p.isDefault).map((p: TtsRecord) => p.id)).toEqual(["p1"]);
     cleanup();
   });
 
   it("profile mutations (save/remove) invalidate the chat-side voice-map cache", async () => {
     store = [makeRecord({ id: "p1", isDefault: true, name: "Old" })];
-    let hook: any = null;
+    let hook: TtsProfilesHook | null = null;
     function Probe() {
       hook = useTtsProfiles();
       return null;
