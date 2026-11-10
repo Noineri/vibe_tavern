@@ -43,10 +43,13 @@ import { installPersonaApiSeam } from "../../../test/persona-api-seam.js";
 import type { ReactNode } from "react";
 import type {
   ExperienceChatConfigRow,
+  ExperienceContextCaptureRequest,
   ExperiencePromptOverridesResponse,
   ExperienceSessionResponse,
+  ExperienceStartRequest,
 } from "../../api/types.js";
 import type { ExperienceDefinitionDto } from "@vibe-tavern/api-contracts";
+import type { DiscoveredExperienceDefinition } from "../../api/script-api.js";
 import type { ExperienceCapability } from "@vibe-tavern/domain";
 
 // react-dom's event system initializes against the global window/document, so
@@ -236,17 +239,28 @@ function makeConfig(over: Partial<ExperienceChatConfigRow> = {}): ExperienceChat
 function def(
   declaredCapabilities: Array<{ capability: ExperienceCapability; reason?: string }>,
   fields?: NonNullable<ExperienceDefinitionDto["setup"]>["fields"],
-): ExperienceDefinitionDto {
-  const d: ExperienceDefinitionDto = {
+): DiscoveredExperienceDefinition {
+  return {
     apiVersion: 1,
     manifest: { id: "m", name: "Game", mode: "turn" },
     declaredCapabilities,
+    // The kernel-computed method-presence flags the REAL test endpoint always
+    // sends (the former bare DTO omitted them — a shape production can never
+    // produce). The modal never reads them; false keeps the falsy runtime
+    // value the suite has always observed.
+    hasChoose: false,
+    hasFlavor: false,
+    hasUpdate: false,
+    ...(fields ? { setup: { fields } } : {}),
   };
-  if (fields) d.setup = { fields };
-  return d;
 }
 
-function interactiveOk(d: ExperienceDefinitionDto) {
+/** The REAL test-endpoint wire union (script-api's declared return) — the
+ *  discovery fixtures and the deferred resolver below derive from it instead
+ *  of a widened structural echo. */
+type ScriptTestWireResult = Awaited<ReturnType<typeof realScriptApi.testScript>>;
+
+function interactiveOk(d: DiscoveredExperienceDefinition): Extract<ScriptTestWireResult, { kind: "interactive" }> {
   return { kind: "interactive", definition: d, discoveryError: null };
 }
 
@@ -789,9 +803,12 @@ describe("ExperienceSetupModal — model seats", () => {
     await pickDropdown(view, view.baseElement.querySelector('[data-seat-id="seat_3"]')!, "experience_setup_model_placeholder", "Model B");
     fireEvent.click(view.getByTestId("experience-setup-start"));
     await waitFor(() => expect(mocks.startSession).toHaveBeenCalledTimes(1));
-    const participants = mocks.startSession.mock.calls[0][1];
-    const seat2 = participants.find((p: any) => p.id === "seat_2");
-    const seat3 = participants.find((p: any) => p.id === "seat_3");
+    // The recorded wire arg typed as startSession's REAL participants param —
+    // the seat predicates are compiler-checked against the start-participant
+    // schema input.
+    const participants: NonNullable<ExperienceStartRequest["participants"]> = mocks.startSession.mock.calls[0][1];
+    const seat2 = participants.find((p) => p.id === "seat_2");
+    const seat3 = participants.find((p) => p.id === "seat_3");
     expect(seat2).toEqual({ id: "seat_2", label: "Bot1", controller: "model", providerProfileId: "p1", modelId: "model-a" });
     expect(seat3).toEqual({ id: "seat_3", label: "Bot2", controller: "model", providerProfileId: "p2", modelId: "model-b" });
   });
@@ -864,8 +881,9 @@ describe("ExperienceSetupModal — model seats", () => {
     await pickDropdown(view, seat2, "experience_setup_model_placeholder", "model-a");
     fireEvent.click(view.getByTestId("experience-setup-start"));
     await waitFor(() => expect(mocks.startSession).toHaveBeenCalledTimes(1));
-    const seat2p = mocks.startSession.mock.calls[0][1].find((p: any) => p.id === "seat_2");
-    expect(seat2p.modelId).toBe("model-a");
+    const participants: NonNullable<ExperienceStartRequest["participants"]> = mocks.startSession.mock.calls[0][1];
+    const seat2p = participants.find((p) => p.id === "seat_2");
+    expect(seat2p?.modelId).toBe("model-a");
   });
 });
 
@@ -1011,7 +1029,7 @@ describe("ExperienceSetupModal — compact summary", () => {
   });
 
   it("cancel during generation aborts and retains the session (no endSession)", async () => {
-    mocks.captureContext.mockImplementation(async (_body: any, signal: AbortSignal) => {
+    mocks.captureContext.mockImplementation(async (_body: ExperienceContextCaptureRequest, signal: AbortSignal) => {
       return new Promise((resolve) => {
         signal.addEventListener("abort", () => resolve(null));
       });
@@ -1108,7 +1126,9 @@ describe("ExperienceSetupModal — prompt overrides", () => {
 describe("ExperienceSetupModal — scope switch", () => {
   it("a late A discovery result does not paint after switching to B", async () => {
     setFakeState({ config: makeConfig() });
-    let resolveA!: (v: any) => void;
+    // The deferred resolver carries the REAL test-endpoint wire union — the
+    // late-A payload below is compiler-checked against the production shape.
+    let resolveA!: (v: ScriptTestWireResult) => void;
     mocks.testScript.mockReturnValueOnce(new Promise((r) => { resolveA = r; }));
     const view = renderModal();
     // SS-7B3: the discovery request now starts only after the selected
@@ -1135,7 +1155,7 @@ describe("ExperienceSetupModal — close + session preservation", () => {
     setFakeState({ config: makeConfig({ capabilityGrants: ["rp_context"], contextMode: "current_branch" }) });
     mocks.testScript.mockResolvedValue(interactiveOk(def([{ capability: "rp_context" }])));
     let abortSignal: AbortSignal | null = null;
-    mocks.captureContext.mockImplementation(async (_b: any, signal: AbortSignal) => {
+    mocks.captureContext.mockImplementation(async (_b: ExperienceContextCaptureRequest, signal: AbortSignal) => {
       abortSignal = signal;
       return new Promise((resolve) => signal.addEventListener("abort", () => resolve(null)));
     });

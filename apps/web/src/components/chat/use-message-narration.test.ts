@@ -58,6 +58,11 @@ mock.module("../../lib/tts/voice-map-data.js", () => ({
 const { render, act, cleanup } = await import("@testing-library/react");
 const { useMessageNarration } = await import("./use-message-narration.js");
 
+/** The typed per-test binding (step 11): ReturnType of the REAL hook — every
+ *  Probe call arg and every member read below is compiler-checked against the
+ *  hook's real signature. */
+type NarrationHook = ReturnType<typeof useMessageNarration>;
+
 const originalStart = useTtsPlaybackStore.getState().startNarration;
 const originalStop = useTtsPlaybackStore.getState().stopNarration;
 
@@ -81,16 +86,16 @@ describe("useMessageNarration", () => {
       profiles: [pDefault, pChar],
       links: [{ ttsProfileId: "p2", targetType: "character", targetId: "char1", mode: "voice" }],
     };
-    let hook: any = null;
+    let hook: NarrationHook | null = null;
     function Probe() {
-      hook = (useMessageNarration as any)("m1", "char1", null, () => "hello");
+      hook = useMessageNarration("m1", "char1", null, () => "hello");
       return null;
     }
     await act(async () => {
       render(React.createElement(Probe));
     });
-    expect(hook?.available).toBe(true);
-    expect(hook?.narrating).toBe(false);
+    expect(hook!.available).toBe(true);
+    expect(hook!.narrating).toBe(false);
   });
 
   test("available=false for disabled, none, and loading", async () => {
@@ -99,15 +104,15 @@ describe("useMessageNarration", () => {
       profiles: [pDefault],
       links: [{ ttsProfileId: "p1", targetType: "character", targetId: "char1", mode: "disabled" }],
     };
-    let hook1: any = null;
+    let hook1: NarrationHook | null = null;
     function Probe1() {
-      hook1 = (useMessageNarration as any)("m1", "char1", null, () => "hello");
+      hook1 = useMessageNarration("m1", "char1", null, () => "hello");
       return null;
     }
     await act(async () => {
       render(React.createElement(Probe1));
     });
-    expect(hook1?.available).toBe(false);
+    expect(hook1!.available).toBe(false);
     cleanup();
 
     // none (no default, no links)
@@ -115,28 +120,28 @@ describe("useMessageNarration", () => {
       profiles: [profile({ id: "p2", isDefault: false })],
       links: [],
     };
-    let hook2: any = null;
+    let hook2: NarrationHook | null = null;
     function Probe2() {
-      hook2 = (useMessageNarration as any)("m2", "char1", null, () => "hello");
+      hook2 = useMessageNarration("m2", "char1", null, () => "hello");
       return null;
     }
     await act(async () => {
       render(React.createElement(Probe2));
     });
-    expect(hook2?.available).toBe(false);
+    expect(hook2!.available).toBe(false);
     cleanup();
 
     // loading (null data)
     currentData = null;
-    let hook3: any = null;
+    let hook3: NarrationHook | null = null;
     function Probe3() {
-      hook3 = (useMessageNarration as any)("m3", "char1", null, () => "hello");
+      hook3 = useMessageNarration("m3", "char1", null, () => "hello");
       return null;
     }
     await act(async () => {
       render(React.createElement(Probe3));
     });
-    expect(hook3?.available).toBe(false);
+    expect(hook3!.available).toBe(false);
   });
 
   test("onNarrate toggles start vs stop", async () => {
@@ -173,15 +178,15 @@ describe("useMessageNarration", () => {
       },
     } as never);
 
-    let hook: any = null;
+    let hook: NarrationHook | null = null;
     function Probe() {
-      hook = (useMessageNarration as any)("m1", null, null, () => "Hello world");
+      hook = useMessageNarration("m1", null, null, () => "Hello world");
       return null;
     }
     await act(async () => {
       render(React.createElement(Probe));
     });
-    expect(hook?.available).toBe(true);
+    expect(hook!.available).toBe(true);
     // Not narrating -> onNarrate should start
     await act(async () => {
       hook!.onNarrate();
@@ -217,7 +222,7 @@ describe("useMessageNarration", () => {
     });
     // Need fresh hook instance after re-render? Probe captures latest
     // The hook now should report narrating true
-    expect(hook?.narrating).toBe(true);
+    expect(hook!.narrating).toBe(true);
     await act(async () => {
       hook!.onNarrate();
     });
@@ -248,9 +253,9 @@ describe("useMessageNarration", () => {
     });
     __setTtsPlaybackDepsForTests({ player: fakePlayer as never, synthesize: fakeSynthesize as never });
 
-    let hook: any = null;
+    let hook: NarrationHook | null = null;
     function Probe() {
-      hook = (useMessageNarration as any)("m1", null, null, () => "Hello ```code block``` world *shaking* **nervously**");
+      hook = useMessageNarration("m1", null, null, () => "Hello ```code block``` world *shaking* **nervously**");
       return null;
     }
     await act(async () => {
@@ -292,9 +297,9 @@ describe("useMessageNarration", () => {
     });
     __setTtsPlaybackDepsForTests({ player: fakePlayer as never, synthesize: fakeSynthesize as never });
 
-    let hook: any = null;
+    let hook: NarrationHook | null = null;
     function Probe() {
-      hook = (useMessageNarration as any)("m1", null, null, () => 'He whispered "don\u2019t *ever* come back" and left');
+      hook = useMessageNarration("m1", null, null, () => 'He whispered "don\u2019t *ever* come back" and left');
       return null;
     }
     await act(async () => {
@@ -338,9 +343,9 @@ describe("useMessageNarration — TTS annotation tags (TPE-1)", () => {
       },
     } as never);
 
-    let hook: any = null;
+    let hook: NarrationHook | null = null;
     function Probe() {
-      hook = (useMessageNarration as any)("m1", null, null, () => 'She [laugh] softly. "Wait, don’t *ever* go."');
+      hook = useMessageNarration("m1", null, null, () => 'She [laugh] softly. "Wait, don’t *ever* go."');
       return null;
     }
     await act(async () => {
@@ -394,9 +399,9 @@ describe("useMessageNarration — macro resolution (TPE-19)", () => {
         return origStart(...(args as [string, string, TtsProfileRecord]));
       },
     } as never);
-    let hook: any = null;
+    let hook: NarrationHook | null = null;
     function Probe() {
-      hook = (useMessageNarration as any)("m1", null, null, () => source);
+      hook = useMessageNarration("m1", null, null, () => source);
       return null;
     }
     await act(async () => {
