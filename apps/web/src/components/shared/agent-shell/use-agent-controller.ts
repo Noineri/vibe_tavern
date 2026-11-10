@@ -75,6 +75,7 @@ export interface UseAgentControllerArgs {
    *  cancelled (`false`) — the shell's host hook clears per-turn
    *  attachments on success and keeps them for a retry on failure. */
   onTurnSettled?: (ok: boolean) => void;
+  onPromptAttachmentsSent?: (presetIds: readonly string[]) => void;
   /** CM-7: feed the segmented context metrics from the `finish` SSE event to
    *  the shell's meter immediately (before any context refetch round-trips).
    *  Null when the finish event carried no/ill-formed metrics. */
@@ -183,7 +184,7 @@ export interface AgentController extends AgentTurnActions {
 export function useAgentController(
   args: UseAgentControllerArgs,
 ): AgentController {
-  const { kind, transport, threadId, providerProfileId, model, onTurnSettled, onMetrics, applyPlanToolResult, threadTodo, threadMessages, feedOutcome, streamingMirrorKey, scheduler } = args;
+  const { kind, transport, threadId, providerProfileId, model, onTurnSettled, onPromptAttachmentsSent, onMetrics, applyPlanToolResult, threadTodo, threadMessages, feedOutcome, streamingMirrorKey, scheduler } = args;
 
   const [isSending, setIsSending] = useState(false);
   // Optimistic user message: shown immediately on send so the user sees their
@@ -411,6 +412,14 @@ export function useAgentController(
           {
             signal: controller.signal,
             ...buildStreamCallbacks(threadId, { current: false }),
+            onFinish: () => {
+              // Owner contract: success clears; failure keeps for retry. An SSE error's
+              // phase is indistinguishable, so pending honestly means it will attach
+              // to the next message. Regenerations and compactions never submit chips.
+              if (attachment.isCurrent(controller, threadId) && opts?.promptAttachments?.length) {
+                onPromptAttachmentsSent?.(opts.promptAttachments.map((item) => item.presetId));
+              }
+            },
           },
         );
       };
@@ -463,7 +472,7 @@ export function useAgentController(
         }
       }
     },
-    [kind, threadId, providerProfileId, model, transport, onTurnSettled, onMetrics, applyPlanToolResult, pushStreamDelta, flushDeltaBuffer, prepareTurn],
+    [kind, threadId, providerProfileId, model, transport, onTurnSettled, onPromptAttachmentsSent, onMetrics, applyPlanToolResult, pushStreamDelta, flushDeltaBuffer, prepareTurn],
   );
 
   const handleAnswer = useCallback(

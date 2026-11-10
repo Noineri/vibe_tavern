@@ -1,4 +1,7 @@
 {
+  "prompt_attachment_included": "Включено",
+  "prompt_attachment_view": "Посмотреть приложенный промпт: {name}",
+  "prompt_attachment_caption": "Промпт, включённый в это сообщение",
 	"app_name": "Vibe Tavern",
 	"settings_modal_title": "Настройки Vibe Tavern",
 	"settings_all": "Все настройки…",

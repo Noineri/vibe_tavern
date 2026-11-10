@@ -1682,6 +1682,24 @@ async function drainRegenerateTurn(
 }
 
 describe("streamSidechatTurn regenerate (AP-9)", () => {
+  it("regenerates a failed prompt-attached turn from its one frozen snapshot", async () => {
+    const { threadId } = await makeSidechatThread();
+    const preset = await stores.presets.create({ name: "Retry preset", systemPrompt: "RETRY-FROZEN-MARKER" });
+    const failed = await drainTurn(threadId, "Try this", { ...deps, streamText: () => { throw new Error("provider setup failed"); } }, undefined, [{ presetId: preset.id }]);
+    expect(failed.map((chunk) => chunk.event)).toContain("error");
+    const before = (await stores.experienceCopilot.listMessages(threadId)).filter((row) => row.role === "user");
+    expect(before).toHaveLength(1);
+    expect(before[0]!.promptAttachments).toHaveLength(1);
+    const snapshot = before[0]!.promptAttachments![0]!;
+    await stores.presets.update(preset.id, { systemPrompt: "CHANGED-AFTER-FAILURE" });
+    const retried = await drainRegenerateTurn(threadId);
+    expect(retried.map((chunk) => chunk.event)).toContain("finish");
+    expect(occurrences(promptText(), "RETRY-FROZEN-MARKER")).toBe(1);
+    expect(promptText()).not.toContain("CHANGED-AFTER-FAILURE");
+    const after = (await stores.experienceCopilot.listMessages(threadId)).filter((row) => row.role === "user");
+    expect(after).toHaveLength(1);
+    expect(after[0]!.promptAttachments).toEqual([snapshot]);
+  });
 	it("keeps the turn's events, replaces the last turn's rows without a new user row, and records a fresh rp_sync after the user row when the RP moved", async () => {
 		const { threadId, chatId, branchId } = await makeSidechatThread("RP-SEED the door opens.");
 		await drainTurn(threadId, "OOC question one");

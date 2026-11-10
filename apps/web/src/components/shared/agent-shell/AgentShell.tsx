@@ -243,7 +243,7 @@ function AgentShellSession({
     return [...characters, ...mentionCatalog, ...presetCatalog];
   }, [allCharacters, mentionCatalog, presetCatalog]);
 
-  const { contextLinks, setContextLinks, pinnedContext, handlePinContext, handleUnpinContext } =
+  const { contextLinks, setContextLinks, pinnedContext, handlePinContext, handleUnpinContext, clearSubmittedPresets } =
     useAgentContextLinks(threadId, transport, catalog);
 
   // ── Toolbar modal open state (AP-27: the gear opens the settings summary,
@@ -428,6 +428,7 @@ function AgentShellSession({
     providerProfileId,
     model,
     onTurnSettled: handleTurnSettled,
+    onPromptAttachmentsSent: clearSubmittedPresets,
     onMetrics: copilotContext.applyMetrics,
     applyPlanToolResult: agentPlan.applyToolResult, // PM-6: `plan` tool results → the plan cache
     threadTodo, // TAG-7 (restored PM-7): seeds the session-scoped todo panel state (mount/switch)

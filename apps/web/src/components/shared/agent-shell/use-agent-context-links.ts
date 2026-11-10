@@ -65,5 +65,10 @@ export function useAgentContextLinks(threadId: string | null, transport: AgentHo
 		[contextLinks, handleSetContextLinks],
 	);
 
-	return { contextLinks, setContextLinks, pinnedContext, handlePinContext, handleUnpinContext };
+	const clearSubmittedPresets = useCallback((presetIds: readonly string[]) => {
+		const submitted = new Set(presetIds);
+		setContextLinks((current) => current.filter((link) => link.targetType !== "prompt_preset" || !submitted.has(link.targetId)));
+	}, []);
+
+	return { contextLinks, setContextLinks, pinnedContext, handlePinContext, handleUnpinContext, clearSubmittedPresets };
 }

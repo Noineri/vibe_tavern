@@ -14,6 +14,7 @@ import type { GenerationMetadata } from "../lib/generation-metadata.js";
 export interface StreamOpts {
   onGenerationContext?: ParseSSEStreamOptions["onGenerationContext"];
   onUserMessageSaved?: ParseSSEStreamOptions["onUserMessageSaved"];
+  onFinish?: ParseSSEStreamOptions["onFinish"];
   waitForStreamEnd?: boolean;
   signal?: AbortSignal;
   onEventId?: (id: string) => boolean | void;
@@ -100,6 +101,7 @@ export async function streamChatEndpoint(
     onGenerationMetadata: opts.onGenerationMetadata,
     onGenerationContext: opts.onGenerationContext,
     onUserMessageSaved: opts.onUserMessageSaved,
+    onFinish: opts.onFinish,
     waitForStreamEnd: opts.waitForStreamEnd,
   });
 }

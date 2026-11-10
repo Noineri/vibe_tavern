@@ -30,6 +30,14 @@ function opts() {
 }
 
 describe("parseSSEStream", () => {
+	it("signals only an explicit finish event, not EOF or an error", async () => {
+		const onFinish = mock(() => {});
+		await parseSSEStream({ response: sseResponse(['event: finish\ndata: {"finishReason":"cancelled"}\n\n']), ...opts(), onFinish });
+		expect(onFinish).toHaveBeenCalledTimes(1);
+		await parseSSEStream({ response: sseResponse([]), ...opts(), onFinish });
+		await expect(parseSSEStream({ response: sseResponse(['event: error\ndata: {"message":"failed"}\n\n']), ...opts(), onFinish })).rejects.toBeInstanceOf(ProviderStreamError);
+		expect(onFinish).toHaveBeenCalledTimes(1);
+	});
 	it("forwards text-delta chunks to onChunk", async () => {
 		const o = opts();
 		await parseSSEStream({

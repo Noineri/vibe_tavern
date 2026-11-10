@@ -1135,3 +1135,18 @@ describe("ExperienceCopilotMessageBlock — sent attachments (CA-4f)", () => {
     expect(summarize.mock.calls[0]!.slice(0, 4)).toEqual(["thread-1", "u1", "att1", { providerProfileId: "p1", model: "m1" }]);
   });
 });
+
+describe("AgentMessageBlock — confirmed prompt attachments", () => {
+  for (const mobile of [false, true]) {
+    it(`opens the saved snapshot on ${mobile ? "mobile" : "desktop"}`, async () => {
+      mobileOverride = mobile;
+      const saved = "<rp_prompt>\nExact saved text\n</rp_prompt>";
+      const message = userMsg({ promptAttachments: [{ presetId: "preset-1", displayName: "Stored name", promptText: saved }] });
+      const view = render(<AgentMessageBlock messageMarkup="plain" message={message} />);
+      expect(view.getByText("Stored name")).toBeDefined();
+      fireEvent.click(view.getByRole("button", { name: /prompt_attachment_view/ }));
+      await waitFor(() => expect(view.getByTestId("sent-file-summary-scroll").textContent).toBe(saved));
+      expect(view.getByText("prompt_attachment_caption")).toBeDefined();
+    });
+  }
+});

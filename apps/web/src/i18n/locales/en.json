@@ -1,4 +1,7 @@
 {
+  "prompt_attachment_included": "Included",
+  "prompt_attachment_view": "View included prompt: {name}",
+  "prompt_attachment_caption": "Prompt included with this message",
 	"app_name": "Vibe Tavern",
 	"settings_modal_title": "Vibe Tavern settings",
 	"settings_all": "All settings…",
