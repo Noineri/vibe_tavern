@@ -590,7 +590,7 @@ export function useSummaryTab({
           <span>{t("summary_prior_max")}</span>
           <NumberInput
             className="w-[80px] shrink-0"
-            inputClassName="text-center"
+            inputClassName="!text-center"
             hideControls
             min={0}
             max={100}
@@ -753,7 +753,7 @@ export function useSummaryTab({
           <span>{t("summary_auto_every")}</span>
           <NumberInput
             className="w-[80px] shrink-0"
-            inputClassName="text-center"
+            inputClassName="!text-center"
             hideControls
             min={1}
             max={500}
@@ -786,7 +786,7 @@ export function useSummaryTab({
             <span>{t("summary_prior_max")}</span>
             <NumberInput
               className="w-[80px] shrink-0"
-              inputClassName="text-center"
+              inputClassName="!text-center"
               hideControls
               min={0}
               max={100}
