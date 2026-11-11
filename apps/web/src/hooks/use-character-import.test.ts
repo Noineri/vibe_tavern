@@ -28,7 +28,9 @@ import { brandId, type ChatId } from "@vibe-tavern/domain";
 
 import { useDomEnv } from "../../test/dom-env.js";
 import { strictTestDouble } from "../../test/strict-test-double.js";
+import { wireBranch, wireChat, wireCharacter } from "../../test/wire-fixtures.js";
 import type { RpcData } from "../api/unwrap.js";
+import type { ImportJsonResponse } from "../api/types.js";
 
 useDomEnv();
 
@@ -42,12 +44,23 @@ const uploadCharacterAvatar = mock((_id: string, _file: File, _full?: File) =>
 const uploadAsset = mock((_f: File) => Promise.resolve({ assetId: "asset-legacy" }));
 const fetchBootstrapAction = mock((_opts?: { silent?: boolean; skipSnapshotSync?: boolean }) =>
 	Promise.resolve());
-const importCharacterAction = mock((_input: { fileName: string; jsonText?: string; importEmbeddedBook?: boolean; enableImportedRegexProfile?: boolean }) =>
+const importCharacterAction = mock((_input: { fileName: string; jsonText?: string; importEmbeddedBook?: boolean; enableImportedRegexProfile?: boolean }): Promise<ImportJsonResponse> =>
 	Promise.resolve({
-		activeChatId: "chat-1",
-		snapshot: { character: { id: "char-imported", name: "Test", avatarExt: null } },
+		activeChatId: brandId<ChatId>("chat-1"),
+		snapshot: {
+			chats: [],
+			allCharacters: [],
+			activeChat: wireChat(),
+			activeBranch: wireBranch(),
+			branches: [],
+			messages: [],
+			summaries: [],
+			promptTrace: null,
+			character: wireCharacter({ id: "char-imported", name: "Test" }),
+			persona: null,
+		},
 		imported: { kind: "character", name: "Test", fileName: "card.png", warningCount: 0, warnings: [] },
-	} as never));
+	}));
 
 // ─── Wire capture for the import-api transports (importJson / importJsonBatch) ─
 // import-api passes its input straight into `{ json: input }`, so capturing

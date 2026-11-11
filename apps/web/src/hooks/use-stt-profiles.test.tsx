@@ -168,10 +168,10 @@ describe("useSttProfiles — P2 draft auto-key hint", () => {
     // must resolve from the client-side vendor match (first keyful provider
     // on the Gemini API host; the active-flag never participates).
     act(() => hook!.startCreate());
-    act(() => hook!.setForm({ backend: "gemini" as never }));
+    act(() => hook!.setForm({ backend: "gemini" }));
     await waitFor(() => expect(hook?.draftAutoKeyProviderName).toBe("Gemini"));
     // A server-decorated saved record still wins over the live computation.
-    act(() => hook!.setForm({ autoKeyProviderName: "Decorated" as never }));
+    act(() => hook!.setForm({ autoKeyProviderName: "Decorated" }));
     await waitFor(() => expect(hook?.draftAutoKeyProviderName).toBe("Decorated"));
   });
 
@@ -186,7 +186,7 @@ describe("useSttProfiles — P2 draft auto-key hint", () => {
     render(React.createElement(Probe));
     await waitFor(() => expect(hook?.loading).toBe(false));
     act(() => hook!.startCreate());
-    act(() => hook!.setForm({ backend: "gemini" as never }));
+    act(() => hook!.setForm({ backend: "gemini" }));
     await waitFor(() => expect(hook?.draftAutoKeyProviderName).toBe("My Google TTS"));
   });
 
@@ -203,15 +203,15 @@ describe("useSttProfiles — P2 draft auto-key hint", () => {
     render(React.createElement(Probe));
     await waitFor(() => expect(hook?.loading).toBe(false));
     act(() => hook!.startCreate());
-    act(() => hook!.setForm({ backend: "openai-compat" as never }));
+    act(() => hook!.setForm({ backend: "openai-compat" }));
     // Trim + scheme + trailing slashes + case all normalize (the server rule).
-    act(() => hook!.setForm({ config: { endpoint: "https://NANO-GPT.com/api/v1//" } as never }));
+    act(() => hook!.setForm({ config: { endpoint: "https://NANO-GPT.com/api/v1//" } }));
     await waitFor(() => expect(hook?.draftAutoKeyProviderName).toBe("NanoLLM"));
     // No match → null (no fake hint).
-    act(() => hook!.setForm({ config: { endpoint: "https://nowhere.example/v1" } as never }));
+    act(() => hook!.setForm({ config: { endpoint: "https://nowhere.example/v1" } }));
     await waitFor(() => expect(hook?.draftAutoKeyProviderName).toBeNull());
     // The browser tier never carries an auto-key hint.
-    act(() => hook!.setForm({ backend: "whisper-browser" as never }));
+    act(() => hook!.setForm({ backend: "whisper-browser" }));
     await waitFor(() => expect(hook?.draftAutoKeyProviderName).toBeNull());
   });
 
@@ -235,16 +235,16 @@ describe("useSttProfiles — P2 draft auto-key hint", () => {
 
     // deepgram: the provider on the vendor host wins over the TTS profile
     // (the server rule order).
-    act(() => hook!.setForm({ backend: "deepgram" as never }));
+    act(() => hook!.setForm({ backend: "deepgram" }));
     await waitFor(() => expect(hook?.draftAutoKeyProviderName).toBe("Deepgram LLM"));
 
     // elevenlabs: no provider on the host → the same-vendor TTS key hint.
-    act(() => hook!.setForm({ backend: "elevenlabs" as never }));
+    act(() => hook!.setForm({ backend: "elevenlabs" }));
     await waitFor(() => expect(hook?.draftAutoKeyProviderName).toBe("My ElevenLabs TTS"));
 
     // nvidia: provider on the vendor host; no TTS arm exists, a stray
     // TTS profile must never match.
-    act(() => hook!.setForm({ backend: "nvidia" as never }));
+    act(() => hook!.setForm({ backend: "nvidia" }));
     await waitFor(() => expect(hook?.draftAutoKeyProviderName).toBe("NVIDIA LLM"));
   });
 
@@ -259,7 +259,7 @@ describe("useSttProfiles — P2 draft auto-key hint", () => {
     render(React.createElement(Probe));
     await waitFor(() => expect(hook?.loading).toBe(false));
     act(() => hook!.startCreate());
-    act(() => hook!.setForm({ backend: "deepgram" as never }));
+    act(() => hook!.setForm({ backend: "deepgram" }));
     await waitFor(() => expect(hook?.draftAutoKeyProviderName).toBe("My Deepgram TTS"));
   });
 });
@@ -313,7 +313,7 @@ describe("useSttProfiles — CRUD", () => {
 
     hook!.startCreate();
     await waitFor(() => expect(hook?.form?.id).toBeNull());
-    hook!.setForm({ name: "NewOne", config: { endpoint: "https://x/v1", model: "whisper-1" } as never });
+    hook!.setForm({ name: "NewOne", config: { endpoint: "https://x/v1", model: "whisper-1" } });
     await waitFor(() => expect(hook?.dirty).toBe(true));
     await hook!.save();
     await waitFor(() => expect(hook?.profiles.length).toBe(2));
@@ -444,14 +444,14 @@ describe("useSttProfiles — backend switch + key lifecycle", () => {
 
     // Backend switch → whisper-browser: config resets to the roster default,
     // a stored key never survives into the new backend.
-    hook!.setForm({ backend: "whisper-browser" as never });
+    hook!.setForm({ backend: "whisper-browser" });
     await waitFor(() => expect(hook?.form?.backend).toBe("whisper-browser"));
     expect(hook!.form?.config).toEqual({ model: "onnx-community/whisper-base" });
     expect(hook!.form?.hasStoredApiKey).toBe(false);
     expect(hook!.form?.apiKey).toBe("");
 
     // Back to openai-compat: config wipes.
-    hook!.setForm({ backend: "openai-compat" as never });
+    hook!.setForm({ backend: "openai-compat" });
     await waitFor(() => expect(hook?.form?.backend).toBe("openai-compat"));
     expect(hook!.form?.config).toEqual({});
   });
@@ -471,13 +471,13 @@ describe("useSttProfiles — backend switch + key lifecycle", () => {
     // Same rule as gemini (ST-7): the level-2 picker must be non-empty
     // before the first save — the visible twin of the adapters' server-side
     // DEFAULT_*_STT_MODEL fallbacks.
-    hook!.setForm({ backend: "deepgram" as never });
+    hook!.setForm({ backend: "deepgram" });
     await waitFor(() => expect(hook?.form?.backend).toBe("deepgram"));
     expect(hook!.form?.config).toEqual({ model: "nova-3" });
-    hook!.setForm({ backend: "elevenlabs" as never });
+    hook!.setForm({ backend: "elevenlabs" });
     await waitFor(() => expect(hook?.form?.backend).toBe("elevenlabs"));
     expect(hook!.form?.config).toEqual({ model: "scribe_v2" });
-    hook!.setForm({ backend: "nvidia" as never });
+    hook!.setForm({ backend: "nvidia" });
     await waitFor(() => expect(hook?.form?.backend).toBe("nvidia"));
     expect(hook!.form?.config).toEqual({ model: "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning" });
   });

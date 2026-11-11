@@ -23,6 +23,7 @@ import {
 import { useDomEnv } from "../../test/dom-env.js";
 import { installI18nContextSeam } from "../../test/i18n-context-seam.js";
 import { TestEventSource } from "../../test/event-source-seam.js";
+import { wireProviderProfile } from "../../test/wire-fixtures.js";
 
 useDomEnv();
 
@@ -132,7 +133,7 @@ describe("useQuotaEvents", () => {
 
 	it("updates the store and toasts once for a low-remaining event", () => {
 		useProviderDataStore.setState({
-			profiles: [{ id: PROFILE, name: "My ZAI" }] as never,
+			profiles: [wireProviderProfile({ id: PROFILE, name: "My ZAI" })],
 		});
 		renderHook(() => useQuotaEvents());
 		const source = MockEventSource.instances[0]!;

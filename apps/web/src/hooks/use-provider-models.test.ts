@@ -1,6 +1,7 @@
 
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 import { useDomEnv } from "../../test/dom-env.js";
+import { wireProviderProfile } from "../../test/wire-fixtures.js";
 
 useDomEnv();
 
@@ -20,7 +21,7 @@ describe("useProviderModels", () => {
 	beforeEach(() => {
 		mock.clearAllMocks();
 		useProviderDataStore.setState({
-			profiles: [{ id: "prof_1", cachedModels: { models: [{ id: "cached", label: "Cached" }], cachedAt: "2026-01-01" } } as never],
+			profiles: [wireProviderProfile({ id: "prof_1", cachedModels: { models: [{ id: "cached", label: "Cached" }], cachedAt: "2026-01-01" } })],
 		});
 	});
 

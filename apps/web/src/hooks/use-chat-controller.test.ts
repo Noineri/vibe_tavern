@@ -14,13 +14,13 @@
  */
 import { describe, test, expect, beforeEach, mock } from "bun:test";
 
-import { brandId, type ChatId, type PromptPresetId } from "@vibe-tavern/domain";
+import { brandId, normalizeInsightsConfig, type ChatBranchId, type CharacterId, type ChatId, type PromptPresetId } from "@vibe-tavern/domain";
 import type { CoauthorLoreBundle, RegenerateOverride } from "@vibe-tavern/api-contracts";
 import type { DiceRollSnapshot, ExperienceQueuedAttachmentView } from "../api/types.js";
 import type { ExperienceScopeState } from "../stores/experience-store.js";
 import type { GenerationMetadata } from "../lib/generation-metadata.js";
 import { useDomEnv } from "../../test/dom-env.js";
-import { wireChat, wirePromptPreset, wireUiSettings } from "../../test/wire-fixtures.js";
+import { wireBranch, wireChat, wirePersona, wireProviderProfile, wirePromptPreset, wireUiSettings } from "../../test/wire-fixtures.js";
 
 useDomEnv();
 
@@ -209,7 +209,7 @@ beforeEach(() => {
   // Active profile with a default model so `canSendViaActiveProfile` is true
   // (otherwise handleRegenerateMessage toasts + returns before touching state).
   useProviderDataStore.setState({
-    profiles: [{ id: "p1", isActive: true, defaultModel: "gpt-x" } as never],
+    profiles: [wireProviderProfile({ id: "p1", isActive: true, defaultModel: "gpt-x" })],
   });
   useBootstrapStore.setState({ data: null });
   useSnapshotStore.setState({ activeChat: null });
@@ -670,26 +670,38 @@ describe("useChatController — handleContinueMessage (LS-4a, non-stream)", () =
   });
 });
 
+/** Bootstrap data whose uiSettings pin only the Co-Author binding — the
+ *  binding hook reads `data.uiSettings.coauthorProviderId` alone. */
+function seedBootstrapUiSettings(coauthorProviderId: string | null): void {
+  useBootstrapStore.setState({
+    data: {
+      initialChatId: null, snapshot: null, isFirstRun: false, allCharacters: [],
+      promptPresets: [],
+      uiSettings: { ...wireUiSettings(), coauthorProviderId },
+      agentKindSettings: {},
+      isArmServer: false,
+    },
+  });
+}
+
 describe("useChatController — Co-Author send gate", () => {
   beforeEach(() => {
     // Put the active chat into coauthor mode.
-    useSnapshotStore.setState({ activeChat: { mode: "coauthor" } as never });
+    useSnapshotStore.setState({ activeChat: wireChat({ mode: "coauthor" }) });
     // Stream mode so handleSend uses the stream path (sendChatMessageStream).
     useProviderStore.setState((s) => ({ connection: { ...s.connection, streamResponse: true } }));
   });
 
   test("passes the gate when an explicit Co-Author binding exists", async () => {
     useProviderDataStore.setState({
-      profiles: [{ id: "p_co", name: "Co Prof", isActive: false, defaultModel: null } as never],
+      profiles: [wireProviderProfile({ id: "p_co", name: "Co Prof", isActive: false, defaultModel: null })],
       // CG-2: the Co-Author model lives on the bound connection's row — same
       // effective model ("tool-m") the retired ui_settings global carried.
       coauthorSettingsByProfile: {
         p_co: { providerProfileId: "p_co", modelName: "tool-m", settings: {}, createdAt: "2026-01-01", updatedAt: "2026-01-01" },
       },
     });
-    useBootstrapStore.setState({
-      data: { uiSettings: { coauthorProviderId: "p_co" } } as never,
-    });
+    seedBootstrapUiSettings("p_co");
     sendChatMessageStream.mockImplementation((_id: unknown, _body: unknown, opts: { onDone?: () => void }) => {
       opts?.onDone?.();
       return Promise.resolve();
@@ -704,14 +716,12 @@ describe("useChatController — Co-Author send gate", () => {
 
   test("CE-B1: recognizes an edit_lore_entry result as a live lore proposal by wire shape", async () => {
     useProviderDataStore.setState({
-      profiles: [{ id: "p_co", name: "Co Prof", isActive: false, defaultModel: null } as never],
+      profiles: [wireProviderProfile({ id: "p_co", name: "Co Prof", isActive: false, defaultModel: null })],
       coauthorSettingsByProfile: {
         p_co: { providerProfileId: "p_co", modelName: "tool-m", settings: {}, createdAt: "2026-01-01", updatedAt: "2026-01-01" },
       },
     });
-    useBootstrapStore.setState({
-      data: { uiSettings: { coauthorProviderId: "p_co" } } as never,
-    });
+    seedBootstrapUiSettings("p_co");
     const bundle: CoauthorLoreBundle = {
       revision: 7,
       lorebooks: [],
@@ -757,7 +767,7 @@ describe("useChatController — Co-Author send gate", () => {
 
   test("blocks when no explicit binding and no RP fallback profile", async () => {
     useProviderDataStore.setState({ profiles: [] });
-    useBootstrapStore.setState({ data: { uiSettings: { coauthorProviderId: null } } as never });
+    seedBootstrapUiSettings(null);
 
     useChatStore.setState({ activeChatId: CHAT, draft: "hello", generations: {}, messageActionId: null });
     const { result } = renderHook(() => useChatController());
@@ -796,13 +806,13 @@ function makeRoll(o: Partial<DiceRollSnapshot> = {}): DiceRollSnapshot {
     checkId: "c1",
     checkLabel: "C",
     notation: "1d20",
-    faceShape: "d20" as never,
-    resolution: "strict" as never,
+    faceShape: "d20",
+    resolution: "strict",
     mode: "normal",
     included: true,
     finalAttemptId: null,
     attempts: [],
-    createdAt: 0 as never,
+    createdAt: "1970-01-01T00:00:00.000Z",
     ...o,
   } as DiceRollSnapshot;
 }
@@ -872,25 +882,30 @@ describe("diceSendBlockReason (DICE-F3 pure send gate)", () => {
 });
 
 /** Seed a minimal RP snapshot (chat/branch/persona + insights config) —
- *  shared by the dice-send and P21 suites so the partial-shape casts live
- *  here ONCE (hygiene `as never` budget is a ratchet). */
+ *  shared by the dice-send and P21 suites so the snapshot completion lives
+ *  here ONCE, through the shared wire builders. */
 function seedRpSnapshot(over: { characterId?: string; personaId?: string; diceEnabled?: boolean } = {}) {
   useSnapshotStore.setState({
-    activeChat: {
+    activeChat: wireChat({
       id: CHAT,
-      characterId: over.characterId ?? "char-1",
+      characterId: brandId<CharacterId>(over.characterId ?? "char-1"),
       mode: "rp",
-      insightsConfig: { objectiveEnabled: true, trackerEnabled: true, diceEnabled: over.diceEnabled ?? false, diceMode: "normal" },
-    } as never,
-    activeBranch: { id: "br-1" } as never,
-    persona: { id: over.personaId ?? "per-1" } as never,
+      insightsConfig: normalizeInsightsConfig({
+        objectiveEnabled: true,
+        trackerEnabled: true,
+        diceEnabled: over.diceEnabled ?? false,
+        diceMode: "normal",
+      }),
+    }),
+    activeBranch: wireBranch({ id: brandId<ChatBranchId>("br-1") }),
+    persona: wirePersona({ id: over.personaId ?? "per-1" }),
   });
 }
 
 describe("useChatController — handleSend dice send (DICE-F3, stream path)", () => {
   // Stubbed once per file so conflict tests can assert it fired; cleared in
   // beforeEach. `tryHandleDiceSendConflict` calls it fire-and-forget.
-  const refreshPending = mock();
+  const refreshPending = mock<(chatId: string, branchId: string) => Promise<void>>();
   // IR-73D: refreshAttachment is stubbed alongside refreshPending so
   // conflict / settlement tests can assert the experience attachment refresh.
   const refreshAttachment = mock((_chatId: string, _branchId: string): Promise<void> => Promise.resolve());
@@ -902,12 +917,12 @@ describe("useChatController — handleSend dice send (DICE-F3, stream path)", ()
     refreshPending.mockClear();
     refreshAttachment.mockClear();
     useProviderStore.setState((s) => ({ connection: { ...s.connection, streamResponse: true } }));
-    useProviderDataStore.setState({ profiles: [{ id: "p1", isActive: true, defaultModel: "m" } as never] });
+    useProviderDataStore.setState({ profiles: [wireProviderProfile({ id: "p1", isActive: true, defaultModel: "m" })] });
     // `readDiceSendState` reads chatId / branchId / insights / persona /
     // characterId straight from the snapshot, so seed them all here.
     seedRpSnapshot({ characterId: DICE_CHAR, personaId: DICE_PER, diceEnabled: true });
     useChatStore.setState({ activeChatId: CHAT, draft: "hi", generations: {}, messageActionId: null });
-    useDiceStore.setState({ byScope: {}, refreshPending: refreshPending as never });
+    useDiceStore.setState({ byScope: {}, refreshPending });
     // IR-73D: clear experience scope and override refreshAttachment with the
     // test mock so settlement/conflict tests can assert it fired.
     useExperienceStore.setState({ byScope: {}, activeScope: null, refreshAttachment });
@@ -923,7 +938,7 @@ describe("useChatController — handleSend dice send (DICE-F3, stream path)", ()
           rollingRequestIds: {},
           lastError: null,
         },
-      } as never,
+      },
     });
   }
 
@@ -1578,7 +1593,7 @@ describe("useChatController — lorebook overflow toast (P21, stream done path)"
   beforeEach(() => {
     sendChatMessageStream.mockReset();
     useProviderStore.setState((s) => ({ connection: { ...s.connection, streamResponse: true } }));
-    useProviderDataStore.setState({ profiles: [{ id: "p1", isActive: true, defaultModel: "m" } as never] });
+    useProviderDataStore.setState({ profiles: [wireProviderProfile({ id: "p1", isActive: true, defaultModel: "m" })] });
     seedRpSnapshot();
     useChatStore.setState({ activeChatId: CHAT, draft: "hi", generations: {}, messageActionId: null });
   });

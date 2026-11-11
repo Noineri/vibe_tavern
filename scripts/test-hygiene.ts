@@ -350,7 +350,27 @@ export const BUDGETS = {
 	// ProviderSamplerValues). test-type-gate: apps/web workspace tsc keys
 	// identical before AND after — the batch files carried 0 keys, 0 new,
 	// 852 byte-untouched. One commit with the test edits.
-	asNever: 216,
+	// 166 (2026-11-11, step 15c): −50 — the hooks cluster (50 sites / 7
+	// files: use-chat-controller 18, use-stt-profiles 17, use-tts-profiles
+	// 11, use-character-import 1, use-copilot-model-favorites 1,
+	// use-provider-models 1, use-quota-events 1). Chat-controller rows seed
+	// through wireProviderProfile, the Co-Author bootstrap blocks share a
+	// seedBootstrapUiSettings completion, the RP snapshot completes through
+	// wireChat/wireBranch/wirePersona (normalizeInsightsConfig carries the
+	// dice defaults), the roll's wrong-typed createdAt becomes a real
+	// Timestamp ("d20"/"strict" already valid — pure deletions),
+	// refreshPending's mock gets its real signature, the lane literal was
+	// already complete, the one COMMENT mention reworded. stt/tts: 28
+	// setForm partials were pure deletions (real backend unions,
+	// Record<string, unknown> config, string | null hint).
+	// use-character-import: Promise<ImportJsonResponse> with the FULL wire
+	// SessionSnapshot (the first draft's partial drew a NEW TS2322 key and
+	// was completed — the gate doing its job) + the branded activeChatId;
+	// seedFavorites retyped FavoriteProviderModelRecord[]; provider rows in
+	// the two remaining files seed through wireProviderProfile. apps/web tsc
+	// 0 errors before AND after, 0 new keys, 852 byte-untouched. One commit
+	// with the test edits.
+	asNever: 166,
 	/** Global `screen.` usage in apps/web test files (binds at import time). */
 	// 196 (2026-10-04): ratcheted to the merged tree's count after PR #51
 	// (provider-lists unification removed the forked pickers' screen usage;

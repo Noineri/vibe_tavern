@@ -12,6 +12,7 @@ import { useDomEnv } from "../../test/dom-env.js";
 import { useCopilotModelFavorites } from "./use-copilot-model-favorites.js";
 import { useProviderDataStore } from "../stores/provider-data-store.js";
 import { MODEL_FAVORITE_SCOPE } from "@vibe-tavern/domain";
+import type { FavoriteProviderModelRecord } from "../api/types.js";
 
 useDomEnv();
 
@@ -28,10 +29,10 @@ mock.module("../stores/api-actions/provider-actions.js", () => ({
   toggleFavoriteModelAction,
 }));
 
-function seedFavorites(profileId: string, favorites: unknown[]) {
+function seedFavorites(profileId: string, favorites: FavoriteProviderModelRecord[]) {
   useProviderDataStore.setState({
     copilotFavoritesByProfile: {
-      [profileId]: favorites as never,
+      [profileId]: favorites,
     },
   });
 }

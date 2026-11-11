@@ -159,14 +159,14 @@ describe("useTtsProfiles", () => {
     act(() => hook!.startCreate());
     // Two separate patches: a backend switch wipes config by design
     // (stale keys must not leak into the new backend's config).
-    act(() => hook!.setForm({ backend: "openai-compatible" as never }));
-    act(() => hook!.setForm({ config: { endpoint: "https://NANO-GPT.com/api/v1//" } as never }));
+    act(() => hook!.setForm({ backend: "openai-compatible" }));
+    act(() => hook!.setForm({ config: { endpoint: "https://NANO-GPT.com/api/v1//" } }));
     await waitFor(() => expect(hook?.draftAutoKeyProviderName).toBe("NanoLLM"));
     // A decorated saved record still wins over the live computation.
-    act(() => hook!.setForm({ autoKeyProviderName: "Decorated" as never }));
+    act(() => hook!.setForm({ autoKeyProviderName: "Decorated" }));
     await waitFor(() => expect(hook?.draftAutoKeyProviderName).toBe("Decorated"));
     // No match → null (no fake hint).
-    act(() => hook!.setForm({ autoKeyProviderName: null as never, config: { endpoint: "https://nowhere.example/v1" } as never }));
+    act(() => hook!.setForm({ autoKeyProviderName: null, config: { endpoint: "https://nowhere.example/v1" } }));
     await waitFor(() => expect(hook?.draftAutoKeyProviderName).toBeNull());
   });
 
@@ -215,7 +215,7 @@ describe("useTtsProfiles", () => {
 
     hook!.startCreate();
     await waitFor(() => expect(hook?.form?.id).toBeNull());
-    hook!.setForm({ name: "NewOne", backend: "gemini" as never });
+    hook!.setForm({ name: "NewOne", backend: "gemini" });
     await waitFor(() => expect(hook?.dirty).toBe(true));
     await hook!.save();
     await waitFor(() => expect(hook?.profiles.length).toBe(2));
@@ -284,11 +284,11 @@ describe("useTtsProfiles", () => {
     await waitFor(() => expect(hook?.form?.backend).toBe("kokoro"));
     expect(hook!.form?.config).toEqual({ speed: 1.5 });
     expect(hook!.form?.voiceId).toBe("af_heart");
-    hook!.setForm({ backend: "gemini" as never });
+    hook!.setForm({ backend: "gemini" });
     await waitFor(() => expect(hook?.form?.backend).toBe("gemini"));
     expect(hook!.form?.config).toEqual({});
     expect(hook!.form?.voiceId).toBe("");
-    hook!.setForm({ backend: "kokoro" as never });
+    hook!.setForm({ backend: "kokoro" });
     await waitFor(() => expect(hook?.form?.backend).toBe("kokoro"));
     expect(hook!.form?.config).toEqual({});
     expect(hook!.form?.voiceId).toBe("af_heart");
@@ -306,7 +306,7 @@ describe("useTtsProfiles", () => {
     hook!.select("p1");
     await waitFor(() => expect(hook?.form?.narratorVoiceId).toBe("af_bella"));
     // Backend switch resets narratorVoiceId
-    hook!.setForm({ backend: "gemini" as never });
+    hook!.setForm({ backend: "gemini" });
     await waitFor(() => expect(hook?.form?.narratorVoiceId).toBe(""));
     // Set narrator and save — payload maps "" -> null and value -> string
     hook!.setForm({ narratorVoiceId: "Kore" });
@@ -345,7 +345,7 @@ describe("useTtsProfiles", () => {
     hook!.startCreate();
     await waitFor(() => expect(hook?.form?.id).toBeNull());
     // Set config + voiceId on the new form
-    hook!.setForm({ config: { endpoint: "https://x", speed: 1.2 } as never, voiceId: "test-voice" });
+    hook!.setForm({ config: { endpoint: "https://x", speed: 1.2 }, voiceId: "test-voice" });
     await waitFor(() => expect(hook?.form?.voiceId).toBe("test-voice"));
     hook!.setForm({ name: "NewOne" });
     await waitFor(() => expect(hook?.dirty).toBe(true));
@@ -357,7 +357,7 @@ describe("useTtsProfiles", () => {
     // Update path
     hook!.select(created.id);
     await waitFor(() => expect(hook?.form?.id).toBe(created.id));
-    hook!.setForm({ config: { apiKey: "k123" } as never, voiceId: "new-voice" });
+    hook!.setForm({ config: { apiKey: "k123" }, voiceId: "new-voice" });
     await waitFor(() => expect(hook?.form?.voiceId).toBe("new-voice"));
     hook!.setForm({ name: "Renamed" });
     await waitFor(() => expect(hook?.dirty).toBe(true));
