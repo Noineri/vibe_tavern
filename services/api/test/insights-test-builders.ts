@@ -467,6 +467,36 @@ export function makePromptContext(
 	};
 }
 
+/** Completes a narrow `{ context }` fixture return into the REAL
+ *  `BuiltPipelineContext` the `chatLifecycle.buildPipelineContext` /
+ *  `buildChatImpersonationPipelineContext` contracts carry. The consumers on
+ *  the exercised paths read `built.context` only (the lifecycle returns it to
+ *  the insight one-shots; the AI-assistant impersonation branch spreads it) —
+ *  every other member below is an inert default. One derivation: the
+ *  makeSessionRuntime wrapper below and the ChatLifecycle / AI-assistant
+ *  stream doubles (step 14i) all complete through this. */
+export function makeBuiltPipelineContext(context: PromptAssemblyContext): BuiltPipelineContext {
+	return {
+		context,
+		branchId: brandId<ChatBranchId>("branch_1"),
+		chatId: brandId<ChatId>("chat_1"),
+		chatPromptPresetId: null,
+		promptPresetId: null,
+		promptPresetName: null,
+		activeLoreEntries: [],
+		overflowedLorebooks: [],
+		retrievedMemories: [],
+		scriptResult: {
+			personality: "",
+			scenario: "",
+			injectedMessages: [],
+			errors: [],
+			scriptRuns: [],
+		},
+		recentMessageCount: 0,
+	};
+}
+
 /** The `ConfigPatchResponse` the refresh path returns (`activeChat` rides
  *  `mapChatDto` over a real chat row — the same DTO the wire sees). */
 export function makeConfigPatchResponse(chatId = "chat_1"): ConfigPatchResponse {
@@ -562,25 +592,7 @@ export function makeSessionRuntime(fixture: SessionRuntimeFixture = {}): Session
 								>[0],
 							): Promise<BuiltPipelineContext> => {
 								const built = await fixture.chatLifecycle!.buildPipelineContext(input);
-								return {
-									context: built.context,
-									branchId: brandId<ChatBranchId>("branch_1"),
-									chatId: brandId<ChatId>("chat_1"),
-									chatPromptPresetId: null,
-									promptPresetId: null,
-									promptPresetName: null,
-									activeLoreEntries: [],
-									overflowedLorebooks: [],
-									retrievedMemories: [],
-									scriptResult: {
-										personality: "",
-										scenario: "",
-										injectedMessages: [],
-										errors: [],
-										scriptRuns: [],
-									},
-									recentMessageCount: 0,
-								};
+								return makeBuiltPipelineContext(built.context);
 							},
 						},
 					}

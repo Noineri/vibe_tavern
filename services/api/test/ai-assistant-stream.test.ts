@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { simulateReadableStream } from "ai";
+import { simulateReadableStream, type LanguageModel } from "ai";
 import { MockLanguageModelV4 } from "ai/test";
 import type { LanguageModelV4StreamPart } from "@ai-sdk/provider";
 import { setTokenCountFn } from "@vibe-tavern/prompt-pipeline";
@@ -12,25 +12,31 @@ import { createAiAssistantDeps } from "../src/domain/ai-assistant/ai-assistant-d
 import { buildUserMessage, countAiAssistantTokens, streamAiAssistant, type StreamDeps } from "../src/domain/ai-assistant/ai-assistant-stream.js";
 import { getModeConfig } from "../src/domain/ai-assistant/ai-assistant-modes.js";
 import { createOllamaModel } from "../src/domain/providers/ollama-adapter.js";
+import { makeBuiltPipelineContext } from "./insights-test-builders.js";
 
 async function deps(overrides: Partial<StreamDeps> = {}): Promise<StreamDeps> {
   const base: Omit<StreamDeps, "db"> = {
     getCharacterById: async () => null,
     getPersonaById: async () => null,
     getLoreEntryById: async () => null,
-    resolveModel: () => ({}) as never,
+    // The agent-suite LanguageModel stub (agent-core-characterization and 6
+    // siblings): resolveModel is only invoked on streaming paths, which these
+    // tests either override with a MockLanguageModelV4 or never reach.
+    resolveModel: () => ({}) as LanguageModel,
     getProviderProfile: async () => ({ id: "profile_1", providerPreset: "openai", endpoint: "", apiKey: "key", defaultModel: "model_1", contextBudget: null, maxTokens: 2000, proxyMode: "inherit", proxyId: null }),
     getEffectiveProviderProfile: async () => ({ id: "profile_1", providerPreset: "openai", endpoint: "", apiKey: "key", defaultModel: "model_1", contextBudget: null, maxTokens: 2000, proxyMode: "inherit", proxyId: null }),
     getPresetPromptData: async () => ({ aiAssistantPrompts: { chat_impersonate: "Impersonate the character.", md_import: "Import this markdown." }, scriptAiSystemPrompt: null }),
-    buildChatImpersonationPipelineContext: async (input) => ({
-      context: {
+    // The stream reads `built.context` only (ai-assistant-stream.ts:171) —
+    // the rest of BuiltPipelineContext is inert defaults (the shared
+    // insights-test-builders completion).
+    buildChatImpersonationPipelineContext: async (input) =>
+      makeBuiltPipelineContext({
         identity: { chatId: input.chatId },
         character: { id: "", name: "", description: "" },
         persona: null,
         lore: [],
         chat: { recentMessages: [] },
-      },
-    }) as never,
+      }),
     getMessageEditorChat: async () => null,
     getMessageEditorMessages: async () => [],
     getMessageEditorVariantsByBranch: async () => new Map(),
@@ -318,15 +324,13 @@ describe("AI assistant stream prompt preparation", () => {
       mode: "chat_impersonate", instruction: "Continue.", providerProfileId: "profile_1", enabledLayers: [], chatId: "chat_1", recentMessageCount: 7, draftText: "draft-only-key",
     }, await deps({ buildChatImpersonationPipelineContext: async (input) => {
       calls.push(input);
-      return {
-        context: {
-          identity: { chatId: input.chatId },
-          character: { id: "", name: "", description: "" },
-          persona: null,
-          lore: [],
-          chat: { recentMessages: [{ id: "msg_1", role: "user", content: "Hello" }, { id: "msg_2", role: "assistant", content: "Hi" }] },
-        },
-      } as never;
+      return makeBuiltPipelineContext({
+        identity: { chatId: input.chatId },
+        character: { id: "", name: "", description: "" },
+        persona: null,
+        lore: [],
+        chat: { recentMessages: [{ id: "msg_1", role: "user", content: "Hello" }, { id: "msg_2", role: "assistant", content: "Hi" }] },
+      });
     } }));
     expect(calls).toEqual([{
       chatId: "chat_1",

@@ -5,7 +5,7 @@ import {
   ChatLifecycleRuntime,
   type ChatLifecycleRuntimeDeps,
 } from "../src/runtime/session/session-runtime-chat-lifecycle.js";
-import { makeChatRow } from "./insights-test-builders.js";
+import { makeBuiltPipelineContext, makeChatRow, makePromptContext } from "./insights-test-builders.js";
 import { strictTestDouble } from "./strict-test-double.js";
 
 describe("ChatLifecycleRuntime insight context branch targeting (OFA-4)", () => {
@@ -26,9 +26,11 @@ describe("ChatLifecycleRuntime insight context branch targeting (OFA-4)", () => 
           },
           "ChatLifecycleRuntime stores (insights context)",
         ),
-        buildPipelineContext: async (_chatId: ChatId, branchId?: ChatBranchId) => {
+        // The real BuiltPipelineContext contract via the shared completion
+        // (the test pins branch targeting only — the context is inert).
+        buildPipelineContext: async (chatId: ChatId, branchId?: ChatBranchId) => {
           if (branchId) seenBranches.push(branchId);
-          return { context: {} } as never;
+          return makeBuiltPipelineContext(makePromptContext({ identity: { chatId } }));
         },
       },
       "ChatLifecycleRuntime deps (insights context)",

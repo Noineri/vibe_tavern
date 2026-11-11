@@ -7,9 +7,16 @@ import { createStoreContainer, STORAGE_FOLDERS, type StoreContainer } from "@vib
 import { AssetService } from "../src/domain/asset/asset-service.js";
 import { CharacterAdapter } from "../src/api/adapters/character-adapter.js";
 import type { CharacterRuntimeApi } from "../src/api/contract/runtime-api.js";
+import type { SessionRuntime } from "../src/runtime/session/session-runtime.js";
+import { strictTestDouble } from "./strict-test-double.js";
 
 const CHARS = STORAGE_FOLDERS.characters;
-const noopSession = {} as never;
+// Minimal sessionRuntime double — the avatar-swap paths don't call into it;
+// any unprovided member throws a labeled miss.
+const noopSession = strictTestDouble<SessionRuntime>(
+	{},
+	"CharacterAdapter sessionRuntime (gallery avatar repro)",
+);
 
 // Distinct, recognizable image-byte signatures so we can tell which image is
 // on disk / served at a glance. Each is a valid-ish PNG header + a payload tag.
@@ -72,7 +79,7 @@ describe("Bug #2/#3 adapter-level repro: gallery avatar swap + direct upload", (
 		// ── Swap 1: set avatar from gallery image A.
 		const r1 = await characters.setAvatarFromGallery(cid, idA, new File([CROP_A], "crop.png", { type: "image/png" }), "{}");
 		expect(r1.avatarFullExt).toBe("png");
-		const row1 = await stores.characters.getById(cid as never);
+		const row1 = await stores.characters.getById(cid);
 		const t1 = row1!.updatedAt;
 
 		// disk full must be image A's bytes (the source gallery image is copied as the full).
@@ -87,7 +94,7 @@ describe("Bug #2/#3 adapter-level repro: gallery avatar swap + direct upload", (
 		const idB = (await stores.characterAssets.listByCharacter(cid)).find((r) => r.order === 1)!.id;
 		await new Promise((r) => setTimeout(r, 20)); // ensure updatedAt ticks forward
 		const r2 = await characters.setAvatarFromGallery(cid, idB, new File([CROP_B], "crop.png", { type: "image/png" }), "{}");
-		const row2 = await stores.characters.getById(cid as never);
+		const row2 = await stores.characters.getById(cid);
 		const t2 = row2!.updatedAt;
 
 		// updatedAt MUST advance (the frontend cache-bust depends on this).
@@ -176,7 +183,7 @@ describe("Bug #2/#3 adapter-level repro: gallery avatar swap + direct upload", (
 		);
 		expect(new Uint8Array(await diskThumb(dataRoot, cid))).toEqual(DIRECT_X);
 		expect(new Uint8Array(await diskFull(dataRoot, cid))).toEqual(DIRECT_X_FULL);
-		const t1 = (await stores.characters.getById(cid as never))!.updatedAt;
+		const t1 = (await stores.characters.getById(cid))!.updatedAt;
 
 		await new Promise((r) => setTimeout(r, 20));
 		// Second direct upload — must overwrite BOTH thumb and full.
@@ -187,7 +194,7 @@ describe("Bug #2/#3 adapter-level repro: gallery avatar swap + direct upload", (
 		);
 		expect(new Uint8Array(await diskThumb(dataRoot, cid))).toEqual(DIRECT_Y);
 		expect(new Uint8Array(await diskFull(dataRoot, cid))).toEqual(DIRECT_Y_FULL);
-		const t2 = (await stores.characters.getById(cid as never))!.updatedAt;
+		const t2 = (await stores.characters.getById(cid))!.updatedAt;
 		expect(Date.parse(t2)).toBeGreaterThan(Date.parse(t1));
 
 		// Serve returns the SECOND full.

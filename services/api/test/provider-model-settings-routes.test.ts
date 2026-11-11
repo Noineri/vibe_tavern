@@ -69,7 +69,7 @@ describe("provider model-settings overlay routes", () => {
         captured = { profileId, modelId, settings };
         return {
           id: "pms_1", providerProfileId: profileId, modelId,
-          settings: settings as never, createdAt: "t1", updatedAt: "t2",
+          settings, createdAt: "t1", updatedAt: "t2",
         };
       },
     });
@@ -91,7 +91,7 @@ describe("provider model-settings overlay routes", () => {
     const runtime = mockRuntime({
       upsertProviderModelSettings: async (_p, _m, settings) => {
         capturedSettings = settings;
-        return { id: "x", providerProfileId: "p", modelId: "m", settings: settings as never, createdAt: "t", updatedAt: "t" };
+        return { id: "x", providerProfileId: "p", modelId: "m", settings, createdAt: "t", updatedAt: "t" };
       },
     });
     const app = createProviderRoutes(runtime);

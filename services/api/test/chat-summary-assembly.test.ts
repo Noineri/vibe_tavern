@@ -1,12 +1,13 @@
 import { describe, expect, it } from "bun:test";
 import type { StoreContainer } from "@vibe-tavern/db";
 import { setTokenCountFn } from "@vibe-tavern/prompt-pipeline";
-import { normalizeInsightsConfig, normalizeObjectiveState, type AssemblePromptResponse, type ChatBranchId, type ChatId } from "@vibe-tavern/domain";
+import { brandId, normalizeInsightsConfig, normalizeObjectiveState, type AssemblePromptResponse, type ChatBranchId, type ChatId } from "@vibe-tavern/domain";
 import { PromptAssemblyService, type PromptAssemblyResolver } from "../src/domain/prompt/prompt-assembly-service.js";
 import { ChatLifecycleRuntime, type ChatLifecycleRuntimeDeps } from "../src/runtime/session/session-runtime-chat-lifecycle.js";
 import { SessionRuntime } from "../src/runtime/session/session-runtime.js";
 import type { nonstreamingProviderExecute } from "../src/infrastructure/ai/nonstreaming-provider-executor.js";
 import { ChatSummaryService, withSummaryAttachmentsAsText, withSummaryPromptAsFinalUserMessage } from "../src/domain/chat/chat-summary-service.js";
+import type { ProviderProfileService } from "../src/domain/providers/provider-profile-service.js";
 import { resolveSummaryPrompt } from "../src/domain/prompt/summary-prompt.js";
 import { createStoreContainer } from "@vibe-tavern/db";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -38,8 +39,28 @@ const chat = makeChatRow({
 function assembled(prompt: AssemblePromptResponse = {
   layers: [],
   finalPayload: { messages: [] },
-}): { branchId: ChatBranchId; prompt: AssemblePromptResponse; promptTraceDraft: never } {
-  return { branchId: "branch_1" as ChatBranchId, prompt, promptTraceDraft: undefined as never };
+}): Awaited<ReturnType<ChatLifecycleRuntimeDeps["assemblePrompt"]>> {
+  return {
+    branchId: "branch_1" as ChatBranchId,
+    prompt,
+    // The real PromptTraceDraft the assemblePrompt dep contract carries (the
+    // 14h chat-mode-strategy shape) — the summary paths read `.prompt` only.
+    promptTraceDraft: {
+      chatId: brandId<ChatId>("chat_1"),
+      branchId: brandId<ChatBranchId>("branch_1"),
+      model: "",
+      assembledLayers: [],
+      tokenAccounting: {},
+      activatedLoreEntries: [],
+      activatedLoreDetail: [],
+      scriptInjections: [],
+      retrievedMemories: [],
+      finalPayload: {},
+      latencyMs: 0,
+      presetId: null,
+      presetName: null,
+    },
+  };
 }
 
 function makeLifecycle(
@@ -363,18 +384,22 @@ function makeSummaryService() {
     },
     "ChatSummaryService stores",
   );
-  const profiles = {
-    getProviderProfile: async () => ({
-      id: "profile_1",
-      providerPreset: "openai",
-      apiKey: "test-key",
-      defaultModel: "summary-model",
-      bindPerModel: false,
-      // SUM-2: profile carries a contextBudget that ranged summary must NOT inherit.
-      contextBudget: 1048576,
-    }),
-    getProviderModelSettings: async () => null,
-  };
+  const profiles = strictTestDouble<ProviderProfileService>(
+    {
+      getProviderProfile: async () =>
+        makeProviderProfileRow({
+          id: "profile_1",
+          providerPreset: "openai",
+          apiKey: "test-key",
+          defaultModel: "summary-model",
+          bindPerModel: false,
+          // SUM-2: profile carries a contextBudget that ranged summary must NOT inherit.
+          contextBudget: 1048576,
+        }),
+      getProviderModelSettings: async () => null,
+    },
+    "ChatSummaryService providerProfiles (summary reshape)",
+  );
   const runtime = strictTestDouble<SessionRuntime>(
     {
       chatLifecycle: lifecycle,
@@ -387,7 +412,7 @@ function makeSummaryService() {
     capturedExecuteArgs = { overrideMaxTokens, overrideTemperature };
     return { text: "A concise summary." } as Awaited<ReturnType<typeof nonstreamingProviderExecute>>;
   };
-  return new ChatSummaryService(stores, runtime, profiles as never, null, execute);
+  return new ChatSummaryService(stores, runtime, profiles, null, execute);
 }
 
 describe("PromptAssemblyService summary preparation", () => {

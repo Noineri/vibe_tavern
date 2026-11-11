@@ -13,6 +13,7 @@ import {
 	type ProviderFetch,
 } from "../src/domain/providers/provider-fetch-factory.js";
 import type { describeAttachments, resolveVisionDescribePrompt } from "../src/infrastructure/ai/vision-gate.js";
+import type { SessionRuntime } from "../src/runtime/session/session-runtime.js";
 import { makeProviderProfileRow } from "./copilot-test-builders.js";
 import { strictTestDouble } from "./strict-test-double.js";
 
@@ -86,7 +87,12 @@ function makeProfileService(opts: { visionModel?: string | null; active?: boolea
 	);
 }
 
-const noopSession = {} as never;
+// Minimal sessionRuntime double — the describe paths don't call into it; any
+// unprovided member throws a labeled miss.
+const noopSession = strictTestDouble<SessionRuntime>(
+	{},
+	"CharacterAdapter/PersonaAdapter sessionRuntime (gallery describe)",
+);
 
 async function setup(opts: { visionModel?: string | null; active?: boolean } = {}) {
 	const { CharacterAdapter } = await import("../src/api/adapters/character-adapter.js");

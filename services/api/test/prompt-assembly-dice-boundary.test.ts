@@ -10,6 +10,7 @@
  * mutate prompt fields, inject messages, or run during assembly.
  */
 import { describe, expect, test } from "bun:test";
+import { brandId, type ChatId } from "@vibe-tavern/domain";
 import type { ChatStore, ScriptRow, ScriptStore, StoreContainer } from "@vibe-tavern/db";
 import { StaticPromptResolver } from "../src/domain/prompt/prompt-resolver.js";
 import { RegexHookService } from "../src/domain/regex/regex-hook-service.js";
@@ -57,7 +58,7 @@ describe("prompt-assembly Dice boundary", () => {
     const resolver = new StaticPromptResolver(stores, new RegexHookService(stores));
 
     const result = await resolver.executeScripts({
-      chatId: "chat_1" as never,
+      chatId: brandId<ChatId>("chat_1"),
       characterRecord: {
         name: "TestChar",
         personality: "original personality",
@@ -87,7 +88,7 @@ describe("prompt-assembly Dice boundary", () => {
     const resolver = new StaticPromptResolver(stores, new RegexHookService(stores));
 
     const result = await resolver.executeScripts({
-      chatId: "chat_1" as never,
+      chatId: brandId<ChatId>("chat_1"),
       characterRecord: {
         name: "TestChar",
         personality: "base",

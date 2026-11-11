@@ -57,7 +57,9 @@ function makeBase(over: Partial<StoredProviderProfileRecord> = {}): StoredProvid
 /** Tracks which modelId the adapter requested an overlay for, per model. */
 function makeProfileService(opts: {
   base?: StoredProviderProfileRecord;
-  overlays?: Record<string, ModelSettingsOverlay | null>;
+  /** Per-model overlays the fixture resolves; a missing key means "no row"
+   *  (the service double returns null, matching getProviderModelSettings). */
+  overlays?: Record<string, ModelSettingsOverlay>;
   /** Extra profiles resolvable by id (for Co-Author binding tests). */
   profilesById?: Record<string, StoredProviderProfileRecord>;
 }): { service: ProviderProfileService; requestedFor: string[] } {
@@ -71,7 +73,17 @@ function makeProfileService(opts: {
         requestedFor.push(modelId);
         const overlay = opts.overlays?.[modelId];
         if (overlay === undefined) return null;
-        return { settings: overlay } as never;
+        // The real ProviderModelSettingsRecord — the resolver reads
+        // `.settings` only (chat-adapter.ts:787); the identity columns are
+        // inert but required by the contract the erasure hid.
+        return {
+          id: `pms_${modelId}`,
+          providerProfileId: base.id,
+          modelId,
+          settings: overlay,
+          createdAt: "0",
+          updatedAt: "0",
+        };
       },
     },
     "effective-profile ProviderProfileService",

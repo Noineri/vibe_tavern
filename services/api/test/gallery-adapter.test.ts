@@ -8,6 +8,8 @@ import { AssetService } from "../src/domain/asset/asset-service.js";
 import { CharacterAdapter } from "../src/api/adapters/character-adapter.js";
 import { createCharacterRoutes } from "../src/api/routes/character.js";
 import type { CharacterRuntimeApi, CharacterAssetRuntimeApi } from "../src/api/contract/runtime-api.js";
+import type { SessionRuntime } from "../src/runtime/session/session-runtime.js";
+import { strictTestDouble } from "./strict-test-double.js";
 
 const CHARS = STORAGE_FOLDERS.characters;
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
@@ -17,17 +19,17 @@ async function exists(p: string): Promise<boolean> {
 	try { await stat(p); return true; } catch { return false; }
 }
 
-// Minimal sessionRuntime stub — gallery methods don't call into it.
-// (deleteCharacter does, so tests that exercise cascade inject a stub below.)
-const noopSession = {
-	character: {
-		delete: async (id: string) => {
-			// Delegates to the character store's folder+row delete; the test's
-			// `stores` is closed over so the real path runs.
-			return undefined;
+// Minimal sessionRuntime double — gallery methods don't call into it.
+// (deleteCharacter does, so the cascade test drives the store directly — the
+// stub's delete member is a deliberate no-op, not the real deletion.)
+const noopSession = strictTestDouble<SessionRuntime>(
+	{
+		character: {
+			delete: async () => undefined,
 		},
 	},
-} as never;
+	"CharacterAdapter sessionRuntime (gallery adapter)",
+);
 
 async function setup() {
 	const dataRoot = await mkdtemp(join(tmpdir(), "vt-gallery-adapter-"));

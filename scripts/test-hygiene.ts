@@ -249,6 +249,35 @@ export const BUDGETS = {
 	// byte-untouched keys with zero new keys (no shrink — these casts
 	// suppressed diagnostics, they never produced baselined ones). One commit
 	// with the test edits.
+	// 613 (2026-11-11, step 14i): −22 — the services/api tail (12 files:
+	// ai-assistant-stream 3, attachment-delete 2, avatar-adapter 1,
+	// chat-lifecycle-insights-context 1, chat-summary-assembly 2,
+	// effective-profile-model-override 1, gallery-adapter 1,
+	// gallery-avatar-repro 5, gallery-describe 1, prompt-assembly-dice-boundary
+	// 2, provider-model-settings-routes 2, session-runtime-builders 1) —
+	// **SERVICES/API TEST AS-NEVER = 0: STEP 14 CLOSES** (steps 15/16 own the
+	// remaining apps/web ~611 + packages 2). The narrow `{ context }`
+	// returns → makeBuiltPipelineContext promoted to
+	// insights-test-builders.ts (one derivation; the makeSessionRuntime
+	// wrapper now completes through it); the impersonation context bodies are
+	// unchanged literals. resolveModel → the agent-suite `({}) as
+	// LanguageModel` stub (7-file precedent). ChatAdapter unused ctor deps →
+	// per-slot strictTestDouble tokens (the effective-profile precedent; a
+	// dep-intersection token breaks PartialMembers — first draft tried it and
+	// the mapped type collapsed to never, caught by the key-level tsc delta).
+	// chatRuntime.deleteMessage stub → the real MessageResponse ({messages:
+	// [], promptTrace: null}); sessionRuntime doubles → strictTestDouble with
+	// the gallery-adapter cascade stub kept as a REAL character.delete member
+	// (its stale "delegates to the store" comment corrected against the
+	// :238 test comment); chat-summary promptTraceDraft → the 14h
+	// chat-mode-strategy literal and the unread profiles → strictTestDouble
+	// over makeProviderProfileRow; getProviderModelSettings → the real
+	// ProviderModelSettingsRecord (overlay | null retyped to the non-null
+	// overlays the tests actually pass); 6 PURE DELETIONS where the literals
+	// already satisfied (getById(cid) ×4 — the store takes plain string;
+	// upsert settings ×2 — the :113 twin already proved it). test-type-gate:
+	// services/api 1750 errors / 637 keys before AND after — 0 dead, 0 new
+	// (these casts suppressed nothing). One commit with the test edits.
 	// 635 (2026-11-11, step 14h): −44 — the regex + insights + settings +
 	// chat-mode clusters (44 sites / 7 files: regex-hooks 9 — one of them a
 	// comment mention the word-bounded scanner counts, regex-reasoning 8,
@@ -273,7 +302,7 @@ export const BUDGETS = {
 	// baselined loaders-missing TS2741 that the brandId edit would have
 	// reworded). test-type-gate: exactly 1 dead key (that TS2741), 0 new
 	// keys, 852 byte-untouched. One commit with the test edits.
-	asNever: 635,
+	asNever: 613,
 	/** Global `screen.` usage in apps/web test files (binds at import time). */
 	// 196 (2026-10-04): ratcheted to the merged tree's count after PR #51
 	// (provider-lists unification removed the forked pickers' screen usage;

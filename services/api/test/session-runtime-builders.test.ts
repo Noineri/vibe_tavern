@@ -25,9 +25,30 @@ import { SessionRuntime } from "../src/runtime/session/session-runtime.js";
 import { ChatAdapter } from "../src/api/adapters/chat-adapter.js";
 import { countTokensDefault } from "../src/infrastructure/ai/tokenizer-service.js";
 import type { ChatId, MessageId } from "@vibe-tavern/domain";
+import type { LiveChatOrchestrator } from "../src/domain/chat/live-chat-orchestrator.js";
+import type { ChatSummaryService } from "../src/domain/chat/chat-summary-service.js";
+import type { ProviderProfileService } from "../src/domain/providers/provider-profile-service.js";
+import type { AssetService } from "../src/domain/asset/asset-service.js";
+import { strictTestDouble } from "./strict-test-double.js";
 
-/** Unused-dep stub for ChatAdapter construction in narrow wiring tests. Mirror of attachment-delete.test.ts. */
-const noop = {} as never;
+/** Unused ChatAdapter ctor deps for the narrow wiring test — each a strict
+ *  double (one per ctor slot); any access throws a labeled miss. */
+const noopOrchestrator = strictTestDouble<LiveChatOrchestrator>(
+	{},
+	"ChatAdapter unused liveChatOrchestrator (session-runtime-builders)",
+);
+const noopSummaries = strictTestDouble<ChatSummaryService>(
+	{},
+	"ChatAdapter unused chatSummaryService (session-runtime-builders)",
+);
+const noopProfiles = strictTestDouble<ProviderProfileService>(
+	{},
+	"ChatAdapter unused providerProfileService (session-runtime-builders)",
+);
+const noopAssets = strictTestDouble<AssetService>(
+	{},
+	"ChatAdapter unused assetService (session-runtime-builders)",
+);
 
 /** Spins up a real SessionRuntime against an isolated temp DB and seeds one chat. */
 async function createTestRuntime(): Promise<{
@@ -512,10 +533,10 @@ describe("Wave B1.1 — per-endpoint response builder shapes", () => {
 		const adapter = new ChatAdapter(
 			stores,
 			runtime,
-			noop,
-			noop,
-			noop,
-			noop,
+			noopOrchestrator,
+			noopSummaries,
+			noopProfiles,
+			noopAssets,
 			async () => {
 				throw new Error("transcribeSttAudio is not wired in the session-runtime-builders fixture");
 			},
