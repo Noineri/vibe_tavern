@@ -28,7 +28,7 @@
  * directly.
  */
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
-import { brandId, normalizeInsightsConfig, type MessageVariantId } from "@vibe-tavern/domain";
+import { brandId, normalizeInsightsConfig, type ChatId, type MessageVariantId } from "@vibe-tavern/domain";
 import { wireBranch, wireChat, wireCharacter, wireMessage, wireVariant } from "../../../test/wire-fixtures.js";
 import { useDomEnv } from "../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
@@ -155,13 +155,13 @@ type SceneTrackerRecord = NonNullable<AppMessage["sceneTracker"]>;
 
 function record(variantId: string): SceneTrackerRecord {
   return {
-    variantId: variantId as never,
+    variantId: brandId<MessageVariantId>(variantId),
     schemaHash: SCHEMA_HASH,
     configRevision: REVISION,
     sourceHash: "s1",
     sceneState: { mood: "calm" },
     modelId: null,
-    generatedAt: "2026-01-01T00:00:00.000Z" as never,
+    generatedAt: "2026-01-01T00:00:00.000Z",
   };
 }
 
@@ -252,7 +252,7 @@ beforeEach(async () => {
  *  affordance span + helpers. */
 async function mountBlock(messageId: string) {
   const { MessageBlock, chatStore } = await load();
-  chatStore.useChatStore.getState().setActiveChatId("chat-1" as never);
+  chatStore.useChatStore.getState().setActiveChatId(brandId<ChatId>("chat-1"));
   const utils = render(
     createElement(MessageBlock, { messageId, index: 0, isFirstAssistant: false, isLast: false, prevRole: null }),
   );

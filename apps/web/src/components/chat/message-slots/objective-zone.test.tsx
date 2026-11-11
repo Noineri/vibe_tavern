@@ -28,6 +28,8 @@ const { act, fireEvent, render, waitFor } = await import("@testing-library/react
 import { useSnapshotStore } from "../../../stores/snapshot-store.js";
 import { useHeaderZoneExpansionStore } from "../../../stores/header-zone-expansion.js";
 import type { InsightsCompletionPatchResponse, ObjectiveState } from "../../../api/types.js";
+import { brandId, normalizeInsightsConfig, type ChatBranchId, type ChatId } from "@vibe-tavern/domain";
+import { wireChat, wireMessage } from "../../../../test/wire-fixtures.js";
 
 const mocks = {
   updateObjectiveTaskAction: mock(),
@@ -91,17 +93,17 @@ afterEach(() => {
   mocks.checkObjectiveCompletionAction.mockReset();
   mocks.refreshInsightsCompletion.mockReset();
   mocks.toastError.mockReset();
-  cancelInsightsCompletionRefresh("c1" as never);
+  cancelInsightsCompletionRefresh(brandId<ChatId>("c1"));
 });
 
 function seedState(state: ObjectiveState, objectiveEnabled: boolean, branchId?: string) {
   useSnapshotStore.setState({
-    activeChat: {
-      id: "c1",
-      ...(branchId !== undefined ? { activeBranchId: branchId } : {}),
-      insightsConfig: { objectiveEnabled, trackerEnabled: false },
+    activeChat: wireChat({
+      id: brandId<ChatId>("c1"),
+      ...(branchId !== undefined ? { activeBranchId: brandId<ChatBranchId>(branchId) } : {}),
+      insightsConfig: normalizeInsightsConfig({ objectiveEnabled, trackerEnabled: false }),
       insightsObjectiveState: state,
-    } as never,
+    }),
   });
 }
 
@@ -369,17 +371,14 @@ describe("Objective slot + real AssistantContextHeader", () => {
     };
     seedState(exhausted, true);
     useSnapshotStore.getState().ingestSnapshot({
-      messages: [{
-        id: "m1",
-        chatId: "c1",
-        branchId: "b1",
-        role: "assistant",
-        position: 1,
-        content: "Committed reply",
-        variants: [],
-        selectedVariantIndex: null,
-        modelId: null,
-      } as never],
+      messages: [
+        wireMessage("m1", {
+          chatId: brandId<ChatId>("c1"),
+          branchId: brandId<ChatBranchId>("b1"),
+          position: 1,
+          content: "Committed reply",
+        }),
+      ],
     });
 
     let resolveRefresh: (response: InsightsCompletionPatchResponse) => void = () => {};
@@ -401,7 +400,7 @@ describe("Objective slot + real AssistantContextHeader", () => {
     expect(container.textContent).not.toContain("Enter the forest");
     expect(container.querySelector('[class*="bg-border"]')).toBeNull();
 
-    act(() => startInsightsCompletionRefresh("c1" as never, { branchId: "b1", messageId: "m1" }));
+    act(() => startInsightsCompletionRefresh(brandId<ChatId>("c1"), { branchId: "b1", messageId: "m1" }));
     expect(container.textContent).not.toContain("Enter the forest");
 
     await act(async () => {

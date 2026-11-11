@@ -58,11 +58,11 @@ function makeProps(overrides: Partial<Parameters<typeof MessageShell>[0]> = {}):
       tokenCount: 0,
       createdAt: new Date().toISOString(),
       diceRolls: [],
-    } as never,
+    },
     copied: false,
     slotExtras: {},
     variantControlsOverlay: null,
-    variantControlsRef: { current: null } as never,
+    variantControlsRef: { current: null },
     children: React.createElement("div", null, "hello"),
     actions: {
       onCopy: () => {},
@@ -74,11 +74,11 @@ function makeProps(overrides: Partial<Parameters<typeof MessageShell>[0]> = {}):
       onAiEdit: () => {},
     },
     ...overrides,
-  } as never;
+  };
 }
 
 function renderWithTooltip(ui: React.ReactElement) {
-  return render(React.createElement(TooltipProvider as never, null, ui));
+  return render(React.createElement(TooltipProvider, null, ui));
 }
 
 describe("MessageShell annotate button (TPE-14)", () => {

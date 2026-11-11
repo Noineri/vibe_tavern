@@ -7,6 +7,7 @@ useDomEnv();
 import { useTtsPlaybackStore, __setTtsPlaybackDepsForTests } from "../../stores/tts-playback-store.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import type { TtsProfileRecord } from "../../api/tts-api.js";
+import { wireCharacter, wireChat, wirePersona } from "../../../test/wire-fixtures.js";
 import { TTS_NARRATION_MODE_KEY, persistTtsNarrationMode } from "../../lib/local-storage.js";
 
 function profile(overrides: Partial<TtsProfileRecord> = {}): TtsProfileRecord {
@@ -73,7 +74,7 @@ beforeEach(() => {
     autoNarrate: false,
     startNarration: originalStart,
     stopNarration: originalStop,
-  } as never);
+  });
   __setTtsPlaybackDepsForTests(null);
   currentData = null;
   window.localStorage.removeItem(TTS_NARRATION_MODE_KEY);
@@ -161,7 +162,7 @@ describe("useMessageNarration", () => {
       dispose: () => {},
     };
     const fakeSynthesize = mock(async (text: string) => ({ blob: new Blob([text], { type: "audio/mpeg" }), mime: "audio/mpeg" }));
-    __setTtsPlaybackDepsForTests({ player: fakePlayer as never, synthesize: fakeSynthesize as never });
+    __setTtsPlaybackDepsForTests({ player: fakePlayer, synthesize: fakeSynthesize });
 
     const origStart = useTtsPlaybackStore.getState().startNarration;
     const origStop = useTtsPlaybackStore.getState().stopNarration;
@@ -176,7 +177,7 @@ describe("useMessageNarration", () => {
         stopCalled = true;
         return origStop();
       },
-    } as never);
+    });
 
     let hook: NarrationHook | null = null;
     function Probe() {
@@ -214,8 +215,8 @@ describe("useMessageNarration", () => {
 
     // Simulate narrating state
     useTtsPlaybackStore.setState({
-      narrations: { m1: { status: "playing", total: 1, played: 0, received: 1 } },
-    } as never);
+      narrations: { m1: { status: "playing", total: 1, played: 0, received: 1, synthesized: 1 } },
+    });
     // Re-render to pick up narrating=true
     await act(async () => {
       render(React.createElement(Probe));
@@ -229,7 +230,7 @@ describe("useMessageNarration", () => {
     expect(stopCalled).toBe(true);
 
     // Restore
-    useTtsPlaybackStore.setState({ narrations: {} } as never);
+    useTtsPlaybackStore.setState({ narrations: {} });
     __setTtsPlaybackDepsForTests(null);
   });
 
@@ -251,7 +252,7 @@ describe("useMessageNarration", () => {
       capturedText = text;
       return { blob: new Blob([text], { type: "audio/mpeg" }), mime: "audio/mpeg" };
     });
-    __setTtsPlaybackDepsForTests({ player: fakePlayer as never, synthesize: fakeSynthesize as never });
+    __setTtsPlaybackDepsForTests({ player: fakePlayer, synthesize: fakeSynthesize });
 
     let hook: NarrationHook | null = null;
     function Probe() {
@@ -295,7 +296,7 @@ describe("useMessageNarration", () => {
       capturedText = text;
       return { blob: new Blob([text], { type: "audio/mpeg" }), mime: "audio/mpeg" };
     });
-    __setTtsPlaybackDepsForTests({ player: fakePlayer as never, synthesize: fakeSynthesize as never });
+    __setTtsPlaybackDepsForTests({ player: fakePlayer, synthesize: fakeSynthesize });
 
     let hook: NarrationHook | null = null;
     function Probe() {
@@ -332,7 +333,7 @@ describe("useMessageNarration — TTS annotation tags (TPE-1)", () => {
       dispose: () => {},
     };
     const fakeSynthesize = mock(async (text: string) => ({ blob: new Blob([text], { type: "audio/mpeg" }), mime: "audio/mpeg" }));
-    __setTtsPlaybackDepsForTests({ player: fakePlayer as never, synthesize: fakeSynthesize as never });
+    __setTtsPlaybackDepsForTests({ player: fakePlayer, synthesize: fakeSynthesize });
     const origStart = useTtsPlaybackStore.getState().startNarration;
     useTtsPlaybackStore.setState({
       startNarration: async (...args: unknown[]) => {
@@ -341,7 +342,7 @@ describe("useMessageNarration — TTS annotation tags (TPE-1)", () => {
         capturedText = typeof args[1] === "string" ? args[1] : null;
         return origStart(...(args as [string, string, TtsProfileRecord]));
       },
-    } as never);
+    });
 
     let hook: NarrationHook | null = null;
     function Probe() {
@@ -367,14 +368,14 @@ describe("useMessageNarration — TTS annotation tags (TPE-1)", () => {
 describe("useMessageNarration — macro resolution (TPE-19)", () => {
   function seedMacroContext(coauthor = false) {
     useSnapshotStore.setState({
-      character: { name: "Noi" },
-      persona: { name: "Alya", pronouns: "she/her" },
-      activeChat: { mode: coauthor ? "coauthor" : "chat" },
-    } as never);
+      character: wireCharacter({ name: "Noi" }),
+      persona: wirePersona({ name: "Alya", pronouns: "she/her" }),
+      activeChat: wireChat({ mode: coauthor ? "coauthor" : "rp" }),
+    });
   }
 
   function resetMacroContext() {
-    useSnapshotStore.setState({ character: null, persona: null, activeChat: null } as never);
+    useSnapshotStore.setState({ character: null, persona: null, activeChat: null });
   }
 
   async function captureStartNarrationText(source: string): Promise<string | null> {
@@ -388,7 +389,7 @@ describe("useMessageNarration — macro resolution (TPE-19)", () => {
       dispose: () => {},
     };
     const fakeSynthesize = mock(async (text: string) => ({ blob: new Blob([text], { type: "audio/mpeg" }), mime: "audio/mpeg" }));
-    __setTtsPlaybackDepsForTests({ player: fakePlayer as never, synthesize: fakeSynthesize as never });
+    __setTtsPlaybackDepsForTests({ player: fakePlayer, synthesize: fakeSynthesize });
     const origStart = useTtsPlaybackStore.getState().startNarration;
     let captured: string | null = null;
     useTtsPlaybackStore.setState({
@@ -398,7 +399,7 @@ describe("useMessageNarration — macro resolution (TPE-19)", () => {
         captured = typeof args[1] === "string" ? args[1] : null;
         return origStart(...(args as [string, string, TtsProfileRecord]));
       },
-    } as never);
+    });
     let hook: NarrationHook | null = null;
     function Probe() {
       hook = useMessageNarration("m1", null, null, () => source);

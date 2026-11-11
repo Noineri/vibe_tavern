@@ -11,6 +11,7 @@
 import { beforeAll, describe, it, expect, mock } from "bun:test";
 import React from "react";
 import { brandId, type DiceRollId, type DiceRollSnapshot } from "@vibe-tavern/domain";
+import type { MessageMetaContext } from "../../../lib/message-meta-registry.js";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 
@@ -82,6 +83,26 @@ function makeRoll(overrides: Partial<DiceRollSnapshot> = {}): DiceRollSnapshot {
   };
 }
 
+/** Complete descriptor context around a roll set. The badge reads ONLY
+ *  ctx.diceRolls (the file header's structural invariant), so the identity
+ *  members are inert here — they mirror the committed user-message context
+ *  the registry hands this user-gated descriptor. */
+function metaCtx(diceRolls: DiceRollSnapshot[]): MessageMetaContext {
+  return {
+    chatId: "c1",
+    messageId: "m1",
+    messageRole: "user",
+    variant: null,
+    variantIndex: 0,
+    isStreaming: false,
+    isCoauthorTurn: false,
+    presetName: null,
+    tokenCount: 0,
+    createdAt: "2026-07-22T10:00:00Z",
+    diceRolls,
+  };
+}
+
 describe("DICE-F10 dice-rolls meta descriptor", () => {
   it("is role-gated to user messages", () => {
     expect(diceRollsMetaDescriptor.roles).toEqual(["user"]);
@@ -89,13 +110,13 @@ describe("DICE-F10 dice-rolls meta descriptor", () => {
 
   it("is visible only when the message carries rolls (assistant/system never)", () => {
     const vis = diceRollsMetaDescriptor.visible!;
-    expect(vis({ diceRolls: [] } as never)).toBe(false);
-    expect(vis({ diceRolls: [makeRoll()] } as never)).toBe(true);
+    expect(vis(metaCtx([]))).toBe(false);
+    expect(vis(metaCtx([makeRoll()]))).toBe(true);
   });
 
   it("render returns a badge bound to the message's rolls (check label surfaces)", () => {
     const roll = makeRoll({ checkLabel: "Perception" });
-    const node = diceRollsMetaDescriptor.render!({ diceRolls: [roll] } as never) as React.ReactElement;
+    const node = diceRollsMetaDescriptor.render!(metaCtx([roll])) as React.ReactElement;
     const { container } = render(node);
     expect(container.textContent).toContain("Perception");
   });

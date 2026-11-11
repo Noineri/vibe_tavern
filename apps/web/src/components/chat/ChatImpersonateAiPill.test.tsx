@@ -3,6 +3,7 @@ import React from "react";
 
 import { useDomEnv } from "../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
+import { wireUiSettings } from "../../../test/wire-fixtures.js";
 
 useDomEnv();
 
@@ -62,22 +63,15 @@ beforeEach(() => {
       isFirstRun: false,
       allCharacters: [],
       promptPresets: [],
-      personas: [],
       uiSettings: {
-        id: "default",
-        theme: "dark",
-        chatFontSize: 15,
-        uiFontSize: 14,
-        messageWidth: 700,
-        language: "en",
-        activePromptPresetId: null,
+        ...wireUiSettings(),
         aiAssistantProviderId: "provider_1",
         aiAssistantModelName: "model_1",
         chatImpersonateEnhanceDraft: false,
-        updatedAt: "2026-01-01T00:00:00.000Z",
       },
+      agentKindSettings: {},
       isArmServer: false,
-    } as never,
+    },
   });
 });
 

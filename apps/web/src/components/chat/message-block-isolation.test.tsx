@@ -562,7 +562,7 @@ describe("MessageBlock — render isolation invariant", () => {
     // selectors are scoped to m1, so A must NOT re-render.
     act(() => {
       snapshotStore.useSnapshotStore.getState().updateMessage("m2", {
-        sceneTracker: { variantId: "m2-v0", schemaHash: "h1", configRevision: 1, sourceHash: "s1", sceneState: { mood: "stormy" }, modelId: null, generatedAt: "2026-01-01T00:00:00.000Z" } as never,
+        sceneTracker: { variantId: brandId<MessageVariantId>("m2-v0"), schemaHash: "h1", configRevision: 1, sourceHash: "s1", sceneState: { mood: "stormy" }, modelId: null, generatedAt: "2026-01-01T00:00:00.000Z" },
       });
     });
     await act(async () => { await Promise.resolve(); });

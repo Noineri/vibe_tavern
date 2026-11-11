@@ -118,6 +118,7 @@ const { flushSync } = await import("react-dom");
 import { IMAGE_GEN_BACKENDS, IMAGE_GEN_BACKEND_CAPABILITIES, type Attachment, type ImageGenBackendType } from "@vibe-tavern/domain";
 import type { ImageGenProfileRecord } from "../../api/image-gen-api.js";
 import type { ImageGenRunMeta } from "../../stores/image-gen-chat-store.js";
+import { wireMessage } from "../../../test/wire-fixtures.js";
 
 /** Typed minimal record for the click-time lookup seam — only id/backend
  *  matter to the component; the rest satisfies the wire type. */
@@ -158,13 +159,13 @@ function slotAtt(overrides?: Partial<Attachment>): Attachment {
   };
 }
 
-/** Minimal seeded message for the optimistic-update seam. */
-type SeededMessage = { id: string; attachments: Array<Attachment> };
+/** Seeded message for the optimistic-update seam: a complete wire row
+ *  carrying the attachment set under test. */
 function seedMessage(id: string, attachments: Array<Attachment>) {
   useSnapshotStore.setState({
     messagesById: {
       ...useSnapshotStore.getState().messagesById,
-      [id]: { id, attachments } as SeededMessage as never,
+      [id]: wireMessage(id, { attachments }),
     },
   });
 }

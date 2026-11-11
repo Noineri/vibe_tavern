@@ -411,7 +411,71 @@ export const BUDGETS = {
 	// key-level tsc delta EMPTY before and after (the 8 files carried 0
 	// baseline keys; the 2 pre-existing harness.smoke keys byte-stable), 852
 	// byte-untouched. One commit with the test edits.
-	asNever: 122,
+	// 68 (2026-11-11, step 15e): −54 — the chat-cluster batch, the fourteen
+	// files 18/6/4/4/4/4/3/3/2/2/1/1/1/1 (use-message-narration,
+	// MessageShell.narrate, message-shell-continue, objective-zone,
+	// MessageShell.annotate-mobile, MessageShell.annotate,
+	// message-edit-coordination, dice-rolls, scene-zone, MessageAiEditorModal,
+	// ChatImpersonateAiPill — the TQ-2-flagged bootstrap fixture,
+	// ImageGenSlotControls, InputArea.per-send-prefill, message-block-isolation
+	// — the TQ-1-flagged sceneTracker literal). The repo remainder is apps/web
+	// 66 + packages 2. THE SHAPES: use-message-narration — the five
+	// __setTtsPlaybackDepsForTests seams drop both casts (the fake player
+	// satisfies NarrationPlayer's six required members with play resolving
+	// "ended", a SegmentPlayResult member; the fake synthesize matches
+	// SynthesizeFn — fewer parameters are legal by contravariance, the return
+	// shape is exact); the store setState partials drop theirs (the
+	// (...args: unknown[]) capture wrappers ARE assignable to the real
+	// startNarration/stopNarration signatures); the playing re-seed gains the
+	// REQUIRED NarrationState.synthesized (1 = the fake's one genuine
+	// synthesis); the TPE-19 macro seed completes through wireCharacter /
+	// wirePersona / wireChat — where the erasure hid a WRONG-VALUE fiction:
+	// mode "chat" is not a ChatMode member (rp | coauthor | novel | group,
+	// platform-constants.ts CHAT_MODE) → the real default "rp", the same
+	// not-coauthor read. The MessageShell four (narrate / continue / annotate /
+	// annotate-mobile) — all 18 casts PURE DELETIONS: the typed makeProps seam
+	// (Parameters<typeof MessageShell>[0]) was already in place and its
+	// literal satisfies MessageShellProps / MessageMetaContext as written
+	// ({ current: null } fits RefObject<HTMLSpanElement | null>, narrating is
+	// optional, the override actions spread the complete seven-member base);
+	// createElement takes the typed Tooltip.Provider directly. objective-zone —
+	// the insights-completion action seams brand the chat id at the edge
+	// (brandId<ChatId>), seedState and the ingested message row complete
+	// through wireChat / wireMessage with normalizeInsightsConfig carrying the
+	// persisted insights column. dice-rolls — ONE file-local metaCtx()
+	// returning the complete MessageMetaContext replaces the three erased
+	// partial contexts (the badge reads ONLY ctx.diceRolls — the file header's
+	// own structural invariant — so the identity members are inert). scene-zone
+	// + message-edit-coordination — record() brands variantId at the fixture
+	// edge (brandId<MessageVariantId>); both generatedAt casts were PURE
+	// DELETIONS (the domain Timestamp is a plain string alias, entities.ts);
+	// setActiveChatId takes brandId<ChatId>. MessageAiEditorModal —
+	// seedBootstrap now matches the file's own cast-free seedPairs literal: the
+	// NONEXISTENT personas member dropped (it lives on BootstrapState, never on
+	// BootstrapData), the REQUIRED agentKindSettings added; the TPE-19 macro
+	// seed completes through the same three wire rows (mode "chat" → "rp"
+	// again). ChatImpersonateAiPill — the flagged fixture is a real
+	// BootstrapData: uiSettings spreads wireUiSettings and keeps the three
+	// pins the tests read as overrides (every other value of the old literal
+	// equals a wireUiSettings default), personas dropped, agentKindSettings
+	// added. ImageGenSlotControls — the minimal { id, attachments } row
+	// completes through wireMessage(id, { attachments }) (attachments is an
+	// optional member of the wire message); the SeededMessage alias, used only
+	// by the cast, left with it. InputArea.per-send-prefill — the fake
+	// controller object is untyped, the empty personas array needed no cast
+	// (pure deletion). message-block-isolation — ONLY the erasure died: the m2
+	// sceneTracker mutation keeps every value including the literal "h1"
+	// schemaHash, plus the runtime-inert variantId brand, so the
+	// assert-independent Profiler counts (mount 1, 0 after B's mutation) are
+	// untouched. apps/web key-level tsc delta EMPTY before and after, measured
+	// on the MAIN workspace config (its src/** include carries the collocated
+	// tests; tsconfig.test.json covers apps/web/test/** only): 0 diagnostics at
+	// the base commit and after, 0 new keys; the test tree's pre-existing
+	// harness.smoke keys byte-stable; 852 byte-untouched. The fourteen
+	// per-file spot runs carry identical counts before and after
+	// (9/3/4/15/1/4/8/12/22/45/2/20/6/10, 0 fail). One commit with the test
+	// edits.
+	asNever: 68,
 	/** Global `screen.` usage in apps/web test files (binds at import time). */
 	// 196 (2026-10-04): ratcheted to the merged tree's count after PR #51
 	// (provider-lists unification removed the forked pickers' screen usage;

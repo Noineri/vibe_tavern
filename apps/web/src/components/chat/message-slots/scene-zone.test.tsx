@@ -142,13 +142,13 @@ type SceneTrackerRecord = NonNullable<AppMessage["sceneTracker"]>;
 
 function record(variantId: string, sceneState: SceneTrackerRecord["sceneState"], opts?: { stale?: boolean }): SceneTrackerRecord {
   return {
-    variantId: variantId as never,
+    variantId: brandId<MessageVariantId>(variantId),
     schemaHash: opts?.stale ? "old" : SCHEMA_HASH,
     configRevision: opts?.stale ? 0 : REVISION,
     sourceHash: "s1",
     sceneState,
     modelId: null,
-    generatedAt: "2026-01-01T00:00:00.000Z" as never,
+    generatedAt: "2026-01-01T00:00:00.000Z",
   };
 }
 
