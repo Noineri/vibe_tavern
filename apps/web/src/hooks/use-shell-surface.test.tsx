@@ -107,7 +107,7 @@ describe("useShellSurface", () => {
 			setActiveChat("coauthor");
 			useNavigationStore.setState({ mode: "build" });
 			const { result } = renderHook(() => useShellSurface(baseProps));
-			// Still the coauthor PLAY surface — never an impossible build screen.
+			// Still the coauthor PLAY surface — an impossible build screen is never the result.
 			expect(result.current.surface.type).toBe(SURFACE_SURFACES.CoauthorMode);
 			expect(result.current.leftChrome.type).toBe(SURFACE_LEFT_CHROME.coauthor.desktop);
 			expect(result.current.topBar.type).toBe(SURFACE_TOP_BARS.coauthor);

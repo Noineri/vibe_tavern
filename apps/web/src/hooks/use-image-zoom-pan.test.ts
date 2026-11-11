@@ -128,7 +128,7 @@ function touch1(x: number, y: number): React.TouchEvent {
   return touchEvent([{ clientX: x, clientY: y }]);
 }
 
-/** touchend/touchcancel with the given fingers still on screen. */
+/** touchend/touchcancel with the given still-on-screen fingers. */
 function touchEnd(remaining: Array<{ clientX: number; clientY: number }>): React.TouchEvent {
   return touchEvent(remaining);
 }

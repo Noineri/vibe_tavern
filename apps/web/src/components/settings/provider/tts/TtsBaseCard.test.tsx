@@ -7,7 +7,7 @@ useDomEnv();
 
 installI18nContextSeam();
 
-const { render, screen } = await import("@testing-library/react");
+const { render } = await import("@testing-library/react");
 const { TtsBaseCard, emotionTagsHintKey } = await import("./TtsBaseCard.js");
 const { TooltipProvider } = await import("../../../shared/Tooltip.js");
 const { TTS_BACKEND } = await import("@vibe-tavern/domain");
@@ -58,9 +58,9 @@ describe("TtsBaseCard — emotion-tags badge (TPE-15)", () => {
 
   for (const c of CASES) {
     it(`${c.name}: badge visible`, () => {
-      const { unmount } = renderCard(makeForm(c.backend, c.config));
+      const { unmount, getByTestId } = renderCard(makeForm(c.backend, c.config));
       try {
-        const badge = screen.getByTestId("tts-emotion-tags-badge");
+        const badge = getByTestId("tts-emotion-tags-badge");
         expect(badge.textContent).toContain("tts_emotion_tags_badge");
       } finally {
         unmount();
@@ -78,9 +78,9 @@ describe("TtsBaseCard — emotion-tags badge (TPE-15)", () => {
 
   for (const c of STRIP_CASES) {
     it(`${c.name}: no badge for strip dialects`, () => {
-      const { unmount } = renderCard(makeForm(c.backend, c.config));
+      const { unmount, queryByTestId } = renderCard(makeForm(c.backend, c.config));
       try {
-        expect(screen.queryByTestId("tts-emotion-tags-badge")).toBeNull();
+        expect(queryByTestId("tts-emotion-tags-badge")).toBeNull();
       } finally {
         unmount();
       }

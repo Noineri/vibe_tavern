@@ -466,7 +466,7 @@ describe("useTtsProfiles — TE2-10 editor screen machine (headerMode, LLM mecha
     hook!.setForm({ name: "Alpha-2" });
     await waitFor(() => expect(hook?.dirty).toBe(true));
     expect(hook!.headerMode).toBe("view");
-    // Edit settings opens the connection screen.
+    // The connection screen opens from Edit settings.
     hook!.startEdit();
     await waitFor(() => expect(hook?.headerMode).toBe("edit"));
     // Save returns to the view card.

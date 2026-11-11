@@ -20,7 +20,7 @@ import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 import type { AiAssistantChunk, AiAssistantRequestBody, ProviderProfileRecord, UiSettingsRecord } from "../../api/types.js";
 
 useDomEnv();
-const { act, fireEvent, render, screen, waitFor } = await import("@testing-library/react");
+const { act, fireEvent, render, waitFor } = await import("@testing-library/react");
 
 const mockState = {
   /** Chunks the stream mock will yield on the next call. */
@@ -209,13 +209,17 @@ function renderModal(ui: React.ReactNode) {
   return render(<TooltipProvider>{ui}</TooltipProvider>);
 }
 
+type ModalView = ReturnType<typeof renderModal>;
+
 /** Type the prompt textarea and click the generate button. The Modal portals
  *  to document.body, so query at the document level. The prompt field is the
- *  only <textarea> in the modal (NumberInput renders <input>, not <textarea>). */
-async function generateWithPrompt(prompt: string) {
+ *  only <textarea> in the modal (NumberInput renders <input>, not <textarea>).
+ *  findByText is the caller's render-returned query (bound to baseElement =
+ *  document.body, so it sees the portal). */
+async function generateWithPrompt(findByText: ModalView["findByText"], prompt: string) {
   const textarea = document.querySelector("textarea") as HTMLTextAreaElement;
   fireEvent.change(textarea, { target: { value: prompt } });
-  const generateBtn = await screen.findByText("script_ai_generate");
+  const generateBtn = await findByText("script_ai_generate");
   await act(async () => { fireEvent.click(generateBtn); });
 }
 
@@ -240,7 +244,7 @@ describe("AiAssistantModal — request construction", () => {
     });
     seedBootstrap("prov-1", null);
 
-    renderModal(
+    const { findByText } = renderModal(
       <AiAssistantModal
         mode="full"
         apiMode="lore_entry"
@@ -252,7 +256,7 @@ describe("AiAssistantModal — request construction", () => {
       />,
     );
 
-    await generateWithPrompt("rewrite this");
+    await generateWithPrompt(findByText, "rewrite this");
 
     await waitFor(() => expect(mockState.requests).toHaveLength(1));
     const body = mockState.requests[0];
@@ -271,7 +275,7 @@ describe("AiAssistantModal — request construction", () => {
     });
     seedBootstrap("prov-1", null);
 
-    renderModal(
+    const { getByText } = renderModal(
       <AiAssistantModal
         mode="full"
         apiMode="md_import"
@@ -284,7 +288,7 @@ describe("AiAssistantModal — request construction", () => {
     const textarea = document.querySelector("textarea") as HTMLTextAreaElement;
     fireEvent.change(textarea, { target: { value: "# Imported\nSome content" } });
 
-    const startBtn = screen.getByText("import_md_start");
+    const startBtn = getByText("import_md_start");
     await act(async () => { fireEvent.click(startBtn); });
 
     await waitFor(() => expect(mockState.requests).toHaveLength(1));
@@ -321,14 +325,14 @@ describe("AiAssistantModal — streaming accumulation", () => {
       { type: "done" },
     ]);
 
-    renderModal(
+    const { findByText, getByText } = renderModal(
       <AiAssistantModal mode="full" apiMode="lore_entry" isOpen={true} onClose={() => {}} />,
     );
 
-    await generateWithPrompt("greet");
+    await generateWithPrompt(findByText, "greet");
 
     await waitFor(() => {
-      expect(screen.getByText(/Hello world/)).toBeTruthy();
+      expect(getByText(/Hello world/)).toBeTruthy();
     });
   });
 
@@ -340,45 +344,45 @@ describe("AiAssistantModal — streaming accumulation", () => {
       { type: "done" },
     ]);
 
-    renderModal(
+    const { findByText, getByText } = renderModal(
       <AiAssistantModal mode="full" apiMode="lore_entry" isOpen={true} onClose={() => {}} />,
     );
 
-    await generateWithPrompt("think");
+    await generateWithPrompt(findByText, "think");
 
     // MessageReasoning starts collapsed; expand it to read the body.
-    const reasoningHeader = await screen.findByText("reasoning");
+    const reasoningHeader = await findByText("reasoning");
     await act(async () => { fireEvent.click(reasoningHeader); });
     await waitFor(() => {
-      expect(screen.getByText(/Thinking hard/)).toBeTruthy();
+      expect(getByText(/Thinking hard/)).toBeTruthy();
     });
   });
 
   it("displays the error from an error chunk", async () => {
     setChunks([{ type: "error", error: "model-overloaded" }]);
 
-    renderModal(
+    const { findByText, getByText } = renderModal(
       <AiAssistantModal mode="full" apiMode="lore_entry" isOpen={true} onClose={() => {}} />,
     );
 
-    await generateWithPrompt("go");
+    await generateWithPrompt(findByText, "go");
 
     await waitFor(() => {
-      expect(screen.getByText("model-overloaded")).toBeTruthy();
+      expect(getByText("model-overloaded")).toBeTruthy();
     });
   });
 
   it("displays the error from a thrown stream", async () => {
     mockState.shouldThrow = true;
 
-    renderModal(
+    const { findByText, getByText } = renderModal(
       <AiAssistantModal mode="full" apiMode="lore_entry" isOpen={true} onClose={() => {}} />,
     );
 
-    await generateWithPrompt("go");
+    await generateWithPrompt(findByText, "go");
 
     await waitFor(() => {
-      expect(screen.getByText(/network-down/)).toBeTruthy();
+      expect(getByText(/network-down/)).toBeTruthy();
     });
   });
 });
@@ -399,20 +403,20 @@ describe("AiAssistantModal — stop / cancellation", () => {
     // A chunk that we yield, then the test clicks stop before "done".
     setChunks([{ type: "text", text: "partial" }]);
 
-    renderModal(
+    const { findByText, getByText } = renderModal(
       <AiAssistantModal mode="full" apiMode="lore_entry" isOpen={true} onClose={() => {}} />,
     );
 
-    await generateWithPrompt("go");
+    await generateWithPrompt(findByText, "go");
 
     // While the stream is mid-flight, the Stop button should be visible.
-    const stopBtn = await screen.findByText("script_ai_stop");
+    const stopBtn = await findByText("script_ai_stop");
     expect(stopBtn).toBeTruthy();
     await act(async () => { fireEvent.click(stopBtn); });
 
     // After stop, the generate button returns (streaming=false).
     await waitFor(() => {
-      expect(screen.getByText("script_ai_generate")).toBeTruthy();
+      expect(getByText("script_ai_generate")).toBeTruthy();
     });
   });
 });
@@ -433,7 +437,7 @@ describe("AiAssistantModal — insert / replace callbacks", () => {
     setChunks([{ type: "text", text: "new code" }, { type: "done" }]);
     const onInsert = mock();
 
-    renderModal(
+    const { findByText } = renderModal(
       <AiAssistantModal
         mode="full"
         apiMode="lore_entry"
@@ -445,10 +449,10 @@ describe("AiAssistantModal — insert / replace callbacks", () => {
       />,
     );
 
-    await generateWithPrompt("add more");
+    await generateWithPrompt(findByText, "add more");
 
     // Wait for stream completion: the Insert button appears.
-    const insertBtn = await screen.findByText("script_ai_insert");
+    const insertBtn = await findByText("script_ai_insert");
     await act(async () => { fireEvent.click(insertBtn); });
 
     expect(onInsert).toHaveBeenCalledTimes(1);
@@ -460,7 +464,7 @@ describe("AiAssistantModal — insert / replace callbacks", () => {
     setChunks([{ type: "text", text: "replacement" }, { type: "done" }]);
     const onReplace = mock();
 
-    renderModal(
+    const { findByText } = renderModal(
       <AiAssistantModal
         mode="full"
         apiMode="lore_entry"
@@ -472,9 +476,9 @@ describe("AiAssistantModal — insert / replace callbacks", () => {
       />,
     );
 
-    await generateWithPrompt("replace it");
+    await generateWithPrompt(findByText, "replace it");
 
-    const replaceBtn = await screen.findByText("script_ai_apply");
+    const replaceBtn = await findByText("script_ai_apply");
     await act(async () => { fireEvent.click(replaceBtn); });
 
     expect(onReplace).toHaveBeenCalledTimes(1);
@@ -497,7 +501,7 @@ describe("AiAssistantModal — line diff preview", () => {
   it("renders the diff summary when editing existing content", async () => {
     setChunks([{ type: "text", text: "line one v2" }, { type: "done" }]);
 
-    renderModal(
+    const { findByText, getByText } = renderModal(
       <AiAssistantModal
         mode="full"
         apiMode="lore_entry"
@@ -509,15 +513,15 @@ describe("AiAssistantModal — line diff preview", () => {
       />,
     );
 
-    await generateWithPrompt("edit");
+    await generateWithPrompt(findByText, "edit");
 
     // The diff title "lore_entry_ai_changes" renders with +1/-1 counts.
     await waitFor(() => {
-      expect(screen.getByText("lore_entry_ai_changes")).toBeTruthy();
+      expect(getByText("lore_entry_ai_changes")).toBeTruthy();
     });
     await waitFor(() => {
-      expect(screen.getByText("+1")).toBeTruthy();
-      expect(screen.getByText("-1")).toBeTruthy();
+      expect(getByText("+1")).toBeTruthy();
+      expect(getByText("-1")).toBeTruthy();
     });
   });
 });
@@ -538,7 +542,7 @@ describe("AiAssistantModal — quickpill settings sync", () => {
     const onSettingsChange = mock();
     const onClose = mock();
 
-    renderModal(
+    const { getByText } = renderModal(
       <AiAssistantModal
         mode="quickpill"
         isOpen={true}
@@ -555,7 +559,7 @@ describe("AiAssistantModal — quickpill settings sync", () => {
     const enhanceToggle = document.body.querySelector('[role="switch"]');
     if (!enhanceToggle) throw new Error("Draft enhancement toggle was not rendered.");
     await act(async () => { fireEvent.click(enhanceToggle); });
-    const doneBtn = screen.getByText("done_btn");
+    const doneBtn = getByText("done_btn");
     await act(async () => { fireEvent.click(doneBtn); });
 
     expect(onSettingsChange).toHaveBeenCalledTimes(1);
@@ -742,7 +746,7 @@ describe("AiAssistantModal — scroll wiring (CNR-8f)", () => {
       { type: "done" },
     ]);
 
-    renderModal(
+    const { getByText } = renderModal(
       <AiAssistantModal
         mode="full"
         apiMode="md_import"
@@ -765,7 +769,7 @@ describe("AiAssistantModal — scroll wiring (CNR-8f)", () => {
     // Drive the import: paste content, start, stream partial JSON + text.
     const textarea = document.querySelector("textarea") as HTMLTextAreaElement;
     fireEvent.change(textarea, { target: { value: "# Imported\nSome content" } });
-    const startBtn = screen.getByText("import_md_start");
+    const startBtn = getByText("import_md_start");
     await act(async () => { fireEvent.click(startBtn); });
 
     // Every parsed-field preview box keeps its content cap (max-h-40) on a

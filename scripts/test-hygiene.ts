@@ -200,7 +200,69 @@ export const BUDGETS = {
 	// exactly. 12 holder files remain (RegexPresetEditor 25, AiAssistantModal
 	// 16, TtsProfileEditor 7, BoundResourcesField 5, StarPromptModal 4,
 	// TtsBaseCard 2, and the six 1-site files).
-	screen: 65,
+	// 1 (2026-11-11): step 18b — the screen sweep closer: −64, and the
+	// category closes at ONE documented survivor (ratchet 138 → 65 → 1; the
+	// planned 0/0 is NOT reached, by a ruling recorded below). The eleven
+	// holder files beside the survivor are at zero (live scanFile:
+	// 25/16/7/5/4/2/1/1/1/1/1 before, 0 after).
+	// THE 52 QUERY SITES — RegexPresetEditor 25, AiAssistantModal 16,
+	// BoundResourcesField 5, StarPromptModal 4, TtsBaseCard 2 — now query
+	// through each test's own render() return (the R7 dom-env contract, the
+	// 18a shapes): 35 call sites gained per-test destructures of exactly the
+	// queries the test uses (17/12/2/4), and TtsBaseCard's two existing
+	// { unmount } destructures gained theirs; AiAssistantModal's
+	// generateWithPrompt helper takes the caller's findByText (typed
+	// ModalView["findByText"], ModalView = ReturnType<typeof renderModal>;
+	// 9 call sites); StarPromptModal's file-local openModal returns its own
+	// render result; RegexPresetEditor's in-test seg() closes over the
+	// destructured getAllByRole; the `screen` binding is dropped from the
+	// five dynamic RTL imports. Same boundary: no file passes a custom
+	// container or baseElement, so the render-returned queries bind to
+	// document.body (@testing-library/react dist/pure.js:265, :239) — the
+	// element the modals portal to — and queries, asserts and behavior are
+	// unchanged (source expect( counts identical per file; per-file runs
+	// 31/18/3/5/10 pass, 0 fail, before and after).
+	// THE OTHER 12 WERE NOT QUERY ACCESS: this scanner counts over the whole
+	// file, comments included (countMatches(content, SCREEN_DOT) in scanFile
+	// below), and the English noun closing a sentence matched — "the
+	// separate edit screen." TtsProfileEditor 7 (ALL of its sites),
+	// MasterDetailModal 1, RootErrorBoundary 1, use-image-zoom-pan 1,
+	// use-shell-surface 1, use-tts-profiles 1: twelve single comment lines
+	// reworded so the noun no longer closes its sentence — meaning preserved,
+	// no code touched (per-file runs 86/21/3/9/11/16 pass, 0 fail, before and
+	// after; TtsProfileEditor's RUNTIME expect() total is not a stable
+	// counter — its 61 waitFor calls re-run their assertions on every poll,
+	// 3469 to 3613 across five runs of which four ran identical content — the
+	// source expect( count is 365 on both sides).
+	// THE SURVIVOR — apps/web/test/harness.smoke.test.tsx:43, byte-untouched.
+	// The survivor law: a site survives only with proof that the fix is worse
+	// than the pattern. Its test (:34-44, "the global `screen` is bound to a
+	// live document") has the global binding itself as its SUBJECT — the
+	// regression pin for dom-env.ts's import discipline, added together with
+	// its fix in 0cb7ed060 (2026-08-08, "fix(test): load @testing-library
+	// only after happy-dom registers") after a @testing-library/jest-dom 6.10
+	// bump started importing @testing-library/dom, which turned a static
+	// import in dom-env.ts into a poisoned global for every DOM test file at
+	// once. THE PROOF is two binding mechanisms, read in the installed
+	// packages: @testing-library/dom 10.4.2 dist/screen.js:48-49 binds the
+	// global at MODULE EVALUATION — live queries when document.body exists,
+	// otherwise a stub whose every query throws (:54); @testing-library/react
+	// 16.3.3 dist/pure.js:265 binds render()'s returned queries to
+	// document.body at CALL time. A render-returned query therefore stays
+	// GREEN in the poisoned state: an R7 migration would leave this pin
+	// unable to fail for the reason it exists, under a title still claiming
+	// it does (and a near-twin of the file's first test). The worker
+	// escalated the conflict mid-unit (kill every site vs same-boundary
+	// rewrite only) and the campaign supervisor ruled the site stays; 1/1 is
+	// the honest record. No exemption mechanism is added to this guard — a
+	// change to enforcement tooling is an owner decision.
+	// apps/web key-level tsc delta EMPTY on BOTH programs: the MAIN workspace
+	// config (the eleven src-collocated files) 0 → 0 diagnostics;
+	// apps/web/tsconfig.test.json (apps/web/test/**, the survivor's program)
+	// 3 → 3 diagnostics / 2 → 2 keys — both pre-existing baselined jest-dom
+	// matcher typings inside the untouched survivor; 852 byte-untouched. One
+	// commit with the test edits.
+	screen: 1,
 	/** `innerHTML = ""` surgeries (TtsProfileEditor legacy block). */
 	innerHTMLEmpty: 30,
 	/** Literal `await sleep/delay/wait(N)` with N > 200 in test files. */

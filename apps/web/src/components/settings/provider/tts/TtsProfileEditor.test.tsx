@@ -120,7 +120,7 @@ afterEach(async () => {
 /** View-mode fixture: a SAVED profile in the list + headerMode "view" — the
  *  LLM mechanism renders the base card + config sections (voices, model
  *  card, tuning, bindings) only in this state; the connection form is the
- *  separate edit screen. Derives the profiles record from the form. */
+ *  separate edit screen; the fixture derives the profiles record from the form. */
 function viewTts(overrides: TtsOverrides = {}) {
   const base = makeTts(overrides);
   const form = base.form;
@@ -264,7 +264,7 @@ describe("TtsProfileEditor", () => {
     const view = renderEditor(React.createElement(TtsProfileEditor, { tts }));
     fireEvent.click(view.getByTestId("tts-tuning-accordion-toggle"));
     await waitFor(() => expect(view.getByTestId("tts-tuning-accordion-body")).toBeTruthy());
-    // View mode: model/style/voices; apiKey is the separate edit screen.
+    // View mode: model/style/voices; the separate edit screen owns apiKey.
     expect(view.queryByTestId("tts-field-api-key")).toBeNull();
     expect(view.getByTestId("tts-field-model")).toBeTruthy();
     expect(view.getByTestId("tts-field-style-instructions")).toBeTruthy();
@@ -297,7 +297,7 @@ describe("TtsProfileEditor", () => {
     const view = renderEditor(React.createElement(TtsProfileEditor, { tts }));
     fireEvent.click(view.getByTestId("tts-tuning-accordion-toggle"));
     await waitFor(() => expect(view.getByTestId("tts-tuning-accordion-body")).toBeTruthy());
-    // View mode: modelId/sliders/toggle/voices; apiKey is the edit screen.
+    // View mode: modelId/sliders/toggle/voices; the edit screen owns apiKey.
     expect(view.queryByTestId("tts-field-api-key")).toBeNull();
     expect(view.getByTestId("tts-field-model")).toBeTruthy();
     // TPE-9a (owner decision): input-mode model fields carry a link to the
@@ -515,7 +515,7 @@ describe("TtsProfileEditor — F5 restructure (sections, local variant, stored k
     const voice = view.getByTestId("tts-voice-section");
     // LLM mechanism (rework) + owner rule: the MODEL picker is a bare
     // section (no card wrapper) and sits ABOVE the voice section — voices
-    // are model-dependent. Endpoint/key live on the separate edit screen.
+    // are model-dependent. The separate edit screen carries endpoint/key.
     const modelField = view.getByTestId("tts-field-model");
     expect(modelField).toBeTruthy();
     expect(view.getByTestId("tts-models-refresh")).toBeTruthy();
@@ -1115,7 +1115,7 @@ describe("TtsProfileEditor — TE2-8 provider form fork", () => {
     // View mode: base card + no connection card (kokoro is browser-local).
     expect(view.getByTestId("tts-base-card")).toBeTruthy();
     expect(view.queryByTestId("tts-field-model")).toBeNull();
-    // Segment state is pinned on the edit screen.
+    // The edit screen is where segment state is pinned.
     const editTts = makeTts({
       form: asForm({ id: "p1", name: "P", backend: TTS_BACKEND.Kokoro, config: {}, apiKey: "", providerRef: null, voiceId: "af_heart", narratorVoiceId: "" }),
     });
@@ -1442,9 +1442,9 @@ describe("TtsProfileEditor — TE2-10 view mode (LLM headerMode mechanism)", () 
     const setForm = mock(() => {});
     const tts = collapsedTts({ headerMode: "edit", setForm });
     const view = renderEditor(React.createElement(TtsProfileEditor, { tts }));
-    // The connection form is the whole edit screen.
+    // The whole edit screen is the connection form.
     expect(view.getByTestId("tts-profile-name-input")).toBeTruthy();
-    // Config sections do NOT render on the edit screen.
+    // On the edit screen, config sections do NOT render.
     expect(view.queryByTestId("tts-base-card")).toBeNull();
     expect(view.queryByTestId("tts-voice-section")).toBeNull();
     expect(view.queryByTestId("tts-voice-select")).toBeNull();

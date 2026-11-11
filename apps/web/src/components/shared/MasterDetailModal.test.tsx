@@ -206,7 +206,7 @@ describe("MasterDetailModal — mobile", () => {
       />,
     );
 
-    // Master is visible and full-width on mobile main screen.
+    // On the mobile main screen, master is visible and full-width.
     const masterPane = getByTestId("master").parentElement!;
     expect(masterPane.className).toContain("w-full");
     expect(masterPane.className).not.toContain("w-[220px]");
