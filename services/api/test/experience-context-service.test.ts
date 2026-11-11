@@ -29,7 +29,9 @@ import {
 	type ExperienceChatLifecycleSeam,
 } from "../src/domain/interactive/experience-context-service.js";
 import type { ProviderProfileService } from "../src/domain/providers/provider-profile-service.js";
+import { nonstreamingProviderExecute } from "../src/infrastructure/ai/nonstreaming-provider-executor.js";
 import { DomainError } from "../src/shared/errors.js";
+import { execResult } from "./insights-test-builders.js";
 
 // ─── A no-capability counter game (only needs a startable session) ───────────
 const COUNTER_SOURCE = `
@@ -59,17 +61,17 @@ beforeEach(async () => {
 
 async function seedSession(opts: { contextMode?: ExperienceContextMode; messages?: number; summaries?: number; grants?: ExperienceCapability[] } = {}) {
 	const contextMode = opts.contextMode ?? "none";
-	const character = await stores.characters.create({ name: "Aria", description: "Fire mage." } as never);
-	const chat = await stores.chats.createChat({ characterId: character.id, title: "T" } as never);
+	const character = await stores.characters.create({ name: "Aria", description: "Fire mage." });
+	const chat = await stores.chats.createChat({ characterId: character.id, title: "T", promptPresetId: null });
 	const branchId = chat.activeBranchId as string;
-	await stores.personas.create({ name: "Olya", description: "Scholar.", defaultForNewChats: true } as never);
-	const script = await stores.scripts.create({ name: "Rules", scriptKind: "interactive", code: COUNTER_SOURCE } as never);
+	await stores.personas.create({ name: "Olya", description: "Scholar.", defaultForNewChats: true });
+	const script = await stores.scripts.create({ name: "Rules", scriptKind: "interactive", code: COUNTER_SOURCE });
 	await resources.updateConfig(chat.id, {
 		enabled: true,
 		scriptId: script.id,
 		capabilityGrants: opts.grants ?? ["rp_context"],
 		contextMode,
-	} as never);
+	});
 
 	const msgCount = opts.messages ?? 4;
 	for (let i = 0; i < msgCount; i++) {
@@ -92,7 +94,7 @@ async function seedSession(opts: { contextMode?: ExperienceContextMode; messages
 			includeInContext: true,
 			excludeSummarized: false,
 			source: "manual",
-		} as never);
+		});
 	}
 
 	const started = await experienceService.startSession({ chatId: chat.id, branchId, settings: {}, participants: [] });
@@ -107,7 +109,7 @@ function makeProfile(overrides: Partial<StoredProviderProfileRecord> = {}): Stor
 		id: "pp1",
 		name: "Test",
 		providerPreset: "ollama",
-		coauthorTransport: "openai" as never,
+		coauthorTransport: "chat_completions",
 		endpoint: "http://x",
 		apiKey: null,
 		defaultModel: "test-model",
@@ -144,7 +146,7 @@ function makeProfile(overrides: Partial<StoredProviderProfileRecord> = {}): Stor
 		showReasoning: false,
 		streamResponse: true,
 		customSamplers: false,
-		proxyMode: "off" as never,
+		proxyMode: "inherit",
 		proxyId: null,
 		isActive: true,
 		visionModel: null,
@@ -182,12 +184,15 @@ function makeContextService(seams: MockSeams = {}) {
 	const chatLifecycle: ExperienceChatLifecycleSeam = seams.chatLifecycle ?? {
 		assembleSummaryPrompt: async () => ({ prompt: minimalPrompt(), branchId: "b" as ChatBranchId }),
 	};
-	const execute = seams.execute ?? (async () => ({ text: "A compact recap of the scene." }));
+	const execute: typeof nonstreamingProviderExecute = async (input) => {
+		const r = seams.execute ? await seams.execute({ signal: input.signal }) : { text: "A compact recap of the scene." };
+		return execResult(r.text);
+	};
 	return new ExperienceContextService({
 		stores,
 		providerProfiles: providerProfiles as ProviderProfileService,
 		chatLifecycle,
-		execute: execute as never,
+		execute,
 	});
 }
 
@@ -420,8 +425,8 @@ async function chatIdForSession(sessionId: string): Promise<{ chatId: string }> 
 describe("ExperienceContextService — context source (report item 6)", () => {
 	/** A second character + chat with its own branch history and one summary. */
 	async function seedSourceChat(): Promise<{ characterId: string; chatId: string; branchId: string }> {
-		const character = await stores.characters.create({ name: "Mila", description: "Rival spy." } as never);
-		const chat = await stores.chats.createChat({ characterId: character.id, title: "Source" } as never);
+		const character = await stores.characters.create({ name: "Mila", description: "Rival spy." });
+		const chat = await stores.chats.createChat({ characterId: character.id, title: "Source", promptPresetId: null });
 		const branchId = chat.activeBranchId as string;
 		for (let i = 0; i < 3; i++) {
 			await stores.messages.addMessage({
@@ -442,7 +447,7 @@ describe("ExperienceContextService — context source (report item 6)", () => {
 			includeInContext: true,
 			excludeSummarized: false,
 			source: "manual",
-		} as never);
+		});
 		return { characterId: character.id, chatId: chat.id, branchId };
 	}
 
@@ -502,7 +507,7 @@ describe("ExperienceContextService — context source (report item 6)", () => {
 
 	test("explicit character beats the source chat's own card", async () => {
 		const source = await seedSourceChat();
-		const third = await stores.characters.create({ name: "Third", description: "Wildcard." } as never);
+		const third = await stores.characters.create({ name: "Third", description: "Wildcard." });
 		const { sessionId } = await seedSession({ contextMode: "recent", messages: 4 });
 		const row = await makeContextService().captureContext({
 			sessionId,
@@ -553,7 +558,7 @@ describe("ExperienceContextService — context source (report item 6)", () => {
 	// ─── Wave 3 (PS-3): persona source — the user-identity override ────────────
 
 	test("persona source: config-pinned persona replaces the host identity; history/character ambient", async () => {
-		const chosen = await stores.personas.create({ name: "Vera", description: "Detective." } as never);
+		const chosen = await stores.personas.create({ name: "Vera", description: "Detective." });
 		const { chatId: hostChatId, sessionId } = await seedSession({ contextMode: "recent", messages: 4 });
 		await resources.updateConfig(hostChatId, { contextSourcePersonaId: chosen.id });
 		const row = await makeContextService().captureContext({ sessionId });
@@ -570,8 +575,8 @@ describe("ExperienceContextService — context source (report item 6)", () => {
 	});
 
 	test("explicit persona capture override beats the config column; explicit null clears to ambient", async () => {
-		const chosen = await stores.personas.create({ name: "Vera", description: "Detective." } as never);
-		const other = await stores.personas.create({ name: "Kat", description: "Pilot." } as never);
+		const chosen = await stores.personas.create({ name: "Vera", description: "Detective." });
+		const other = await stores.personas.create({ name: "Kat", description: "Pilot." });
 		const { chatId: hostChatId, sessionId } = await seedSession({ contextMode: "recent", messages: 4 });
 		await resources.updateConfig(hostChatId, { contextSourcePersonaId: chosen.id });
 		const overridden = await makeContextService().captureContext({ sessionId, contextSourcePersonaId: other.id });
@@ -587,7 +592,7 @@ describe("ExperienceContextService — context source (report item 6)", () => {
 
 	test("persona source is independent of the chat/character source (both apply)", async () => {
 		const source = await seedSourceChat();
-		const chosen = await stores.personas.create({ name: "Vera", description: "Detective." } as never);
+		const chosen = await stores.personas.create({ name: "Vera", description: "Detective." });
 		const { sessionId } = await seedSession({ contextMode: "recent", messages: 4 });
 		const row = await makeContextService().captureContext({
 			sessionId,

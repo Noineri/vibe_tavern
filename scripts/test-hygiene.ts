@@ -161,7 +161,31 @@ export const BUDGETS = {
 	// over makeProviderProfileRow rows; `{ text }` fakes → the shared
 	// execResult builder (promoted to insights-test-builders.ts, fork #1 of
 	// objective-service.test.ts's 14a original). One commit with the test edits.
-	asNever: 861,
+	// 776 (2026-11-11, TYPE-SAFETY wave D step 14e): the experience spread
+	// zeroed — all 85 sites died WITH their erased constructs
+	// (model-effect-service 23, context-service 17, timer-scheduler 16,
+	// timer-effect-service 6, round-service 5, replay-service 4, service 4,
+	// resource-service 3, routes 3, playground 2, chatter-service 1,
+	// effect-retry 1): the Aria/Olya/Rules store-create fragments died as
+	// PURE DELETIONS (the literals already satisfy CreateCharacterData /
+	// CreatePersonaData / CreateScriptData — the 14c compaction lesson);
+	// createChat fragments completed with the REAL required member
+	// `promptPresetId: null` (column default, runtime-identical — this also
+	// killed the 10 live TS2741 CreateChatInput baseline errors); the
+	// capabilityGrants casts died by typing GRANTS/seed params as
+	// ExperienceCapability[]; `"openai"`/`"off"` profile members → real
+	// CoauthorTransport/ProviderProxyMode values ("chat_completions" /
+	// "inherit" — the store defaults; neither is read on the exercised
+	// paths); execute/executeStructured doubles typed via
+	// typeof nonstreamingProviderExecute + ExperienceModelEffectServiceDeps
+	// and returning the shared execResult shape (the `{ text }` fiction);
+	// the per-model getProviderModelSettings fake completed to a REAL
+	// ProviderModelSettingsRecord; resource-service's hostile
+	// "not_a_real_capability" re-cast as ExperienceCapability pinning the
+	// isValidCapability runtime guard (the 14a agent-kind-registry
+	// precedent); playground's comment mention reworded so the content-level
+	// scanner regex no longer counts it. One commit with the test edits.
+	asNever: 776,
 	/** Global `screen.` usage in apps/web test files (binds at import time). */
 	// 196 (2026-10-04): ratcheted to the merged tree's count after PR #51
 	// (provider-lists unification removed the forked pickers' screen usage;

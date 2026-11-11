@@ -562,8 +562,8 @@ async function seedChatAndScript(
 	grants: ExperienceCapability[] = [],
 	visualSource?: string,
 ): Promise<{ chatId: string; branchId: string; visual: ExperienceVisualRow | null }> {
-	const character = await stores.characters.create({ name: "Hero" } as never);
-	const chat = await stores.chats.createChat({ characterId: character.id, title: "T" });
+	const character = await stores.characters.create({ name: "Hero" });
+	const chat = await stores.chats.createChat({ characterId: character.id, title: "T", promptPresetId: null });
 	const script = await stores.scripts.create({ name: "Rules", scriptKind: "interactive", code: source });
 	let visualRow: ExperienceVisualRow | null = null;
 	if (visualSource !== undefined) {
@@ -717,8 +717,8 @@ context.experience.register({
 
 	test("config GET → PUT → GET round-trips the enabled flag", async () => {
 		const { stores, resources, app } = await setupIntegration();
-		const character = await stores.characters.create({ name: "Hero" } as never);
-		const chat = await stores.chats.createChat({ characterId: character.id, title: "T" });
+		const character = await stores.characters.create({ name: "Hero" });
+		const chat = await stores.chats.createChat({ characterId: character.id, title: "T", promptPresetId: null });
 
 		const before = await app.request(`/api/chats/${chat.id}/experience/config`);
 		expect(before.status).toBe(200);
@@ -737,9 +737,9 @@ context.experience.register({
 
 	test("config PUT persists and clears context-source fields through the real DB", async () => {
 		const { stores, app } = await setupIntegration();
-		const character = await stores.characters.create({ name: "Hero" } as never);
+		const character = await stores.characters.create({ name: "Hero" });
 		const persona = await stores.personas.create({ name: "Them" });
-		const chat = await stores.chats.createChat({ characterId: character.id, title: "T" });
+		const chat = await stores.chats.createChat({ characterId: character.id, title: "T", promptPresetId: null });
 
 		const put = await app.request(`/api/chats/${chat.id}/experience/config`, {
 			method: "PUT", headers: { "content-type": "application/json" },
@@ -885,7 +885,7 @@ describe("Experience routes — IR-70A session discovery (integration)", () => {
 		const { stores, resources, app } = await setupIntegration();
 		const { chatId } = await seedChatAndScript(stores, resources, COUNTER_SOURCE);
 		const otherChar = await stores.characters.create({ name: "O" });
-		const otherChat = await stores.chats.createChat({ characterId: otherChar.id, title: "O" });
+		const otherChat = await stores.chats.createChat({ characterId: otherChar.id, title: "O", promptPresetId: null });
 		const res = await app.request(`/api/chats/${chatId}/experience/session?branchId=${otherChat.activeBranchId}`);
 		expect(res.status).toBe(404);
 		expect((await jsonBody<HttpErrorBody>(res)).error.details.code).toBe("branch_not_found");

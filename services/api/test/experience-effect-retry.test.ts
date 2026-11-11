@@ -47,8 +47,8 @@ async function setup() {
 
 async function seedActiveSessionWithFailedEffect(errorText = "provider unavailable") {
   const { service, resources } = await setup();
-  const character = await stores.characters.create({ name: "Hero" } as never);
-  const chat = await stores.chats.createChat({ characterId: character.id, title: "T" });
+  const character = await stores.characters.create({ name: "Hero" });
+  const chat = await stores.chats.createChat({ characterId: character.id, title: "T", promptPresetId: null });
   const script = await stores.scripts.create({ name: "Rules", scriptKind: "interactive", code: MODEL_EFFECT_SOURCE });
   await resources.updateConfig(chat.id, { enabled: true, scriptId: script.id, capabilityGrants: [] });
 

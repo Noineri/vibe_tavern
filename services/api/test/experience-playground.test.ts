@@ -46,6 +46,7 @@ import { runExperienceTest } from "../src/domain/interactive/experience-tester.j
 import { ExperienceChatterService } from "../src/domain/interactive/experience-chatter-service.js";
 import type { ProviderProfileService } from "../src/domain/providers/provider-profile-service.js";
 import { strictTestDouble } from "./strict-test-double.js";
+import { execResult } from "./insights-test-builders.js";
 import type { HttpErrorBody } from "./routes-test-builders.js";
 import type { ExperiencePlaygroundData } from "../src/domain/interactive/experience-playground.js";
 import type { ExperienceDefinition } from "../src/domain/interactive/experience-kernel.js";
@@ -881,7 +882,8 @@ describe("no-write invariant — zero persistence/binding/DB involvement", () =>
     // Collect every `from "..."` target that appears on an `import` line ONLY
     // (the module's doc comment legitimately names the banned modules in prose
     // to explain what it does NOT import — scanning the whole source would
-    // false-positive on that prose, exactly the `as never`/"was never" trap).
+    // false-positive on that prose; a pattern merely QUOTED in prose still
+    // matches the same naive regex a real call would).
     const importTargets: string[] = [];
     for (const line of source.match(/^import .+$/gm) ?? []) {
       for (const m of line.matchAll(/from\s+"([^"]+)"/g)) {
@@ -1295,10 +1297,10 @@ function makeChatterService(replyText: string): { service: ExperienceChatterServ
     // The strict double keeps the three provided members compiler-checked;
     // a member the chatter starts reading throws a labeled miss.
     providerProfiles: strictTestDouble<ProviderProfileService>(providerProfiles, "ProviderProfileService (playground chatter)"),
-    execute: (async () => {
+    execute: async () => {
       calls += 1;
-      return { text: replyText };
-    }) as never,
+      return execResult(replyText);
+    },
   });
   return { service, executeCalls: () => calls };
 }

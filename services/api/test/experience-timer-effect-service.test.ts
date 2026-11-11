@@ -18,6 +18,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { createStoreContainer, type StoreContainer } from "@vibe-tavern/db";
+import type { ExperienceCapability } from "@vibe-tavern/domain";
 
 import { ExperienceResourceService } from "../src/domain/interactive/experience-resource-service.js";
 import { ExperienceService } from "../src/domain/interactive/experience-service.js";
@@ -108,7 +109,7 @@ context.experience.register({
 });
 `;
 
-const GRANTS = ["participants", "model"];
+const GRANTS: ExperienceCapability[] = ["participants", "model"];
 const PARTICIPANTS = [
 	{ id: "human", label: "You", controller: "human" as const },
 	{ id: "model", label: "AI", controller: "model" as const, providerProfileId: "pp1", modelId: "test-model" },
@@ -129,12 +130,12 @@ async function setup() {
 }
 
 async function seedSession(source: string) {
-	const character = await stores.characters.create({ name: "Aria", description: "Mage." } as never);
-	const chat = await stores.chats.createChat({ characterId: character.id, title: "T" } as never);
+	const character = await stores.characters.create({ name: "Aria", description: "Mage." });
+	const chat = await stores.chats.createChat({ characterId: character.id, title: "T", promptPresetId: null });
 	const branchId = chat.activeBranchId as string;
-	await stores.personas.create({ name: "Olya", description: "Scholar.", defaultForNewChats: true } as never);
-	const script = await stores.scripts.create({ name: "Rules", scriptKind: "interactive", code: source } as never);
-	await resources.updateConfig(chat.id, { enabled: true, scriptId: script.id, capabilityGrants: GRANTS as never } as never);
+	await stores.personas.create({ name: "Olya", description: "Scholar.", defaultForNewChats: true });
+	const script = await stores.scripts.create({ name: "Rules", scriptKind: "interactive", code: source });
+	await resources.updateConfig(chat.id, { enabled: true, scriptId: script.id, capabilityGrants: GRANTS });
 	const started = await experienceService.startSession({ chatId: chat.id, branchId, settings: {}, participants: PARTICIPANTS });
 	if (!started.ok) throw new Error(`startSession failed: ${started.error.code}`);
 	return { chatId: chat.id, branchId, sessionId: started.data.sessionId };
