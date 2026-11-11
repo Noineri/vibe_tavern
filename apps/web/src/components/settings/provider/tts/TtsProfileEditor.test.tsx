@@ -396,7 +396,6 @@ describe("TtsProfileEditor", () => {
     expect(call.profileId).toBeUndefined();
 
     cleanup();
-    document.body.innerHTML = "";
     await act(async () => {});
   });
 
@@ -437,7 +436,6 @@ describe("TtsProfileEditor", () => {
     await waitFor(() => expect(listTtsDraftModelsMock.mock.calls.length).toBeGreaterThan(before), { timeout: 1000 });
     expect("source" in listTtsDraftModelsMock.mock.calls.at(-1)![0]).toBe(false);
     cleanup();
-    document.body.innerHTML = "";
     await act(async () => {});
   });
 
@@ -495,7 +493,6 @@ describe("TtsProfileEditor", () => {
     const patch = (setForm.mock.calls[0] as unknown[])[0] as { config: Record<string, unknown> };
     expect(patch.config.model).toBe("kokoro");
     cleanup();
-    document.body.innerHTML = "";
     await act(async () => {});
   });
 });
@@ -715,7 +712,6 @@ describe("TtsProfileEditor — F6 sliders + voice placeholders", () => {
     const view = renderEditor(React.createElement(TtsProfileEditor, { tts }));
     await waitFor(() => expect(setForm).toHaveBeenCalledWith({ voiceId: "new-voice" }), { timeout: 2500 });
     cleanup();
-    document.body.innerHTML = "";
     await act(async () => {});
   });
 
@@ -741,7 +737,6 @@ describe("TtsProfileEditor — F6 sliders + voice placeholders", () => {
     const view = renderEditor(React.createElement(TtsProfileEditor, { tts }));
     await waitFor(() => expect(setForm).toHaveBeenCalledWith({ voiceId: "first-voice" }), { timeout: 2500 });
     cleanup();
-    document.body.innerHTML = "";
     await act(async () => {});
   });
 
@@ -769,7 +764,6 @@ describe("TtsProfileEditor — F6 sliders + voice placeholders", () => {
     await new Promise((resolve) => setTimeout(resolve, 900));
     expect(setForm).not.toHaveBeenCalledWith({ voiceId: "first-voice" });
     cleanup();
-    document.body.innerHTML = "";
     await act(async () => {});
   });
 
@@ -788,7 +782,6 @@ describe("TtsProfileEditor — F6 sliders + voice placeholders", () => {
     const input = await waitFor(() => view.getByTestId("tts-voice-input") as HTMLInputElement, { timeout: 2500 });
     expect(input.placeholder).toBe("tts_field_voice_manual_placeholder");
     cleanup();
-    document.body.innerHTML = "";
     await act(async () => {});
   });
 
@@ -807,7 +800,6 @@ describe("TtsProfileEditor — F6 sliders + voice placeholders", () => {
     const input = await waitFor(() => view.getByTestId("tts-voice-input") as HTMLInputElement, { timeout: 2500 });
     expect(input.placeholder).toBe("tts_field_voice_manual_placeholder");
     cleanup();
-    document.body.innerHTML = "";
     await act(async () => {});
   });
 
@@ -826,7 +818,6 @@ describe("TtsProfileEditor — F6 sliders + voice placeholders", () => {
     const input = await waitFor(() => view.getByTestId("tts-voice-input") as HTMLInputElement, { timeout: 2500 });
     expect(input.placeholder).toBe("tts_field_voice_manual_placeholder");
     cleanup();
-    document.body.innerHTML = "";
     await act(async () => {});
   });
 
@@ -850,7 +841,6 @@ describe("TtsProfileEditor — F6 sliders + voice placeholders", () => {
     expect(view.queryByTestId("tts-voices-empty")).toBeNull();
     expect(input).toBeTruthy();
     cleanup();
-    document.body.innerHTML = "";
     await act(async () => {});
   });
 
@@ -900,7 +890,6 @@ describe("TtsProfileEditor — F6 sliders + voice placeholders", () => {
       expect(bodyText).toContain("Alloy");
     });
     cleanup();
-    document.body.innerHTML = "";
     await act(async () => {});
   });
 
@@ -934,7 +923,6 @@ describe("TtsProfileEditor — F6 sliders + voice placeholders", () => {
       expect(patch.narratorVoiceId.length).toBeGreaterThan(0);
     }
     cleanup();
-    document.body.innerHTML = "";
     await act(async () => {});
   });
 
@@ -955,7 +943,6 @@ describe("TtsProfileEditor — F6 sliders + voice placeholders", () => {
     expect(input.value).toBe("custom-narrator");
     expect(input.placeholder).toBe("tts_field_narrator_voice_none");
     cleanup();
-    document.body.innerHTML = "";
     await act(async () => {});
   });
 });
@@ -1025,7 +1012,6 @@ describe("TtsProfileEditor — TE2-8 provider form fork", () => {
     expect(applied?.config?.["modelFilter"]).toBe("modality");
     expect(applied?.config?.["endpoint"]).toBe("https://openrouter.ai/api/v1");
     cleanup();
-    document.body.innerHTML = "";
     await act(async () => {});
   });
 
@@ -1062,7 +1048,6 @@ describe("TtsProfileEditor — TE2-8 provider form fork", () => {
     // that actually carries a backend, not by the raw tail.
     const lastBackendPatch = () => [...calls].reverse().find((c) => c && typeof c.backend === "string");
     for (const [label, backend] of expected) {
-      document.body.innerHTML = "";
       const trigger = Array.from(view.container.querySelectorAll("button")).find((b) => b.textContent?.trim() === "custom");
       expect(trigger).toBeTruthy();
       fireEvent.click(trigger!);
@@ -1079,7 +1064,6 @@ describe("TtsProfileEditor — TE2-8 provider form fork", () => {
       expect(applied?.config?.["preset"]).toBeDefined();
     }
     cleanup();
-    document.body.innerHTML = "";
     await act(async () => {});
   });
 
@@ -1185,7 +1169,6 @@ describe("TtsProfileEditor — TE2-8 provider form fork", () => {
     expect(body).not.toContain("OpenAI");
     expect(body).not.toContain("OpenRouter");
     cleanup();
-    document.body.innerHTML = "";
     await act(async () => {});
   });
 
@@ -1763,7 +1746,6 @@ describe("TtsProfileEditor — voice clone section", () => {
     await view1.findByTestId("tts-voice-section");
     expect(view1.queryByTestId("tts-clone-section")).toBeNull();
     cleanup();
-    document.body.innerHTML = "";
     await act(async () => {});
 
     // Library-capable backend (chatterbox shape): voices EMPTY but the
@@ -1778,7 +1760,6 @@ describe("TtsProfileEditor — voice clone section", () => {
     // Sits directly under the voice section (design point 1).
     expect(section.previousElementSibling?.getAttribute("data-testid")).toBe("tts-voice-section");
     cleanup();
-    document.body.innerHTML = "";
     await act(async () => {});
   });
 
@@ -1837,7 +1818,6 @@ describe("TtsProfileEditor — voice clone section", () => {
     expect(afterClone.profileId).toBe("p1");
 
     cleanup();
-    document.body.innerHTML = "";
     await act(async () => {});
   });
 
@@ -1878,7 +1858,6 @@ describe("TtsProfileEditor — voice clone section", () => {
       expect(call.audio.type).toBe("audio/wav");
 
       cleanup();
-      document.body.innerHTML = "";
       await act(async () => {});
     } finally {
       __setGlueDecoderForTests(null);
@@ -1907,7 +1886,6 @@ describe("TtsProfileEditor — voice clone section", () => {
       expect(call.audio.name).toBe("solo.mp3");
 
       cleanup();
-      document.body.innerHTML = "";
       await act(async () => {});
     } finally {
       __setGlueDecoderForTests(null);
@@ -1945,7 +1923,6 @@ describe("TtsProfileEditor — voice clone section", () => {
       expect("source" in listTtsDraftVoicesMock.mock.calls[before][0]).toBe(false);
 
       cleanup();
-      document.body.innerHTML = "";
       await act(async () => {});
     } finally {
       listTtsDraftVoicesMock.mockRestore();
@@ -1972,7 +1949,6 @@ describe("TtsProfileEditor — voice clone section", () => {
       expect(view.getByTestId("tts-voice-input")).toBeTruthy();
 
       cleanup();
-      document.body.innerHTML = "";
       await act(async () => {});
     } finally {
       listTtsDraftVoicesMock.mockRestore();
@@ -2030,7 +2006,6 @@ describe("TtsProfileEditor — voice clone section", () => {
       expect(plain.queryByTestId("tts-clone-reference-text")).toBeNull();
       expect(plain.queryByTestId("tts-clone-hint-siliconflow")).toBeNull();
       cleanup();
-      document.body.innerHTML = "";
       await act(async () => {});
 
       // SiliconFlow phase: transcript hint + caveat key ride capabilities —
@@ -2064,7 +2039,6 @@ describe("TtsProfileEditor — voice clone section", () => {
       expect(call.referenceText).toBe("Hello, this is my voice.");
 
       cleanup();
-      document.body.innerHTML = "";
       await act(async () => {});
     } finally {
       // Restore the suite default stub — a leaked phase-based impl would
@@ -2103,7 +2077,6 @@ describe("TtsProfileEditor — voice clone section", () => {
     expect((view.getByTestId("tts-clone-name") as HTMLInputElement).value).toBe("dupe");
 
     cleanup();
-    document.body.innerHTML = "";
     await act(async () => {});
   });
 });

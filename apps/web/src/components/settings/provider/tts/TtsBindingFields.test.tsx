@@ -143,7 +143,6 @@ afterEach(async () => {
   __setTtsLinksDepsForTests(null);
   await act(async () => {});
   cleanup();
-  document.body.innerHTML = "";
 });
 
 describe("TtsBindingFields", () => {

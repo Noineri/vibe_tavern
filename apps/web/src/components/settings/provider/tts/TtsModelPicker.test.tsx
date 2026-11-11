@@ -66,11 +66,10 @@ function mountPicker(overrides: Partial<React.ComponentProps<typeof TtsModelPick
 }
 
 beforeEach(() => {
-  document.body.innerHTML = "";
+  cleanup();
 });
 afterEach(async () => {
   cleanup();
-  document.body.innerHTML = "";
 });
 
 describe("TtsModelPicker (ProviderModelSelector adapter)", () => {

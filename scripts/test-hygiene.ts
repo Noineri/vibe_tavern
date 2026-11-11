@@ -264,7 +264,47 @@ export const BUDGETS = {
 	// commit with the test edits.
 	screen: 1,
 	/** `innerHTML = ""` surgeries (TtsProfileEditor legacy block). */
-	innerHTMLEmpty: 30,
+	// 0 (2026-11-12): step 19 — the innerHTML sweep CLOSES THE CATEGORY
+	// (ratchet 30 → 0; any new site now fails the guard outright). The
+	// census split ran first (the 18b lesson): all 30 sites are CODE, zero
+	// comment mentions. The holders are exactly the packet's three TTS
+	// files (live scanFile 27/2/1 before, 0/0/0 after; repo-wide 30 → 0
+	// over 1281 test files). THE SHAPES (R6, same boundary — each wipe
+	// deleted, the sanctioned teardown it already followed stays):
+	// TtsProfileEditor 26 of 27 are the legacy trio `cleanup();
+	// innerHTML=""; await act` — 19 four-space end-of-test sites, 5
+	// six-space sites inside try-finally blocks (glue decoder twice, voices
+	// mockRestore twice, siliconflow end), and 2 mid-test phase resets
+	// immediately followed by a fresh renderEditor (:1766, :2033) — in all
+	// of them cleanup() had ALREADY produced the emptied body the wipe
+	// re-produced, and the file's own afterEach runs act+cleanup again;
+	// TtsModelPicker's beforeEach wipe became cleanup() (the sanctioned
+	// reset of the same state — every mount goes through render()), its
+	// afterEach wipe deleted above the existing cleanup();
+	// TtsBindingFields's afterEach wipe deleted above cleanup().
+	// THE JUDGMENT CALL: the one NON-teardown-imitation site — the
+	// mid-loop wipe in "applyPreset: every native roster row maps to ITS
+	// backend" (:1065, a for-loop over all 8 presets) — kills the open
+	// dropdown portal while keeping the editor mount alive; cleanup()
+	// cannot express that (it unmounts the editor, and the loop's next
+	// iteration queries view.container), so it went to the supervisor with
+	// its mechanism instead of being forced. RULING: plain deletion, on
+	// production evidence — the dropdown is the shared DropdownSelect
+	// (TtsProviderForm.tsx:237), a controlled cmdk+Radix Popover whose
+	// handleSelect runs onChange(id); setOpen(false); synchronously on
+	// every selection (DropdownSelect.tsx:139-142), so the no-open-popup
+	// state the wipe manufactures is already true at each iteration start;
+	// deleting it makes the pin strictly more honest — an auto-close
+	// regression now fails the loop loudly instead of being forcibly
+	// hidden. Binding conditions held: the waitFor re-click retry block
+	// byte-untouched; the applyPreset test green 4/4 standalone and the
+	// file green 3 times at identical counts. Per-file pass/fail identical before
+	// and after (86/7/5 pass, 0 fail; 24 and 16 expect();
+	// TtsProfileEditor's runtime expect() total stays a waitFor-poll
+	// counter — 3405 → 3618/3629/3694 across the three AFTER runs, the
+	// source expect( count is 365 on both sides). One commit with the
+	// test edits.
+	innerHTMLEmpty: 0,
 	/** Literal `await sleep/delay/wait(N)` with N > 200 in test files. */
 	longSleeps: 2,
 } as const;
