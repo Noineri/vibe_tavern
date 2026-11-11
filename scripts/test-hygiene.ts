@@ -306,6 +306,49 @@ export const BUDGETS = {
 	// test edits.
 	innerHTMLEmpty: 0,
 	/** Literal `await sleep/delay/wait(N)` with N > 200 in test files. */
+	// 2 (2026-11-12, step 20): closes at TWO DOCUMENTED SURVIVORS - the
+	// sweep's last budget does not move (2 -> 2); both sites stay
+	// byte-untouched by ruling on this unit's escalation (the 18b
+	// harness.smoke precedent: the fix is worse than the pattern). THE
+	// CENSUS AT START (live scanFile): exactly 2 matches repo-wide over
+	// 1281 test files, both CODE lines in scripts/test.test.ts (line 155
+	// N=400, line 174 N=300), zero comment mentions - the only holder
+	// file. Both sites feed CHILD PROCESSES through runTestSuites; the
+	// children are real OS processes whose only clock is real time, so
+	// the pinned mechanisms need genuine child lifetimes and the R5
+	// parent-side wait forms cannot reproduce them:
+	// (a) test.test.ts:155, "runs suites concurrently instead of one at a
+	// time" - each child prints Date.now() around its sleep and the
+	// parent asserts the two windows OVERLAP from the children's own
+	// stamps (test.test.ts:167-168); the second assert is the
+	// sequential-killer (a sequential pool records suite 1 before
+	// spawning suite 2, scripts/test.ts:311), and the 400ms child is the
+	// margin over node -e spawn jitter (spot-run bodies time at ~419ms /
+	// ~320ms - the sleeps are the runtimes);
+	// (b) test.test.ts:174, "keeps results in declaration order when
+	// suites finish out of order" - pins the indexed-results invariant
+	// (scripts/test.ts:300) GIVEN the first suite outlives the second
+	// (test.test.ts:172); the 300ms child is the margin that
+	// deterministically reverses completion order - shorter children
+	// make the assert pass vacuously (completion order = declaration
+	// order).
+	// ALTERNATIVES CONSIDERED, each worse than the pattern: parked
+	// promises in the parent cannot extend a child process's life
+	// (separate OS process); a never-released promise INSIDE the child
+	// hangs it and orphans the process at the suite timeout; a
+	// sibling-marker disk event turns a sequential regression into a
+	// hang + orphan instead of a fast clean fail and rides fs.watch
+	// inside `node -e` on Windows CI (a fresh flake surface); poll loops
+	// are the same sleep chopped below the scanner threshold (laundering);
+	// parent wall-clock asserts are what the test itself forbids ("Pinned
+	// on overlap, not wall clock", test.test.ts:146-148); lowering either
+	// number trades the budget for false-fail margins on a loaded CI box.
+	// Binding conditions held: spot run identical before/after (19 pass /
+	// 0 fail / 98 expect()); scripts workspace tsc 0 diagnostics before
+	// and after; scripts/test.test.ts byte-untouched (not in this
+	// commit). The four hygiene budgets close: as-never 0/0 (step 16),
+	// screen 1/1 (dom-env pin, step 18b), innerHTML 0/0 (step 19), sleeps
+	// 2/2 (these survivors).
 	longSleeps: 2,
 } as const;
 
