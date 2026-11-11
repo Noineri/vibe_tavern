@@ -529,6 +529,10 @@ export interface SessionRuntimeFixture {
 	chatLifecycle?: {
 		buildPipelineContext(input: {
 			chatId: ChatId;
+			/** Background triggers pass the committed event's branch explicitly
+			 *  (session-runtime-chat-lifecycle.ts input); the objective-suite
+			 *  orchestration pins assert it (getContextBranchIds). */
+			branchId?: ChatBranchId;
 			model: string;
 			recentMessageLimit?: number;
 			dryRun?: boolean;

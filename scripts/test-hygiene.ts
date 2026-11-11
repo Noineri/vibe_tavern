@@ -109,7 +109,16 @@ export const BUDGETS = {
 	// trace-history-store.test.ts makeTrace (both trace DTOs completed to the
 	// real PromptTraceRecordDto with brandId'd ids, killing the member-level
 	// never-spells); same law, same supervisor follow-up commit.
-	asNever: 1227,
+	// 1056 (2026-11-11, TYPE-SAFETY wave D step 14a): objective-service.test.ts
+	// zeroed — all 171 sites died WITH their erased constructs: ctor null seams
+	// → the shared unusedObjectiveDeps token; fake executes/resolvePrompts →
+	// ConstructorParameters<typeof ObjectiveService> seam types + real
+	// GenerationResult results; "chat_1" ids → brandId<ChatId>;
+	// sessionRuntime/providerProfiles doubles → makeSessionRuntime /
+	// strictTestDouble with complete makeProviderProfileRow records (the
+	// insights-test-builders SessionRuntimeFixture input widened with the real
+	// buildPipelineContext branchId member). One commit with the test edits.
+	asNever: 1056,
 	/** Global `screen.` usage in apps/web test files (binds at import time). */
 	// 196 (2026-10-04): ratcheted to the merged tree's count after PR #51
 	// (provider-lists unification removed the forked pickers' screen usage;

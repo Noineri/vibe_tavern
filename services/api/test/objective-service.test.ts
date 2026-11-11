@@ -17,8 +17,8 @@
  * service only touches those two chat-store methods.
  */
 import { describe, it, expect } from "bun:test";
-import type { ObjectiveLongTermGoal, ObjectiveMode, ObjectiveState, ObjectiveTask } from "@vibe-tavern/domain";
-import { defaultObjectiveState, normalizeObjectiveState, OBJECTIVE_MODE, OBJECTIVE_TASK_STATUS } from "@vibe-tavern/domain";
+import type { ChatId, ObjectiveLongTermGoal, ObjectiveMode, ObjectiveState, ObjectiveTask, ObjectiveTaskStatus } from "@vibe-tavern/domain";
+import { brandId, defaultObjectiveState, normalizeObjectiveState, OBJECTIVE_MODE, OBJECTIVE_TASK_STATUS } from "@vibe-tavern/domain";
 import type { StoreContainer } from "@vibe-tavern/db";
 import type { PromptAssemblyContext } from "@vibe-tavern/prompt-pipeline";
 import {
@@ -29,8 +29,12 @@ import {
   selectActiveTask,
   advanceAfterCompletion,
 } from "../src/domain/insights/objective-service.js";
-import type { ProviderExecutionInput } from "../src/infrastructure/ai/provider-execution-types.js";
-import { makeMessageRow, makeObjectiveChatRow, makeObjectiveStores } from "./insights-test-builders.js";
+import type { ProviderProfileService } from "../src/domain/providers/provider-profile-service.js";
+import type { GenerationResult, ProviderExecutionInput } from "../src/infrastructure/ai/provider-execution-types.js";
+import { makeMessageRow, makeObjectiveChatRow, makeObjectiveStores, makeSessionRuntime } from "./insights-test-builders.js";
+import { makeProviderProfileRow } from "./copilot-test-builders.js";
+import { strictTestDouble } from "./strict-test-double.js";
+import { unusedObjectiveDeps } from "./objective-service-fixture.js";
 
 // ─── pure helpers ───────────────────────────────────────────────────────────
 
@@ -102,6 +106,19 @@ describe("selectActiveTask + advanceAfterCompletion (INS-3b)", () => {
 
 // ─── service (DI execute + resolvePrompt) ───────────────────────────────────
 
+/** The service's real ctor seams (objective-service.ts keeps its Execute /
+ *  ResolvePrompt aliases private): derived FROM the class these tests
+ *  construct, so a ctor signature change re-types every double here. */
+type Execute = ConstructorParameters<typeof ObjectiveService>[3];
+type ResolvePrompt = ConstructorParameters<typeof ObjectiveService>[4];
+
+/** A real GenerationResult — the fake execute's full return type. The service
+ *  reads only `.text` (objective-service.ts:238/:240); providerResponse is the
+ *  required trace member, never read on these paths. */
+function execResult(text: string): GenerationResult {
+  return { text, providerResponse: { mode: "nonstream", steps: [] } };
+}
+
 function makeMockStores(initial: unknown = {}): { stores: StoreContainer; readState: () => ObjectiveState } {
   // `initial` is the stored insights_objective_state JSON blob — the domain's
   // own parse seam takes it as `unknown` (normalizeObjectiveState) because
@@ -136,7 +153,7 @@ const context: PromptAssemblyContext = {
     ],
   },
 } as PromptAssemblyContext;
-const profile = {} as never; // fake execute ignores it
+const profile = makeProviderProfileRow(); // fake execute ignores it
 
 /**
  * Build a service whose `execute` captures the prompt it receives (so the test
@@ -149,12 +166,12 @@ function serviceWith(
   promptBase = "BASE-INSTRUCTION",
 ): { service: ObjectiveService; capturedPrompt: () => ProviderExecutionInput["prompt"] | null } {
   let captured: ProviderExecutionInput["prompt"] | null = null;
-  const execute = async (input: ProviderExecutionInput) => {
+  const execute: Execute = async (input) => {
     captured = input.prompt;
-    return { text: reply } as never; // service only reads result.text
+    return execResult(reply); // service only reads result.text
   };
-  const resolvePrompt = async () => promptBase;
-  return { service: new ObjectiveService(stores, null as never, null as never, execute as never, resolvePrompt as never), capturedPrompt: () => captured };
+  const resolvePrompt: ResolvePrompt = async () => promptBase;
+  return { service: new ObjectiveService(stores, unusedObjectiveDeps, unusedObjectiveDeps, execute, resolvePrompt), capturedPrompt: () => captured };
 }
 
 describe("ObjectiveService (INS-3b logic + INS-3c assembler wiring)", () => {
@@ -162,7 +179,7 @@ describe("ObjectiveService (INS-3b logic + INS-3c assembler wiring)", () => {
     const { stores, readState } = makeMockStores({ objectiveDescription: "Defeat the warlord", tasks: [], autoCheckFrequency: 0, injectionDepth: 1, generatePrompt: "", checkPrompt: "", injectPrompt: "" });
     const { service } = serviceWith(stores, '{"tasks":[{"description":"Reach the city gates"},{"description":"Confront the warlord"},{"description":"End the siege"}]}');
 
-    const state = await service.generateTasks({ chatId: "chat_1" as never, profile, model: "m", context });
+    const state = await service.generateTasks({ chatId: brandId<ChatId>("chat_1"), profile, model: "m", context });
     expect(state.tasks.map((t) => t.description)).toEqual(["Reach the city gates", "Confront the warlord", "End the siege"]);
     expect(state.objectiveDescription).toBe("Defeat the warlord"); // preserved
     // The first generated task is explicitly 'active' (the current target); the
@@ -173,7 +190,7 @@ describe("ObjectiveService (INS-3b logic + INS-3c assembler wiring)", () => {
       OBJECTIVE_TASK_STATUS.pending,
       OBJECTIVE_TASK_STATUS.pending,
     ]);
-    expect((await service.getActiveTask("chat_1" as never))?.description).toBe("Reach the city gates");
+    expect((await service.getActiveTask(brandId<ChatId>("chat_1")))?.description).toBe("Reach the city gates");
 
     // Persisted: readState reflects the saved tasks with the same activation.
     const persisted = readState().tasks;
@@ -190,7 +207,7 @@ describe("ObjectiveService (INS-3b logic + INS-3c assembler wiring)", () => {
     };
     const { stores, readState } = makeMockStores(initial);
     const { service } = serviceWith(stores, "I cannot help with that.");
-    await expect(service.generateTasks({ chatId: "chat_1" as never, profile, model: "m", context })).rejects.toThrow();
+    await expect(service.generateTasks({ chatId: brandId<ChatId>("chat_1"), profile, model: "m", context })).rejects.toThrow();
     expect(readState().tasks).toEqual(initial.tasks);
   });
 
@@ -201,20 +218,20 @@ describe("ObjectiveService (INS-3b logic + INS-3c assembler wiring)", () => {
       tasks: [{ id: "t1", description: "Keep this route", status: OBJECTIVE_TASK_STATUS.pending }],
     };
     const { stores, readState } = makeMockStores(initial);
-    let releaseExecute: ((value: { text: string }) => void) | undefined;
+    let releaseExecute: ((value: GenerationResult) => void) | undefined;
     let markStarted: (() => void) | undefined;
     const started = new Promise<void>((resolve) => { markStarted = resolve; });
-    const execute = async () => new Promise<{ text: string }>((resolve) => {
+    const execute: Execute = async () => new Promise<GenerationResult>((resolve) => {
       releaseExecute = resolve;
       markStarted?.();
     });
-    const service = new ObjectiveService(stores, null as never, null as never, execute as never, async () => "BASE");
+    const service = new ObjectiveService(stores, unusedObjectiveDeps, unusedObjectiveDeps, execute, async () => "BASE");
     const controller = new AbortController();
 
-    const pending = service.generateTasks({ chatId: "chat_1" as never, profile, model: "m", context, signal: controller.signal });
+    const pending = service.generateTasks({ chatId: brandId<ChatId>("chat_1"), profile, model: "m", context, signal: controller.signal });
     await started;
     controller.abort();
-    releaseExecute?.({ text: '{"tasks":[{"description":"Overwrite"}]}' });
+    releaseExecute?.(execResult('{"tasks":[{"description":"Overwrite"}]}'));
 
     await expect(pending).rejects.toThrow();
     expect(readState().tasks).toEqual(initial.tasks);
@@ -227,19 +244,19 @@ describe("ObjectiveService (INS-3b logic + INS-3c assembler wiring)", () => {
       tasks: [{ id: "t1", description: "Original route", status: OBJECTIVE_TASK_STATUS.pending }],
     };
     const { stores, readState } = makeMockStores(initial);
-    let releaseExecute: ((value: { text: string }) => void) | undefined;
+    let releaseExecute: ((value: GenerationResult) => void) | undefined;
     let markStarted: (() => void) | undefined;
     const started = new Promise<void>((resolve) => { markStarted = resolve; });
-    const execute = async () => new Promise<{ text: string }>((resolve) => {
+    const execute: Execute = async () => new Promise<GenerationResult>((resolve) => {
       releaseExecute = resolve;
       markStarted?.();
     });
-    const service = new ObjectiveService(stores, null as never, null as never, execute as never, async () => "BASE");
+    const service = new ObjectiveService(stores, unusedObjectiveDeps, unusedObjectiveDeps, execute, async () => "BASE");
 
-    const pending = service.generateTasks({ chatId: "chat_1" as never, profile, model: "m", context });
+    const pending = service.generateTasks({ chatId: brandId<ChatId>("chat_1"), profile, model: "m", context });
     await started;
-    await service.updateTask("chat_1" as never, "t1", { description: "User-edited route" });
-    releaseExecute?.({ text: '{"tasks":[{"description":"Stale generated route"}]}' });
+    await service.updateTask(brandId<ChatId>("chat_1"), "t1", { description: "User-edited route" });
+    releaseExecute?.(execResult('{"tasks":[{"description":"Stale generated route"}]}'));
 
     const result = await pending;
     expect(result.tasks[0].description).toBe("User-edited route");
@@ -254,19 +271,19 @@ describe("ObjectiveService (INS-3b logic + INS-3c assembler wiring)", () => {
       injectionDepth: 1,
     };
     const { stores, readState } = makeMockStores(initial);
-    let releaseExecute: ((value: { text: string }) => void) | undefined;
+    let releaseExecute: ((value: GenerationResult) => void) | undefined;
     let markStarted: (() => void) | undefined;
     const started = new Promise<void>((resolve) => { markStarted = resolve; });
-    const execute = async () => new Promise<{ text: string }>((resolve) => {
+    const execute: Execute = async () => new Promise<GenerationResult>((resolve) => {
       releaseExecute = resolve;
       markStarted?.();
     });
-    const service = new ObjectiveService(stores, null as never, null as never, execute as never, async () => "BASE");
+    const service = new ObjectiveService(stores, unusedObjectiveDeps, unusedObjectiveDeps, execute, async () => "BASE");
 
-    const pending = service.generateTasks({ chatId: "chat_1" as never, profile, model: "m", context });
+    const pending = service.generateTasks({ chatId: brandId<ChatId>("chat_1"), profile, model: "m", context });
     await started;
-    await service.updateObjectiveConfig("chat_1" as never, { injectionDepth: 7 });
-    releaseExecute?.({ text: '{"tasks":[{"description":"Fresh generated route"}]}' });
+    await service.updateObjectiveConfig(brandId<ChatId>("chat_1"), { injectionDepth: 7 });
+    releaseExecute?.(execResult('{"tasks":[{"description":"Fresh generated route"}]}'));
 
     const result = await pending;
     expect(result.tasks[0].description).toBe("Fresh generated route");
@@ -302,15 +319,15 @@ describe("ObjectiveService (INS-3b logic + INS-3c assembler wiring)", () => {
     });
     const service = new ObjectiveService(
       stores,
-      null as never,
-      null as never,
-      async () => ({ text: '{"tasks":[{"description":"Generated route"}]}' }) as never,
+      unusedObjectiveDeps,
+      unusedObjectiveDeps,
+      async () => execResult('{"tasks":[{"description":"Generated route"}]}'),
       async () => "BASE",
     );
 
-    const generation = service.generateTasks({ chatId: "chat_1" as never, profile, model: "m", context });
+    const generation = service.generateTasks({ chatId: brandId<ChatId>("chat_1"), profile, model: "m", context });
     await firstSaveStarted;
-    const config = service.updateObjectiveConfig("chat_1" as never, { injectionDepth: 7 });
+    const config = service.updateObjectiveConfig(brandId<ChatId>("chat_1"), { injectionDepth: 7 });
     await new Promise((resolve) => setTimeout(resolve, 0));
     releaseFirstSave?.();
     await Promise.all([generation, config]);
@@ -327,32 +344,32 @@ describe("ObjectiveService (INS-3b logic + INS-3c assembler wiring)", () => {
       tasks: [{ id: "t1", description: "Wait", status: OBJECTIVE_TASK_STATUS.pending }],
     };
     const { stores } = makeMockStores(initial);
-    const releases: Array<(value: { text: string }) => void> = [];
+    const releases: Array<(value: GenerationResult) => void> = [];
     let executeCalls = 0;
     let activeExecutions = 0;
     let maxActiveExecutions = 0;
-    const execute = async () => {
+    const execute: Execute = async () => {
       const call = executeCalls++;
       activeExecutions += 1;
       maxActiveExecutions = Math.max(maxActiveExecutions, activeExecutions);
-      return new Promise<{ text: string }>((resolve) => {
+      return new Promise<GenerationResult>((resolve) => {
         releases[call] = (value) => {
           activeExecutions -= 1;
           resolve(value);
         };
       });
     };
-    const service = new ObjectiveService(stores, null as never, null as never, execute as never, async () => "BASE");
+    const service = new ObjectiveService(stores, unusedObjectiveDeps, unusedObjectiveDeps, execute, async () => "BASE");
 
-    const generate = service.generateTasks({ chatId: "chat_1" as never, profile, model: "m", context });
+    const generate = service.generateTasks({ chatId: brandId<ChatId>("chat_1"), profile, model: "m", context });
     while (executeCalls < 1) await Promise.resolve();
-    const check = service.checkCompletion({ chatId: "chat_1" as never, profile, model: "m", context });
+    const check = service.checkCompletion({ chatId: brandId<ChatId>("chat_1"), profile, model: "m", context });
     await new Promise((resolve) => setTimeout(resolve, 0));
     const callsBeforeFirstRelease = executeCalls;
 
-    releases[0]?.({ text: '{"tasks":[{"description":"Generated task"}]}' });
+    releases[0]?.(execResult('{"tasks":[{"description":"Generated task"}]}'));
     while (executeCalls < 2) await Promise.resolve();
-    releases[1]?.({ text: '{"completed":false}' });
+    releases[1]?.(execResult('{"completed":false}'));
     await Promise.all([generate, check]);
 
     expect(callsBeforeFirstRelease).toBe(1);
@@ -371,10 +388,10 @@ describe("ObjectiveService (INS-3b logic + INS-3c assembler wiring)", () => {
     const { stores } = makeMockStates(initial);
     const { service } = serviceWith(stores, '{"completed":true}');
 
-    const after = await service.checkCompletion({ chatId: "chat_1" as never, profile, model: "m", context });
+    const after = await service.checkCompletion({ chatId: brandId<ChatId>("chat_1"), profile, model: "m", context });
     expect(after.tasks[0].status).toBe(OBJECTIVE_TASK_STATUS.completed);
     expect(after.tasks[1].status).toBe(OBJECTIVE_TASK_STATUS.pending);
-    expect((await service.getActiveTask("chat_1" as never))?.description).toBe("Run");
+    expect((await service.getActiveTask(brandId<ChatId>("chat_1")))?.description).toBe("Run");
   });
 
   it("does not complete a target edited while its check is in flight", async () => {
@@ -384,19 +401,19 @@ describe("ObjectiveService (INS-3b logic + INS-3c assembler wiring)", () => {
       tasks: [{ id: "t1", description: "Pick the lock", status: OBJECTIVE_TASK_STATUS.pending }],
     };
     const { stores, readState } = makeMockStores(initial);
-    let releaseExecute: ((value: { text: string }) => void) | undefined;
+    let releaseExecute: ((value: GenerationResult) => void) | undefined;
     let markStarted: (() => void) | undefined;
     const started = new Promise<void>((resolve) => { markStarted = resolve; });
-    const execute = async () => new Promise<{ text: string }>((resolve) => {
+    const execute: Execute = async () => new Promise<GenerationResult>((resolve) => {
       releaseExecute = resolve;
       markStarted?.();
     });
-    const service = new ObjectiveService(stores, null as never, null as never, execute as never, async () => "BASE");
+    const service = new ObjectiveService(stores, unusedObjectiveDeps, unusedObjectiveDeps, execute, async () => "BASE");
 
-    const pending = service.checkCompletion({ chatId: "chat_1" as never, profile, model: "m", context });
+    const pending = service.checkCompletion({ chatId: brandId<ChatId>("chat_1"), profile, model: "m", context });
     await started;
-    await service.updateTask("chat_1" as never, "t1", { description: "Find another exit" });
-    releaseExecute?.({ text: '{"completed":true}' });
+    await service.updateTask(brandId<ChatId>("chat_1"), "t1", { description: "Find another exit" });
+    releaseExecute?.(execResult('{"completed":true}'));
 
     const result = await pending;
     expect(result.tasks[0]).toEqual({ id: "t1", description: "Find another exit", status: OBJECTIVE_TASK_STATUS.pending });
@@ -412,7 +429,7 @@ describe("ObjectiveService (INS-3b logic + INS-3c assembler wiring)", () => {
     const { stores } = makeMockStates(initial);
     const { service } = serviceWith(stores, '{"completed":false}');
 
-    const after = await service.checkCompletion({ chatId: "chat_1" as never, profile, model: "m", context });
+    const after = await service.checkCompletion({ chatId: brandId<ChatId>("chat_1"), profile, model: "m", context });
     expect(after.tasks[0].status).toBe(OBJECTIVE_TASK_STATUS.pending);
   });
 
@@ -423,20 +440,20 @@ describe("ObjectiveService (INS-3b logic + INS-3c assembler wiring)", () => {
       tasks: [{ id: "t1", description: "Wait", status: OBJECTIVE_TASK_STATUS.pending }],
     };
     const { stores, readState } = makeMockStores(initial);
-    let releaseExecute: ((value: { text: string }) => void) | undefined;
+    let releaseExecute: ((value: GenerationResult) => void) | undefined;
     let markStarted: (() => void) | undefined;
     const started = new Promise<void>((resolve) => { markStarted = resolve; });
-    const execute = async () => new Promise<{ text: string }>((resolve) => {
+    const execute: Execute = async () => new Promise<GenerationResult>((resolve) => {
       releaseExecute = resolve;
       markStarted?.();
     });
-    const service = new ObjectiveService(stores, null as never, null as never, execute as never, async () => "BASE");
+    const service = new ObjectiveService(stores, unusedObjectiveDeps, unusedObjectiveDeps, execute, async () => "BASE");
     const controller = new AbortController();
 
-    const pending = service.checkCompletion({ chatId: "chat_1" as never, profile, model: "m", context, signal: controller.signal });
+    const pending = service.checkCompletion({ chatId: brandId<ChatId>("chat_1"), profile, model: "m", context, signal: controller.signal });
     await started;
     controller.abort();
-    releaseExecute?.({ text: '{"completed":true}' });
+    releaseExecute?.(execResult('{"completed":true}'));
 
     await expect(pending).rejects.toThrow();
     expect(readState().tasks[0].status).toBe(OBJECTIVE_TASK_STATUS.pending);
@@ -445,20 +462,20 @@ describe("ObjectiveService (INS-3b logic + INS-3c assembler wiring)", () => {
   it("CRUD: addTask appends pending; updateTask patches; deleteTask removes; unknown id throws", async () => {
     const initial: ObjectiveState = { objectiveDescription: "x", tasks: [{ id: "t1", description: "first", status: OBJECTIVE_TASK_STATUS.pending }], autoCheckFrequency: 0, injectionDepth: 1, generatePrompt: "", checkPrompt: "", injectPrompt: "" };
     const { stores } = makeMockStates(initial);
-    const service = new ObjectiveService(stores, null as never, null as never, async () => ({ text: "" }) as never);
+    const service = new ObjectiveService(stores, unusedObjectiveDeps, unusedObjectiveDeps, async () => execResult(""));
 
-    const withAdded = await service.addTask("chat_1" as never, "second");
+    const withAdded = await service.addTask(brandId<ChatId>("chat_1"), "second");
     expect(withAdded.tasks).toHaveLength(2);
     expect(withAdded.tasks[1].status).toBe(OBJECTIVE_TASK_STATUS.pending);
 
-    const withUpdated = await service.updateTask("chat_1" as never, "t1", { status: OBJECTIVE_TASK_STATUS.abandoned, description: "skipped" });
+    const withUpdated = await service.updateTask(brandId<ChatId>("chat_1"), "t1", { status: OBJECTIVE_TASK_STATUS.abandoned, description: "skipped" });
     expect(withUpdated.tasks[0]).toEqual({ id: "t1", description: "skipped", status: OBJECTIVE_TASK_STATUS.abandoned });
 
-    const withDeleted = await service.deleteTask("chat_1" as never, "t1");
+    const withDeleted = await service.deleteTask(brandId<ChatId>("chat_1"), "t1");
     expect(withDeleted.tasks.find((t) => t.id === "t1")).toBeUndefined();
 
-    await expect(service.updateTask("chat_1" as never, "nope", { description: "x" })).rejects.toThrow();
-    await expect(service.deleteTask("chat_1" as never, "nope")).rejects.toThrow();
+    await expect(service.updateTask(brandId<ChatId>("chat_1"), "nope", { description: "x" })).rejects.toThrow();
+    await expect(service.deleteTask(brandId<ChatId>("chat_1"), "nope")).rejects.toThrow();
   });
 
   it("reorders the complete route and rejects incomplete or duplicate permutations", async () => {
@@ -471,28 +488,28 @@ describe("ObjectiveService (INS-3b logic + INS-3c assembler wiring)", () => {
       ],
     };
     const { stores } = makeMockStates(initial);
-    const service = new ObjectiveService(stores, null as never, null as never, async () => ({ text: "" }) as never);
+    const service = new ObjectiveService(stores, unusedObjectiveDeps, unusedObjectiveDeps, async () => execResult(""));
 
-    const reordered = await service.reorderTasks("chat_1" as never, ["t2", "t1", "t3"]);
+    const reordered = await service.reorderTasks(brandId<ChatId>("chat_1"), ["t2", "t1", "t3"]);
     expect(reordered.tasks.map((task) => task.id)).toEqual(["t2", "t1", "t3"]);
-    await expect(service.reorderTasks("chat_1" as never, ["t1", "t2"])).rejects.toThrow("complete permutation");
-    await expect(service.reorderTasks("chat_1" as never, ["t1", "t1", "t3"])).rejects.toThrow("complete permutation");
+    await expect(service.reorderTasks(brandId<ChatId>("chat_1"), ["t1", "t2"])).rejects.toThrow("complete permutation");
+    await expect(service.reorderTasks(brandId<ChatId>("chat_1"), ["t1", "t1", "t3"])).rejects.toThrow("complete permutation");
   });
 
   it("defaults and normalizes contextWindow to a positive integer", async () => {
     expect(defaultObjectiveState().contextWindow).toBe(5);
     const { stores } = makeMockStores({ ...defaultObjectiveState(), contextWindow: 3.8 });
-    const service = new ObjectiveService(stores, null as never, null as never, async () => ({ text: "" }) as never);
-    expect((await service.getState("chat_1" as never)).contextWindow).toBe(3);
-    expect((await service.updateObjectiveConfig("chat_1" as never, { contextWindow: 6 })).contextWindow).toBe(6);
+    const service = new ObjectiveService(stores, unusedObjectiveDeps, unusedObjectiveDeps, async () => execResult(""));
+    expect((await service.getState(brandId<ChatId>("chat_1"))).contextWindow).toBe(3);
+    expect((await service.updateObjectiveConfig(brandId<ChatId>("chat_1"), { contextWindow: 6 })).contextWindow).toBe(6);
   });
 
   it("defaults, normalizes, and clears the persisted auto-check event count in manual mode", async () => {
     expect(defaultObjectiveState().autoCheckEventCount).toBe(0);
     const { stores } = makeMockStores({ ...defaultObjectiveState(), autoCheckFrequency: 3, autoCheckEventCount: 4.8 });
-    const service = new ObjectiveService(stores, null as never, null as never, async () => ({ text: "" }) as never);
-    expect((await service.getState("chat_1" as never)).autoCheckEventCount).toBe(4);
-    expect((await service.updateObjectiveConfig("chat_1" as never, { autoCheckFrequency: 0 })).autoCheckEventCount).toBe(0);
+    const service = new ObjectiveService(stores, unusedObjectiveDeps, unusedObjectiveDeps, async () => execResult(""));
+    expect((await service.getState(brandId<ChatId>("chat_1"))).autoCheckEventCount).toBe(4);
+    expect((await service.updateObjectiveConfig(brandId<ChatId>("chat_1"), { autoCheckFrequency: 0 })).autoCheckEventCount).toBe(0);
   });
 
   it("setting a task active deterministically demotes every other active task", async () => {
@@ -504,9 +521,9 @@ describe("ObjectiveService (INS-3b logic + INS-3c assembler wiring)", () => {
       ],
     };
     const { stores } = makeMockStates(initial);
-    const service = new ObjectiveService(stores, null as never, null as never, async () => ({ text: "" }) as never);
+    const service = new ObjectiveService(stores, unusedObjectiveDeps, unusedObjectiveDeps, async () => execResult(""));
 
-    const updated = await service.updateTask("chat_1" as never, "t2", { status: OBJECTIVE_TASK_STATUS.active });
+    const updated = await service.updateTask(brandId<ChatId>("chat_1"), "t2", { status: OBJECTIVE_TASK_STATUS.active });
     expect(updated.tasks.map((task) => task.status)).toEqual([
       OBJECTIVE_TASK_STATUS.pending,
       OBJECTIVE_TASK_STATUS.active,
@@ -523,9 +540,9 @@ describe("ObjectiveService (INS-3b logic + INS-3c assembler wiring)", () => {
         { id: "t4", description: "   ", status: OBJECTIVE_TASK_STATUS.pending },
       ],
     });
-    const service = new ObjectiveService(stores, null as never, null as never, async () => ({ text: "" }) as never);
+    const service = new ObjectiveService(stores, unusedObjectiveDeps, unusedObjectiveDeps, async () => execResult(""));
 
-    const normalized = await service.getState("chat_1" as never);
+    const normalized = await service.getState(brandId<ChatId>("chat_1"));
     expect(normalized.tasks).toEqual([
       { id: "t1", description: "first", status: OBJECTIVE_TASK_STATUS.active },
       { id: "t2", description: "second", status: OBJECTIVE_TASK_STATUS.pending },
@@ -539,17 +556,17 @@ describe("ObjectiveService (INS-3b logic + INS-3c assembler wiring)", () => {
       tasks: [{ id: "t1", description: "Keep this task", status: OBJECTIVE_TASK_STATUS.pending }],
     };
     const { stores } = makeMockStates(initial);
-    const service = new ObjectiveService(stores, null as never, null as never, async () => ({ text: "" }) as never);
+    const service = new ObjectiveService(stores, unusedObjectiveDeps, unusedObjectiveDeps, async () => execResult(""));
 
-    await expect(service.addTask("chat_1" as never, "   ")).rejects.toThrow("required");
-    await expect(service.updateTask("chat_1" as never, "t1", { description: "   " })).rejects.toThrow("required");
-    await expect(service.setObjectiveDescription("chat_1" as never, "   ")).rejects.toThrow("required");
+    await expect(service.addTask(brandId<ChatId>("chat_1"), "   ")).rejects.toThrow("required");
+    await expect(service.updateTask(brandId<ChatId>("chat_1"), "t1", { description: "   " })).rejects.toThrow("required");
+    await expect(service.setObjectiveDescription(brandId<ChatId>("chat_1"), "   ")).rejects.toThrow("required");
   });
 
   it("setObjectiveDescription sets the high-level goal on an empty chat", async () => {
     const { stores } = makeMockStores();
-    const service = new ObjectiveService(stores, null as never, null as never, async () => ({ text: "" }) as never);
-    const state = await service.setObjectiveDescription("chat_1" as never, "Survive the winter");
+    const service = new ObjectiveService(stores, unusedObjectiveDeps, unusedObjectiveDeps, async () => execResult(""));
+    const state = await service.setObjectiveDescription(brandId<ChatId>("chat_1"), "Survive the winter");
     expect(state.objectiveDescription).toBe("Survive the winter");
   });
 
@@ -563,7 +580,7 @@ describe("ObjectiveService (INS-3b logic + INS-3c assembler wiring)", () => {
     const { stores } = makeMockStores({ objectiveDescription: "Defeat the warlord", tasks: [], autoCheckFrequency: 0, injectionDepth: 1, generatePrompt: "", checkPrompt: "", injectPrompt: "" });
     const { service, capturedPrompt } = serviceWith(stores, '{"tasks":[{"description":"Fight"}]}');
 
-    await service.generateTasks({ chatId: "chat_1" as never, profile, model: "m", context });
+    await service.generateTasks({ chatId: brandId<ChatId>("chat_1"), profile, model: "m", context });
     const messages = (capturedPrompt()!.finalPayload as { messages: Array<{ role: string; content: string; layerId?: string }> }).messages;
     // The character context reaches the insight model (it sees the RP world).
     expect(messages.some((m) => m.content.includes("A fire mage."))).toBe(true);
@@ -581,14 +598,14 @@ describe("ObjectiveService (INS-3b logic + INS-3c assembler wiring)", () => {
     const { stores } = makeMockStores({ objectiveDescription: "Escape", tasks: [], autoCheckFrequency: 0, injectionDepth: 1, generatePrompt: "MY-CUSTOM-GEN-PROMPT", checkPrompt: "", injectPrompt: "" });
     // resolvePrompt receives the override; a real loader would return it verbatim.
     let receivedOverride: string | null = null;
-    const execute = async () => ({ text: '{"tasks":[{"description":"Go"}]}' }) as never;
-    const resolvePrompt = async (_key: string, override?: string) => {
+    const execute: Execute = async () => execResult('{"tasks":[{"description":"Go"}]}');
+    const resolvePrompt: ResolvePrompt = async (_key, override) => {
       receivedOverride = override ?? null;
       return override?.trim() || "DEFAULT";
     };
-    const service = new ObjectiveService(stores, null as never, null as never, execute as never, resolvePrompt as never);
+    const service = new ObjectiveService(stores, unusedObjectiveDeps, unusedObjectiveDeps, execute, resolvePrompt);
 
-    await service.generateTasks({ chatId: "chat_1" as never, profile, model: "m", context });
+    await service.generateTasks({ chatId: brandId<ChatId>("chat_1"), profile, model: "m", context });
     expect(receivedOverride).toBe("MY-CUSTOM-GEN-PROMPT");
   });
 });
@@ -613,7 +630,7 @@ describe("ObjectiveService.triggerAutoCheck (INS-4 orchestration)", () => {
     reply?: string;
     hasProvider?: boolean;
     model?: string;
-    executeOverride?: () => Promise<{ text: string }>;
+    executeOverride?: () => Promise<GenerationResult>;
   }): {
     service: ObjectiveService;
     getBuildCalls: () => number;
@@ -657,25 +674,26 @@ describe("ObjectiveService.triggerAutoCheck (INS-4 orchestration)", () => {
     let buildCalls = 0;
     let recentMessageLimit: number | undefined;
     let executeCalls = 0;
-    const sessionRuntime = {
+    const sessionRuntime = makeSessionRuntime({
       chatLifecycle: {
-        buildPipelineContext: async (input: { recentMessageLimit?: number; branchId?: string }) => {
+        buildPipelineContext: async (input) => {
           buildCalls += 1;
           recentMessageLimit = input.recentMessageLimit;
           if (input.branchId) contextBranchIds.push(input.branchId);
           return { context };
         },
       },
-    } as never;
-    const providerProfiles = {
-      resolveActiveProviderProfile: async () => (hasProvider ? { id: "prof_1", defaultModel: model } : null),
-    } as never;
-    const execute = async () => {
+    });
+    const providerProfiles = strictTestDouble<ProviderProfileService>(
+      { resolveActiveProviderProfile: async () => (hasProvider ? makeProviderProfileRow({ id: "prof_1", defaultModel: model }) : null) },
+      "ProviderProfileService (objective auto-check)",
+    );
+    const execute: Execute = async () => {
       executeCalls += 1;
-      return executeOverride ? executeOverride() : { text: reply } as never;
+      return executeOverride ? executeOverride() : execResult(reply);
     };
-    const resolvePrompt = async () => "BASE-INSTRUCTION";
-    const service = new ObjectiveService(stores, sessionRuntime, providerProfiles, execute as never, resolvePrompt as never);
+    const resolvePrompt: ResolvePrompt = async () => "BASE-INSTRUCTION";
+    const service = new ObjectiveService(stores, sessionRuntime, providerProfiles, execute, resolvePrompt);
     return {
       service,
       getBuildCalls: () => buildCalls,
@@ -775,7 +793,7 @@ describe("ObjectiveService.triggerAutoCheck (INS-4 orchestration)", () => {
       executeOverride: async () => {
         attempts += 1;
         if (attempts === 1) throw new Error("provider failed");
-        return { text: '{"completed":false}' };
+        return execResult('{"completed":false}');
       },
     });
 
@@ -806,7 +824,7 @@ describe("ObjectiveService.triggerAutoCheck (INS-4 orchestration)", () => {
   it("returns immediately when there is no forward-state job to join", async () => {
     const t = makeTriggerService({ objectiveEnabled: true, autoCheckFrequency: 1, assistantCount: 1 });
 
-    await t.service.waitForForwardState("chat_1" as never);
+    await t.service.waitForForwardState(brandId<ChatId>("chat_1"));
 
     expect(t.getExecuteCalls()).toBe(0);
   });
@@ -824,14 +842,14 @@ describe("ObjectiveService.triggerAutoCheck (INS-4 orchestration)", () => {
       executeOverride: async () => {
         markStarted?.();
         await gate;
-        return { text: '{"completed":true}' };
+        return execResult('{"completed":true}');
       },
     });
 
     const automatic = t.service.triggerAutoCheck(trigger());
     await started;
     let joined = false;
-    const joining = t.service.waitForForwardState("chat_1" as never).then(() => { joined = true; });
+    const joining = t.service.waitForForwardState(brandId<ChatId>("chat_1")).then(() => { joined = true; });
     await Promise.resolve();
     expect(joined).toBe(false);
     expect(t.readState().tasks[0]?.status).toBe(OBJECTIVE_TASK_STATUS.pending);
@@ -856,14 +874,14 @@ describe("ObjectiveService.triggerAutoCheck (INS-4 orchestration)", () => {
       executeOverride: async () => {
         markStarted?.();
         await gate;
-        return { text: '{"completed":true}' };
+        return execResult('{"completed":true}');
       },
     });
 
     const automatic = t.service.triggerAutoCheck(trigger());
     await started;
     const controller = new AbortController();
-    const joining = t.service.waitForForwardState("chat_1" as never, controller.signal);
+    const joining = t.service.waitForForwardState(brandId<ChatId>("chat_1"), controller.signal);
     controller.abort(new Error("cancel forward-state wait"));
 
     await expect(joining).rejects.toThrow("cancel forward-state wait");
@@ -887,13 +905,13 @@ describe("ObjectiveService.triggerAutoCheck (INS-4 orchestration)", () => {
       executeOverride: async () => {
         markStarted?.();
         await gate;
-        return { text: '{"completed":false}' };
+        return execResult('{"completed":false}');
       },
     });
 
     const automatic = t.service.triggerAutoCheck(trigger());
     await started;
-    await t.service.updateObjectiveConfig("chat_1" as never, { injectionDepth: 7 });
+    await t.service.updateObjectiveConfig(brandId<ChatId>("chat_1"), { injectionDepth: 7 });
 
     expect(t.readState().injectionDepth).toBe(7);
     release?.();
@@ -918,15 +936,18 @@ describe("ObjectiveService.triggerAutoCheck (INS-4 orchestration)", () => {
       },
       messages: { getMessages: async () => [makeMessageRow({ id: "message_1", role: "assistant", position: 0, content: "reply" })] },
     });
-    const sessionRuntime = { chatLifecycle: { buildPipelineContext: async () => ({ context }) } } as never;
-    const providerProfiles = { resolveActiveProviderProfile: async () => ({ id: "profile_1", defaultModel: "model_1" }) } as never;
+    const sessionRuntime = makeSessionRuntime({ chatLifecycle: { buildPipelineContext: async () => ({ context }) } });
+    const providerProfiles = strictTestDouble<ProviderProfileService>(
+      { resolveActiveProviderProfile: async () => makeProviderProfileRow({ id: "profile_1", defaultModel: "model_1" }) },
+      "ProviderProfileService (manual-vs-auto serialization)",
+    );
     let executeCalls = 0;
     let activeExecutions = 0;
     let maxActiveExecutions = 0;
     let releaseFirst: (() => void) | undefined;
     let markFirstStarted: (() => void) | undefined;
     const firstStarted = new Promise<void>((resolve) => { markFirstStarted = resolve; });
-    const execute = async () => {
+    const execute: Execute = async () => {
       executeCalls += 1;
       activeExecutions += 1;
       maxActiveExecutions = Math.max(maxActiveExecutions, activeExecutions);
@@ -934,14 +955,14 @@ describe("ObjectiveService.triggerAutoCheck (INS-4 orchestration)", () => {
         markFirstStarted?.();
         await new Promise<void>((resolve) => { releaseFirst = resolve; });
         activeExecutions -= 1;
-        return { text: '{"tasks":[{"description":"Generated task"}]}' } as never;
+        return execResult('{"tasks":[{"description":"Generated task"}]}');
       }
       activeExecutions -= 1;
-      return { text: '{"completed":false}' } as never;
+      return execResult('{"completed":false}');
     };
-    const service = new ObjectiveService(stores, sessionRuntime, providerProfiles, execute as never, async () => "BASE");
+    const service = new ObjectiveService(stores, sessionRuntime, providerProfiles, execute, async () => "BASE");
 
-    const manual = service.generateTasks({ chatId: "chat_1" as never, profile, model: "m", context });
+    const manual = service.generateTasks({ chatId: brandId<ChatId>("chat_1"), profile, model: "m", context });
     await firstStarted;
     const automatic = service.triggerAutoCheck(trigger());
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -973,37 +994,40 @@ describe("ObjectiveService.triggerAutoCheck (INS-4 orchestration)", () => {
       },
       messages: { getMessages: async () => [] },
     });
-    const sessionRuntime = {
+    const sessionRuntime = makeSessionRuntime({
       chatLifecycle: {
-        buildPipelineContext: async (input: { branchId: string }) => {
-          contextBranchIds.push(input.branchId);
+        buildPipelineContext: async (input) => {
+          if (input.branchId) contextBranchIds.push(input.branchId);
           return { context };
         },
       },
-    } as never;
+    });
     let executeCalls = 0;
     const eventCountsAtExecution: number[] = [];
     let releaseFirst: (() => void) | undefined;
     let markFirstStarted: (() => void) | undefined;
     const firstStarted = new Promise<void>((resolve) => { markFirstStarted = resolve; });
-    const execute = async () => {
+    const execute: Execute = async () => {
       executeCalls += 1;
       eventCountsAtExecution.push(state.autoCheckEventCount);
       if (executeCalls === 1) {
         markFirstStarted?.();
         await new Promise<void>((resolve) => { releaseFirst = resolve; });
       }
-      return { text: '{"completed":false}' } as never;
+      return execResult('{"completed":false}');
     };
-    const providerProfiles = { resolveActiveProviderProfile: async () => ({ id: "profile_1", defaultModel: "model_1" }) } as never;
-    const service = new ObjectiveService(stores, sessionRuntime, providerProfiles, execute as never, async () => "BASE");
+    const providerProfiles = strictTestDouble<ProviderProfileService>(
+      { resolveActiveProviderProfile: async () => makeProviderProfileRow({ id: "profile_1", defaultModel: "model_1" }) },
+      "ProviderProfileService (event coalescing)",
+    );
+    const service = new ObjectiveService(stores, sessionRuntime, providerProfiles, execute, async () => "BASE");
 
     const first = service.triggerAutoCheck(trigger("branch_a", "message_a"));
     await firstStarted;
     await service.triggerAutoCheck(trigger("branch_b", "message_b"));
     await service.triggerAutoCheck(trigger("branch_c", "message_c"));
     let joined = false;
-    const joining = service.waitForForwardState("chat_1" as never).then(() => { joined = true; });
+    const joining = service.waitForForwardState(brandId<ChatId>("chat_1")).then(() => { joined = true; });
     await Promise.resolve();
     expect(joined).toBe(false);
 
@@ -1033,17 +1057,20 @@ describe("ObjectiveService.triggerAutoCheck (INS-4 orchestration)", () => {
   it("ignores a stored secondary-model pin while using the chat model", async () => {
     let activeCalls = 0;
     let pinnedCalls = 0;
-    const providerProfiles = {
-      resolveActiveProviderProfile: async () => {
-        activeCalls += 1;
-        return { id: "prof_active", defaultModel: "chat-model" };
+    const providerProfiles = strictTestDouble<ProviderProfileService>(
+      {
+        resolveActiveProviderProfile: async () => {
+          activeCalls += 1;
+          return makeProviderProfileRow({ id: "prof_active", defaultModel: "chat-model" });
+        },
+        getProviderProfile: async () => {
+          pinnedCalls += 1;
+          return makeProviderProfileRow({ id: "prof_pinned", defaultModel: "secondary-default" });
+        },
       },
-      getProviderProfile: async () => {
-        pinnedCalls += 1;
-        return { id: "prof_pinned", defaultModel: "secondary-default" };
-      },
-    } as never;
-    const service = new ObjectiveService({} as StoreContainer, {} as never, providerProfiles, async () => ({ text: "" }) as never, async () => "");
+      "ProviderProfileService (secondary-pin ignored)",
+    );
+    const service = new ObjectiveService({} as StoreContainer, unusedObjectiveDeps, providerProfiles, async () => execResult(""), async () => "");
 
     const resolved = await service.resolveInsightProvider({
       ...defaultObjectiveState(),
@@ -1061,18 +1088,21 @@ describe("ObjectiveService.triggerAutoCheck (INS-4 orchestration)", () => {
   it("resolves a separately pinned provider/model instead of the active chat profile", async () => {
     let activeCalls = 0;
     let pinnedCalls = 0;
-    const providerProfiles = {
-      resolveActiveProviderProfile: async () => {
-        activeCalls += 1;
-        return { id: "prof_active", defaultModel: "chat-model" };
+    const providerProfiles = strictTestDouble<ProviderProfileService>(
+      {
+        resolveActiveProviderProfile: async () => {
+          activeCalls += 1;
+          return makeProviderProfileRow({ id: "prof_active", defaultModel: "chat-model" });
+        },
+        getProviderProfile: async (id) => {
+          pinnedCalls += 1;
+          expect(id).toBe("prof_pinned");
+          return makeProviderProfileRow({ id, defaultModel: "provider-default" });
+        },
       },
-      getProviderProfile: async (id: string) => {
-        pinnedCalls += 1;
-        expect(id).toBe("prof_pinned");
-        return { id, defaultModel: "provider-default" };
-      },
-    } as never;
-    const service = new ObjectiveService({} as StoreContainer, {} as never, providerProfiles, async () => ({ text: "" }) as never, async () => "");
+      "ProviderProfileService (separate pin)",
+    );
+    const service = new ObjectiveService({} as StoreContainer, unusedObjectiveDeps, providerProfiles, async () => execResult(""), async () => "");
 
     const resolved = await service.resolveInsightProvider({
       ...defaultObjectiveState(),
@@ -1107,11 +1137,11 @@ describe("ObjectiveService — goals mode (OGM)", () => {
     const initial: ObjectiveState = { ...defaultObjectiveState(), mode: OBJECTIVE_MODE.goals };
     const { stores } = makeMockStates(initial);
     let resolvedKey = "";
-    const execute = async () => ({ text: '{"longTerm":{"description":"Free the city"},"shortTerm":[{"description":"Reach gates"},{"description":"Find ally"}]}' });
-    const resolvePrompt = async (key: string) => { resolvedKey = key; return "GOAL-BASE"; };
-    const service = new ObjectiveService(stores, null as never, null as never, execute as never, resolvePrompt as never);
+    const execute: Execute = async () => execResult('{"longTerm":{"description":"Free the city"},"shortTerm":[{"description":"Reach gates"},{"description":"Find ally"}]}');
+    const resolvePrompt: ResolvePrompt = async (key) => { resolvedKey = key; return "GOAL-BASE"; };
+    const service = new ObjectiveService(stores, unusedObjectiveDeps, unusedObjectiveDeps, execute, resolvePrompt);
 
-    const state = await service.generateTasks({ chatId: "chat_1" as never, profile, model: "m", context });
+    const state = await service.generateTasks({ chatId: brandId<ChatId>("chat_1"), profile, model: "m", context });
     expect(resolvedKey).toBe("objectiveGenerateGoals");
     expect(state.mode).toBe(OBJECTIVE_MODE.goals);
     expect(state.longTermGoal).toEqual({ description: "Free the city", status: OBJECTIVE_TASK_STATUS.pending });
@@ -1129,16 +1159,16 @@ describe("ObjectiveService — goals mode (OGM)", () => {
       shortTermGoals: [{ id: "g1", description: "Old", status: OBJECTIVE_TASK_STATUS.pending }],
     };
     const { stores, readState } = makeMockStores(initial);
-    let releaseExecute: ((value: { text: string }) => void) | undefined;
+    let releaseExecute: ((value: GenerationResult) => void) | undefined;
     let markStarted: (() => void) | undefined;
     const started = new Promise<void>((resolve) => { markStarted = resolve; });
-    const execute = async () => new Promise<{ text: string }>((resolve) => { releaseExecute = resolve; markStarted?.(); });
-    const service = new ObjectiveService(stores, null as never, null as never, execute as never, async () => "BASE");
+    const execute: Execute = async () => new Promise<GenerationResult>((resolve) => { releaseExecute = resolve; markStarted?.(); });
+    const service = new ObjectiveService(stores, unusedObjectiveDeps, unusedObjectiveDeps, execute, async () => "BASE");
 
-    const pending = service.generateTasks({ chatId: "chat_1" as never, profile, model: "m", context });
+    const pending = service.generateTasks({ chatId: brandId<ChatId>("chat_1"), profile, model: "m", context });
     await started;
-    await service.addShortTermGoal("chat_1" as never, "User-added goal");
-    releaseExecute?.({ text: '{"longTerm":{"description":"Stale"},"shortTerm":[{"description":"x"}]}' });
+    await service.addShortTermGoal(brandId<ChatId>("chat_1"), "User-added goal");
+    releaseExecute?.(execResult('{"longTerm":{"description":"Stale"},"shortTerm":[{"description":"x"}]}'));
 
     const result = await pending;
     // Stale generation discarded (goalsRevision changed); the user's edit survives.
@@ -1159,7 +1189,7 @@ describe("ObjectiveService — goals mode (OGM)", () => {
     };
     const { stores } = makeMockStates(initial);
     const { service } = serviceWith(stores, '{"completed":true}');
-    const state = await service.checkCompletion({ chatId: "chat_1" as never, profile, model: "m", context });
+    const state = await service.checkCompletion({ chatId: brandId<ChatId>("chat_1"), profile, model: "m", context });
     expect(state.shortTermGoals.find((g) => g.id === "g1")?.status).toBe(OBJECTIVE_TASK_STATUS.completed);
     expect(state.longTermGoal?.status).toBe(OBJECTIVE_TASK_STATUS.pending);
     expect(state.shortTermGoals.find((g) => g.id === "g2")?.status).toBe(OBJECTIVE_TASK_STATUS.pending);
@@ -1173,16 +1203,16 @@ describe("ObjectiveService — goals mode (OGM)", () => {
       shortTermGoals: [{ id: "g1", description: "Reach gates", status: OBJECTIVE_TASK_STATUS.active }],
     };
     const { stores } = makeMockStates(initial);
-    let releaseExecute: ((value: { text: string }) => void) | undefined;
+    let releaseExecute: ((value: GenerationResult) => void) | undefined;
     let markStarted: (() => void) | undefined;
     const started = new Promise<void>((resolve) => { markStarted = resolve; });
-    const execute = async () => new Promise<{ text: string }>((resolve) => { releaseExecute = resolve; markStarted?.(); });
-    const service = new ObjectiveService(stores, null as never, null as never, execute as never, async () => "BASE");
+    const execute: Execute = async () => new Promise<GenerationResult>((resolve) => { releaseExecute = resolve; markStarted?.(); });
+    const service = new ObjectiveService(stores, unusedObjectiveDeps, unusedObjectiveDeps, execute, async () => "BASE");
 
-    const checking = service.checkCompletion({ chatId: "chat_1" as never, profile, model: "m", context });
+    const checking = service.checkCompletion({ chatId: brandId<ChatId>("chat_1"), profile, model: "m", context });
     await started;
-    await service.setObjectiveMode("chat_1" as never, OBJECTIVE_MODE.route);
-    releaseExecute?.({ text: '{"completed":true}' });
+    await service.setObjectiveMode(brandId<ChatId>("chat_1"), OBJECTIVE_MODE.route);
+    releaseExecute?.(execResult('{"completed":true}'));
     const state = await checking;
 
     expect(state.mode).toBe(OBJECTIVE_MODE.route);
@@ -1198,9 +1228,9 @@ describe("ObjectiveService — goals mode (OGM)", () => {
     };
     const { stores } = makeMockStates(initial);
     let executed = false;
-    const execute = async () => { executed = true; return { text: '{"completed":true}' }; };
-    const service = new ObjectiveService(stores, null as never, null as never, execute as never, async () => "BASE");
-    const state = await service.checkCompletion({ chatId: "chat_1" as never, profile, model: "m", context });
+    const execute: Execute = async () => { executed = true; return execResult('{"completed":true}'); };
+    const service = new ObjectiveService(stores, unusedObjectiveDeps, unusedObjectiveDeps, execute, async () => "BASE");
+    const state = await service.checkCompletion({ chatId: brandId<ChatId>("chat_1"), profile, model: "m", context });
     expect(executed).toBe(false);
     expect(state.shortTermGoals[0].status).toBe(OBJECTIVE_TASK_STATUS.completed);
   });
@@ -1213,11 +1243,11 @@ describe("ObjectiveService — goals mode (OGM)", () => {
       tasks: [{ id: "t1", description: "Route task", status: OBJECTIVE_TASK_STATUS.pending }],
     };
     const { stores } = makeMockStates(initial);
-    const service = new ObjectiveService(stores, null as never, null as never, async () => ({ text: "" }) as never, async () => "BASE");
-    const goals = await service.setObjectiveMode("chat_1" as never, OBJECTIVE_MODE.goals);
+    const service = new ObjectiveService(stores, unusedObjectiveDeps, unusedObjectiveDeps, async () => execResult(""), async () => "BASE");
+    const goals = await service.setObjectiveMode(brandId<ChatId>("chat_1"), OBJECTIVE_MODE.goals);
     expect(goals.mode).toBe(OBJECTIVE_MODE.goals);
     expect(goals.tasks).toHaveLength(1); // route data preserved across the switch
-    const back = await service.setObjectiveMode("chat_1" as never, OBJECTIVE_MODE.route);
+    const back = await service.setObjectiveMode(brandId<ChatId>("chat_1"), OBJECTIVE_MODE.route);
     expect(back.mode).toBe(OBJECTIVE_MODE.route);
     expect(back.tasks[0].description).toBe("Route task");
   });
@@ -1225,33 +1255,36 @@ describe("ObjectiveService — goals mode (OGM)", () => {
   it("updateLongTermGoal creates (pending) then cycles status", async () => {
     const initial: ObjectiveState = { ...defaultObjectiveState(), mode: OBJECTIVE_MODE.goals };
     const { stores } = makeMockStates(initial);
-    const service = new ObjectiveService(stores, null as never, null as never, async () => ({ text: "" }) as never, async () => "BASE");
-    const created = await service.updateLongTermGoal("chat_1" as never, { description: "Liberate the city" });
+    const service = new ObjectiveService(stores, unusedObjectiveDeps, unusedObjectiveDeps, async () => execResult(""), async () => "BASE");
+    const created = await service.updateLongTermGoal(brandId<ChatId>("chat_1"), { description: "Liberate the city" });
     expect(created.longTermGoal).toEqual({ description: "Liberate the city", status: OBJECTIVE_TASK_STATUS.pending });
-    const done = await service.updateLongTermGoal("chat_1" as never, { status: OBJECTIVE_TASK_STATUS.completed });
+    const done = await service.updateLongTermGoal(brandId<ChatId>("chat_1"), { status: OBJECTIVE_TASK_STATUS.completed });
     expect(done.longTermGoal).toEqual({ description: "Liberate the city", status: OBJECTIVE_TASK_STATUS.completed });
   });
 
   it("updateLongTermGoal rejects an empty description and an unknown status", async () => {
     const initial: ObjectiveState = { ...defaultObjectiveState(), mode: OBJECTIVE_MODE.goals };
     const { stores } = makeMockStates(initial);
-    const service = new ObjectiveService(stores, null as never, null as never, async () => ({ text: "" }) as never, async () => "BASE");
-    await expect(service.updateLongTermGoal("chat_1" as never, { description: "   " })).rejects.toThrow();
-    await expect(service.updateLongTermGoal("chat_1" as never, { status: "bogus" as never })).rejects.toThrow();
+    const service = new ObjectiveService(stores, unusedObjectiveDeps, unusedObjectiveDeps, async () => execResult(""), async () => "BASE");
+    await expect(service.updateLongTermGoal(brandId<ChatId>("chat_1"), { description: "   " })).rejects.toThrow();
+    // "bogus" is deliberately outside ObjectiveTaskStatus — the runtime status
+    // guard (isObjectiveTaskStatus) is what this pins; the narrow cast is the
+    // fixture seam for out-of-domain input (agent-kind-registry.test.ts:190 idiom).
+    await expect(service.updateLongTermGoal(brandId<ChatId>("chat_1"), { status: "bogus" as ObjectiveTaskStatus })).rejects.toThrow();
   });
 
   it("addShortTermGoal / updateShortTermGoal / deleteShortTermGoal round-trip", async () => {
     const initial: ObjectiveState = { ...defaultObjectiveState(), mode: OBJECTIVE_MODE.goals };
     const { stores } = makeMockStates(initial);
-    const service = new ObjectiveService(stores, null as never, null as never, async () => ({ text: "" }) as never, async () => "BASE");
-    const added = await service.addShortTermGoal("chat_1" as never, "Reach the gates");
+    const service = new ObjectiveService(stores, unusedObjectiveDeps, unusedObjectiveDeps, async () => execResult(""), async () => "BASE");
+    const added = await service.addShortTermGoal(brandId<ChatId>("chat_1"), "Reach the gates");
     const id = added.shortTermGoals[0].id;
     expect(added.shortTermGoals[0].status).toBe(OBJECTIVE_TASK_STATUS.pending);
-    const updated = await service.updateShortTermGoal("chat_1" as never, id, { description: "Reach the gates at dawn" });
+    const updated = await service.updateShortTermGoal(brandId<ChatId>("chat_1"), id, { description: "Reach the gates at dawn" });
     expect(updated.shortTermGoals[0].description).toBe("Reach the gates at dawn");
-    const deleted = await service.deleteShortTermGoal("chat_1" as never, id);
+    const deleted = await service.deleteShortTermGoal(brandId<ChatId>("chat_1"), id);
     expect(deleted.shortTermGoals).toHaveLength(0);
-    await expect(service.updateShortTermGoal("chat_1" as never, id, { description: "x" })).rejects.toThrow();
+    await expect(service.updateShortTermGoal(brandId<ChatId>("chat_1"), id, { description: "x" })).rejects.toThrow();
   });
 
   it("selectShortTermGoal sets exactly one short-term active (demotes the previous active)", async () => {
@@ -1264,8 +1297,8 @@ describe("ObjectiveService — goals mode (OGM)", () => {
       ],
     };
     const { stores } = makeMockStates(initial);
-    const service = new ObjectiveService(stores, null as never, null as never, async () => ({ text: "" }) as never, async () => "BASE");
-    const state = await service.selectShortTermGoal("chat_1" as never, "g2");
+    const service = new ObjectiveService(stores, unusedObjectiveDeps, unusedObjectiveDeps, async () => execResult(""), async () => "BASE");
+    const state = await service.selectShortTermGoal(brandId<ChatId>("chat_1"), "g2");
     expect(state.shortTermGoals.find((g) => g.id === "g2")?.status).toBe(OBJECTIVE_TASK_STATUS.active);
     expect(state.shortTermGoals.find((g) => g.id === "g1")?.status).toBe(OBJECTIVE_TASK_STATUS.pending);
   });
@@ -1276,8 +1309,8 @@ describe("ObjectiveService — goals mode (OGM)", () => {
       tasks: [{ id: "t1", description: "T", status: "active" }, { id: "t2", description: "T2", status: "active" }],
       shortTermGoals: [{ id: "s1", description: "S", status: "active" }, { id: "s2", description: "S2", status: "active" }],
     });
-    const service = new ObjectiveService(stores, null as never, null as never, async () => ({ text: "" }) as never, async () => "BASE");
-    const state = await service.getState("chat_1" as never);
+    const service = new ObjectiveService(stores, unusedObjectiveDeps, unusedObjectiveDeps, async () => execResult(""), async () => "BASE");
+    const state = await service.getState(brandId<ChatId>("chat_1"));
     expect(state.mode).toBe(OBJECTIVE_MODE.route); // absent → route
     expect(state.longTermGoal).toBeNull();
     expect(state.shortTermGoals).toHaveLength(2);
