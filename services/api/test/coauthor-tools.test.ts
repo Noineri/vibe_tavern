@@ -3,12 +3,15 @@ import { serializeProfileMd } from "@vibe-tavern/db";
 import { normalizeTrackerTemplate } from "@vibe-tavern/domain";
 import { trackerTemplateSchema } from "@vibe-tavern/api-contracts";
 import type { CoauthorLoreBundleOutput, CoauthorToolOutput, CoauthorTrackerTemplateOutput } from "@vibe-tavern/api-contracts";
-import type { ToolExecutionOptions, ToolSet } from "ai";
 import { buildCoauthorTools } from "../src/domain/chat/coauthor-tools.js";
 import { buildCoauthorWorkingDocument } from "../src/domain/chat/coauthor-working-document.js";
 import type { LoreDelegate, LoreDelegateInput, LoreDelegateResult } from "../src/domain/coauthor/lore/lore-delegate.js";
 import type { TrackerDelegateInput } from "../src/domain/coauthor/tracker/tracker-delegate.js";
-import { coauthorToolInputSchema } from "./provider-boundary-test-builders.js";
+import {
+  coauthorToolInputSchema,
+  executeTool,
+  makeToolContext,
+} from "./provider-boundary-test-builders.js";
 
 /**
  * Co-Author tools propose edits; they never write. These tests pin the
@@ -36,36 +39,11 @@ function sampleProfileMd(
   });
 }
 
-/** Real AI SDK tool-execution context (the tools ignore it; `buildCoauthorTools`
- *  returns a `ToolSet`, so the loose element typing accepts this stub). */
-const makeToolContext = (toolCallId: string): ToolExecutionOptions<unknown> => ({
-  toolCallId,
-  messages: [],
-  context: undefined,
-});
+/** The tool-context + execution seam lives in provider-boundary-test-builders.ts
+ *  (TYPE-SAFETY wave D step 14c: promoted from this file's local helpers once a
+ *  third consumer — experience-copilot-tools — converted; ONE derivation, all
+ *  consumers import it). */
 const ctx = makeToolContext("t");
-
-/**
- * Execute one statically registered co-author tool. `buildCoauthorTools` returns
- * the SDK's loose `ToolSet` — every member (and its `execute`) optional, which
- * models the toolSet FILTER. These tests call tools built WITHOUT a filter (the
- * filtering tests assert absence via `toBeUndefined`, never execute), so a
- * missing member is a test-contract break: this file's ONE execution seam
- * narrows loudly (throw, not `undefined` reads) and the call site pins the
- * tool's real output type.
- */
-async function executeTool<O = unknown>(
-  tools: ToolSet,
-  name: string,
-  input: unknown,
-  ctx: ToolExecutionOptions<unknown>,
-): Promise<O> {
-  const { execute } = tools[name] ?? {};
-  if (!execute) {
-    throw new Error(`tool ${name} is not registered — the toolSet filter dropped a member this test requires`);
-  }
-  return execute(input, ctx);
-}
 
 describe("coauthor-tools: write_profile", () => {
   test("validates via parseProfileMd round-trip and returns the profile target", async () => {

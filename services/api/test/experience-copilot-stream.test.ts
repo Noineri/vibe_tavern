@@ -1366,7 +1366,10 @@ describe("experience-copilot stream — ask split-turn (TAG-5)", () => {
     try {
       await collect(
         streamExperienceCopilot(
-          { threadId: "thread_1", providerProfileId: "prov_1" } as never,
+          // The static type allows the mode-less request (content/answer are
+          // optional members); the AP-9 guard is the RUNTIME contract this pin
+          // exercises — no erasure needed to construct the input.
+          { threadId: "thread_1", providerProfileId: "prov_1" },
           makeDeps(store),
         ),
       );

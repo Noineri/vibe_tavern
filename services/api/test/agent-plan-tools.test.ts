@@ -4,8 +4,11 @@ import {
   createAgentPlanTools,
   type AgentPlanToolOptions,
 } from "../src/domain/agent-plan/agent-plan-tools.js";
+import { makeToolContext } from "./provider-boundary-test-builders.js";
 
-const ctx = { messages: [], toolCallId: "t", abort: () => {} } as never;
+/** The REAL AI SDK tool-execution context (the tools ignore it) — the shared
+ *  seam from provider-boundary-test-builders.ts (wave D step 14c). */
+const ctx = makeToolContext("t");
 
 const PLAN = {
   goal: "Ship the plan tools",

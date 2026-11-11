@@ -22,6 +22,7 @@ import {
 	type FinishReason,
 	type LanguageModelUsage,
 	type TextStreamPart,
+	type ToolExecutionOptions,
 	type ToolSet,
 } from "ai";
 import type { ProxyProfile, ProviderProfile } from "@vibe-tavern/db";
@@ -267,4 +268,48 @@ export function coauthorToolInputSchema(
 		);
 	}
 	return schema;
+}
+
+// ─── The AI-SDK tool-call boundary (context + execution seam) ────────────────
+
+/**
+ * The REAL AI SDK tool-execution context (`ToolExecutionOptions` — the second
+ * `execute()` argument every `tool({ execute })` callback receives):
+ * `toolCallId` + `messages` + `context` are required members (`context:
+ * undefined` is the honest no-context value — the tools under test read
+ * none), `abortSignal` is the real optional member. The old per-file fakes
+ * carried a NONEXISTENT `abort` member and lacked `context` — fictions the
+ * erasure casts hid (14b proved both against ai@7 provider-utils).
+ *
+ * Promoted here (TYPE-SAFETY wave D step 14c) from coauthor-tools.test.ts's
+ * file-local helper — one derivation, now three consumers (coauthor-tools,
+ * experience-copilot-tools, agent-plan-tools).
+ */
+export function makeToolContext(toolCallId: string): ToolExecutionOptions<unknown> {
+	return { toolCallId, messages: [], context: undefined };
+}
+
+/**
+ * Execute one statically registered tool. The SDK factories
+ * (`buildCoauthorTools`, `buildExperienceCopilotTools`, `createAgentPlanTools`)
+ * return the loose `ToolSet` — every member (and its `execute`) optional,
+ * which models the toolSet FILTER. Tests calling tools built WITHOUT a filter
+ * treat a missing member as a test-contract break: this ONE execution seam
+ * narrows LOUDLY (throw, not `undefined` reads) and the call site pins the
+ * tool's real output type through `<O>`.
+ *
+ * Promoted here (TYPE-SAFETY wave D step 14c) from coauthor-tools.test.ts's
+ * file-local helper — same promotion as {@link makeToolContext} above.
+ */
+export async function executeTool<O = unknown>(
+	tools: ToolSet,
+	name: string,
+	input: unknown,
+	ctx: ToolExecutionOptions<unknown>,
+): Promise<O> {
+	const { execute } = tools[name] ?? {};
+	if (!execute) {
+		throw new Error(`tool ${name} is not registered — the toolSet filter dropped a member this test requires`);
+	}
+	return execute(input, ctx);
 }

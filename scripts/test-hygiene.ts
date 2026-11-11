@@ -130,7 +130,23 @@ export const BUDGETS = {
 	// `rows.slice(-limit) as never[]` → typed rows; promptService {} →
 	// strictTestDouble<PromptAssemblyService>; listCoauthorChats/prepareLiveTurn
 	// ids → brandId<CharacterId>/<ChatId>. One commit with the test edits.
-	asNever: 979,
+	// 928 (2026-11-11, TYPE-SAFETY wave D step 14c): the copilot cluster
+	// zeroed — all 51 sites died WITH their erased constructs (compaction 30,
+	// copilot-tools 19, agent-plan-tools 1, stream 1): the compaction ctor
+	// pairs were pure deletions (makeProviderProfilesFixture already returns
+	// the ctor's ProviderProfileService; makeExecutor's execute already matches
+	// typeof nonstreamingProviderExecute — the cast-free SC-8a block proved
+	// both), the dedupe gate now resolves a REAL GenerationResult (the old
+	// `{ text }` was 14a's fiction class); copilot-tools' file-local ctx fake
+	// (the 14b fiction: nonexistent `abort`, missing required `context`) →
+	// makeToolContext + executeTool<O> with per-tool real output types — the
+	// seam PROMOTED to provider-boundary-test-builders.ts (one derivation, 3+
+	// consumers: coauthor-tools imports it now too, its 81 tests re-run
+	// unchanged); agent-plan-tools ctx → makeToolContext (execute sites left —
+	// their possibly-undefined keys are baselined debt, untouched); stream's
+	// single site was noise (the request type allows the mode-less input the
+	// AP-9 guard rejects at runtime). One commit with the test edits.
+	asNever: 928,
 	/** Global `screen.` usage in apps/web test files (binds at import time). */
 	// 196 (2026-10-04): ratcheted to the merged tree's count after PR #51
 	// (provider-lists unification removed the forked pickers' screen usage;

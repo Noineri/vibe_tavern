@@ -1,12 +1,17 @@
 import { describe, test, expect } from "bun:test";
+import type { AgentPlan } from "@vibe-tavern/domain";
 import {
   buildExperienceCopilotTools,
+  type ExperienceCopilotBindingSuggestion,
   type ExperienceCopilotRunSimulateDigest,
   type ExperienceCopilotRunTestDigest,
 } from "../src/domain/interactive/copilot/experience-copilot-tools.js";
 import type { ExperienceCopilotTodoResult } from "../src/domain/interactive/copilot/copilot-todo-tool.js";
 import type { AgentBufferToolOutput } from "../src/domain/agent/agent-buffer-tools.js";
+import type { AgentPlanToolResult } from "../src/domain/agent-plan/agent-plan-tools.js";
+import type { AgentAskUserResult } from "../src/domain/agent/agent-ask-user-tool.js";
 import { copilotToolInputSchema } from "./copilot-test-builders.js";
+import { executeTool, makeToolContext } from "./provider-boundary-test-builders.js";
 
 /**
  * Experience-Copilot tools propose rules/visual edits and run read-only tests;
@@ -14,8 +19,12 @@ import { copilotToolInputSchema } from "./copilot-test-builders.js";
  * (write_buffer/edit_buffer), the rules-validation guard, the read-only digests
  * (run_test), and the ToolSet shape + gating — mirroring coauthor-tools.test.ts.
  *
- * The second execute() argument (the AI-SDK tool-call context) is ignored by
- * every tool here, so a stub cast `as never` suffices (matches coauthor test).
+ * Every tool executes through the SHARED tool-boundary seam
+ * (provider-boundary-test-builders.ts): `makeToolContext` builds the real AI-SDK
+ * `ToolExecutionOptions` (the second execute() argument — ignored by every tool
+ * here), and `executeTool<O>` narrows the SDK's loose `ToolSet` loudly while the
+ * call site pins the tool's real output type (wave D step 14c — the 14b
+ * treatment, promoted once this file became the seam's third consumer).
  */
 
 /** A minimal VALID experience rules script (counter) — discover + create +
@@ -177,16 +186,18 @@ context.experience.register({
  *  COMPLETE JSON.stringify of the projected state, not a capped prefix. */
 const VERBOSE_BLOB = "0123456789abcdefghij".repeat(125);
 
-/** Shared tool-execution context stub (the tools ignore it). */
-const ctx = { messages: [], toolCallId: "t", abort: () => {} } as never;
+/** Shared tool-execution context (the tools ignore it) — the real AI SDK shape. */
+const ctx = makeToolContext("t");
 
 describe("experience-copilot-tools: write_buffer (rules)", () => {
   test("valid rules → returns { target, proposed, summary } and advances the working buffer", async () => {
     const tools = buildExperienceCopilotTools();
-    const out = (await tools.write_buffer.execute(
+    const out = await executeTool<AgentBufferToolOutput>(
+      tools,
+      "write_buffer",
       { target: "rules", content: VALID_RULES, summary: "Initial rules." },
       ctx,
-    )) as never;
+    );
 
     expect(out.target).toBe("rules");
     expect(out.summary).toBe("Initial rules.");
@@ -195,21 +206,23 @@ describe("experience-copilot-tools: write_buffer (rules)", () => {
 
     // The working buffer advanced: a later edit_buffer searching the written
     // content succeeds, proving workingRules == the written source.
-    const edited = (await tools.edit_buffer.execute(
+    const edited = await executeTool<AgentBufferToolOutput>(
+      tools,
+      "edit_buffer",
       {
         target: "rules",
         edits: [{ search: 'manifest: { id: "counter"', replace: 'manifest: { id: "renamed"' }],
         summary: "Rename.",
       },
       ctx,
-    )) as never;
+    );
     expect(edited.proposed).toContain('manifest: { id: "renamed"');
   });
 
   test("rejects empty content", async () => {
     const tools = buildExperienceCopilotTools();
     await expect(
-      tools.write_buffer.execute({ target: "rules", content: "   ", summary: "x" }, ctx),
+      executeTool(tools, "write_buffer", { target: "rules", content: "   ", summary: "x" }, ctx),
     ).rejects.toThrow(/empty/);
   });
 });
@@ -218,7 +231,9 @@ describe("experience-copilot-tools: write_buffer rules-validation guard", () => 
   test("a syntactically-bad rules proposal throws (model would self-correct)", async () => {
     const tools = buildExperienceCopilotTools();
     await expect(
-      tools.write_buffer.execute(
+      executeTool(
+        tools,
+        "write_buffer",
         { target: "rules", content: SYNTAX_ERROR_RULES, summary: "bad" },
         ctx,
       ),
@@ -230,7 +245,9 @@ describe("experience-copilot-tools: write_buffer rules-validation guard", () => 
   test("a missing-method rules proposal throws naming the typed error", async () => {
     const tools = buildExperienceCopilotTools();
     await expect(
-      tools.write_buffer.execute(
+      executeTool(
+        tools,
+        "write_buffer",
         { target: "rules", content: MISSING_METHOD_RULES, summary: "bad" },
         ctx,
       ),
@@ -239,7 +256,9 @@ describe("experience-copilot-tools: write_buffer rules-validation guard", () => 
 
   test("the corrected reference Round passes proposal validation under the derived launch context", async () => {
     const tools = buildExperienceCopilotTools();
-    const out = await tools.write_buffer.execute(
+    const out = await executeTool<AgentBufferToolOutput>(
+      tools,
+      "write_buffer",
       { target: "rules", content: REFERENCE_ROUND_RULES, summary: "Reference Round" },
       ctx,
     );
@@ -249,16 +268,20 @@ describe("experience-copilot-tools: write_buffer rules-validation guard", () => 
   test("a rejected proposal does NOT advance the buffer (non-poisoning)", async () => {
     const tools = buildExperienceCopilotTools();
     await expect(
-      tools.write_buffer.execute(
+      executeTool(
+        tools,
+        "write_buffer",
         { target: "rules", content: SYNTAX_ERROR_RULES, summary: "bad" },
         ctx,
       ),
     ).rejects.toThrow(/failed validation/);
     // The buffer is still empty: a valid write_buffer (first mutation) succeeds.
-    const out = (await tools.write_buffer.execute(
+    const out = await executeTool<AgentBufferToolOutput>(
+      tools,
+      "write_buffer",
       { target: "rules", content: VALID_RULES, summary: "ok" },
       ctx,
-    )) as never;
+    );
     expect(out.target).toBe("rules");
   });
 });
@@ -266,21 +289,22 @@ describe("experience-copilot-tools: write_buffer rules-validation guard", () => 
 describe("experience-copilot-tools: write_buffer first-mutation guard", () => {
   test("a second whole-buffer rules rewrite is rejected; edit_buffer still works", async () => {
     const tools = buildExperienceCopilotTools();
-    await tools.write_buffer.execute(
-      { target: "rules", content: VALID_RULES, summary: "first" },
-      ctx,
-    );
+    await executeTool(tools, "write_buffer", { target: "rules", content: VALID_RULES, summary: "first" }, ctx);
     await expect(
-      tools.write_buffer.execute(
+      executeTool(
+        tools,
+        "write_buffer",
         { target: "rules", content: VALID_RULES, summary: "second" },
         ctx,
       ),
     ).rejects.toThrow(/FIRST rules change/);
     // edit_buffer composes on the committed buffer.
-    const edited = (await tools.edit_buffer.execute(
+    const edited = await executeTool<AgentBufferToolOutput>(
+      tools,
+      "edit_buffer",
       { target: "rules", edits: [{ search: "Counter", replace: "Tally" }], summary: "rename" },
       ctx,
-    )) as never;
+    );
     expect(edited.proposed).toContain("Tally");
   });
 });
@@ -288,22 +312,23 @@ describe("experience-copilot-tools: write_buffer first-mutation guard", () => {
 describe("experience-copilot-tools: write_buffer (visual, no validation)", () => {
   test("any content is accepted (no validator exists)", async () => {
     const tools = buildExperienceCopilotTools();
-    const out = (await tools.write_buffer.execute(
+    const out = await executeTool<AgentBufferToolOutput>(
+      tools,
+      "write_buffer",
       { target: "visual", content: "<div>hello</div>", summary: "v" },
       ctx,
-    )) as never;
+    );
     expect(out.target).toBe("visual");
     expect(out.proposed).toBe("<div>hello</div>");
   });
 
   test("a second whole-buffer visual rewrite is rejected", async () => {
     const tools = buildExperienceCopilotTools();
-    await tools.write_buffer.execute(
-      { target: "visual", content: "<a/>", summary: "first" },
-      ctx,
-    );
+    await executeTool(tools, "write_buffer", { target: "visual", content: "<a/>", summary: "first" }, ctx);
     await expect(
-      tools.write_buffer.execute(
+      executeTool(
+        tools,
+        "write_buffer",
         { target: "visual", content: "<b/>", summary: "second" },
         ctx,
       ),
@@ -314,14 +339,16 @@ describe("experience-copilot-tools: write_buffer (visual, no validation)", () =>
 describe("experience-copilot-tools: edit_buffer", () => {
   test("exact edits compose on a seeded buffer and return the proposed rules", async () => {
     const tools = buildExperienceCopilotTools({ rules: VALID_RULES });
-    const out = (await tools.edit_buffer.execute(
+    const out = await executeTool<AgentBufferToolOutput>(
+      tools,
+      "edit_buffer",
       {
         target: "rules",
         edits: [{ search: 'id: "counter", name: "Counter"', replace: 'id: "counter", name: "Tally"' }],
         summary: "Rename.",
       },
       ctx,
-    )) as never;
+    );
     expect(out.target).toBe("rules");
     expect(out.proposed).toContain('name: "Tally"');
     // Validation passed (still valid rules) — the result is a valid proposal.
@@ -330,7 +357,9 @@ describe("experience-copilot-tools: edit_buffer", () => {
   test("edit_buffer rejects when no buffer exists in the working state", async () => {
     const tools = buildExperienceCopilotTools();
     await expect(
-      tools.edit_buffer.execute(
+      executeTool(
+        tools,
+        "edit_buffer",
         { target: "rules", edits: [{ search: "x", replace: "y" }], summary: "s" },
         ctx,
       ),
@@ -341,7 +370,9 @@ describe("experience-copilot-tools: edit_buffer", () => {
     const tools = buildExperienceCopilotTools({ rules: VALID_RULES });
     // Replace the registration with a syntax-broken variant.
     await expect(
-      tools.edit_buffer.execute(
+      executeTool(
+        tools,
+        "edit_buffer",
         {
           target: "rules",
           edits: [{ search: "context.experience.register({", replace: "context.experience.register({ !!broken" }],
@@ -351,14 +382,16 @@ describe("experience-copilot-tools: edit_buffer", () => {
       ),
     ).rejects.toThrow(/edit_buffer: proposed rules failed validation/);
     // The buffer is untouched (atomic on failure): a valid edit still applies.
-    const ok = (await tools.edit_buffer.execute(
+    const ok = await executeTool<AgentBufferToolOutput>(
+      tools,
+      "edit_buffer",
       {
         target: "rules",
         edits: [{ search: "Counter", replace: "Tally" }],
         summary: "ok",
       },
       ctx,
-    )) as never;
+    );
     expect(ok.proposed).toContain("Tally");
   });
 });
@@ -366,7 +399,7 @@ describe("experience-copilot-tools: edit_buffer", () => {
 describe("experience-copilot-tools: run_test (read-only digest)", () => {
   test("on valid rules returns an ok digest with legal action types and does NOT mutate the buffer", async () => {
     const tools = buildExperienceCopilotTools({ rules: VALID_RULES });
-    const digest = (await tools.run_test.execute({}, ctx)) as never;
+    const digest = await executeTool<ExperienceCopilotRunTestDigest>(tools, "run_test", {}, ctx);
 
     expect(digest.ok).toBe(true);
     expect(digest.status).toBe("active");
@@ -375,10 +408,12 @@ describe("experience-copilot-tools: run_test (read-only digest)", () => {
     expect(digest.stateSummary).toContain("count");
     // Read-only: the buffer is unchanged — a search for original content still
     // applies via edit_buffer (run_test did not mutate workingRules).
-    const edited = (await tools.edit_buffer.execute(
+    const edited = await executeTool<AgentBufferToolOutput>(
+      tools,
+      "edit_buffer",
       { target: "rules", edits: [{ search: "Counter", replace: "Tally" }], summary: "after-run" },
       ctx,
-    )) as never;
+    );
     expect(edited.proposed).toContain("Tally");
   });
 
@@ -386,7 +421,7 @@ describe("experience-copilot-tools: run_test (read-only digest)", () => {
     // Owner 2026-10-18: the assistant sees everything the script produced.
     // The old caps kept the last 20 console entries and 1 500 state chars.
     const tools = buildExperienceCopilotTools({ rules: VERBOSE_RULES });
-    const digest = await tools.run_test.execute({}, ctx) as ExperienceCopilotRunTestDigest;
+    const digest = await executeTool<ExperienceCopilotRunTestDigest>(tools, "run_test", {}, ctx);
 
     expect(digest.ok).toBe(true);
     // All 30 create() console lines, in order — no 20-entry tail.
@@ -401,7 +436,7 @@ describe("experience-copilot-tools: run_test (read-only digest)", () => {
 
   test("derived context is echoed with the default seats/grants and per-seat legality", async () => {
     const tools = buildExperienceCopilotTools({ rules: REFERENCE_ROUND_RULES });
-    const digest = await tools.run_test.execute({}, ctx) as ExperienceCopilotRunTestDigest;
+    const digest = await executeTool<ExperienceCopilotRunTestDigest>(tools, "run_test", {}, ctx);
 
     expect(digest.ok).toBe(true);
     expect(digest.legalActionTypes).toEqual(["score", "pass"]);
@@ -425,7 +460,7 @@ describe("experience-copilot-tools: run_test (read-only digest)", () => {
       humanSeatId: "bot",
     };
     const tools = buildExperienceCopilotTools({ rules: GROUNDED_ROUND_RULES, launchContext });
-    const digest = await tools.run_test.execute({}, ctx) as ExperienceCopilotRunTestDigest;
+    const digest = await executeTool<ExperienceCopilotRunTestDigest>(tools, "run_test", {}, ctx);
 
     expect(digest.ok).toBe(true);
     expect(digest.legalActionTypes).toEqual(["pass"]);
@@ -444,30 +479,30 @@ describe("experience-copilot-tools: run_test (read-only digest)", () => {
       rules: GROUNDED_ROUND_RULES,
       launchContext: { ...launchContext, seed: "seed-beta" },
     });
-    const differentSeed = await differentSeedTools.run_test.execute({}, ctx) as ExperienceCopilotRunTestDigest;
+    const differentSeed = await executeTool<ExperienceCopilotRunTestDigest>(differentSeedTools, "run_test", {}, ctx);
     expect(differentSeed.stateSummary).not.toBe(digest.stateSummary);
   });
 
   test("on invalid (seeded) rules returns a structured error digest (ok:false)", async () => {
     const tools = buildExperienceCopilotTools({ rules: SYNTAX_ERROR_RULES });
-    const digest = (await tools.run_test.execute({}, ctx)) as never;
+    const digest = await executeTool<ExperienceCopilotRunTestDigest>(tools, "run_test", {}, ctx);
 
     expect(digest.ok).toBe(false);
     expect(typeof digest.errorCode).toBe("string");
-    expect(digest.errorCode.length).toBeGreaterThan(0);
+    expect(digest.errorCode?.length).toBeGreaterThan(0);
     expect(typeof digest.errorMessage).toBe("string");
   });
 
   test("throws when no rules buffer exists", async () => {
     const tools = buildExperienceCopilotTools();
-    await expect(tools.run_test.execute({}, ctx)).rejects.toThrow(/no rules buffer/);
+    await expect(executeTool(tools, "run_test", {}, ctx)).rejects.toThrow(/no rules buffer/);
   });
 });
 
 describe("experience-copilot-tools: run_simulate (read-only digest)", () => {
   test("on valid rules returns a digest with a stop reason and iteration count", async () => {
     const tools = buildExperienceCopilotTools({ rules: VALID_RULES });
-    const digest = (await tools.run_simulate.execute({}, ctx)) as never;
+    const digest = await executeTool<ExperienceCopilotRunSimulateDigest>(tools, "run_simulate", {}, ctx);
     // With the derived human seat, this ungated counter stops at its human boundary.
     expect(digest.ok).toBe(true);
     expect(typeof digest.stopReason).toBe("string");
@@ -488,7 +523,7 @@ describe("experience-copilot-tools: run_simulate (read-only digest)", () => {
         humanSeatId: "you",
       },
     });
-    const digest = await tools.run_simulate.execute({}, ctx) as ExperienceCopilotRunSimulateDigest;
+    const digest = await executeTool<ExperienceCopilotRunSimulateDigest>(tools, "run_simulate", {}, ctx);
 
     expect(digest.ok).toBe(true);
     expect(digest.iterations).toBe(1);
@@ -500,7 +535,7 @@ describe("experience-copilot-tools: run_simulate (read-only digest)", () => {
     // Owner 2026-10-18: the assistant sees everything the script produced —
     // the simulation digest carries every create() line, not the last 20.
     const tools = buildExperienceCopilotTools({ rules: VERBOSE_RULES });
-    const digest = await tools.run_simulate.execute({}, ctx) as ExperienceCopilotRunSimulateDigest;
+    const digest = await executeTool<ExperienceCopilotRunSimulateDigest>(tools, "run_simulate", {}, ctx);
 
     expect(digest.ok).toBe(true);
     expect(digest.consoleTail).toEqual(
@@ -512,17 +547,21 @@ describe("experience-copilot-tools: run_simulate (read-only digest)", () => {
 describe("experience-copilot-tools: suggest_visual_binding", () => {
   test("returns a non-binding suggestion echoing the reason and optional id", async () => {
     const tools = buildExperienceCopilotTools();
-    const withId = (await tools.suggest_visual_binding.execute(
+    const withId = await executeTool<ExperienceCopilotBindingSuggestion>(
+      tools,
+      "suggest_visual_binding",
       { reason: "A scoreboard visual fits this counter.", visualId: "vis-1" },
       ctx,
-    )) as never;
+    );
     expect(withId.suggestedVisualId).toBe("vis-1");
     expect(withId.reason).toBe("A scoreboard visual fits this counter.");
 
-    const withoutId = (await tools.suggest_visual_binding.execute(
+    const withoutId = await executeTool<ExperienceCopilotBindingSuggestion>(
+      tools,
+      "suggest_visual_binding",
       { reason: "Consider a visual." },
       ctx,
-    )) as never;
+    );
     expect(withoutId.suggestedVisualId).toBeUndefined();
     expect(withoutId.reason).toBe("Consider a visual.");
   });
@@ -530,9 +569,9 @@ describe("experience-copilot-tools: suggest_visual_binding", () => {
 
 describe("experience-copilot-tools: plan/read_plan", () => {
   test("plan writes the full script-owned plan and returns its summary envelope", async () => {
-    let saved: unknown = null;
+    let saved: AgentPlan | null = null;
     const tools = buildExperienceCopilotTools({
-      loadPlan: async () => saved as never,
+      loadPlan: async () => saved,
       savePlan: async (plan) => {
         saved = plan;
       },
@@ -546,9 +585,9 @@ describe("experience-copilot-tools: plan/read_plan", () => {
       ],
     };
 
-    const result = (await tools.plan.execute({ plan }, ctx)) as never;
+    const result = await executeTool<AgentPlanToolResult>(tools, "plan", { plan }, ctx);
     expect(result).toEqual({ ok: true, activeTitle: "Wire the reducer", remaining: 2 });
-    expect(await tools.read_plan.execute({}, ctx)).toEqual(plan);
+    expect(await executeTool<AgentPlan | { empty: true }>(tools, "read_plan", {}, ctx)).toEqual(plan);
   });
 
   test("plan input schema is an OBJECT root `{plan}`", () => {
@@ -575,8 +614,8 @@ describe("experience-copilot-tools: todo (full-list rewrite + saveTodo, restored
     ];
     const second = [{ title: "bind the visual", status: "active" }];
 
-    const r1 = (await tools.todo.execute({ items: first }, ctx)) as ExperienceCopilotTodoResult;
-    const r2 = (await tools.todo.execute({ items: second }, ctx)) as ExperienceCopilotTodoResult;
+    const r1 = await executeTool<ExperienceCopilotTodoResult>(tools, "todo", { items: first }, ctx);
+    const r2 = await executeTool<ExperienceCopilotTodoResult>(tools, "todo", { items: second }, ctx);
 
     expect(r1.ok).toBe(true);
     expect(r1.activeTitle).toBe("wire the reducer");
@@ -595,10 +634,12 @@ describe("experience-copilot-tools: todo (full-list rewrite + saveTodo, restored
         throw new Error("db down");
       },
     });
-    const r = (await tools.todo.execute(
+    const r = await executeTool<ExperienceCopilotTodoResult>(
+      tools,
+      "todo",
       { items: [{ title: "a", status: "pending" }] },
       ctx,
-    )) as ExperienceCopilotTodoResult;
+    );
     expect(r.ok).toBe(false);
     expect(typeof r.error).toBe("string");
     expect(r.error).toContain("db down");
@@ -606,9 +647,9 @@ describe("experience-copilot-tools: todo (full-list rewrite + saveTodo, restored
 
   test("throws when no saveTodo writer is wired (precondition miss)", async () => {
     const tools = buildExperienceCopilotTools();
-    await expect(tools.todo.execute({ items: [{ title: "a", status: "pending" }] }, ctx)).rejects.toThrow(
-      /no todo writer wired/,
-    );
+    await expect(
+      executeTool(tools, "todo", { items: [{ title: "a", status: "pending" }] }, ctx),
+    ).rejects.toThrow(/no todo writer wired/);
   });
 
   test("input schema rejects a list over the 30-item cap", () => {
@@ -657,10 +698,12 @@ describe("experience-copilot-tools: todo (full-list rewrite + saveTodo, restored
 describe("experience-copilot-tools: ask_user (awaiting marker)", () => {
   test("returns awaiting_answer carrying question/options/recommended verbatim", async () => {
     const tools = buildExperienceCopilotTools();
-    const r = (await tools.ask_user.execute(
+    const r = await executeTool<AgentAskUserResult>(
+      tools,
+      "ask_user",
       { question: "Which layout?", options: ["tabs", "accordion"], recommended: "tabs" },
       ctx,
-    )) as never;
+    );
     expect(r.status).toBe("awaiting_answer");
     expect(r.question).toBe("Which layout?");
     expect(r.options).toEqual(["tabs", "accordion"]);
@@ -669,7 +712,12 @@ describe("experience-copilot-tools: ask_user (awaiting marker)", () => {
 
   test("free-text question (no options) returns no options/recommended", async () => {
     const tools = buildExperienceCopilotTools();
-    const r = (await tools.ask_user.execute({ question: "What should the win condition be?" }, ctx)) as never;
+    const r = await executeTool<AgentAskUserResult>(
+      tools,
+      "ask_user",
+      { question: "What should the win condition be?" },
+      ctx,
+    );
     expect(r.status).toBe("awaiting_answer");
     expect(r.question).toBe("What should the win condition be?");
     expect(r.options).toBeUndefined();
@@ -775,7 +823,7 @@ describe("experience-copilot-tools: SS-4B trust gate (rulesTrusted: false)", () 
     // VALID rules prove non-execution: a real run would return ok:true; the
     // refusal fires before the sandbox is ever touched.
     const tools = buildExperienceCopilotTools({ rules: VALID_RULES, rulesTrusted: false });
-    const digest = (await tools.run_test.execute({}, ctx)) as ExperienceCopilotRunTestDigest;
+    const digest = await executeTool<ExperienceCopilotRunTestDigest>(tools, "run_test", {}, ctx);
     expect(digest.ok).toBe(false);
     expect(digest.errorCode).toBe("script_not_trusted");
     expect(digest.errorMessage).toContain("imported and never enabled");
@@ -784,7 +832,7 @@ describe("experience-copilot-tools: SS-4B trust gate (rulesTrusted: false)", () 
 
   test("run_simulate refuses an untrusted script with the same structured digest", async () => {
     const tools = buildExperienceCopilotTools({ rules: VALID_RULES, rulesTrusted: false });
-    const digest = (await tools.run_simulate.execute({}, ctx)) as ExperienceCopilotRunSimulateDigest;
+    const digest = await executeTool<ExperienceCopilotRunSimulateDigest>(tools, "run_simulate", {}, ctx);
     expect(digest.ok).toBe(false);
     expect(digest.errorCode).toBe("script_not_trusted");
     expect(digest.errorMessage).toContain("imported and never enabled");
@@ -794,10 +842,12 @@ describe("experience-copilot-tools: SS-4B trust gate (rulesTrusted: false)", () 
     // SYNTAX_ERROR rules would throw on the trusted path — acceptance proves
     // the sandbox run was skipped; the marker names the trust state.
     const tools = buildExperienceCopilotTools({ rulesTrusted: false });
-    const out = (await tools.write_buffer.execute(
+    const out = await executeTool<AgentBufferToolOutput>(
+      tools,
+      "write_buffer",
       { target: "rules", content: SYNTAX_ERROR_RULES, summary: "draft" },
       ctx,
-    )) as AgentBufferToolOutput;
+    );
     expect(out.target).toBe("rules");
     expect(out.proposed).toBe(SYNTAX_ERROR_RULES);
     expect(out.notValidated).toBe("not validated: script is imported and not yet enabled");
@@ -805,30 +855,36 @@ describe("experience-copilot-tools: SS-4B trust gate (rulesTrusted: false)", () 
 
   test("edit_buffer accepts invalid edits without validation and carries the marker; the buffer still advances", async () => {
     const tools = buildExperienceCopilotTools({ rules: VALID_RULES, rulesTrusted: false });
-    const out = (await tools.edit_buffer.execute(
+    const out = await executeTool<AgentBufferToolOutput>(
+      tools,
+      "edit_buffer",
       {
         target: "rules",
         edits: [{ search: "context.experience.register({", replace: "context.experience.register({ !!broken" }],
         summary: "break",
       },
       ctx,
-    )) as AgentBufferToolOutput;
+    );
     expect(out.notValidated).toBe("not validated: script is imported and not yet enabled");
     // The working buffer advanced (no validation throw, no rollback).
-    const after = (await tools.edit_buffer.execute(
+    const after = await executeTool<AgentBufferToolOutput>(
+      tools,
+      "edit_buffer",
       { target: "rules", edits: [{ search: " !!broken", replace: "" }], summary: "fix" },
       ctx,
-    )) as AgentBufferToolOutput;
+    );
     expect(after.proposed).toContain("context.experience.register({");
     expect(after.notValidated).toBe("not validated: script is imported and not yet enabled");
   });
 
   test("visual proposals never carry the marker (no rules validation exists for visual)", async () => {
     const tools = buildExperienceCopilotTools({ rulesTrusted: false });
-    const out = (await tools.write_buffer.execute(
+    const out = await executeTool<AgentBufferToolOutput>(
+      tools,
+      "write_buffer",
       { target: "visual", content: "<div>x</div>", summary: "v" },
       ctx,
-    )) as AgentBufferToolOutput;
+    );
     expect(out.target).toBe("visual");
     expect(out.proposed).toBe("<div>x</div>");
     expect(out.notValidated).toBeUndefined();
@@ -838,18 +894,20 @@ describe("experience-copilot-tools: SS-4B trust gate (rulesTrusted: false)", () 
 describe("experience-copilot-tools: SS-4B trusted parity (after first enable)", () => {
   test("rulesTrusted: true — run_test executes, rules proposals validate and carry NO marker", async () => {
     const tools = buildExperienceCopilotTools({ rules: VALID_RULES, rulesTrusted: true });
-    const digest = (await tools.run_test.execute({}, ctx)) as ExperienceCopilotRunTestDigest;
+    const digest = await executeTool<ExperienceCopilotRunTestDigest>(tools, "run_test", {}, ctx);
     expect(digest.ok).toBe(true);
     expect(digest.legalActionTypes).toEqual(["increment", "reset"]);
 
     // Validation still throws on invalid rules for a trusted script.
     await expect(
-      tools.write_buffer.execute({ target: "rules", content: SYNTAX_ERROR_RULES, summary: "bad" }, ctx),
+      executeTool(tools, "write_buffer", { target: "rules", content: SYNTAX_ERROR_RULES, summary: "bad" }, ctx),
     ).rejects.toThrow(/failed validation/);
-    const out = (await tools.write_buffer.execute(
+    const out = await executeTool<AgentBufferToolOutput>(
+      tools,
+      "write_buffer",
       { target: "rules", content: VALID_RULES, summary: "ok" },
       ctx,
-    )) as AgentBufferToolOutput;
+    );
     expect(out.notValidated).toBeUndefined();
   });
 });

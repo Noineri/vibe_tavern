@@ -222,8 +222,8 @@ describe("ExperienceCopilotCompactionService — manual compact (CM-5)", () => {
     const executor = makeExecutor({ text: "summary-1" });
     const service = new ExperienceCopilotCompactionService(
       store,
-      makeProviderProfiles() as never,
-      executor.execute as never,
+      makeProviderProfiles(),
+      executor.execute,
     );
 
     const result = await service.compact({ threadId: "thread_1" });
@@ -261,8 +261,8 @@ describe("ExperienceCopilotCompactionService — manual compact (CM-5)", () => {
     const executor = makeExecutor({ text: "summary-1" });
     const service = new ExperienceCopilotCompactionService(
       store,
-      makeProviderProfiles() as never,
-      executor.execute as never,
+      makeProviderProfiles(),
+      executor.execute,
     );
 
     await service.compact({ threadId: "thread_1" });
@@ -277,8 +277,8 @@ describe("ExperienceCopilotCompactionService — manual compact (CM-5)", () => {
     const executor = makeExecutor({ text: "summary-1" });
     const service = new ExperienceCopilotCompactionService(
       store,
-      makeProviderProfiles() as never,
-      executor.execute as never,
+      makeProviderProfiles(),
+      executor.execute,
     );
 
     await service.compact({ threadId: "thread_1" });
@@ -304,8 +304,8 @@ describe("ExperienceCopilotCompactionService — manual compact (CM-5)", () => {
     const executor = makeExecutor();
     const service = new ExperienceCopilotCompactionService(
       store,
-      makeProviderProfiles() as never,
-      executor.execute as never,
+      makeProviderProfiles(),
+      executor.execute,
     );
 
     const error = await service.compact({ threadId: "thread_1" }).then(
@@ -342,8 +342,8 @@ describe("ExperienceCopilotCompactionService — manual compact (CM-5)", () => {
     const executor = makeExecutor({ text: "summary" });
     const service = new ExperienceCopilotCompactionService(
       store,
-      makeProviderProfiles() as never,
-      executor.execute as never,
+      makeProviderProfiles(),
+      executor.execute,
     );
 
     await service.compact({ threadId: "thread_1" });
@@ -369,8 +369,8 @@ describe("ExperienceCopilotCompactionService — manual compact (CM-5)", () => {
     );
     const service = new ExperienceCopilotCompactionService(
       store,
-      makeProviderProfiles() as never,
-      executor.execute as never,
+      makeProviderProfiles(),
+      executor.execute,
     );
 
     const error = await service.compact({ threadId: "thread_1" }).then(
@@ -402,8 +402,8 @@ describe("ExperienceCopilotCompactionService — manual compact (CM-5)", () => {
     const executor = makeExecutor({ text: "summary via gateway" });
     const service = new ExperienceCopilotCompactionService(
       store,
-      profiles as never,
-      executor.execute as never,
+      profiles,
+      executor.execute,
     );
 
     await service.compact({ threadId: "thread_1" });
@@ -424,8 +424,8 @@ describe("ExperienceCopilotCompactionService — auto-compact (CM-6)", () => {
     const executor = makeExecutor({ text: "auto-summary" });
     const service = new ExperienceCopilotCompactionService(
       store,
-      makeProviderProfiles() as never,
-      executor.execute as never,
+      makeProviderProfiles(),
+      executor.execute,
     );
 
     await service.autoCompactAfterTurn("thread_1");
@@ -442,7 +442,7 @@ describe("ExperienceCopilotCompactionService — auto-compact (CM-6)", () => {
         contextMetrics: makeMetrics({ totalTokens: 500, budgetTokens: 1000 }),
       });
       const executor = makeExecutor();
-      const service = new ExperienceCopilotCompactionService(store, makeProviderProfiles() as never, executor.execute as never);
+      const service = new ExperienceCopilotCompactionService(store, makeProviderProfiles(), executor.execute);
       await service.autoCompactAfterTurn("thread_1");
       expect(executor.calls).toHaveLength(0);
     }
@@ -453,7 +453,7 @@ describe("ExperienceCopilotCompactionService — auto-compact (CM-6)", () => {
         contextMetrics: makeMetrics({ totalTokens: 900, budgetTokens: 1000 }),
       });
       const executor = makeExecutor();
-      const service = new ExperienceCopilotCompactionService(store, makeProviderProfiles() as never, executor.execute as never);
+      const service = new ExperienceCopilotCompactionService(store, makeProviderProfiles(), executor.execute);
       await service.autoCompactAfterTurn("thread_1");
       expect(executor.calls).toHaveLength(0);
     }
@@ -463,7 +463,7 @@ describe("ExperienceCopilotCompactionService — auto-compact (CM-6)", () => {
         contextMetrics: makeMetrics({ totalTokens: 900, budgetTokens: 1000 }),
       });
       const executor = makeExecutor();
-      const service = new ExperienceCopilotCompactionService(store, makeProviderProfiles() as never, executor.execute as never);
+      const service = new ExperienceCopilotCompactionService(store, makeProviderProfiles(), executor.execute);
       await service.autoCompactAfterTurn("thread_1");
       expect(executor.calls).toHaveLength(0);
     }
@@ -475,7 +475,7 @@ describe("ExperienceCopilotCompactionService — auto-compact (CM-6)", () => {
       thread.lastProviderProfileId = null;
       thread.lastModel = null;
       const executor = makeExecutor();
-      const service = new ExperienceCopilotCompactionService(store, makeProviderProfiles() as never, executor.execute as never);
+      const service = new ExperienceCopilotCompactionService(store, makeProviderProfiles(), executor.execute);
       await service.autoCompactAfterTurn("thread_1");
       expect(executor.calls).toHaveLength(0);
     }
@@ -485,16 +485,16 @@ describe("ExperienceCopilotCompactionService — auto-compact (CM-6)", () => {
     const { store } = makeStore(makeTurnSequence(20), {
       contextMetrics: makeMetrics({ totalTokens: 900, budgetTokens: 1000 }),
     });
-    let release!: (v: { text: string }) => void;
-    const gate = new Promise<{ text: string }>((resolve) => {
+    let release!: (v: GenerationResult) => void;
+    const gate = new Promise<GenerationResult>((resolve) => {
       release = resolve;
     });
-    const calls: unknown[] = [];
-    const execute = async (input: unknown) => {
+    const calls: ProviderExecutionInput[] = [];
+    const execute = async (input: ProviderExecutionInput): Promise<GenerationResult> => {
       calls.push(input);
       return gate;
     };
-    const service = new ExperienceCopilotCompactionService(store, makeProviderProfiles() as never, execute as never);
+    const service = new ExperienceCopilotCompactionService(store, makeProviderProfiles(), execute);
 
     // Auto starts and acquires the lock (execute is now in-flight on the gate).
     const autoPromise = service.autoCompactAfterTurn("thread_1");
@@ -507,7 +507,7 @@ describe("ExperienceCopilotCompactionService — auto-compact (CM-6)", () => {
     ) as { kind?: string } | null;
     expect(manualError?.kind).toBe("Conflict");
 
-    release({ text: "auto-summary" });
+    release({ text: "auto-summary", providerResponse: { mode: "nonstream", steps: [] } });
     await autoPromise;
 
     expect(calls).toHaveLength(1);
@@ -520,8 +520,8 @@ describe("ExperienceCopilotCompactionService — auto-compact (CM-6)", () => {
     const executor = makeExecutor(new Error("summarize boom"));
     const service = new ExperienceCopilotCompactionService(
       store,
-      makeProviderProfiles() as never,
-      executor.execute as never,
+      makeProviderProfiles(),
+      executor.execute,
     );
 
     // Fire-and-forget: the error is swallowed (logged via onError), never thrown.
@@ -572,8 +572,8 @@ describe("ExperienceCopilotCompactionService — echo stubs (#16)", () => {
     const executor = makeExecutor({ text: "summary-echo" });
     const service = new ExperienceCopilotCompactionService(
       store,
-      makeProviderProfiles() as never,
-      executor.execute as never,
+      makeProviderProfiles(),
+      executor.execute,
     );
 
     await service.compact({ threadId: "thread_1" });
