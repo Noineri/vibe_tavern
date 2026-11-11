@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { regexAssistRequestSchema, regexAssistResponseSchema } from "@vibe-tavern/api-contracts";
+import { regexAssistRequestSchema, regexAssistResponseSchema, type AiAssistantStreamChunk } from "@vibe-tavern/api-contracts";
 
 describe("regex-assist contracts", () => {
   it("validates request and response schemas", () => {
@@ -47,7 +47,8 @@ import { strictTestDouble } from "./strict-test-double.js";
 import type { StreamDeps } from "../src/domain/ai-assistant/ai-assistant-stream.js";
 import { generateRegexAssist } from "../src/domain/ai-assistant/regex-assist-service.js";
 import { createAiAssistantFeature } from "../src/domain/ai-assistant/ai-assistant-feature.js";
-import type { ModelMessage } from "ai";
+import type { AiAssistantRuntimeApi } from "../src/api/contract/runtime-api.js";
+import type { LanguageModel, ModelMessage } from "ai";
 
 type StreamDepsSeam = StreamDeps & { streamTextImpl?: import("../src/domain/ai-assistant/regex-assist-service.js").RegexAssistStreamFn };
 
@@ -56,7 +57,10 @@ async function makeDeps(streamTextImpl: NonNullable<StreamDepsSeam["streamTextIm
   const profile = { id: "profile_1", providerPreset: "openai", endpoint: "", apiKey: "key", defaultModel: "model_1", contextBudget: null, maxTokens: 2000 };
   return {
     db,
-    resolveModel: () => ({}) as never,
+    // The streamTextImpl seam short-circuits the executor, so the model the
+    // service resolves is an opaque handle the fake never touches — the same
+    // LanguageModel stub the agent/copilot suites carry.
+    resolveModel: () => ({}) as LanguageModel,
     getProviderProfile: async () => profile,
     getEffectiveProviderProfile: async () => profile,
     getPresetPromptData: async () => ({ aiAssistantPrompts: null, scriptAiSystemPrompt: null }),
@@ -157,15 +161,15 @@ describe("generateRegexAssist — full path (real resolver + injected executor)"
 describe("POST /api/ai/regex-assist route (feature mount)", () => {
   it("passes the request through and serializes the response", async () => {
     const seen: Array<Record<string, unknown>> = [];
-    const runtime = {
-      streamAiAssistant: async function* () {},
+    const runtime: AiAssistantRuntimeApi = {
+      streamAiAssistant: async function* (): AsyncGenerator<AiAssistantStreamChunk> {},
       countAiAssistantTokens: async () => ({ tokens: 0, model: "m", layerCount: 0, messageCount: 0, activatedLoreCount: 0 }),
       regexAssist: async (body: Record<string, unknown>) => {
         seen.push(body);
         return { draft: { name: "N", findRegex: "/x/g", replaceString: "", trimStrings: [], applyTarget: "persist", depthMode: "all", explanation: "e" } };
       },
     };
-    const feature = createAiAssistantFeature(runtime as never);
+    const feature = createAiAssistantFeature(runtime);
     // The feature module's activate({router}) registers routes on a real Hono
     // sub-router (FeatureDeps.router); a bare `new Hono()` carries the exact
     // registration surface the server hands features, so the registered paths

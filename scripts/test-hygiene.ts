@@ -249,7 +249,31 @@ export const BUDGETS = {
 	// byte-untouched keys with zero new keys (no shrink — these casts
 	// suppressed diagnostics, they never produced baselined ones). One commit
 	// with the test edits.
-	asNever: 679,
+	// 635 (2026-11-11, step 14h): −44 — the regex + insights + settings +
+	// chat-mode clusters (44 sites / 7 files: regex-hooks 9 — one of them a
+	// comment mention the word-bounded scanner counts, regex-reasoning 8,
+	// regex-assist 2, insights-adapter 10, insights-feature 3,
+	// settings-adapter 6, chat-mode-strategy 6). Session seams in the two RX
+	// harnesses typed from ChatRuntimeDeps (makeSessionSnapshot; response
+	// builders completed to the real contracts — MessageResponse's
+	// promptTrace, BranchResponse through the mapChatBranch funnel — and a
+	// complete IChatOrder for chatOrder, the dice harness shapes); the unused
+	// ProviderOrchestrator ctor dep → strictTestDouble UNSET tokens;
+	// regex-assist's resolveModel → the agent-suite LanguageModel stub and
+	// the feature-mount runtime literal typed AiAssistantRuntimeApi (pure
+	// noise: the literal already satisfied it); tracker doubles return real
+	// SceneTrackerRecord rows; the InsightsAdapter objective slot →
+	// makeObjectiveService({}) strict doubles (the file's own precedent);
+	// insights-feature activates with a real bare Hono router (activate
+	// reads only events); settings hostile inputs ride updateUiSettings's own
+	// Record<string, unknown> parameter — pure deletions; chat-mode inputs
+	// brand their ids, the unread promptService → strictTestDouble, the
+	// resolveProvider profile → makeProviderProfileRow, and both assemble
+	// inputs share a complete makeAssembleLoaders() (which also kills the
+	// baselined loaders-missing TS2741 that the brandId edit would have
+	// reworded). test-type-gate: exactly 1 dead key (that TS2741), 0 new
+	// keys, 852 byte-untouched. One commit with the test edits.
+	asNever: 635,
 	/** Global `screen.` usage in apps/web test files (binds at import time). */
 	// 196 (2026-10-04): ratcheted to the merged tree's count after PR #51
 	// (provider-lists unification removed the forked pickers' screen usage;

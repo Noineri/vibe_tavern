@@ -19,8 +19,12 @@ import { ChatApplicationService } from "../src/domain/chat/chat-application-serv
 import type { ChatModeAssembleResult, ChatModeStrategy } from "../src/domain/chat/chat-mode-strategy.js";
 import { RegexHookService } from "../src/domain/regex/regex-hook-service.js";
 import { LiveChatOrchestrator } from "../src/domain/chat/live-chat-orchestrator.js";
+import { mapChatBranch } from "../src/runtime/session/session-runtime-dto.js";
+import type { ProviderOrchestrator } from "../src/domain/providers/provider-orchestrator.js";
 import { nonstreamingProviderExecute } from "../src/infrastructure/ai/nonstreaming-provider-executor.js";
 import { streamProviderExecutor } from "../src/infrastructure/ai/stream-provider-executor.js";
+import { makeChatBranchRow, makeSessionSnapshot } from "./insights-test-builders.js";
+import { strictTestDouble } from "./strict-test-double.js";
 
 // ════════════════════════════════════════════════════════════════════════════
 // RX-10 (REGEX_EXTENSION_PLAN, Wave 2b) — REASONING live hook.
@@ -178,13 +182,17 @@ function makeHarness(
     uiSettings: chat.stores.uiSettings,
     experiences: chat.stores.experiences,
     assemblePrompt: async () => fakeAssembleResult(chat.chatId as string, chat.branchId),
-    getSnapshot: async () => ({ messages: [] }) as never,
-    buildMessageResponse: async () => ({ messages: [] }) as never,
-    buildVariantResponse: async () => ({ messages: [] }) as never,
-    buildBranchResponse: async () => ({ branches: [] }) as never,
-    buildBranchMetaResponse: async () => ({ branches: [] }) as never,
-    buildChatListResponse: async () => ({ chats: [] }) as never,
-    chatOrder: { remove() {} } as never,
+    // Session seams typed from ChatRuntimeDeps contextually: the response
+    // builders complete their real contract shapes (MessageResponse's
+    // promptTrace; BranchResponse's five members) — none is read by the send
+    // paths this file exercises.
+    getSnapshot: async () => makeSessionSnapshot(),
+    buildMessageResponse: async () => ({ messages: [], promptTrace: null }),
+    buildVariantResponse: async () => ({ messages: [] }),
+    buildBranchResponse: async () => ({ messages: [], activeBranch: mapChatBranch(makeChatBranchRow()), branches: [], summaries: [], chats: [] }),
+    buildBranchMetaResponse: async () => ({ branches: [] }),
+    buildChatListResponse: async () => ({ chats: [] }),
+    chatOrder: { add() {}, remove() {}, items: [] },
   });
 
   const fakeStrategy: ChatModeStrategy = {
@@ -198,10 +206,13 @@ function makeHarness(
     },
   };
 
+  // The unused ProviderOrchestrator ctor dep: resolveProvider comes from the
+  // strategy, so the double stays UNSET — every member access throws labeled
+  // (mirrors the dice-send-stream-nonstream harness this file's sibling RX-8 copies).
   return new LiveChatOrchestrator(
     rt,
     chat.chatApp,
-    null as never,
+    strictTestDouble<ProviderOrchestrator>({}, "ProviderOrchestrator unset dep (regex-reasoning)"),
     new EventBus(),
     async () => fakeStrategy,
     undefined,

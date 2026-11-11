@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { Hono } from "hono";
 import { EventBus } from "@vibe-tavern/domain";
 import { createInsightsFeature, composeForwardStateWait } from "../src/domain/insights/insights-feature.js";
 import type { ObjectiveAutoCheckTrigger, ObjectiveService } from "../src/domain/insights/objective-service.js";
@@ -24,7 +25,10 @@ describe("Insights feature immutable event targeting (OFA-4 / SCN-8)", () => {
     } satisfies Pick<SceneTrackerService, "triggerAutoGenerate">;
     const events = new EventBus();
     const feature = createInsightsFeature({ objectiveService, trackerService });
-    feature.activate({ events, router: null as never });
+    // The feature's activate destructures only `events`; a bare Hono instance
+    // satisfies FeatureDeps.router and is never read (the regex-assist route
+    // mount precedent for a cast-free real router stub).
+    feature.activate({ events, router: new Hono() });
 
     events.emit("message.appended", { chatId: "chat_1", branchId: "bu", messageId: "mu", role: "user" });
     events.emit("message.appended", { chatId: "chat_1", branchId: "bc", messageId: "mc", role: "assistant" });
@@ -42,7 +46,7 @@ describe("Insights feature immutable event targeting (OFA-4 / SCN-8)", () => {
     } satisfies Pick<SceneTrackerService, "triggerAutoGenerate">;
     const events = new EventBus();
     const feature = createInsightsFeature({ objectiveService, trackerService });
-    feature.activate({ events, router: null as never });
+    feature.activate({ events, router: new Hono() });
 
     events.emit("message.appended", { chatId: "chat_2", branchId: "b1", messageId: "m_user", role: "user" });
     events.emit("message.appended", { chatId: "chat_2", branchId: "b1", messageId: "m_asst", role: "assistant" });
@@ -59,7 +63,7 @@ describe("Insights feature immutable event targeting (OFA-4 / SCN-8)", () => {
     const trackerService = { triggerAutoGenerate: async (t: SceneAutoGenerateTrigger) => { scn.push(t); } } satisfies Pick<SceneTrackerService, "triggerAutoGenerate">;
     const events = new EventBus();
     const feature = createInsightsFeature({ objectiveService, trackerService });
-    feature.activate({ events, router: null as never });
+    feature.activate({ events, router: new Hono() });
     feature.deactivate?.();
 
     events.emit("message.appended", { chatId: "c", branchId: "b", messageId: "m", role: "assistant" });
