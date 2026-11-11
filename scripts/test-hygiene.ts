@@ -410,6 +410,14 @@ const ALLOW_ABS_PATH_INPUTS = /hygiene:allow-abs-path-inputs\b/;
 /** The guard's own test file quotes every banned pattern deliberately — exempt it entirely. */
 const GUARD_SELF_TEST = /(?:^|\/)test-hygiene\.test\.ts$/;
 
+// (2026-11-12, owner ruling -- supervisor tooling unit): the RTL-import rule
+// guards BOTH apps/web test surfaces -- src-collocated tests AND the
+// standalone apps/web/test tree; the static-import binding hazard (screen
+// bound at module evaluation, before happy-dom registers) is identical in
+// both. Verified at the extension: zero static RTL imports live under
+// apps/web/test today -- the rule is preventive law there, not a cleanup.
+const RTL_GUARDED_PREFIXES = ["apps/web/src/", "apps/web/test/"];
+
 const DRIVE_OR_POSIX_ABSOLUTE = /["'`][A-Za-z]:[\\/]|["'`]\/(?:tmp|home|root|Users|var|mnt)\//;
 const REGISTRY_RESET_CALL = /__(?:reset)\w*Registry\w*ForTests\s*\(/;
 const REGISTRY_SNAPSHOT_OR_RESTORE = /__(?:snapshot|restore)\w*ForTests/;
@@ -436,7 +444,9 @@ export function scanFile(content: string, file: string): { violations: Violation
 	if (GUARD_SELF_TEST.test(file)) return { violations, metrics };
 	const pathsAllowed = ALLOW_ABS_PATH_INPUTS.test(content);
 	STATIC_RTL_IMPORT.lastIndex = 0;
-	const staticRtlImport = file.startsWith("apps/web/src/") ? STATIC_RTL_IMPORT.exec(content) : null;
+	const staticRtlImport = RTL_GUARDED_PREFIXES.some((prefix) => file.startsWith(prefix))
+		? STATIC_RTL_IMPORT.exec(content)
+		: null;
 	if (staticRtlImport) {
 		const offset = staticRtlImport.index;
 		violations.push({
@@ -473,11 +483,20 @@ export function scanFile(content: string, file: string): { violations: Violation
 		}
 	}
 
-	metrics.asNever += countMatches(content, AS_NEVER);
-	metrics.screen += countMatches(content, SCREEN_DOT);
-	metrics.innerHTMLEmpty += countMatches(content, INNER_HTML_EMPTY);
-	for (const m of content.matchAll(LONG_SLEEP)) {
-		if (Number.parseInt(m[1] ?? "0", 10) > 200) metrics.longSleeps++;
+	// (2026-11-12, owner ruling -- supervisor tooling unit): ratchet metrics
+	// count CODE lines only. Comment lines quote the banned identifiers in
+	// incident reports and budget trail entries, and a mention is not a
+	// usage -- the budgets must catch the type. Same comment boundary as the
+	// hard bans above (isCommentLine). Verified at the change: zero
+	// comment-line mentions repo-wide, so no budget moves (0/0, 1/1, 0/0, 2/2).
+	for (const line of lines) {
+		if (isCommentLine(line)) continue;
+		metrics.asNever += countMatches(line, AS_NEVER);
+		metrics.screen += countMatches(line, SCREEN_DOT);
+		metrics.innerHTMLEmpty += countMatches(line, INNER_HTML_EMPTY);
+		for (const m of line.matchAll(LONG_SLEEP)) {
+			if (Number.parseInt(m[1] ?? "0", 10) > 200) metrics.longSleeps++;
+		}
 	}
 
 	return { violations, metrics };

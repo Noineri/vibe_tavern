@@ -117,6 +117,21 @@ describe("test-hygiene guard (TH-4c, L2 layer)", () => {
 			"apps/web/src/example.test.tsx",
 		);
 		expect(mixed.violations).toMatchObject([{ rule: "rtl-import-needs-dom-env", line: 3 }]);
+
+		// (2026-11-12, owner ruling -- supervisor tooling unit) the rule also
+		// guards the standalone apps/web/test tree.
+		const underTestTree = scanFile(
+			`import { render } from "@testing-library/react";\nuseDomEnv();\n`,
+			"apps/web/test/example.test.tsx",
+		);
+		expect(underTestTree.violations.some((v) => v.rule === "rtl-import-needs-dom-env")).toBe(true);
+
+		// Outside apps/web the rule stays out of scope.
+		const outsideWeb = scanFile(
+			`import { render } from "@testing-library/react";\n`,
+			"packages/example/example.test.ts",
+		);
+		expect(outsideWeb.violations.filter((v) => v.rule === "rtl-import-needs-dom-env")).toEqual([]);
 	});
 
 	test("counts ratchet metrics exactly (as never, screen, innerHTML, long sleeps)", () => {
@@ -136,6 +151,22 @@ describe("test-hygiene guard (TH-4c, L2 layer)", () => {
 		expect(metrics.screen).toBe(2);
 		expect(metrics.innerHTMLEmpty).toBe(1);
 		expect(metrics.longSleeps).toBe(2);
+	});
+
+	test("ratchet metrics skip comment lines -- a mention is not a usage (owner ruling 2026-11-12)", () => {
+		const content = [
+			`// const a = m as never; -- incident prose quoting the pattern`,
+			`// expect(screen.getByRole("button")) was the old query shape`,
+			`/* document.body.innerHTML = ""; -- the legacy teardown hack */`,
+			` * await Bun.sleep(400) -- the runner-child survivor, quoted in trail prose`,
+			`const a = m as never;`,
+			`await Bun.sleep(400);`,
+		].join("\n");
+		const { metrics } = scanFile(content, "a.test.ts");
+		expect(metrics.asNever).toBe(1);
+		expect(metrics.screen).toBe(0);
+		expect(metrics.innerHTMLEmpty).toBe(0);
+		expect(metrics.longSleeps).toBe(1);
 	});
 
 	test("runGuard breaches budgets only on growth and formatReport names the breach", () => {
