@@ -13,10 +13,20 @@
 import { describe, it, expect } from "bun:test";
 import type { ChatStore, MessageStore, StoreContainer } from "@vibe-tavern/db";
 import type { PromptAssemblyContext } from "@vibe-tavern/prompt-pipeline";
-import type { ProviderExecutionInput } from "../src/infrastructure/ai/provider-execution-types.js";
+import type { GenerationResult, ProviderExecutionInput } from "../src/infrastructure/ai/provider-execution-types.js";
 import { SceneTrackerService, type SceneTarget } from "../src/domain/insights/tracker-service.js";
-import { computeSceneSchemaHash, normalizeInsightsConfig } from "@vibe-tavern/domain";
-import { makeChatRow, makeMessageRow, makeVariantRow } from "./insights-test-builders.js";
+import {
+	brandId,
+	computeSceneSchemaHash,
+	normalizeInsightsConfig,
+	type ChatBranchId,
+	type ChatId,
+	type MessageId,
+	type MessageVariantId,
+} from "@vibe-tavern/domain";
+import { execResult, makeChatRow, makeMessageRow, makeSessionRuntime, makeVariantRow } from "./insights-test-builders.js";
+import { makeProviderProfileRow } from "./copilot-test-builders.js";
+import type { ProviderProfileService } from "../src/domain/providers/provider-profile-service.js";
 import { strictTestDouble } from "./strict-test-double.js";
 
 const CTX = {
@@ -27,7 +37,8 @@ const CTX = {
 
 const SCHEMA = { mood: { $type: "string" } } as const;
 const SCHEMA_HASH = computeSceneSchemaHash(SCHEMA);
-const TARGET: SceneTarget = { chatId: "chat_1" as never, branchId: "branch_1" as never, messageId: "m2" as never, variantId: "var_1" as never };
+const CHAT: ChatId = brandId<ChatId>("chat_1");
+const TARGET: SceneTarget = { chatId: CHAT, branchId: brandId<ChatBranchId>("branch_1"), messageId: brandId<MessageId>("m2"), variantId: brandId<MessageVariantId>("var_1") };
 const VALID_REPLY = '{"mood":"calm"}';
 
 interface Harness {
@@ -84,25 +95,30 @@ function harness(opts: { trackerEnabled?: boolean; latest?: { messageId: string;
 		"StoreContainer (tracker-coordinator)",
 	);
 
-	const sessionRuntime = { chatLifecycle: { buildPipelineContext: async () => ({ context: CTX }) } } as never;
-	const providerProfiles = { resolveActiveProviderProfile: async () => ({ id: "prof", defaultModel: "scene-model" }) } as never;
+	const sessionRuntime = makeSessionRuntime({ chatLifecycle: { buildPipelineContext: async () => ({ context: CTX }) } });
+	const providerProfiles = strictTestDouble<ProviderProfileService>(
+		{
+			resolveActiveProviderProfile: async () => makeProviderProfileRow({ id: "prof", defaultModel: "scene-model" }),
+		},
+		"harness: providerProfiles (tracker-coordinator)",
+	);
 
-	let releaseExecute: ((value: { text: string }) => void) | undefined;
+	let releaseExecute: ((value: GenerationResult) => void) | undefined;
 	let rejectExecute: ((err: unknown) => void) | undefined;
 	let markStarted: (() => void) | undefined;
 	const started = new Promise<void>((resolve) => { markStarted = resolve; });
-	const execute = async (_input: ProviderExecutionInput) => new Promise<{ text: string }>((resolve, reject) => {
+	const execute = async (_input: ProviderExecutionInput) => new Promise<GenerationResult>((resolve, reject) => {
 		releaseExecute = resolve;
 		rejectExecute = reject;
 		markStarted?.();
 	});
 
-	const service = new SceneTrackerService(stores, sessionRuntime, providerProfiles, execute as never, async () => "BASE");
+	const service = new SceneTrackerService(stores, sessionRuntime, providerProfiles, execute, async () => "BASE");
 
 	return {
 		service,
 		started,
-		release: (reply: string) => releaseExecute?.({ text: reply }),
+		release: (reply: string) => releaseExecute?.(execResult(reply)),
 		releaseError: (err: unknown) => rejectExecute?.(err),
 		hasRecord: () => records["var_1"] !== undefined,
 		setRecord: (current: boolean) => {
@@ -147,7 +163,7 @@ describe("SceneTrackerService auto-start + wait coordination (SCN-8)", () => {
 		const h = harness();
 		void h.service.triggerAutoGenerate({ chatId: "chat_1", branchId: "branch_1", messageId: "m2" });
 		await h.started;
-		const wait = h.service.waitForForwardState("chat_1" as never);
+		const wait = h.service.waitForForwardState(CHAT);
 		await flush();
 		h.release(VALID_REPLY);
 		await expect(wait).resolves.toBeUndefined(); // waited for the shared job
@@ -156,7 +172,7 @@ describe("SceneTrackerService auto-start + wait coordination (SCN-8)", () => {
 
 	it("waitForForwardState STARTS a missing/stale job when none is active", async () => {
 		const h = harness();
-		const wait = h.service.waitForForwardState("chat_1" as never);
+		const wait = h.service.waitForForwardState(CHAT);
 		await h.started; // the wait started a fresh job
 		expect(h.service.hasTargetJob(TARGET)).toBe(true);
 		h.release(VALID_REPLY);
@@ -167,13 +183,13 @@ describe("SceneTrackerService auto-start + wait coordination (SCN-8)", () => {
 	it("waitForForwardState returns immediately when the record is already current", async () => {
 		const h = harness();
 		h.setRecord(true);
-		await expect(h.service.waitForForwardState("chat_1" as never)).resolves.toBeUndefined();
+		await expect(h.service.waitForForwardState(CHAT)).resolves.toBeUndefined();
 		expect(h.service.hasTargetJob(TARGET)).toBe(false);
 	});
 
 	it("waitForForwardState returns immediately when there is no latest assistant target", async () => {
 		const h = harness({ latest: null });
-		await expect(h.service.waitForForwardState("chat_1" as never)).resolves.toBeUndefined();
+		await expect(h.service.waitForForwardState(CHAT)).resolves.toBeUndefined();
 		expect(h.service.hasTargetJob(TARGET)).toBe(false);
 	});
 
@@ -182,7 +198,7 @@ describe("SceneTrackerService auto-start + wait coordination (SCN-8)", () => {
 		void h.service.triggerAutoGenerate({ chatId: "chat_1", branchId: "branch_1", messageId: "m2" });
 		await h.started;
 		const controller = new AbortController();
-		const wait = h.service.waitForForwardState("chat_1" as never, controller.signal);
+		const wait = h.service.waitForForwardState(CHAT, controller.signal);
 		controller.abort(new Error("user cancelled send"));
 		await expect(wait).rejects.toThrow("user cancelled send");
 		// The job is NOT cancelled by the waiter's abort — it is still active...
@@ -195,7 +211,7 @@ describe("SceneTrackerService auto-start + wait coordination (SCN-8)", () => {
 
 	it("a generation failure resolves the wait (proceed with latest-valid/none) and commits nothing", async () => {
 		const h = harness();
-		const wait = h.service.waitForForwardState("chat_1" as never);
+		const wait = h.service.waitForForwardState(CHAT);
 		await h.started;
 		h.releaseError(new Error("llm boom"));
 		await expect(wait).resolves.toBeUndefined(); // NOT rejected — failure is swallowed

@@ -146,7 +146,22 @@ export const BUDGETS = {
 	// their possibly-undefined keys are baselined debt, untouched); stream's
 	// single site was noise (the request type allows the mode-less input the
 	// AP-9 guard rejects at runtime). One commit with the test edits.
-	asNever: 928,
+	// 861 (2026-11-11, TYPE-SAFETY wave D step 14d): the tracker/scene cluster
+	// zeroed — all 67 sites died WITH their erased constructs
+	// (scene-cache-lifecycle 23, tracker-service 17, tracker-backfill 14,
+	// tracker-coordinator 13): the 23 rebuildCurrentSceneCache casts died by
+	// typing the harness variables (chatId: ChatId / branchId: ChatBranchId)
+	// with brandId at the DB→test read boundary; SceneTarget literals →
+	// brandId<ChatId>/<ChatBranchId>/<MessageId>/<MessageVariantId>;
+	// SceneTrackerService ctor null-pairs → the standing unusedObjectiveDeps
+	// token; sessionRuntime fragments → the standing makeSessionRuntime (its
+	// fixture gained the REAL throughMessageId input member — the 14a
+	// branchId-extension precedent — so the SCN-14 freeze pins keep their
+	// captures); providerProfiles fragments → strictTestDouble<ProviderProfileService>
+	// over makeProviderProfileRow rows; `{ text }` fakes → the shared
+	// execResult builder (promoted to insights-test-builders.ts, fork #1 of
+	// objective-service.test.ts's 14a original). One commit with the test edits.
+	asNever: 861,
 	/** Global `screen.` usage in apps/web test files (binds at import time). */
 	// 196 (2026-10-04): ratcheted to the merged tree's count after PR #51
 	// (provider-lists unification removed the forked pickers' screen usage;

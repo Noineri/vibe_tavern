@@ -8,7 +8,7 @@
 import { describe, it, expect } from "bun:test";
 import type { ChatStore, MessageStore, StoreContainer } from "@vibe-tavern/db";
 import type { PromptAssemblyContext } from "@vibe-tavern/prompt-pipeline";
-import type { ProviderExecutionInput } from "../src/infrastructure/ai/provider-execution-types.js";
+import type { GenerationResult, ProviderExecutionInput } from "../src/infrastructure/ai/provider-execution-types.js";
 import {
 	SceneTrackerService,
 	composeSceneInstruction,
@@ -16,9 +16,19 @@ import {
 	type SceneTarget,
 	type SceneGenerateInput,
 } from "../src/domain/insights/tracker-service.js";
-import { computeSceneSourceHash, normalizeInsightsConfig } from "@vibe-tavern/domain";
+import {
+	brandId,
+	computeSceneSourceHash,
+	normalizeInsightsConfig,
+	type ChatBranchId,
+	type ChatId,
+	type MessageId,
+	type MessageVariantId,
+} from "@vibe-tavern/domain";
 import type { SceneTrackerRecord } from "@vibe-tavern/domain";
-import { makeChatRow, makeMessageRow, makeVariantRow } from "./insights-test-builders.js";
+import { execResult, makeChatRow, makeMessageRow, makeVariantRow } from "./insights-test-builders.js";
+import { makeProviderProfileRow } from "./copilot-test-builders.js";
+import { unusedObjectiveDeps } from "./objective-service-fixture.js";
 import { strictTestDouble } from "./strict-test-double.js";
 
 // ─── fixtures ───────────────────────────────────────────────────────────────
@@ -39,12 +49,12 @@ const context: PromptAssemblyContext = {
 		],
 	},
 } as PromptAssemblyContext;
-const profile = {} as never; // fake execute ignores it
+const profile = makeProviderProfileRow(); // the fake execute ignores it; the row is the real stored shape
 const BASE_TARGET: SceneTarget = {
-	chatId: "chat_1" as never,
-	branchId: "branch_1" as never,
-	messageId: "m2" as never,
-	variantId: "var_1" as never,
+	chatId: brandId<ChatId>("chat_1"),
+	branchId: brandId<ChatBranchId>("branch_1"),
+	messageId: brandId<MessageId>("m2"),
+	variantId: brandId<MessageVariantId>("var_1"),
 };
 
 interface MockVariant {
@@ -176,9 +186,9 @@ function quickService(handle: StoreHandle, reply: string, promptBase = "BASE") {
 	let captured: ProviderExecutionInput["prompt"] | null = null;
 	const execute = async (input: ProviderExecutionInput) => {
 		captured = input.prompt;
-		return { text: reply } as never;
+		return execResult(reply);
 	};
-	const service = new SceneTrackerService(handle.stores, null as never, null as never, execute as never, async () => promptBase);
+	const service = new SceneTrackerService(handle.stores, unusedObjectiveDeps, unusedObjectiveDeps, execute, async () => promptBase);
 	return { service, capturedPrompt: () => captured };
 }
 
@@ -188,24 +198,24 @@ function quickService(handle: StoreHandle, reply: string, promptBase = "BASE") {
  */
 function blockingService(handle: StoreHandle, promptBase = "BASE") {
 	let captured: ProviderExecutionInput["prompt"] | null = null;
-	let releaseExecute: ((value: { text: string }) => void) | undefined;
+	let releaseExecute: ((value: GenerationResult) => void) | undefined;
 	let markStarted: (() => void) | undefined;
 	const started = new Promise<void>((resolve) => {
 		markStarted = resolve;
 	});
 	const execute = async (input: ProviderExecutionInput) => {
 		captured = input.prompt;
-		return new Promise<{ text: string }>((resolve) => {
+		return new Promise<GenerationResult>((resolve) => {
 			releaseExecute = resolve;
 			markStarted?.();
 		});
 	};
-	const service = new SceneTrackerService(handle.stores, null as never, null as never, execute as never, async () => promptBase);
+	const service = new SceneTrackerService(handle.stores, unusedObjectiveDeps, unusedObjectiveDeps, execute, async () => promptBase);
 	return {
 		service,
 		capturedPrompt: () => captured,
 		started,
-		release: (reply: string) => releaseExecute?.({ text: reply }),
+		release: (reply: string) => releaseExecute?.(execResult(reply)),
 	};
 }
 
@@ -220,7 +230,7 @@ function generateInput(target: SceneTarget = BASE_TARGET, continuity?: SceneGene
 describe("composeSceneInstruction (SCN-5)", () => {
 	it("embeds the schema descriptor and the continuity window into the base", () => {
 		const instruction = composeSceneInstruction("BASE", TEST_SCHEMA, [
-			{ variantId: "v0" as never, sceneState: { mood: "tense", tension: 8 } },
+			{ variantId: brandId<MessageVariantId>("v0"), sceneState: { mood: "tense", tension: 8 } },
 		]);
 		expect(instruction).toContain("BASE");
 		expect(instruction).toContain('"mood"'); // schema descriptor
@@ -546,7 +556,7 @@ describe("SceneTrackerService.generateScene (SCN-5)", () => {
 		const execute = async () => {
 			throw new Error("provider 500");
 		};
-		const service = new SceneTrackerService(handle.stores, null as never, null as never, execute as never, async () => "BASE");
+		const service = new SceneTrackerService(handle.stores, unusedObjectiveDeps, unusedObjectiveDeps, execute, async () => "BASE");
 		await expect(service.generateScene(generateInput())).rejects.toThrow("provider 500");
 		expect(handle.getRecord("var_1")).toEqual(prior); // preserved
 	});
@@ -582,7 +592,7 @@ describe("SceneTrackerService.generateScene (SCN-5)", () => {
 			},
 		});
 		const { service } = quickService(handle, '{"mood":"calm","tension":3}');
-		const targetB: SceneTarget = { ...BASE_TARGET, variantId: "var_2" as never };
+		const targetB: SceneTarget = { ...BASE_TARGET, variantId: brandId<MessageVariantId>("var_2") };
 		const record = await service.generateScene(generateInput(targetB));
 		expect(record.variantId).toBe("var_2");
 		expect(handle.getRecord("var_1")).toBeNull(); // sibling untouched

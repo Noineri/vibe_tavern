@@ -49,6 +49,7 @@ import {
 	type CharacterId,
 	type ChatBranchId,
 	type ChatId,
+	type MessageId,
 	type MessageVariantId,
 	type ObjectiveState,
 	type SceneTrackerRecord,
@@ -65,6 +66,7 @@ import type { SceneTrackerService } from "../src/domain/insights/tracker-service
 import type { InsightsRuntimeApi } from "../src/api/contract/runtime-api.js";
 import type { SessionRuntime } from "../src/runtime/session/session-runtime.js";
 import type { BuiltPipelineContext, PromptAssemblyResolver } from "../src/domain/prompt/prompt-assembly-service.js";
+import type { GenerationResult } from "../src/infrastructure/ai/provider-execution-types.js";
 import { toCharacterRecord } from "../src/domain/character/character-runtime.js";
 import { mapChatBranch, mapChatDto, mapMessageDto } from "../src/runtime/session/session-runtime-dto.js";
 import { strictTestDouble, type PartialMembers } from "./strict-test-double.js";
@@ -533,6 +535,10 @@ export interface SessionRuntimeFixture {
 			 *  (session-runtime-chat-lifecycle.ts input); the objective-suite
 			 *  orchestration pins assert it (getContextBranchIds). */
 			branchId?: ChatBranchId;
+			/** The backfill runner binds each manifest item to its own history
+			 *  prefix (session-runtime-chat-lifecycle.ts input member); the SCN-14
+			 *  freeze pins assert it (tracker-backfill.test.ts throughMessageId). */
+			throughMessageId?: MessageId;
 			model: string;
 			recentMessageLimit?: number;
 			dryRun?: boolean;
@@ -585,6 +591,20 @@ export function makeSessionRuntime(fixture: SessionRuntimeFixture = {}): Session
 		},
 		"SessionRuntime",
 	);
+}
+
+/** A real {@link GenerationResult} for the injected-execute doubles. The
+ *  insight services read only `.text`, but `providerResponse` is the required
+ *  trace member the type carries (`{ text }` alone is NOT a GenerationResult —
+ *  the fiction the erasure casts hid, surfaced in step 14a). The trace shape
+ *  mirrors the executor's nonstream mode with no steps; nothing under test
+ *  reads it. Fork bookkeeping: fork #1 of the file-local `execResult` in
+ *  objective-service.test.ts (its original 14a header cannot carry
+ *  `forks: 1` within step 14d's four-file scope — fold both here when that
+ *  file is next touched). Consumers: tracker-service / tracker-backfill /
+ *  tracker-coordinator suites. */
+export function execResult(text: string): GenerationResult {
+	return { text, providerResponse: { mode: "nonstream", steps: [] } };
 }
 
 /** A strict `SceneTrackerService` double — the tests wrap their partial

@@ -18,21 +18,27 @@ import type {
 	StoreContainer,
 } from "@vibe-tavern/db";
 import type { PromptAssemblyContext } from "@vibe-tavern/prompt-pipeline";
-import type { ProviderExecutionInput } from "../src/infrastructure/ai/provider-execution-types.js";
+import type { GenerationResult, ProviderExecutionInput } from "../src/infrastructure/ai/provider-execution-types.js";
 import {
 	SceneTrackerService,
 	type SceneBackfillStatus,
 } from "../src/domain/insights/tracker-service.js";
 import {
 	SCENE_BACKFILL_MODE,
+	brandId,
 	computeSceneSchemaHash,
 	computeSceneSourceHash,
 	normalizeInsightsConfig,
+	type ChatBranchId,
+	type MessageId,
+	type MessageVariantId,
 	type SceneBackfillMode,
 	type SceneBackfillRunStatus,
 } from "@vibe-tavern/domain";
 import type { ChatId } from "@vibe-tavern/domain";
-import { makeChatRow, makeMessageRow, makeVariantRow } from "./insights-test-builders.js";
+import { execResult, makeChatRow, makeMessageRow, makeSessionRuntime, makeVariantRow } from "./insights-test-builders.js";
+import { makeProviderProfileRow } from "./copilot-test-builders.js";
+import type { ProviderProfileService } from "../src/domain/providers/provider-profile-service.js";
 import { strictTestDouble } from "./strict-test-double.js";
 
 // ─── fixtures ───────────────────────────────────────────────────────────────
@@ -49,7 +55,7 @@ const CONTEXT: PromptAssemblyContext = {
 } as PromptAssemblyContext;
 
 const VALID_REPLY = '{"mood":"calm","tension":3}';
-const CHAT: ChatId = "chat_1" as never;
+const CHAT: ChatId = brandId<ChatId>("chat_1");
 const BRANCH = "brnch_1";
 
 /** Structurally the store's MessageVariantSceneRecord minus its OPTIONAL
@@ -231,21 +237,24 @@ function makeService(handle: StoreHandle, replies: (string | Error)[]): {
 		handle.execLog.push(`exec#${handle.execLog.length + 1}`);
 		const entry = queue.shift();
 		if (entry instanceof Error) throw entry;
-		return { text: entry ?? VALID_REPLY } as never;
+		return execResult(entry ?? VALID_REPLY);
 	};
-	const sessionRuntime = {
+	const sessionRuntime = makeSessionRuntime({
 		chatLifecycle: {
-			buildPipelineContext: async (input: { throughMessageId?: string }) => {
+			buildPipelineContext: async (input) => {
 				contextInputs.push(input);
 				return { context: CONTEXT };
 			},
 		},
-	} as never;
-	const providerProfiles = {
-		resolveActiveProviderProfile: async () => ({ id: "prof_1", defaultModel: "scene-model" }),
-		getProviderProfile: async () => null,
-	} as never;
-	const service = new SceneTrackerService(handle.stores, sessionRuntime, providerProfiles, execute as never, async () => "BASE");
+	});
+	const providerProfiles = strictTestDouble<ProviderProfileService>(
+		{
+			resolveActiveProviderProfile: async () => makeProviderProfileRow({ id: "prof_1", defaultModel: "scene-model" }),
+			getProviderProfile: async () => null,
+		},
+		"makeService: providerProfiles (tracker-backfill)",
+	);
+	const service = new SceneTrackerService(handle.stores, sessionRuntime, providerProfiles, execute, async () => "BASE");
 	return { service, contextInputs };
 }
 
@@ -257,7 +266,7 @@ function blockingService(handle: StoreHandle): {
 	release: (reply: string) => void;
 	releaseError: (error: Error) => void;
 } {
-	let releaseExecute: ((value: { text: string }) => void) | undefined;
+	let releaseExecute: ((value: GenerationResult) => void) | undefined;
 	let releaseError: ((error: Error) => void) | undefined;
 	let markStarted: (() => void) | undefined;
 	const started = new Promise<void>((resolve) => {
@@ -265,22 +274,25 @@ function blockingService(handle: StoreHandle): {
 	});
 	const execute = async () => {
 		handle.execLog.push(`exec#${handle.execLog.length + 1}`);
-		return new Promise<{ text: string }>((resolve, reject) => {
+		return new Promise<GenerationResult>((resolve, reject) => {
 			releaseExecute = resolve;
 			releaseError = reject;
 			markStarted?.();
 		});
 	};
-	const sessionRuntime = { chatLifecycle: { buildPipelineContext: async () => ({ context: CONTEXT }) } } as never;
-	const providerProfiles = {
-		resolveActiveProviderProfile: async () => ({ id: "prof_1", defaultModel: "scene-model" }),
-		getProviderProfile: async () => null,
-	} as never;
-	const service = new SceneTrackerService(handle.stores, sessionRuntime, providerProfiles, execute as never, async () => "BASE");
+	const sessionRuntime = makeSessionRuntime({ chatLifecycle: { buildPipelineContext: async () => ({ context: CONTEXT }) } });
+	const providerProfiles = strictTestDouble<ProviderProfileService>(
+		{
+			resolveActiveProviderProfile: async () => makeProviderProfileRow({ id: "prof_1", defaultModel: "scene-model" }),
+			getProviderProfile: async () => null,
+		},
+		"blockingService: providerProfiles (tracker-backfill)",
+	);
+	const service = new SceneTrackerService(handle.stores, sessionRuntime, providerProfiles, execute, async () => "BASE");
 	return {
 		service,
 		started,
-		release: (reply) => releaseExecute?.({ text: reply }),
+		release: (reply) => releaseExecute?.(execResult(reply)),
 		releaseError: (error) => releaseError?.(error),
 	};
 }
@@ -393,9 +405,12 @@ describe("SceneTrackerService backfill — manifest freeze + modes (SCN-14)", ()
 
 		// No provider: override providerProfiles to resolve null.
 		const handle = makeStore({ assistants: [{ id: "m1", variantId: "v1", content: "one" }] });
-		const sessionRuntime = { chatLifecycle: { buildPipelineContext: async () => ({ context: CONTEXT }) } } as never;
-		const noProfile = { resolveActiveProviderProfile: async () => null, getProviderProfile: async () => null } as never;
-		const noProviderService = new SceneTrackerService(handle.stores, sessionRuntime, noProfile, (async () => ({ text: VALID_REPLY })) as never, async () => "BASE");
+		const sessionRuntime = makeSessionRuntime({ chatLifecycle: { buildPipelineContext: async () => ({ context: CONTEXT }) } });
+		const noProfile = strictTestDouble<ProviderProfileService>(
+			{ resolveActiveProviderProfile: async () => null, getProviderProfile: async () => null },
+			"no-provider providerProfiles (tracker-backfill)",
+		);
+		const noProviderService = new SceneTrackerService(handle.stores, sessionRuntime, noProfile, async () => execResult(VALID_REPLY), async () => "BASE");
 		await expect(noProviderService.startBackfill(CHAT, SCENE_BACKFILL_MODE.fillMissing)).rejects.toThrow(/provider/i);
 	});
 });
@@ -662,7 +677,7 @@ describe("SceneTrackerService backfill — latest-target send participation (SCN
 		// target job (the same registry the send path joins). The batch never blocks
 		// a send on its own — only the latest target can independently join the
 		// normal send wait via these registered jobs.
-		expect(service.hasTargetJob({ chatId: CHAT, branchId: BRANCH as never, messageId: "m1" as never, variantId: "v1" as never })).toBe(true);
+		expect(service.hasTargetJob({ chatId: CHAT, branchId: brandId<ChatBranchId>(BRANCH), messageId: brandId<MessageId>("m1"), variantId: brandId<MessageVariantId>("v1") })).toBe(true);
 		release(VALID_REPLY);
 		await new Promise((resolve) => setTimeout(resolve, 10));
 		release(VALID_REPLY);

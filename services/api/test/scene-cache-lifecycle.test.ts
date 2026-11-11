@@ -20,7 +20,7 @@ import {
 	type StoreIdGenerator,
 	type MessageVariantSceneRecord,
 } from "@vibe-tavern/db";
-import { computeSceneSchemaHash } from "@vibe-tavern/domain";
+import { brandId, computeSceneSchemaHash, type ChatBranchId, type ChatId } from "@vibe-tavern/domain";
 import { rebuildCurrentSceneCache } from "../src/domain/insights/scene-cache.js";
 import { strictTestDouble } from "./strict-test-double.js";
 
@@ -48,8 +48,8 @@ let db: Db;
 let chatStore: ChatStore;
 let messages: MessageStore;
 let stores: StoreContainer;
-let chatId: string;
-let branchId: string;
+let chatId: ChatId;
+let branchId: ChatBranchId;
 
 function makeRecord(variantId: string, over: Partial<MessageVariantSceneRecord> = {}): MessageVariantSceneRecord {
 	return {
@@ -105,8 +105,10 @@ beforeEach(async () => {
 		status: "active", createdAt: FIXED_NOW, updatedAt: FIXED_NOW,
 	}).run();
 	const chat = await chatStore.createChat({ characterId: "char_1", title: "c", promptPresetId: null });
-	chatId = chat.id;
-	branchId = chat.activeBranchId;
+	// The store row carries plain-string ids; the brand is applied at this
+	// DB→test read boundary (the same edge the service applies — tracker-service.ts).
+	chatId = brandId<ChatId>(chat.id);
+	branchId = brandId<ChatBranchId>(chat.activeBranchId);
 	await setConfig(chatId, SCHEMA_A);
 });
 
@@ -114,14 +116,14 @@ beforeEach(async () => {
 
 describe("rebuildCurrentSceneCache — transition matrix (SCN-6)", () => {
 	test("an empty branch yields an empty cache", async () => {
-		expect(await rebuildCurrentSceneCache(stores, chatId as never)).toBeNull();
+		expect(await rebuildCurrentSceneCache(stores, chatId)).toBeNull();
 		expect(await readCache(chatId)).toEqual({});
 	});
 
 	test("the latest assistant's fresh selected record becomes the cache", async () => {
 		const { variants } = await addAssistant(["Reply A"]);
 		await messages.setSceneRecord(variants[0]!.id, makeRecord(variants[0]!.id, { sceneState: { mood: "tense", tension: 7 } }));
-		const cache = await rebuildCurrentSceneCache(stores, chatId as never);
+		const cache = await rebuildCurrentSceneCache(stores, chatId);
 		expect(cache?.variantId).toBe(variants[0]!.id);
 		expect(cache?.sceneState).toEqual({ mood: "tense", tension: 7 });
 		expect(await readCache(chatId)).toMatchObject({ variantId: variants[0]!.id });
@@ -129,7 +131,7 @@ describe("rebuildCurrentSceneCache — transition matrix (SCN-6)", () => {
 
 	test("a missing record (latest assistant not yet tracked) yields an empty cache", async () => {
 		await addAssistant(["Reply A"]); // no record set
-		expect(await rebuildCurrentSceneCache(stores, chatId as never)).toBeNull();
+		expect(await rebuildCurrentSceneCache(stores, chatId)).toBeNull();
 		expect(await readCache(chatId)).toEqual({});
 	});
 
@@ -138,7 +140,7 @@ describe("rebuildCurrentSceneCache — transition matrix (SCN-6)", () => {
 		// A record stamped with a schemaHash that differs from the live config's
 		// (HASH_A) stays visible — it is a persisted fact under its own schema.
 		await messages.setSceneRecord(variants[0]!.id, makeRecord(variants[0]!.id, { schemaHash: "wrong-hash", schema: SCHEMA_B, sceneState: { location: "keep" } }));
-		const cache = await rebuildCurrentSceneCache(stores, chatId as never);
+		const cache = await rebuildCurrentSceneCache(stores, chatId);
 		expect(cache?.variantId).toBe(variants[0]!.id);
 		expect(cache?.schemaHash).toBe("wrong-hash");
 		expect(cache?.sceneState).toEqual({ location: "keep" });
@@ -148,7 +150,7 @@ describe("rebuildCurrentSceneCache — transition matrix (SCN-6)", () => {
 		const { variants } = await addAssistant(["Reply A"]);
 		// A model/provider/prompt change bumps revision; the prior record survives.
 		await messages.setSceneRecord(variants[0]!.id, makeRecord(variants[0]!.id, { configRevision: 99, sceneState: { mood: "kept" } }));
-		const cache = await rebuildCurrentSceneCache(stores, chatId as never);
+		const cache = await rebuildCurrentSceneCache(stores, chatId);
 		expect(cache?.variantId).toBe(variants[0]!.id);
 		expect(cache?.configRevision).toBe(99);
 		expect((cache?.sceneState as { mood: string }).mood).toBe("kept");
@@ -158,7 +160,7 @@ describe("rebuildCurrentSceneCache — transition matrix (SCN-6)", () => {
 		// Two variants: A selected (no record), B nonselected (just-finished record).
 		const { variants } = await addAssistant(["Reply A", "Reply B"], 0);
 		await messages.setSceneRecord(variants[1]!.id, makeRecord(variants[1]!.id, { sceneState: { mood: "from-B" } }));
-		expect(await rebuildCurrentSceneCache(stores, chatId as never)).toBeNull(); // A has no record → empty, B ignored
+		expect(await rebuildCurrentSceneCache(stores, chatId)).toBeNull(); // A has no record → empty, B ignored
 		expect(await readCache(chatId)).toEqual({});
 	});
 
@@ -166,7 +168,7 @@ describe("rebuildCurrentSceneCache — transition matrix (SCN-6)", () => {
 		const { variants } = await addAssistant(["Reply A", "Reply B"], 0);
 		await messages.setSceneRecord(variants[0]!.id, makeRecord(variants[0]!.id, { sceneState: { mood: "from-A" } }));
 		await messages.setSceneRecord(variants[1]!.id, makeRecord(variants[1]!.id, { sceneState: { mood: "from-B" } }));
-		const cache = await rebuildCurrentSceneCache(stores, chatId as never);
+		const cache = await rebuildCurrentSceneCache(stores, chatId);
 		expect(cache?.variantId).toBe(variants[0]!.id); // selected A, not B
 		expect((cache?.sceneState as { mood: string }).mood).toBe("from-A");
 	});
@@ -175,9 +177,9 @@ describe("rebuildCurrentSceneCache — transition matrix (SCN-6)", () => {
 		const { messageId, variants } = await addAssistant(["Reply A", "Reply B"], 0);
 		await messages.setSceneRecord(variants[0]!.id, makeRecord(variants[0]!.id, { sceneState: { mood: "A" } }));
 		await messages.setSceneRecord(variants[1]!.id, makeRecord(variants[1]!.id, { sceneState: { mood: "B" } }));
-		expect((await rebuildCurrentSceneCache(stores, chatId as never))?.variantId).toBe(variants[0]!.id);
+		expect((await rebuildCurrentSceneCache(stores, chatId))?.variantId).toBe(variants[0]!.id);
 		await messages.selectVariant(messageId, 1); // switch selection to B
-		const cache = await rebuildCurrentSceneCache(stores, chatId as never);
+		const cache = await rebuildCurrentSceneCache(stores, chatId);
 		expect(cache?.variantId).toBe(variants[1]!.id);
 		expect((cache?.sceneState as { mood: string }).mood).toBe("B");
 	});
@@ -189,7 +191,7 @@ describe("rebuildCurrentSceneCache — transition matrix (SCN-6)", () => {
 		await messages.setSceneRecord(vA!.id, makeRecord(vA!.id, { sceneState: { mood: "A-survives" } }));
 		await messages.deleteVariant(messageId, 1); // delete vB (middle) → indexes compact
 		// vA is still selected (selection is by id internally) and its record survived.
-		const cache = await rebuildCurrentSceneCache(stores, chatId as never);
+		const cache = await rebuildCurrentSceneCache(stores, chatId);
 		expect(cache?.variantId).toBe(vA!.id);
 		expect((cache?.sceneState as { mood: string }).mood).toBe("A-survives");
 		// vB's record is gone with the variant; vA's is intact.
@@ -202,9 +204,9 @@ describe("rebuildCurrentSceneCache — transition matrix (SCN-6)", () => {
 		await messages.setSceneRecord(first.variants[0]!.id, makeRecord(first.variants[0]!.id, { sceneState: { mood: "first" } }));
 		const second = await addAssistant(["Second reply"]);
 		await messages.setSceneRecord(second.variants[0]!.id, makeRecord(second.variants[0]!.id, { sceneState: { mood: "second" } }));
-		expect((await rebuildCurrentSceneCache(stores, chatId as never))?.variantId).toBe(second.variants[0]!.id);
+		expect((await rebuildCurrentSceneCache(stores, chatId))?.variantId).toBe(second.variants[0]!.id);
 		await messages.deleteMessage(second.messageId);
-		const cache = await rebuildCurrentSceneCache(stores, chatId as never);
+		const cache = await rebuildCurrentSceneCache(stores, chatId);
 		expect(cache?.variantId).toBe(first.variants[0]!.id); // fell back to the now-latest assistant
 		expect((cache?.sceneState as { mood: string }).mood).toBe("first");
 	});
@@ -212,11 +214,11 @@ describe("rebuildCurrentSceneCache — transition matrix (SCN-6)", () => {
 	test("editing the selected variant's content LEAVES its record intact → cache still mirrors it", async () => {
 		const { messageId, variants } = await addAssistant(["Reply A"]);
 		await messages.setSceneRecord(variants[0]!.id, makeRecord(variants[0]!.id, { sceneState: { mood: "kept" } }));
-		await rebuildCurrentSceneCache(stores, chatId as never);
+		await rebuildCurrentSceneCache(stores, chatId);
 		// A content edit (e.g. a typo fix) must NOT wipe the Scene record — it is a
 		// persisted fact; the user should not have to regenerate after an edit.
 		await messages.editMessage(messageId, "Edited content");
-		const cache = await rebuildCurrentSceneCache(stores, chatId as never);
+		const cache = await rebuildCurrentSceneCache(stores, chatId);
 		expect(cache?.variantId).toBe(variants[0]!.id);
 		expect((cache?.sceneState as { mood: string }).mood).toBe("kept");
 	});
@@ -224,12 +226,12 @@ describe("rebuildCurrentSceneCache — transition matrix (SCN-6)", () => {
 	test("editing a NON-selected variant leaves the selected record (and cache) intact", async () => {
 		const { messageId, variants } = await addAssistant(["A", "B"], 0);
 		await messages.setSceneRecord(variants[0]!.id, makeRecord(variants[0]!.id, { sceneState: { mood: "A" } }));
-		await rebuildCurrentSceneCache(stores, chatId as never);
+		await rebuildCurrentSceneCache(stores, chatId);
 		// Switch to B, edit B (clearing B's record), switch back to A — A's record survives.
 		await messages.selectVariant(messageId, 1);
 		await messages.editMessage(messageId, "B edited");
 		await messages.selectVariant(messageId, 0);
-		const cache = await rebuildCurrentSceneCache(stores, chatId as never);
+		const cache = await rebuildCurrentSceneCache(stores, chatId);
 		expect(cache?.variantId).toBe(variants[0]!.id);
 		expect((cache?.sceneState as { mood: string }).mood).toBe("A");
 	});
@@ -237,9 +239,9 @@ describe("rebuildCurrentSceneCache — transition matrix (SCN-6)", () => {
 	test("a schema change does NOT exclude the prior-schema record (cache still mirrors it)", async () => {
 		const { variants } = await addAssistant(["Reply A"]);
 		await messages.setSceneRecord(variants[0]!.id, makeRecord(variants[0]!.id, { sceneState: { mood: "under-A" } })); // fresh under SCHEMA_A / HASH_A
-		expect((await rebuildCurrentSceneCache(stores, chatId as never))?.variantId).toBe(variants[0]!.id);
+		expect((await rebuildCurrentSceneCache(stores, chatId))?.variantId).toBe(variants[0]!.id);
 		await setConfig(chatId, SCHEMA_B); // live schema is now HASH_B; the HASH_A record must NOT disappear
-		const cache = await rebuildCurrentSceneCache(stores, chatId as never);
+		const cache = await rebuildCurrentSceneCache(stores, chatId);
 		expect(cache?.variantId).toBe(variants[0]!.id);
 		expect(cache?.schemaHash).toBe(HASH_A); // the record's own identity, not the live HASH_B
 		expect((cache?.sceneState as { mood: string }).mood).toBe("under-A");
@@ -254,13 +256,13 @@ describe("rebuildCurrentSceneCache — transition matrix (SCN-6)", () => {
 		const second = await addAssistant(["Second reply"]);
 		await messages.setSceneRecord(second.variants[0]!.id, makeRecord(second.variants[0]!.id, { schema: SCHEMA_B, schemaHash: HASH_B, sceneState: { location: "b" } }));
 		// Live config is SCHEMA_A; the latest (second) record is SCHEMA_B — still mirrored.
-		let cache = await rebuildCurrentSceneCache(stores, chatId as never);
+		let cache = await rebuildCurrentSceneCache(stores, chatId);
 		expect(cache?.variantId).toBe(second.variants[0]!.id);
 		expect(cache?.schemaHash).toBe(HASH_B);
 		// Delete the latest → cache falls back to the older SCHEMA_A record, which
 		// also survived (it was never invalidated by the schema divergence).
 		await messages.deleteMessage(second.messageId);
-		cache = await rebuildCurrentSceneCache(stores, chatId as never);
+		cache = await rebuildCurrentSceneCache(stores, chatId);
 		expect(cache?.variantId).toBe(first.variants[0]!.id);
 		expect(cache?.schemaHash).toBe(HASH_A);
 	});
@@ -273,7 +275,7 @@ describe("rebuildCurrentSceneCache — transition matrix (SCN-6)", () => {
 		const legacy = makeRecord(variants[0]!.id, { sceneState: { mood: "legacy" } });
 		delete (legacy as Partial<typeof legacy>).schema;
 		await messages.setSceneRecord(variants[0]!.id, legacy);
-		const cache = await rebuildCurrentSceneCache(stores, chatId as never);
+		const cache = await rebuildCurrentSceneCache(stores, chatId);
 		expect(cache?.variantId).toBe(variants[0]!.id);
 		expect((cache?.sceneState as { mood: string }).mood).toBe("legacy");
 	});
@@ -281,11 +283,11 @@ describe("rebuildCurrentSceneCache — transition matrix (SCN-6)", () => {
 	test("a forked branch's re-keyed record is picked up once the branch activates", async () => {
 		const { messageId, variants } = await addAssistant(["Reply A"]);
 		await messages.setSceneRecord(variants[0]!.id, makeRecord(variants[0]!.id, { sceneState: { mood: "original" } }));
-		expect((await rebuildCurrentSceneCache(stores, chatId as never))?.variantId).toBe(variants[0]!.id);
+		expect((await rebuildCurrentSceneCache(stores, chatId))?.variantId).toBe(variants[0]!.id);
 		// Fork from this message → copies the variant with a NEW id and a re-keyed record.
 		const fork = await chatStore.forkBranch(chatId, messageId);
 		await chatStore.activateBranch(chatId, fork.id);
-		const cache = await rebuildCurrentSceneCache(stores, chatId as never);
+		const cache = await rebuildCurrentSceneCache(stores, chatId);
 		expect(cache).not.toBeNull();
 		expect(cache?.variantId).not.toBe(variants[0]!.id); // the fork's re-keyed variant id, not the source's
 		expect((cache?.sceneState as { mood: string }).mood).toBe("original"); // scene content preserved across the fork
