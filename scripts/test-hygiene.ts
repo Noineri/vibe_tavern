@@ -180,7 +180,27 @@ export const BUDGETS = {
 	// (provider-lists unification removed the forked pickers' screen usage;
 	// 2026-10-09 regex remediation removed the rest — locked at 156).
 	// Ratcheted to the current tree's count.
-	screen: 138,
+	// 65 (2026-11-11): step 18a — the screen sweep opener. ALL 73 sites in
+	// apps/web/src/components/chat/MessageAiEditorModal.test.tsx (the single
+	// monster holder; live scanFile: 73 before, 0 after) now query through
+	// each test's own render() return (the R7 dom-env contract): 34 bare
+	// renderModal() call sites gained per-test destructures, the 10
+	// already-destructured tests stay (two gained findByText for their
+	// helper calls), the three query helpers take the caller's findByText
+	// (generateWithPrompt / switchToAnnotate / generateAnnotate, typed
+	// ModalView["findByText"]), mergeRow keeps its existing { getByText }
+	// seam, and the `screen` binding is dropped from the dynamic RTL import.
+	// Same boundary: the render-returned queries are bound to
+	// baseElement = document.body (@testing-library/react pure.js:239) —
+	// the element the modal portals to — so queries, asserts and behavior
+	// are unchanged (expect() source count 165 → 165; per-file run 45 pass /
+	// 0 fail / 169 expect() calls before and after; act warnings 44 both
+	// sides; the one remaining bare renderModal() queries nothing — it
+	// drives document.body.querySelectorAll directly). 138 → 65 = 138 − 73
+	// exactly. 12 holder files remain (RegexPresetEditor 25, AiAssistantModal
+	// 16, TtsProfileEditor 7, BoundResourcesField 5, StarPromptModal 4,
+	// TtsBaseCard 2, and the six 1-site files).
+	screen: 65,
 	/** `innerHTML = ""` surgeries (TtsProfileEditor legacy block). */
 	innerHTMLEmpty: 30,
 	/** Literal `await sleep/delay/wait(N)` with N > 200 in test files. */

@@ -22,7 +22,7 @@ import { useDomEnv } from "../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 
 useDomEnv();
-const { act, fireEvent, render, screen, waitFor } = await import("@testing-library/react");
+const { act, fireEvent, render, waitFor } = await import("@testing-library/react");
 import { brandId, type ChatId, type MessageId, type MessageVariantId } from "@vibe-tavern/domain";
 import type { AiAssistantChunk, AiAssistantRequestBody, AppMessage, ProviderProfileRecord, UiSettingsRecord } from "../../api/types.js";
 import type { SnapshotStore } from "../../stores/snapshot-store.js";
@@ -266,11 +266,15 @@ function openEditorForMerge() {
 }
 
 /** Type the instruction textarea (the only one in the modal body) and click
- *  the Generate button. The Modal portals to document.body. */
-async function generateWithPrompt(prompt: string) {
+ *  the Generate button. The Modal portals to document.body; findByText is
+ *  the caller's render-returned query (bound to baseElement = document.body,
+ *  so it sees the portal). */
+type ModalView = ReturnType<typeof renderModal>;
+
+async function generateWithPrompt(findByText: ModalView["findByText"], prompt: string) {
   const textarea = document.querySelector("textarea") as HTMLTextAreaElement;
   fireEvent.change(textarea, { target: { value: prompt } });
-  const generateBtn = await screen.findByText("message_ai_editor_generate");
+  const generateBtn = await findByText("message_ai_editor_generate");
   await act(async () => { fireEvent.click(generateBtn); });
 }
 
@@ -336,10 +340,10 @@ describe("MessageAiEditorModal — merge-option variant-count gate", () => {
     seedMessage(makeVariants(7));
     seedBootstrap("prov", "model-a");
     openEditorForEdit(brandId<MessageVariantId>("var-0"));
-    renderModal();
-    expect(screen.getByText("message_ai_editor_mode_edit")).toBeTruthy();
-    expect(screen.getByText("message_ai_editor_mode_merge")).toBeTruthy();
-    expect(screen.getByText("message_ai_editor_mode_annotate")).toBeTruthy();
+    const { getByText } = renderModal();
+    expect(getByText("message_ai_editor_mode_edit")).toBeTruthy();
+    expect(getByText("message_ai_editor_mode_merge")).toBeTruthy();
+    expect(getByText("message_ai_editor_mode_annotate")).toBeTruthy();
   });
 });
 
@@ -349,14 +353,14 @@ describe("MessageAiEditorModal — generation params + token estimate", () => {
     seedBootstrap("prov-1", "model-a");
     useProviderDataStore.setState({ profiles: [makeProfile("prov-1", "Provider One")] });
     openEditorForEdit(brandId<MessageVariantId>("var-0"));
-    renderModal();
+    const { getByText, findByText } = renderModal();
     // Generation params mirror the shared AiAssistantModal full path.
-    expect(screen.getByText("ai_param_temperature")).toBeTruthy();
-    expect(screen.getByText("ai_param_max_tokens")).toBeTruthy();
-    expect(screen.getByText("ai_quickpill_recent_messages")).toBeTruthy();
+    expect(getByText("ai_param_temperature")).toBeTruthy();
+    expect(getByText("ai_param_max_tokens")).toBeTruthy();
+    expect(getByText("ai_quickpill_recent_messages")).toBeTruthy();
     // Token + assembled-context estimate resolves from the (mocked) count endpoint.
-    expect(await screen.findByText("message_ai_editor_context_lore: 2")).toBeTruthy();
-    expect(screen.getByText("message_ai_editor_context_layers: 3")).toBeTruthy();
+    expect(await findByText("message_ai_editor_context_lore: 2")).toBeTruthy();
+    expect(getByText("message_ai_editor_context_layers: 3")).toBeTruthy();
   });
 });
 
@@ -426,14 +430,14 @@ describe("MessageAiEditorModal — source construction", () => {
     ] as AppMessage["variants"], 0);
     openEditorForEdit(VA);
 
-    renderModal();
+    const { getByText, queryByText, queryByLabelText } = renderModal();
 
     // The selected source row shows the variant's display index.
-    expect(screen.getByText(/#1/)).toBeTruthy();
+    expect(getByText(/#1/)).toBeTruthy();
     // The OTHER variant must not appear as a source row.
-    expect(screen.queryByText(/#2/)).toBeNull();
+    expect(queryByText(/#2/)).toBeNull();
     // Edit mode has no per-row unstar button (the single source is read-only).
-    expect(screen.queryByLabelText("message_ai_editor_unstar_source")).toBeNull();
+    expect(queryByLabelText("message_ai_editor_unstar_source")).toBeNull();
   });
 
   it("merge mode lists EVERY variant as a checkable row; starred ones pre-checked with a glyph", () => {
@@ -502,7 +506,7 @@ describe("MessageAiEditorModal — merge minimum sources", () => {
     ] as AppMessage["variants"], 0);
     openEditorForMerge();
 
-    const { getByText, queryByText } = renderModal();
+    const { getByText, queryByText, findByText } = renderModal();
 
     // Nothing checked: the below-minimum hint shows and Generate is blocked.
     expect(getByText("message_ai_editor_merge_min_sources")).toBeTruthy();
@@ -518,7 +522,7 @@ describe("MessageAiEditorModal — merge minimum sources", () => {
     // Second row unlocks the merge; the run carries exactly the checked ids.
     act(() => { fireEvent.click(mergeRow(q, 2)); });
     expect(queryByText("message_ai_editor_merge_min_sources")).toBeNull();
-    await generateWithPrompt("weave both");
+    await generateWithPrompt(findByText, "weave both");
 
     await waitFor(() => expect(mockState.requests).toHaveLength(1));
     expect(mockState.requests[0]).toMatchObject({
@@ -536,9 +540,9 @@ describe("MessageAiEditorModal — merge minimum sources", () => {
     useMessageAiEditorStore.getState().toggleStar(MID, VA);
     openEditorForMerge();
 
-    renderModal();
+    const { getByText } = renderModal();
 
-    expect(screen.getByText("message_ai_editor_merge_min_sources")).toBeTruthy();
+    expect(getByText("message_ai_editor_merge_min_sources")).toBeTruthy();
   });
 });
 
@@ -557,8 +561,8 @@ describe("MessageAiEditorModal — canonical request IDs", () => {
     ] as AppMessage["variants"], 0);
     openEditorForEdit(VA);
 
-    renderModal();
-    await generateWithPrompt("tighten the prose");
+    const { findByText } = renderModal();
+    await generateWithPrompt(findByText, "tighten the prose");
 
     await waitFor(() => expect(mockState.requests).toHaveLength(1));
     expect(mockState.requests[0]).toMatchObject({
@@ -582,8 +586,8 @@ describe("MessageAiEditorModal — canonical request IDs", () => {
     useMessageAiEditorStore.getState().toggleStar(MID, VC);
     openEditorForMerge();
 
-    renderModal();
-    await generateWithPrompt("combine best beats");
+    const { findByText } = renderModal();
+    await generateWithPrompt(findByText, "combine best beats");
 
     await waitFor(() => expect(mockState.requests).toHaveLength(1));
     expect(mockState.requests[0]).toMatchObject({
@@ -607,10 +611,10 @@ describe("MessageAiEditorModal — canonical request IDs", () => {
     useMessageAiEditorStore.getState().toggleStar(MID, VC);
     openEditorForMerge();
 
-    const { getByText } = renderModal();
+    const { getByText, findByText } = renderModal();
     // All three pre-checked; uncheck #3 before running.
     act(() => { fireEvent.click(mergeRow({ getByText }, 3)); });
-    await generateWithPrompt("combine best beats");
+    await generateWithPrompt(findByText, "combine best beats");
 
     await waitFor(() => expect(mockState.requests).toHaveLength(1));
     expect(mockState.requests[0]).toMatchObject({
@@ -654,8 +658,8 @@ describe("MessageAiEditorModal — canonical request IDs", () => {
     ] as AppMessage["variants"], 0);
     openEditorForEdit(VA);
 
-    renderModal();
-    const generateBtn = screen.getByText("message_ai_editor_generate");
+    const { getByText } = renderModal();
+    const generateBtn = getByText("message_ai_editor_generate");
     // Disabled with empty instruction.
     expect((generateBtn as HTMLButtonElement).disabled).toBe(true);
 
@@ -685,14 +689,14 @@ describe("MessageAiEditorModal — edit word-diff preview", () => {
       { type: "done" },
     ]);
 
-    renderModal();
-    await generateWithPrompt("swap quick for slow");
+    const { getByText, findByText } = renderModal();
+    await generateWithPrompt(findByText, "swap quick for slow");
 
     // The word-diff title is rendered.
-    await waitFor(() => expect(screen.getByText("message_ai_editor_changes")).toBeTruthy());
+    await waitFor(() => expect(getByText("message_ai_editor_changes")).toBeTruthy());
     // Added/removed badges are present (+1 -1).
-    expect(screen.getByText("+1")).toBeTruthy();
-    expect(screen.getByText("-1")).toBeTruthy();
+    expect(getByText("+1")).toBeTruthy();
+    expect(getByText("-1")).toBeTruthy();
   });
 });
 
@@ -725,16 +729,16 @@ describe("MessageAiEditorModal — edit line-diff fallback (tooLarge)", () => {
       { type: "done" },
     ]);
 
-    renderModal();
-    await generateWithPrompt("rewrite wholesale");
+    const { getByText, queryByText, findByText } = renderModal();
+    await generateWithPrompt(findByText, "rewrite wholesale");
 
     // Line-diff fallback rendered: the changes title and the +1/-1 net-delta
     // badges are present (the tooLarge branch renders neither).
-    await waitFor(() => expect(screen.getByText("message_ai_editor_changes")).toBeTruthy());
-    expect(screen.getByText("+1")).toBeTruthy();
-    expect(screen.getByText("-1")).toBeTruthy();
+    await waitFor(() => expect(getByText("message_ai_editor_changes")).toBeTruthy());
+    expect(getByText("+1")).toBeTruthy();
+    expect(getByText("-1")).toBeTruthy();
     // The bare "diff too large" wall is NOT shown.
-    expect(screen.queryByText("message_ai_editor_diff_too_large")).toBeNull();
+    expect(queryByText("message_ai_editor_diff_too_large")).toBeNull();
   });
 });
 
@@ -760,14 +764,14 @@ describe("MessageAiEditorModal — merge full preview", () => {
       { type: "done" },
     ]);
 
-    renderModal();
-    await generateWithPrompt("weave both");
+    const { getByText, queryByText, findByText } = renderModal();
+    await generateWithPrompt(findByText, "weave both");
 
     // Candidate label + full text present.
-    await waitFor(() => expect(screen.getByText("message_ai_editor_candidate_label")).toBeTruthy());
-    expect(screen.getByText(/merged candidate text/)).toBeTruthy();
+    await waitFor(() => expect(getByText("message_ai_editor_candidate_label")).toBeTruthy());
+    expect(getByText(/merged candidate text/)).toBeTruthy();
     // The edit-mode diff title is NOT rendered in merge mode.
-    expect(screen.queryByText("message_ai_editor_changes")).toBeNull();
+    expect(queryByText("message_ai_editor_changes")).toBeNull();
   });
 });
 
@@ -787,13 +791,13 @@ describe("MessageAiEditorModal — stop / stream error", () => {
     openEditorForEdit(VA);
     setChunks([{ type: "text", text: "partial" }]);
 
-    renderModal();
-    await generateWithPrompt("go");
+    const { getByText, findByText } = renderModal();
+    await generateWithPrompt(findByText, "go");
 
-    const stopBtn = await screen.findByText("script_ai_stop");
+    const stopBtn = await findByText("script_ai_stop");
     await act(async () => { fireEvent.click(stopBtn); });
 
-    await waitFor(() => expect(screen.getByText("message_ai_editor_generate")).toBeTruthy());
+    await waitFor(() => expect(getByText("message_ai_editor_generate")).toBeTruthy());
     expect(editMock.fn).not.toHaveBeenCalled();
     expect(createVariantMock.fn).not.toHaveBeenCalled();
   });
@@ -805,10 +809,10 @@ describe("MessageAiEditorModal — stop / stream error", () => {
     openEditorForEdit(VA);
     setChunks([{ type: "error", error: "provider-500" }]);
 
-    renderModal();
-    await generateWithPrompt("go");
+    const { getByText, findByText } = renderModal();
+    await generateWithPrompt(findByText, "go");
 
-    await waitFor(() => expect(screen.getByText("provider-500")).toBeTruthy());
+    await waitFor(() => expect(getByText("provider-500")).toBeTruthy());
     expect(editMock.fn).not.toHaveBeenCalled();
     expect(createVariantMock.fn).not.toHaveBeenCalled();
   });
@@ -835,15 +839,15 @@ describe("MessageAiEditorModal — edit Apply conflict (409) retention", () => {
     // The guarded edit rejects with the server's stable conflict message.
     editMock.fn.mockRejectedValueOnce(new Error("The selected message variant changed before this edit could be applied."));
 
-    renderModal();
-    await generateWithPrompt("rewrite");
+    const { getByText, findByText } = renderModal();
+    await generateWithPrompt(findByText, "rewrite");
 
-    await waitFor(() => expect(screen.getByText("message_ai_editor_apply")).toBeTruthy());
-    const applyBtn = screen.getByText("message_ai_editor_apply");
+    await waitFor(() => expect(getByText("message_ai_editor_apply")).toBeTruthy());
+    const applyBtn = getByText("message_ai_editor_apply");
     await act(async () => { fireEvent.click(applyBtn); });
 
     // Conflict notice renders and the editor target stays open.
-    await waitFor(() => expect(screen.getByText("message_ai_editor_conflict_title")).toBeTruthy());
+    await waitFor(() => expect(getByText("message_ai_editor_conflict_title")).toBeTruthy());
     expect(useMessageAiEditorStore.getState().target).not.toBeNull();
     expect(editMock.fn).toHaveBeenCalledTimes(1);
     expect(editMock.fn).toHaveBeenCalledWith(CID, MID, "revised candidate", VA);
@@ -872,11 +876,11 @@ describe("MessageAiEditorModal — edit Apply success closes", () => {
       { type: "done" },
     ]);
 
-    renderModal();
-    await generateWithPrompt("rewrite");
+    const { getByText, findByText } = renderModal();
+    await generateWithPrompt(findByText, "rewrite");
 
-    await waitFor(() => expect(screen.getByText("message_ai_editor_apply")).toBeTruthy());
-    await act(async () => { fireEvent.click(screen.getByText("message_ai_editor_apply")); });
+    await waitFor(() => expect(getByText("message_ai_editor_apply")).toBeTruthy());
+    await act(async () => { fireEvent.click(getByText("message_ai_editor_apply")); });
 
     await waitFor(() => expect(useMessageAiEditorStore.getState().target).toBeNull());
     expect(editMock.fn).toHaveBeenCalledWith(CID, MID, "revised candidate", VA);
@@ -907,11 +911,11 @@ describe("MessageAiEditorModal — merge Save success clears stars and closes", 
       { type: "done", modelId: "model-a", promptPresetId: "preset-1", finishReason: "stop" },
     ]);
 
-    renderModal();
-    await generateWithPrompt("weave both");
+    const { getByText, findByText } = renderModal();
+    await generateWithPrompt(findByText, "weave both");
 
-    await waitFor(() => expect(screen.getByText("message_ai_editor_save_new_variant")).toBeTruthy());
-    await act(async () => { fireEvent.click(screen.getByText("message_ai_editor_save_new_variant")); });
+    await waitFor(() => expect(getByText("message_ai_editor_save_new_variant")).toBeTruthy());
+    await act(async () => { fireEvent.click(getByText("message_ai_editor_save_new_variant")); });
 
     await waitFor(() => expect(useMessageAiEditorStore.getState().target).toBeNull());
     // Stars are PRESERVED after merge-save so the user can reopen and
@@ -947,10 +951,10 @@ describe("MessageAiEditorModal — zero persistence before acceptance", () => {
       { type: "done" },
     ]);
 
-    renderModal();
-    await generateWithPrompt("rewrite");
+    const { getByText, findByText } = renderModal();
+    await generateWithPrompt(findByText, "rewrite");
 
-    await waitFor(() => expect(screen.getByText("message_ai_editor_apply")).toBeTruthy());
+    await waitFor(() => expect(getByText("message_ai_editor_apply")).toBeTruthy());
     expect(editMock.fn).not.toHaveBeenCalled();
     expect(createVariantMock.fn).not.toHaveBeenCalled();
   });
@@ -965,11 +969,11 @@ describe("MessageAiEditorModal — zero persistence before acceptance", () => {
       { type: "done" },
     ]);
 
-    renderModal();
-    await generateWithPrompt("rewrite");
+    const { getByText, findByText } = renderModal();
+    await generateWithPrompt(findByText, "rewrite");
 
-    await waitFor(() => expect(screen.getByText("message_ai_editor_apply")).toBeTruthy());
-    await act(async () => { fireEvent.click(screen.getByText("cancel_btn")); });
+    await waitFor(() => expect(getByText("message_ai_editor_apply")).toBeTruthy());
+    await act(async () => { fireEvent.click(getByText("cancel_btn")); });
 
     await waitFor(() => expect(useMessageAiEditorStore.getState().target).toBeNull());
     expect(editMock.fn).not.toHaveBeenCalled();
@@ -981,12 +985,12 @@ describe("MessageAiEditorModal — zero persistence before acceptance", () => {
     openEditorForEdit(VA);
     // No seedMessage — messagesById has no MID.
 
-    renderModal();
+    const { getByText, queryByText } = renderModal();
 
-    expect(screen.getByText("message_ai_editor_stale_title")).toBeTruthy();
+    expect(getByText("message_ai_editor_stale_title")).toBeTruthy();
     // Generate button is absent because the body shows the stale-target
     // notice, not the generation surface.
-    expect(screen.queryByText("message_ai_editor_generate")).toBeNull();
+    expect(queryByText("message_ai_editor_generate")).toBeNull();
     expect(editMock.fn).not.toHaveBeenCalled();
     expect(createVariantMock.fn).not.toHaveBeenCalled();
   });
@@ -1035,15 +1039,15 @@ describe("MessageAiEditorModal — annotate mode (TPE-2)", () => {
     ] as AppMessage["variants"], 0);
   }
 
-  async function switchToAnnotate() {
-    const segment = await screen.findByText("message_ai_editor_mode_annotate");
+  async function switchToAnnotate(findByText: ModalView["findByText"]) {
+    const segment = await findByText("message_ai_editor_mode_annotate");
     await act(async () => { fireEvent.click(segment); });
   }
 
   /** TPE-14: annotate carries no instruction input — Generate is driven
    *  directly (it must be enabled with an empty instruction). */
-  async function generateAnnotate() {
-    const generateBtn = await screen.findByText("message_ai_editor_generate");
+  async function generateAnnotate(findByText: ModalView["findByText"]) {
+    const generateBtn = await findByText("message_ai_editor_generate");
     expect((generateBtn as HTMLButtonElement).disabled).toBe(false);
     await act(async () => { fireEvent.click(generateBtn); });
   }
@@ -1060,52 +1064,52 @@ describe("MessageAiEditorModal — annotate mode (TPE-2)", () => {
     seedTwoVariantMessage();
     seedBootstrap("prov", "model-a");
     openEditorForAnnotate();
-    renderModal();
+    const { getByText, queryByText } = renderModal();
     // Annotate-entry sessions carry no captured edit variant (TPE-14), so
     // Edit is structurally impossible — offering it produced the stale-source
     // banner («Source message no longer exists») with dead buttons.
-    expect(screen.queryByText("message_ai_editor_mode_edit")).toBeNull();
-    expect(screen.getByText("message_ai_editor_mode_annotate")).toBeTruthy();
-    expect(screen.queryByText("message_ai_editor_stale_source")).toBeNull();
+    expect(queryByText("message_ai_editor_mode_edit")).toBeNull();
+    expect(getByText("message_ai_editor_mode_annotate")).toBeTruthy();
+    expect(queryByText("message_ai_editor_stale_source")).toBeNull();
   });
 
   it("edit-entry session keeps the Edit segment after switching to Annotate and back", async () => {
     seedTwoVariantMessage();
     seedBootstrap("prov", "model-a");
     openEditorForEdit(VA);
-    renderModal();
-    expect(screen.getByText("message_ai_editor_mode_edit")).toBeTruthy();
-    await switchToAnnotate();
-    expect(screen.getByText("message_ai_editor_mode_annotate")).toBeTruthy();
+    const { getByText, findByText } = renderModal();
+    expect(getByText("message_ai_editor_mode_edit")).toBeTruthy();
+    await switchToAnnotate(findByText);
+    expect(getByText("message_ai_editor_mode_annotate")).toBeTruthy();
     // The captured variant survives the round trip — Edit stays offered.
-    expect(screen.getByText("message_ai_editor_mode_edit")).toBeTruthy();
+    expect(getByText("message_ai_editor_mode_edit")).toBeTruthy();
   });
 
   it("switching to annotate: the currently selected variant becomes the single source", async () => {
     seedTwoVariantMessage();
     openEditorForEdit(VA);
-    renderModal();
+    const { getByText, queryByText, findByText } = renderModal();
 
-    await switchToAnnotate();
+    await switchToAnnotate(findByText);
 
     // The annotate hint replaces the generic instruction hint.
-    expect(screen.getByText("message_ai_editor_annotate_hint")).toBeTruthy();
+    expect(getByText("message_ai_editor_annotate_hint")).toBeTruthy();
     // Single read-only source row (variant #1), the other variant absent.
-    expect(screen.getByText(/#1/)).toBeTruthy();
-    expect(screen.queryByText(/#2/)).toBeNull();
+    expect(getByText(/#1/)).toBeTruthy();
+    expect(queryByText(/#2/)).toBeNull();
   });
 
   it("opened via merge: annotate still resolves the currently selected variant as its source", async () => {
     seedMessage(makeVariants(8)); // >6 so merge entry is possible; var-0 selected
     openEditorForMerge();
-    renderModal();
+    const { queryByText, queryAllByText, findByText } = renderModal();
 
-    await switchToAnnotate();
+    await switchToAnnotate(findByText);
 
     // No below-minimum gate in annotate: generation is not blocked by stars.
-    expect(screen.queryByText("message_ai_editor_merge_min_sources")).toBeNull();
+    expect(queryByText("message_ai_editor_merge_min_sources")).toBeNull();
     // Exactly one source row (the selected variant) — not the starred set.
-    const rows = screen.queryAllByText(/#1/);
+    const rows = queryAllByText(/#1/);
     expect(rows).toHaveLength(1);
   });
 
@@ -1116,10 +1120,10 @@ describe("MessageAiEditorModal — annotate mode (TPE-2)", () => {
       { type: "text", text: 'She [laugh] said "wait for me".' },
       { type: "done" },
     ]);
-    renderModal();
+    const { findByText } = renderModal();
 
-    await switchToAnnotate();
-    await generateAnnotate();
+    await switchToAnnotate(findByText);
+    await generateAnnotate(findByText);
 
     expect(mockState.requests).toHaveLength(1);
     expect(mockState.requests[0].mode).toBe("message_tts_annotate");
@@ -1134,32 +1138,32 @@ describe("MessageAiEditorModal — annotate mode (TPE-2)", () => {
   it("annotate hides the instruction field; edit keeps it (TPE-14)", async () => {
     seedTwoVariantMessage();
     openEditorForEdit(VA);
-    renderModal();
+    const { getByText, queryByText, findByText } = renderModal();
 
     // Edit entry: the instruction field is present and required.
     expect(document.querySelector("textarea")).not.toBeNull();
-    expect(screen.getByText("message_ai_editor_instruction_label")).toBeTruthy();
+    expect(getByText("message_ai_editor_instruction_label")).toBeTruthy();
 
-    await switchToAnnotate();
+    await switchToAnnotate(findByText);
 
     // Annotate: no textarea, no instruction label — only the hint line.
     expect(document.querySelector("textarea")).toBeNull();
-    expect(screen.queryByText("message_ai_editor_instruction_label")).toBeNull();
-    expect(screen.getByText("message_ai_editor_annotate_hint")).toBeTruthy();
+    expect(queryByText("message_ai_editor_instruction_label")).toBeNull();
+    expect(getByText("message_ai_editor_annotate_hint")).toBeTruthy();
   });
 
   it("external annotate entry opens the modal directly in annotate mode (TPE-14)", async () => {
     seedTwoVariantMessage();
     openEditorForAnnotate();
-    renderModal();
+    const { getByText, findByText } = renderModal();
 
     // Lands in annotate: hint line present, no instruction field, and the
     // live selected variant resolved as the single source row.
-    expect(await screen.findByText("message_ai_editor_annotate_hint")).toBeTruthy();
+    expect(await findByText("message_ai_editor_annotate_hint")).toBeTruthy();
     expect(document.querySelector("textarea")).toBeNull();
-    expect(screen.getByText(/#1/)).toBeTruthy();
+    expect(getByText(/#1/)).toBeTruthy();
 
-    await generateAnnotate();
+    await generateAnnotate(findByText);
     expect(mockState.requests).toHaveLength(1);
     expect(mockState.requests[0].mode).toBe("message_tts_annotate");
     expect(mockState.requests[0].instruction).toBe("");
@@ -1182,9 +1186,9 @@ describe("MessageAiEditorModal — annotate mode (TPE-2)", () => {
       { type: "done" },
     ]);
     openEditorForAnnotate();
-    renderModal();
+    const { findByText } = renderModal();
 
-    await generateAnnotate();
+    await generateAnnotate(findByText);
     expect(mockState.requests).toHaveLength(1);
     expect(mockState.requests[0].mode).toBe("message_tts_annotate");
     expect(mockState.requests[0].existingContent).toBe('Alya laughed and said "wait for me", claimed Noi.');
@@ -1197,12 +1201,12 @@ describe("MessageAiEditorModal — annotate mode (TPE-2)", () => {
       { type: "text", text: 'She [laugh] said "wait for me".' },
       { type: "done" },
     ]);
-    renderModal();
+    const { findByText } = renderModal();
 
-    await switchToAnnotate();
-    await generateAnnotate();
+    await switchToAnnotate(findByText);
+    await generateAnnotate(findByText);
 
-    const saveBtn = await screen.findByText("message_ai_editor_save_annotation");
+    const saveBtn = await findByText("message_ai_editor_save_annotation");
     await act(async () => { fireEvent.click(saveBtn); });
 
     // Side-field write: chat id + message id + DISPLAY index of the source
@@ -1222,14 +1226,14 @@ describe("MessageAiEditorModal — annotate mode (TPE-2)", () => {
     seedMessage(makeVariants(8));
     seedGreetingOrder();
     openEditorForAnnotate();
-    renderModal();
+    const { getByText, queryByText } = renderModal();
     // Merge forbidden (owner: «конечно запретить»); Edit hidden by the
     // TPE-20 guard (annotate entries carry no captured variant); Annotate
     // keeps the modal alive — never an empty selector or a dead modal.
-    expect(screen.queryByText("message_ai_editor_mode_merge")).toBeNull();
-    expect(screen.queryByText("message_ai_editor_mode_edit")).toBeNull();
-    expect(screen.getByText("message_ai_editor_mode_annotate")).toBeTruthy();
-    expect(screen.getByText("message_ai_editor_annotate_hint")).toBeTruthy();
+    expect(queryByText("message_ai_editor_mode_merge")).toBeNull();
+    expect(queryByText("message_ai_editor_mode_edit")).toBeNull();
+    expect(getByText("message_ai_editor_mode_annotate")).toBeTruthy();
+    expect(getByText("message_ai_editor_annotate_hint")).toBeTruthy();
   });
 
   it("FS-4b: the same message is NOT a greeting when another assistant message precedes it — Merge stays", () => {
@@ -1239,20 +1243,20 @@ describe("MessageAiEditorModal — annotate mode (TPE-2)", () => {
     seedMessage(makeVariants(8));
     seedPrecedingAssistantMessage();
     openEditorForEdit(brandId<MessageVariantId>("var-0"));
-    renderModal();
-    expect(screen.getByText("message_ai_editor_mode_edit")).toBeTruthy();
-    expect(screen.getByText("message_ai_editor_mode_merge")).toBeTruthy();
-    expect(screen.getByText("message_ai_editor_mode_annotate")).toBeTruthy();
+    const { getByText } = renderModal();
+    expect(getByText("message_ai_editor_mode_edit")).toBeTruthy();
+    expect(getByText("message_ai_editor_mode_merge")).toBeTruthy();
+    expect(getByText("message_ai_editor_mode_annotate")).toBeTruthy();
   });
 
   it("FS-4c: TPE-20 guard intact on non-greeting annotate entries — Edit hidden, Merge + Annotate offered", () => {
     seedMessage(makeVariants(8));
     seedPrecedingAssistantMessage();
     openEditorForAnnotate();
-    renderModal();
-    expect(screen.queryByText("message_ai_editor_mode_edit")).toBeNull();
-    expect(screen.getByText("message_ai_editor_mode_merge")).toBeTruthy();
-    expect(screen.getByText("message_ai_editor_mode_annotate")).toBeTruthy();
+    const { getByText, queryByText } = renderModal();
+    expect(queryByText("message_ai_editor_mode_edit")).toBeNull();
+    expect(getByText("message_ai_editor_mode_merge")).toBeTruthy();
+    expect(getByText("message_ai_editor_mode_annotate")).toBeTruthy();
   });
 
   it("FS-4d: merge requested directly on a greeting degrades to Annotate (no stranded merge mode)", () => {
@@ -1261,11 +1265,11 @@ describe("MessageAiEditorModal — annotate mode (TPE-2)", () => {
     seedMessage(makeVariants(8));
     seedGreetingOrder();
     openEditorForMerge();
-    renderModal();
-    expect(screen.queryByText("message_ai_editor_mode_merge")).toBeNull();
-    expect(screen.getByText("message_ai_editor_mode_annotate")).toBeTruthy();
-    expect(screen.getByText("message_ai_editor_annotate_hint")).toBeTruthy();
-    expect(screen.queryByText("message_ai_editor_merge_min_sources")).toBeNull();
+    const { getByText, queryByText } = renderModal();
+    expect(queryByText("message_ai_editor_mode_merge")).toBeNull();
+    expect(getByText("message_ai_editor_mode_annotate")).toBeTruthy();
+    expect(getByText("message_ai_editor_annotate_hint")).toBeTruthy();
+    expect(queryByText("message_ai_editor_merge_min_sources")).toBeNull();
   });
 
   it("annotate shows the word diff against the variant content (inserted tags are visible)", async () => {
@@ -1275,12 +1279,12 @@ describe("MessageAiEditorModal — annotate mode (TPE-2)", () => {
       { type: "text", text: 'She [laugh] and said "wait for me".' },
       { type: "done" },
     ]);
-    renderModal();
+    const { getByText, findByText } = renderModal();
 
-    await switchToAnnotate();
-    await generateAnnotate();
+    await switchToAnnotate(findByText);
+    await generateAnnotate(findByText);
 
-    await waitFor(() => expect(screen.getByText("message_ai_editor_changes")).toBeTruthy());
+    await waitFor(() => expect(getByText("message_ai_editor_changes")).toBeTruthy());
   });
 });
 
@@ -1325,8 +1329,8 @@ describe("MessageAiEditorModal — editor pair seeding and persistence (SUM-5 sp
   it("an editor provider with no editor model seeds that provider with its default, not the legacy model", async () => {
     seedPairs(["prov-2", null], ["prov-1", "model-a"]);
     openEditorForEdit(VA);
-    renderModal();
-    await generateWithPrompt("tighten it");
+    const { findByText } = renderModal();
+    await generateWithPrompt(findByText, "tighten it");
 
     await waitFor(() => expect(mockState.requests).toHaveLength(1));
     expect(mockState.requests[0].providerProfileId).toBe("prov-2");
@@ -1336,8 +1340,8 @@ describe("MessageAiEditorModal — editor pair seeding and persistence (SUM-5 sp
   it("with no editor pair the legacy pair seeds whole (upgrade fallback)", async () => {
     seedPairs([null, null], ["prov-1", "model-a"]);
     openEditorForEdit(VA);
-    renderModal();
-    await generateWithPrompt("tighten it");
+    const { findByText } = renderModal();
+    await generateWithPrompt(findByText, "tighten it");
 
     await waitFor(() => expect(mockState.requests).toHaveLength(1));
     expect(mockState.requests[0].providerProfileId).toBe("prov-1");
