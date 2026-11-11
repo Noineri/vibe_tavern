@@ -334,23 +334,41 @@ export const BUDGETS = {
 	// 166 (2026-11-11, step 15c): −50 — the hooks cluster (50 sites / 7
 	// files: use-chat-controller 18, use-stt-profiles 17, use-tts-profiles
 	// 11, use-character-import 1, use-copilot-model-favorites 1,
-	// use-provider-models 1, use-quota-events 1). Chat-controller rows seed
-	// through wireProviderProfile, the Co-Author bootstrap blocks share a
-	// seedBootstrapUiSettings completion, the RP snapshot completes through
-	// wireChat/wireBranch/wirePersona (normalizeInsightsConfig carries the
-	// dice defaults), the roll's wrong-typed createdAt becomes a real
-	// Timestamp ("d20"/"strict" already valid — pure deletions),
-	// refreshPending's mock gets its real signature, the lane literal was
-	// already complete, the one COMMENT mention reworded. stt/tts: 28
-	// setForm partials were pure deletions (real backend unions,
-	// Record<string, unknown> config, string | null hint).
-	// use-character-import: Promise<ImportJsonResponse> with the FULL wire
-	// SessionSnapshot (the first draft's partial drew a NEW TS2322 key and
-	// was completed — the gate doing its job) + the branded activeChatId;
-	// seedFavorites retyped FavoriteProviderModelRecord[]; provider rows in
-	// the two remaining files seed through wireProviderProfile. apps/web tsc
-	// 0 errors before AND after, 0 new keys, 852 byte-untouched. One commit
-	// with the test edits.
+	// use-provider-models 1, use-quota-events 1). Chat-controller: 5
+	// provider rows seed through wireProviderProfile; the activeChat
+	// coauthor-mode row and seedRpSnapshot complete through
+	// wireChat/wireBranch/wirePersona with normalizeInsightsConfig carrying
+	// the persisted dice defaults (the seeded ids brandId'd at the seam);
+	// the 3 identical Co-Author bootstrap blocks share ONE file-local
+	// seedBootstrapUiSettings completion built over wireUiSettings (the
+	// file's own earlier cast-free BootstrapData literal proved the shape);
+	// makeRoll's faceShape "d20"/resolution "strict" were already valid
+	// members (pure deletions) while createdAt 0 was a WRONG-TYPED FICTION
+	// fixed as a real Timestamp string; refreshPending's mock gets the real
+	// (chatId, branchId) => Promise<void> dice-store signature; the
+	// setNormalLane scope literal was already complete; the seedRpSnapshot
+	// header's comment mention REWORDED (the one non-code site of the
+	// batch). stt/tts: ALL 28 setForm partials pure deletions (backend
+	// slugs are real SttBackendType/TtsBackendSlug members, config is
+	// Record<string, unknown>, autoKeyProviderName string | null).
+	// use-character-import: the mock returns Promise<ImportJsonResponse>
+	// with the FULL wire SessionSnapshot (empty chats/branches/messages/
+	// summaries, promptTrace/persona null, the self-consistent
+	// wireChat()/wireBranch() pair, wireCharacter carrying the avatarExt
+	// the pin reads) + the branded activeChatId — the first draft's
+	// partial snapshot drew a NEW TS2322 key in the key-level delta and was
+	// COMPLETED, not re-erased. seedFavorites retyped
+	// FavoriteProviderModelRecord[] (rows already complete); provider rows
+	// in the two remaining files seed through wireProviderProfile.
+	// apps/web tsc 0 errors before AND after, 0 new keys, 852
+	// byte-untouched. One commit with the test edits. PROCESS RECORD: the
+	// first 30-line draft of THIS entry pushed the file to 808 lines and
+	// tripped [file-size-ratchet]; the mid-unit "fix" compressed the entry
+	// to 20 lines — a VIOLATION of the ratchet's own law (trimming is
+	// never a remedy; extraction or stop-and-escalate are the only paths —
+	// owner ruling 2026-11-11). The sanctioned remedy landed as the
+	// quarantine-guard extraction f4201172c (572/800), and this entry is
+	// hereby restored to its full natural length.
 	asNever: 166,
 	/** Global `screen.` usage in apps/web test files (binds at import time). */
 	// 196 (2026-10-04): ratcheted to the merged tree's count after PR #51
