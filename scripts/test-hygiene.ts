@@ -118,7 +118,19 @@ export const BUDGETS = {
 	// strictTestDouble with complete makeProviderProfileRow records (the
 	// insights-test-builders SessionRuntimeFixture input widened with the real
 	// buildPipelineContext branchId member). One commit with the test edits.
-	asNever: 1056,
+	// 979 (2026-11-11, TYPE-SAFETY wave D step 14b): the coauthor cluster
+	// zeroed — all 77 sites died WITH their erased constructs
+	// (coauthor-tools 45, coauthor-prompt 28, skill-read-tool 2, lore-model 1,
+	// chat-api 1): the tool-call context fakes (a nonexistent `abort` member,
+	// `context` missing) → the REAL AI SDK ToolExecutionOptions via ONE
+	// makeToolContext helper / typed literals; result-side never-spells → the
+	// ToolSet execute return (the script-agent-tools precedent); message-row
+	// literals → the standing makeMessageRow builder (prompt bytes pinned
+	// unchanged by the file's own sha256 test); branded ids → brandId;
+	// `rows.slice(-limit) as never[]` → typed rows; promptService {} →
+	// strictTestDouble<PromptAssemblyService>; listCoauthorChats/prepareLiveTurn
+	// ids → brandId<CharacterId>/<ChatId>. One commit with the test edits.
+	asNever: 979,
 	/** Global `screen.` usage in apps/web test files (binds at import time). */
 	// 196 (2026-10-04): ratcheted to the merged tree's count after PR #51
 	// (provider-lists unification removed the forked pickers' screen usage;
