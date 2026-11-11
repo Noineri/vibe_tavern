@@ -34,11 +34,66 @@ const repoRoot = join(import.meta.dir, "..");
  */
 export const BUDGETS = {
 	/** `as never` casts in test files (TS-7b class; blanket rewrite wontfix). */
-	// Full historical trail (1243 -> 29, steps 6a-15e): moved
+	// Full historical trail (1243 -> 29, steps 6a-15f): moved
 	// byte-identically to scripts/test-hygiene-budget-log.ts (extracted
 	// 2026-11-11 per the file-size ratchet's extract-only law). The
 	// LATEST entry stays directly below; new entries append above the
 	// value line as always.
+	// 2 (2026-11-11, step 15g): −27 — the stores/lib batch, the LAST apps/web
+	// batch, closes apps/web at zero: the eleven files 7/4/3/2/2/2/2/2/1/1/1
+	// (gallery-store, chat-selectors, message-meta-registry,
+	// chat-mode-registry, context-preview-store, experience-kernel-frame,
+	// experience-sdk-diag, experience-sdk-loop, trace-history-store,
+	// prompt-canvas-summary, tts/narration-cache). The repo remainder is
+	// packages 2 (step 16). THE SHAPES: gallery-store — the makeAsset fixture
+	// brands id/characterId through brandId<CharacterAssetId> /
+	// brandId<CharacterId> (character-asset.ts:13) and its createdAt cast
+	// dies (Timestamp is a plain string alias, entities.ts:80); the
+	// upload/update default mocks resolve makeAsset("uploaded") /
+	// makeAsset("updated") instead of an erased undefined — no test
+	// exercises the upload/update SUCCESS resolve paths (updateCaption's
+	// only test rejects the mock, and nothing calls upload), so nothing
+	// reads the resolved rows and the file's own single fixture is the
+	// honest default (the function declaration hoists above the
+	// module-level mock block that now references it). chat-selectors — the
+	// four snapshot slices complete through the EXISTING wireChat/wireBranch
+	// builders (wire-fixtures.ts:508/494, consumed unmodified — no new
+	// builder file; the store's activeChat/activeBranch slots and the
+	// selection predicate read .id only). message-meta-registry — the ctx()
+	// variant brands MessageVariantId/MessageId (MessageVariant is domain
+	// entities.ts:2267) and its createdAt cast dies (same Timestamp fact).
+	// chat-mode-registry — both casts PURE DELETIONS: "novel"/"group" ARE
+	// ChatMode members (platform-constants.ts:123-128) and the parameter
+	// already takes ChatMode | undefined | null (chat-mode-registry.ts:104).
+	// Both chat-api mock fallbacks brand AT THE SEAM — brandId<ChatId> (+
+	// brandId<ChatBranchId> for the preview) where the test's plain-string
+	// FetchImpl hands off to the real fetchContextPreview/fetchTraceHistory
+	// (chat-api.ts:774/757); trace-history already imported brandId,
+	// context-preview gains the import. experience-sdk-diag/loop — the four
+	// fakeWindow casts PURE DELETIONS: the literal feeds an untyped
+	// new Function("window", …) eval and nothing constrains it.
+	// prompt-canvas-summary — the dep mock returns the records array
+	// directly (SummarySourceRecord IS the dep's element type, derived from
+	// PromptCanvasSummaryLoadDeps["listChatSummaries"]). narration-cache —
+	// the indexedDB restore drops its cast (unknown slot, unknown captured
+	// value). experience-kernel-frame — the two negative pins swap the
+	// double-erased payloads for type-valid RUNTIME-REJECTED values that
+	// mirror the server suite's own fixtures: the invalid-viewer pin takes
+	// { kind: "observer", participantId: "p1" } (the viewer schema's
+	// superRefine rejects an observer carrying a participantId,
+	// interactive-schema.ts:268-274; the server fixture at
+	// experience-kernel.test.ts:313) and the illegal-action pin takes
+	// { type: "", requestId: "r1", expectedRevision: 0 } (boundedId min 1
+	// char fails safeParse while the ExperienceAction interface's bare
+	// string accepts it — interactive-schema.ts:93/297; the counter
+	// reducer's unknown-type fallthrough returns a VALID transition, so the
+	// pinned illegal_action can only come from the schema boundary — the
+	// same mechanism the erased literal hit). apps/web key-level tsc delta
+	// EMPTY before and after on the MAIN workspace config (the 15e/15f
+	// method): 0 diagnostics at the base commit and after; 852
+	// byte-untouched. The eleven per-file spot runs carry identical counts
+	// before and after (8/6/5/11/7/38/4/10/8/4/7, 0 fail). One commit with
+	// the budget.
 	// 29 (2026-11-11, step 15f): −39 — the build/experience/layout batch, the
 	// nine files 18/8/3/3/2/2/1/1/1 (ObjectiveConfig, trace-payload-view,
 	// TopBar.narrate, ScriptEditor, ExperienceAssignment, ExperienceSetupModal,
@@ -86,7 +141,7 @@ export const BUDGETS = {
 	// new keys; 852 byte-untouched. The nine per-file spot runs carry
 	// identical counts before and after (23/13/2/36/29/68/7/14/6, 0 fail).
 	// One commit with the test edits.
-	asNever: 29,
+	asNever: 2,
 	/** Global `screen.` usage in apps/web test files (binds at import time). */
 	// 196 (2026-10-04): ratcheted to the merged tree's count after PR #51
 	// (provider-lists unification removed the forked pickers' screen usage;

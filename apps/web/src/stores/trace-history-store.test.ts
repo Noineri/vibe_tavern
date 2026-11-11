@@ -24,7 +24,7 @@ mock.module("../api/chat-api.js", () => {
   return {
     ...realChatApi,
     fetchTraceHistory: ((chatId: string, opts?: { messageId?: string; branchId?: string }) =>
-      mockFetch ? mockFetch(chatId, opts) : realChatApi.fetchTraceHistory(chatId as never, opts)) as FetchImpl,
+      mockFetch ? mockFetch(chatId, opts) : realChatApi.fetchTraceHistory(brandId<ChatId>(chatId), opts)) as FetchImpl,
   };
 });
 

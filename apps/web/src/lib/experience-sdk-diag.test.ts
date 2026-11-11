@@ -42,8 +42,8 @@ async function createHarness(): Promise<SdkHarness> {
     error: () => {},
   };
   const fakeWindow = {
-    addEventListener: ((type: string, fn: EventListener) => target.addEventListener(type, fn)) as never,
-    dispatchEvent: ((e: Event) => target.dispatchEvent(e)) as never,
+    addEventListener: ((type: string, fn: EventListener) => target.addEventListener(type, fn)),
+    dispatchEvent: ((e: Event) => target.dispatchEvent(e)),
     crypto: globalThis.crypto,
     console: con,
     VibeExperience: undefined as unknown,

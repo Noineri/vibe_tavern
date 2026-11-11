@@ -43,8 +43,8 @@ interface LoopExperience {
 function createHarness(): SdkHarness {
   const target = new EventTarget();
   const fakeWindow = {
-    addEventListener: ((type: string, fn: EventListener) => target.addEventListener(type, fn)) as never,
-    dispatchEvent: ((e: Event) => target.dispatchEvent(e)) as never,
+    addEventListener: ((type: string, fn: EventListener) => target.addEventListener(type, fn)),
+    dispatchEvent: ((e: Event) => target.dispatchEvent(e)),
     crypto: globalThis.crypto,
     VibeExperience: undefined as unknown,
   };

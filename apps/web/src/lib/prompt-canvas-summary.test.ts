@@ -22,7 +22,7 @@ function record(overrides: Partial<SummarySourceRecord> = {}): SummarySourceReco
 
 function deps(records: SummarySourceRecord[]): PromptCanvasSummaryLoadDeps {
   return {
-    listChatSummaries: mock(async () => records as never),
+    listChatSummaries: mock(async () => records),
   };
 }
 

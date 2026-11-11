@@ -8,7 +8,8 @@
  *  - a server failure rolls the list back AND toasts.
  */
 import { test, expect, beforeEach, mock } from "bun:test";
-import type { CharacterAsset } from "@vibe-tavern/domain";
+import { brandId } from "@vibe-tavern/domain";
+import type { CharacterAsset, CharacterAssetId, CharacterId } from "@vibe-tavern/domain";
 
 // ─── Mocked gallery-api ──────────────────────────────────────────────────
 //
@@ -17,10 +18,10 @@ import type { CharacterAsset } from "@vibe-tavern/domain";
 
 const serveCharacterAssetUrl = mock(() => "");
 const listCharacterAssets = mock((_cid: string) => Promise.resolve<CharacterAsset[]>([]));
-const uploadCharacterAsset = mock((_cid: string, _f: File) => Promise.resolve<CharacterAsset>(undefined as never));
+const uploadCharacterAsset = mock((_cid: string, _f: File) => Promise.resolve(makeAsset("uploaded")));
 const updateCharacterAsset = mock(
 	(_cid: string, _rowId: string, _patch: { caption?: string; description?: string | null }) =>
-		Promise.resolve<CharacterAsset>(undefined as never),
+		Promise.resolve(makeAsset("updated")),
 );
 const reorderCharacterAssets = mock((_cid: string, _ids: string[]) => Promise.resolve());
 const deleteCharacterAsset = mock((_cid: string, _rowId: string) => Promise.resolve());
@@ -60,8 +61,8 @@ const { useGalleryStore } = await import("./gallery-store.js");
 
 function makeAsset(id: string, caption = "", description: string | null = null): CharacterAsset {
   return {
-    id: id as never,
-    characterId: "cid" as never,
+    id: brandId<CharacterAssetId>(id),
+    characterId: brandId<CharacterId>("cid"),
     ext: "png",
     mimeType: "image/png",
     caption,
@@ -69,7 +70,7 @@ function makeAsset(id: string, caption = "", description: string | null = null):
     includeInPrompt: false,
     avatarCropJson: null,
     order: 0,
-    createdAt: "2026-01-01T00:00:00Z" as never,
+    createdAt: "2026-01-01T00:00:00Z",
   };
 }
 
@@ -87,9 +88,9 @@ beforeEach(() => {
   listCharacterAssets.mockReset();
   listCharacterAssets.mockImplementation(() => Promise.resolve([]));
   uploadCharacterAsset.mockReset();
-  uploadCharacterAsset.mockImplementation(() => Promise.resolve(undefined as never));
+  uploadCharacterAsset.mockImplementation(() => Promise.resolve(makeAsset("uploaded")));
   updateCharacterAsset.mockReset();
-  updateCharacterAsset.mockImplementation(() => Promise.resolve(undefined as never));
+  updateCharacterAsset.mockImplementation(() => Promise.resolve(makeAsset("updated")));
   reorderCharacterAssets.mockReset();
   reorderCharacterAssets.mockImplementation(() => Promise.resolve());
   deleteCharacterAsset.mockReset();

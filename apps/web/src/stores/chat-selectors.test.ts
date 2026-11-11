@@ -13,7 +13,7 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import { brandId } from "@vibe-tavern/domain";
 import type { ChatBranchId, ChatId, MessageId, PromptTraceRecordDto, AssemblePromptResponse } from "@vibe-tavern/domain";
-import { wirePromptPreview } from "../../test/wire-fixtures.js";
+import { wireBranch, wireChat, wirePromptPreview } from "../../test/wire-fixtures.js";
 import { useSnapshotStore } from "./snapshot-store.js";
 import { useTraceHistoryStore, type TraceHistoryEntry } from "./trace-history-store.js";
 import { useContextPreviewStore, type ContextPreviewEntry } from "./context-preview-store.js";
@@ -101,8 +101,8 @@ describe("useActiveTrace — branch-scoped selection (lazy cache)", () => {
 	beforeEach(() => {
 		useSnapshotStore.getState().clearMessages();
 		useSnapshotStore.setState({
-			activeChat: { id: chatId } as never,
-			activeBranch: { id: branchA } as never,
+			activeChat: wireChat({ id: chatId }),
+			activeBranch: wireBranch({ id: branchA }),
 			promptTrace: null,
 		});
 		useTraceHistoryStore.setState({ entries: {} });
@@ -123,7 +123,7 @@ describe("useActiveTrace — branch-scoped selection (lazy cache)", () => {
 		// The hook falls back to branchB's cached live preview.
 		const traceOnA = makeTrace("t1", branchA, 6800);
 		useSnapshotStore.setState({
-			activeBranch: { id: branchB } as never,
+			activeBranch: wireBranch({ id: branchB }),
 			promptTrace: traceOnA, // stale: belongs to branchA
 		});
 		seedPreviewCache(branchB, previewB); // fresh: 10 tokens for branchB
@@ -141,7 +141,7 @@ describe("useActiveTrace — branch-scoped selection (lazy cache)", () => {
 		seedTraceCache(branchB, [traceOnB]);
 		seedPreviewCache(branchB, previewB);
 		useSnapshotStore.setState({
-			activeBranch: { id: branchB } as never,
+			activeBranch: wireBranch({ id: branchB }),
 			promptTrace: traceOnB,
 		});
 		const selected = selectActiveTrace(useSnapshotStore.getState(), [traceOnB], activePreview(useSnapshotStore.getState()), "t-on-a");

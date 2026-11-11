@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { brandId } from "@vibe-tavern/domain";
+import type { MessageId, MessageVariantId } from "@vibe-tavern/domain";
 import {
   registerMessageMeta,
   resolveMessageMeta,
@@ -12,8 +14,8 @@ function ctx(overrides: Partial<MessageMetaContext> = {}): MessageMetaContext {
     messageId: "msg-1",
     messageRole: "assistant",
     variant: {
-      id: "var-1" as never,
-      messageId: "msg-1" as never,
+      id: brandId<MessageVariantId>("var-1"),
+      messageId: brandId<MessageId>("msg-1"),
       variantIndex: 0,
       content: "",
       isSelected: true,
@@ -22,7 +24,7 @@ function ctx(overrides: Partial<MessageMetaContext> = {}): MessageMetaContext {
       presetName: "Default",
       coauthorModuleId: null,
       coauthorSkillId: null,
-      createdAt: "2026-07-08T00:00:00.000Z" as never,
+      createdAt: "2026-07-08T00:00:00.000Z",
     },
     variantIndex: 0,
     isStreaming: false,

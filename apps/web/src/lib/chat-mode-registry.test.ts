@@ -39,8 +39,8 @@ describe("chat-mode-registry", () => {
 			expect(getChatModePackage(undefined)).toBe(fallback);
 			expect(getChatModePackage(null)).toBe(fallback);
 			// Reserved-but-unimplemented novel/group are not in the manifest → rp fallback.
-			expect(getChatModePackage("novel" as never)).toBe(fallback);
-			expect(getChatModePackage("group" as never)).toBe(fallback);
+			expect(getChatModePackage("novel")).toBe(fallback);
+			expect(getChatModePackage("group")).toBe(fallback);
 		});
 	});
 
