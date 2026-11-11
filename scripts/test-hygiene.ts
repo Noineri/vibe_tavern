@@ -185,7 +185,35 @@ export const BUDGETS = {
 	// isValidCapability runtime guard (the 14a agent-kind-registry
 	// precedent); playground's comment mention reworded so the content-level
 	// scanner regex no longer counts it. One commit with the test edits.
-	asNever: 776,
+	// 722 (2026-11-11, TYPE-SAFETY wave D step 14f): the imports + stt/tts
+	// clusters zeroed — all 54 sites died WITH their erased constructs
+	// (import-batch 8, import-lean 8, import-vtf-monolith 8,
+	// import-chat-swipe-selection 3, stt-routes 9, the four stt-backend-*
+	// files 3 each, tts-adapter-voices 2, tts-narration-library 2,
+	// tts-routes 2): importer mocks typed against makeImportExportDeps' real
+	// fixture types — create/writeEntity/seedImportedOpening returns were
+	// already honest (pure deletions), update returns a real makeCharacterRow
+	// row, getSnapshot → makeSessionSnapshot, createChat ids and the default
+	// resolvers → brandId<ChatId>/<PersonaId>/<PromptPresetId>; stt-routes
+	// providers.create dropped the dead isDefault member (CreateProviderData
+	// never carried one — the store ignores it and auto-key matches on
+	// endpoint+apiKey only) and its tts.create literals completed to
+	// CreateTtsProfileData with the tts_profiles column defaults
+	// (runtime-identical), while the "openai-compatible"/"gemini" backend
+	// slugs and stt.create (sortOrder is store-generated) were pure
+	// deletions; the four stt-backend-* makeBackend helpers and
+	// registry-slug tests carry ONE documented `as SttProfileConfig` each at
+	// the ST-5a injected-key bag seam (production makes the same cast at
+	// stt-adapter.ts:419 — parseConfig reads apiKey off the loose bag), and
+	// their `{ model: "m" }` hostile pins died as deletions (a partial
+	// config is a valid union member — the missing-key ConfigError is the
+	// runtime guard under test); narration-library's pins died as deletions
+	// (parseNarrationLibraryKey takes unknown; NarrationLibraryKey ids are
+	// plain strings); tts-routes' addLink literals are the real TtsTargetType
+	// members; tts-adapter-voices rebuilt the fake row as a real TtsProfile
+	// (brandId edge) and the deps partial as strictTestDouble. One commit
+	// with the test edits.
+	asNever: 722,
 	/** Global `screen.` usage in apps/web test files (binds at import time). */
 	// 196 (2026-10-04): ratcheted to the merged tree's count after PR #51
 	// (provider-lists unification removed the forked pickers' screen usage;

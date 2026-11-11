@@ -25,10 +25,12 @@
 import { test, expect, mock, describe } from "bun:test";
 import type { CreateCharacterData, CreateLorebookData, CreateLoreEntryData } from "@vibe-tavern/db";
 import type { CreateChatRequest } from "../src/domain/chat/chat-application-types.js";
+import type { ChatId, PersonaId, PromptPresetId } from "@vibe-tavern/domain";
+import { brandId } from "@vibe-tavern/domain";
 import { importJson } from "../src/runtime/session/session-runtime-import-export.js";
 import { makeImportExportDeps } from "./import-test-builders.js";
 import { makeCharacterRow } from "./copilot-test-builders.js";
-import { makeLorebookRow } from "./insights-test-builders.js";
+import { makeLorebookRow, makeSessionSnapshot } from "./insights-test-builders.js";
 
 // Minimal V2 card — real importCharacterCardV3Json parses it and synthesizes
 // a deterministic character id from the name, so `getById` returns null below
@@ -41,9 +43,7 @@ const V2_CARD = {
 
 /** Builds a fresh stub deps with a call-counting getSnapshot mock. */
 function makeDeps() {
-  const getSnapshot = mock((_chatId: unknown) =>
-    Promise.resolve({ chats: [], messages: [] }) as never,
-  );
+  const getSnapshot = mock((_chatId: ChatId) => Promise.resolve(makeSessionSnapshot()));
   const createLorebook = mock(async (_data: CreateLorebookData) =>
     makeLorebookRow({ id: "lore_test_123" }),
   );
@@ -53,24 +53,24 @@ function makeDeps() {
     {
       characters: {
         create: mock((_data: CreateCharacterData) =>
-          Promise.resolve(makeCharacterRow("char_test_123")) as never,
+          Promise.resolve(makeCharacterRow("char_test_123")),
         ),
-        update: mock((_id: string, _patch: unknown) => Promise.resolve() as never),
+        update: mock((_id: string, _patch: unknown) => Promise.resolve(makeCharacterRow("char_updated"))),
       },
       content: {
         writeEntity: mock((_folder: unknown, _id: string, _data: unknown) =>
-          Promise.resolve("stub/path") as never,
+          Promise.resolve("stub/path"),
         ),
       },
       chatApp: {
         createChat: mock((_input: CreateChatRequest) =>
-          Promise.resolve({ id: "chat_test_456", activeBranchId: "br_test_789" }) as never,
+          Promise.resolve({ id: brandId<ChatId>("chat_test_456"), activeBranchId: "br_test_789" }),
         ),
       },
-      resolveDefaultPersonaId: mock(() => Promise.resolve("persona_default" as never)),
-      resolveDefaultPromptPresetId: mock(() => Promise.resolve("preset_default" as never)),
+      resolveDefaultPersonaId: mock(() => Promise.resolve(brandId<PersonaId>("persona_default"))),
+      resolveDefaultPromptPresetId: mock(() => Promise.resolve(brandId<PromptPresetId>("preset_default"))),
       seedImportedOpening: mock((_chatId: unknown, _first: string, _alts?: string[]) =>
-        Promise.resolve() as never,
+        Promise.resolve(),
       ),
       lorebooks: { createLorebook, bulkCreateEntries, addLink },
       getSnapshot,
@@ -153,7 +153,7 @@ describe("importJson — lean mass-import path (MASS_IMPORT Wave 1)", () => {
 
     // Single-card path still pays for the snapshot (and the frontend uses it).
     expect(getSnapshot).toHaveBeenCalledTimes(1);
-    expect(getSnapshot.mock.calls[0][0]).toBe("chat_test_456");
+    expect(getSnapshot.mock.calls[0][0]).toBe(brandId<ChatId>("chat_test_456"));
 
     // characterId is also present on the full path (benign; lets the frontend
     // read one field regardless of mode), but the snapshot is the load-bearing

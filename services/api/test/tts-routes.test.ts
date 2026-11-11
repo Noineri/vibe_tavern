@@ -267,8 +267,8 @@ describe("TTS routes — CRUD", () => {
     });
     const b = (await bRes.json()) as { id: string };
 
-    await store.addLink(a.id, "character" as never, "char_1");
-    await store.addLink(b.id, "persona" as never, "persona_1");
+    await store.addLink(a.id, "character", "char_1");
+    await store.addLink(b.id, "persona", "persona_1");
 
     const res = await app.request("/api/tts/links");
     expect(res.status).toBe(200);

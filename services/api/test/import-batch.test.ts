@@ -13,10 +13,12 @@
 import { test, expect, mock, describe } from "bun:test";
 import type { CreateCharacterData } from "@vibe-tavern/db";
 import type { CreateLorebookData, CreateLoreEntryData } from "@vibe-tavern/db";
+import type { ChatId, PersonaId, PromptPresetId } from "@vibe-tavern/domain";
+import { brandId } from "@vibe-tavern/domain";
 import { importJsonBatch } from "../src/runtime/session/session-runtime-import-export.js";
 import { makeImportExportDeps } from "./import-test-builders.js";
 import { makeCharacterRow } from "./copilot-test-builders.js";
-import { makeLorebookRow } from "./insights-test-builders.js";
+import { makeLorebookRow, makeSessionSnapshot } from "./insights-test-builders.js";
 
 function makeCard(name: string, withEmbeddedBook = false) {
 	return {
@@ -40,9 +42,7 @@ function makeCard(name: string, withEmbeddedBook = false) {
 
 /** Stub deps: every successful create returns a deterministic id from the name. */
 function makeDeps() {
-	const getSnapshot = mock((_chatId: unknown) =>
-		Promise.resolve({ chats: [], messages: [] }) as never,
-	);
+	const getSnapshot = mock((_chatId: ChatId) => Promise.resolve(makeSessionSnapshot()));
 	const createLorebook = mock(async (data: CreateLorebookData) =>
 		makeLorebookRow({ id: "lore_1", name: data.name }),
 	);
@@ -52,21 +52,21 @@ function makeDeps() {
 		{
 			characters: {
 				create: mock((data: CreateCharacterData) =>
-					Promise.resolve(makeCharacterRow(`char_${data.name}`, { name: data.name })) as never,
+					Promise.resolve(makeCharacterRow(`char_${data.name}`, { name: data.name })),
 				),
-				update: mock(() => Promise.resolve() as never),
+				update: mock(() => Promise.resolve(makeCharacterRow("char_updated"))),
 			},
 			content: {
-				writeEntity: mock(() => Promise.resolve("stub/path") as never),
+				writeEntity: mock(() => Promise.resolve("stub/path")),
 			},
 			chatApp: {
 				createChat: mock((input: { characterId: string }) =>
-					Promise.resolve({ id: `chat_${input.characterId}`, activeBranchId: "br" }) as never,
+					Promise.resolve({ id: brandId<ChatId>(`chat_${input.characterId}`), activeBranchId: "br" }),
 				),
 			},
-			resolveDefaultPersonaId: mock(() => Promise.resolve("persona_default" as never)),
-			resolveDefaultPromptPresetId: mock(() => Promise.resolve("preset_default" as never)),
-			seedImportedOpening: mock(() => Promise.resolve() as never),
+			resolveDefaultPersonaId: mock(() => Promise.resolve(brandId<PersonaId>("persona_default"))),
+			resolveDefaultPromptPresetId: mock(() => Promise.resolve(brandId<PromptPresetId>("preset_default"))),
+			seedImportedOpening: mock(() => Promise.resolve()),
 			lorebooks: { createLorebook, bulkCreateEntries, addLink },
 			getSnapshot,
 		},

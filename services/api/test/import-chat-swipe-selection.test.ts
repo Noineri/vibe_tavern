@@ -29,10 +29,11 @@ import {
 } from "@vibe-tavern/db";
 import { serializeSillyTavernChat } from "@vibe-tavern/import-export";
 import { importJson } from "../src/runtime/session/session-runtime-import-export.js";
-import type { ChatId } from "@vibe-tavern/domain";
+import type { ChatId, PersonaId, PromptPresetId } from "@vibe-tavern/domain";
 import { brandId } from "@vibe-tavern/domain";
 import type { CreateChatRequest, CreateChatResponse } from "../src/domain/chat/chat-application-types.js";
 import { makeImportExportDeps } from "./import-test-builders.js";
+import { makeSessionSnapshot } from "./insights-test-builders.js";
 
 const FIXED_NOW = "2025-05-04T12:00:00.000Z";
 let clockTick = 0;
@@ -107,11 +108,9 @@ async function importInto(jsonlText: string) {
 					activeBranchId: targetChat.activeBranchId,
 				})),
 			},
-			resolveDefaultPersonaId: mock(() => Promise.resolve("persona_default" as never)),
-			resolveDefaultPromptPresetId: mock(() => Promise.resolve("preset_default" as never)),
-			getSnapshot: mock((_chatId: unknown) =>
-				Promise.resolve({ chats: [], messages: [] } as never),
-			),
+			resolveDefaultPersonaId: mock(() => Promise.resolve(brandId<PersonaId>("persona_default"))),
+			resolveDefaultPromptPresetId: mock(() => Promise.resolve(brandId<PromptPresetId>("preset_default"))),
+			getSnapshot: mock((_chatId: ChatId) => Promise.resolve(makeSessionSnapshot())),
 		},
 		"ImportExportModuleDeps (import-chat-swipe-selection)",
 	);

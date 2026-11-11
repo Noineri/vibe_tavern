@@ -24,9 +24,12 @@
  */
 import { test, expect, mock, describe } from "bun:test";
 import { packMonolith, type CreateCharacterData, type VtfCharacterContent } from "@vibe-tavern/db";
+import type { ChatId, PersonaId, PromptPresetId } from "@vibe-tavern/domain";
+import { brandId } from "@vibe-tavern/domain";
 import { importJson } from "../src/runtime/session/session-runtime-import-export.js";
 import { makeImportExportDeps } from "./import-test-builders.js";
 import { makeCharacterRow } from "./copilot-test-builders.js";
+import { makeSessionSnapshot } from "./insights-test-builders.js";
 
 /** A VTF-native character carrying fields ST JSON cannot losslessly represent. */
 const VTF_CONTENT: VtfCharacterContent = {
@@ -68,33 +71,31 @@ function makeDeps() {
         getById: mock((_id: string) => Promise.resolve(null)),
         create: mock((data: CreateCharacterData) => {
           createInput = data;
-          return Promise.resolve(makeCharacterRow("char_vtf_001")) as never;
+          return Promise.resolve(makeCharacterRow("char_vtf_001"));
         }),
-        update: mock((_id: string, _patch: unknown) => Promise.resolve() as never),
+        update: mock((_id: string, _patch: unknown) => Promise.resolve(makeCharacterRow("char_updated"))),
         resolveFolderName: mock((id: string) => Promise.resolve(id)),
       },
       content: {
         writeEntity: mock((_folder: unknown, id: string, _data: unknown) => {
           writeEntityPaths.push(id);
-          return Promise.resolve("stub/path") as never;
+          return Promise.resolve("stub/path");
         }),
       },
       chatApp: {
       createChat: mock((_input: unknown) =>
-        Promise.resolve({ id: "chat_vtf_002", activeBranchId: "br_vtf_003" }) as never,
+        Promise.resolve({ id: brandId<ChatId>("chat_vtf_002"), activeBranchId: "br_vtf_003" }),
       ),
     },
     chatOrder: { add: mock((_id: unknown) => {}) },
-    resolveDefaultPersonaId: mock(() => Promise.resolve("persona_default" as never)),
-    resolveDefaultPromptPresetId: mock(() => Promise.resolve("preset_default" as never)),
+    resolveDefaultPersonaId: mock(() => Promise.resolve(brandId<PersonaId>("persona_default"))),
+    resolveDefaultPromptPresetId: mock(() => Promise.resolve(brandId<PromptPresetId>("preset_default"))),
     seedImportedOpening: mock((_chatId: unknown, first: string, alts?: string[]) => {
       seedFirst = first;
       seedAlts = alts;
-      return Promise.resolve() as never;
+      return Promise.resolve();
     }),
-    getSnapshot: mock((_chatId: unknown) =>
-      Promise.resolve({ chats: [], messages: [] }) as never,
-    ),
+    getSnapshot: mock((_chatId: ChatId) => Promise.resolve(makeSessionSnapshot())),
   }, "ImportExportModuleDeps (import-vtf-monolith)");
   return { deps, getCreateInput: () => createInput, getWritePaths: () => writeEntityPaths, getSeed: () => ({ first: seedFirst, alts: seedAlts }) };
 }

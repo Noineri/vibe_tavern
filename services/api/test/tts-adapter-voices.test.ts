@@ -10,29 +10,38 @@
  */
 import { describe, expect, test } from "bun:test";
 
-import { TtsAdapter, KokoroClientSideError } from "../src/api/adapters/tts-adapter.js";
+import type { StoreContainer } from "@vibe-tavern/db";
+import type { TtsBackendSlug, TtsProfile, TtsProfileId } from "@vibe-tavern/domain";
+import { brandId } from "@vibe-tavern/domain";
 
-function makeProfileRow(backend: string) {
+import { TtsAdapter, KokoroClientSideError } from "../src/api/adapters/tts-adapter.js";
+import { strictTestDouble } from "./strict-test-double.js";
+
+function makeProfileRow(backend: TtsBackendSlug): TtsProfile {
   return {
-    id: "tts1",
+    id: brandId<TtsProfileId>("tts1"),
     name: "P",
     backend,
     config: {},
-    voiceId: null,
-    lang: null,
+    apiKey: null,
+    providerRef: null,
+    voiceId: "",
+    narratorVoiceId: null,
+    lang: "en",
     sortOrder: 0,
     isDefault: false,
     createdAt: "2026-01-01T00:00:00Z",
     updatedAt: "2026-01-01T00:00:00Z",
-  } as never;
+  };
 }
 
-function makeAdapter(row: unknown) {
-  return new TtsAdapter({
-    tts: {
-      getById: async () => row,
-    } as never,
-  });
+function makeAdapter(row: TtsProfile | null) {
+  return new TtsAdapter(
+    strictTestDouble<Pick<StoreContainer, "tts" | "providers" | "ttsListingSnapshots">>(
+      { tts: { getById: async () => row } },
+      "TtsAdapter (tts-adapter-voices)",
+    ),
+  );
 }
 
 describe("TtsAdapter.listTtsVoices — kokoro guard", () => {

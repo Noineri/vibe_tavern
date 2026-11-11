@@ -447,8 +447,7 @@ describe("STT routes — auto-key resolution", () => {
       providerPreset: "custom",
       endpoint: "http://localhost:8000/v1",
       apiKey: "sk-provider",
-      isDefault: true,
-    } as never);
+    });
 
     const profileRes = await app.request("/api/stt/profiles", {
       method: "POST",
@@ -478,8 +477,7 @@ describe("STT routes — auto-key resolution", () => {
       providerPreset: "custom",
       endpoint: "http://localhost:8000/v1",
       apiKey: "sk-provider",
-      isDefault: true,
-    } as never);
+    });
 
     const profileRes = await app.request("/api/stt/profiles", {
       method: "POST",
@@ -505,12 +503,20 @@ describe("STT routes — auto-key resolution", () => {
 
   test("no own key, no provider match: endpoint-matching openai-compat TTS profile key is used", async () => {
     const { app, tts } = await makeApp();
+    // voiceId/lang/sortOrder/isDefault mirror the tts_profiles column defaults
+    // — exactly what the previous castless-default insert produced.
     const ttsProfile = await tts.create({
       name: "TTS Cloud",
-      backend: "openai-compatible" as never,
+      backend: "openai-compatible",
       config: { endpoint: "http://localhost:8000/v1" },
       apiKey: "sk-tts",
-    } as never);
+      providerRef: null,
+      voiceId: "",
+      narratorVoiceId: null,
+      lang: "en",
+      sortOrder: 0,
+      isDefault: false,
+    });
 
     const profileRes = await app.request("/api/stt/profiles", {
       method: "POST",
@@ -564,8 +570,7 @@ describe("STT routes — Gemini backend (ST-7)", () => {
       providerPreset: "google",
       endpoint: "https://generativelanguage.googleapis.com/v1beta",
       apiKey: "g-llm-key",
-      isDefault: true,
-    } as never);
+    });
 
     const profileRes = await app.request("/api/stt/profiles", {
       method: "POST",
@@ -592,10 +597,16 @@ describe("STT routes — Gemini backend (ST-7)", () => {
     const { app, tts } = await makeApp();
     await tts.create({
       name: "Gemini TTS",
-      backend: "gemini" as never,
+      backend: "gemini",
       config: {},
       apiKey: "g-tts-key",
-    } as never);
+      providerRef: null,
+      voiceId: "",
+      narratorVoiceId: null,
+      lang: "en",
+      sortOrder: 0,
+      isDefault: false,
+    });
 
     const profileRes = await app.request("/api/stt/profiles", {
       method: "POST",
@@ -689,12 +700,12 @@ describe("STT routes — Gemini backend (ST-7)", () => {
     const adapter = new SttAdapter({ stt, providers, tts, sttListingSnapshots });
     const created = await stt.create({
       name: "Gemini",
-      backend: "gemini" as never,
+      backend: "gemini",
       config: { model: "gemini-test" },
       apiKey: "g-key",
       emotionAnnotation: true,
       isDefault: false,
-    } as never);
+    });
 
     globalThis.fetch = mock(async () =>
       interactionsJsonReply(JSON.stringify({ transcript: "слова", tone: "дрожит" })),

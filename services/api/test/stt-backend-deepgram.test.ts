@@ -10,6 +10,7 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 
 import { DEFAULT_DEEPGRAM_STT_MODEL, STT_BACKENDS } from "@vibe-tavern/domain";
+import type { SttProfileConfig } from "@vibe-tavern/domain";
 
 import {
   DeepgramSttConfigError,
@@ -66,16 +67,20 @@ function listenReply(transcript: string): unknown {
 
 const AUDIO_BYTES = Buffer.from("fake-wav-bytes-16k-mono");
 
+// The factories read apiKey/model/language/emotionAnnotation off the loose
+// config bag — the ST-5a adapter boundary: production injects the key and
+// casts once at the same seam (stt-adapter.ts:419); the stored SttProfileConfig
+// union never carries the secret or the emotion toggle.
 function makeBackend(overrides: Record<string, unknown> = {}): SttBackend {
   return deepgramSttFactory({
     model: "nova-3-test",
     ...overrides,
-  } as never);
+  } as SttProfileConfig);
 }
 
 describe("deepgram-stt: config", () => {
   test("missing apiKey → DeepgramSttConfigError", () => {
-    expect(() => deepgramSttFactory({ model: "m" } as never)).toThrow(DeepgramSttConfigError);
+    expect(() => deepgramSttFactory({ model: "m" })).toThrow(DeepgramSttConfigError);
   });
 
   test("empty model falls back to DEFAULT_DEEPGRAM_STT_MODEL", async () => {
@@ -286,7 +291,8 @@ describe("deepgram-stt: extractListenTranscript (defensive containers)", () => {
 describe("deepgram-stt: registry slug", () => {
   test("module-scope registration binds the deepgram slug", async () => {
     const { createSttBackend } = await import("../src/domain/stt/stt-registry.js");
-    const backend = createSttBackend(STT_BACKENDS.Deepgram, { apiKey: "k" } as never);
+    // Same injected-key bag seam as makeBackend (ST-5a).
+    const backend = createSttBackend(STT_BACKENDS.Deepgram, { apiKey: "k" } as SttProfileConfig);
     expect(typeof backend.transcribe).toBe("function");
     expect(typeof backend.listModels).toBe("function");
   });
