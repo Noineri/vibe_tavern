@@ -29,13 +29,21 @@
  * mock.module (tier policy), no network.
  */
 import { describe, expect, it } from "bun:test";
-import { EventBus } from "@vibe-tavern/domain";
-import type { AssemblePromptResponse, MessageId } from "@vibe-tavern/domain";
+import { brandId, EventBus } from "@vibe-tavern/domain";
+import type { AssemblePromptResponse, ChatBranchId, MessageId } from "@vibe-tavern/domain";
 import { LiveChatOrchestrator } from "../src/domain/chat/live-chat-orchestrator.js";
+import type { ChatApplicationService } from "../src/domain/chat/chat-application-service.js";
+import type { ChatModeStrategy } from "../src/domain/chat/chat-mode-strategy.js";
+import type { ProviderOrchestrator } from "../src/domain/providers/provider-orchestrator.js";
+import type { ChatRuntime } from "../src/runtime/session/session-runtime-chat.js";
 import { mergeContinuation } from "../src/infrastructure/ai/merge-continuation.js";
+import { nonstreamingProviderExecute } from "../src/infrastructure/ai/nonstreaming-provider-executor.js";
+import { streamProviderExecutor } from "../src/infrastructure/ai/stream-provider-executor.js";
 import type { GenerationResult } from "../src/infrastructure/ai/provider-execution-types.js";
 import type { ProviderExecutionInput, ProviderStreamResult } from "../src/infrastructure/ai/provider-execution-types.js";
 import type { StoredProviderProfileRecord } from "@vibe-tavern/domain";
+import { makeSessionSnapshot } from "./insights-test-builders.js";
+import { strictTestDouble } from "./strict-test-double.js";
 
 const CHAT = "chat_1";
 const MESSAGE = "msg_1";
@@ -76,50 +84,81 @@ interface RuntimeCalls {
   patchedTracePrefills: Array<string | null | undefined>;
 }
 
-function makeRuntime(calls: RuntimeCalls, assembledPrefill: string | null = null) {
+/** Required-but-unused orchestrator ctor deps (chatApp / providers — the
+ *  continue paths never touch them). One strict double: every member access
+ *  throws labeled (objective-service-fixture.ts's unusedObjectiveDeps
+ *  semantics through the strictTestDouble seam) — the same loud failure class
+ *  the old erasure produced, with the real dep types and no cast. */
+const UNSET: ChatApplicationService & ProviderOrchestrator = strictTestDouble<
+  ChatApplicationService & ProviderOrchestrator
+>({}, "LiveChatOrchestrator unset deps (live-chat-continue)");
+
+/** Executor-seam stub for the member a test does not exercise — throws
+ *  labeled instead of the old erasure (Promise<never> fits either executor's
+ *  return type). */
+function unusedExecutor(name: string): (input: ProviderExecutionInput) => Promise<never> {
+  return async () => {
+    throw new Error(`${name} executor is not exercised by this test`);
+  };
+}
+
+function makeRuntime(calls: RuntimeCalls, assembledPrefill: string | null = null): ChatRuntime {
   const assembled = { prefill: assembledPrefill, finalPayload: {} } as AssemblePromptResponse & { tools?: undefined; maxSteps?: undefined; coauthorModuleId?: undefined; coauthorSkillId?: undefined };
-  return {
-    // sendMessage path.
-    async prepareLiveTurn() {
-      return { snapshot: { messages: [] }, prompt: assembled, userMessage: undefined };
+  return strictTestDouble<ChatRuntime>(
+    {
+      // sendMessage path.
+      async prepareLiveTurn() {
+        return { snapshot: makeSessionSnapshot(), prompt: assembled, userMessage: undefined };
+      },
+      // continue/regenerate path.
+      async assemblePromptPreview(_chatId: string, options: { excludeMessageId?: MessageId }) {
+        calls.assembleExcludeMessageId = options.excludeMessageId;
+        return assembled;
+      },
+      async appendMessageVariant(_chatId: string, messageId: MessageId, input: { content: string }) {
+        calls.appendedVariants.push({ messageId, content: input.content });
+        return { messages: [], promptTrace: null };
+      },
+      async appendAssistantReply(_chatId: string, content: string) {
+        calls.appendedReplies.push(content);
+        return { response: { messages: [], promptTrace: null }, branchId: brandId<ChatBranchId>("branch_1"), messageId: brandId<MessageId>("new_1") };
+      },
+      patchPendingTrace(_chatId: string, patch: { prefill?: string | null }) {
+        calls.patchedTracePrefills.push(patch.prefill);
+      },
+      discardPendingPromptTrace() {},
+      // The orchestrator reads this through `?.() ?? null` (stream-start
+      // metadata); the erased literal answered undefined → null, the double
+      // must answer the same value explicitly.
+      peekPendingPresetName() {
+        return null;
+      },
     },
-    // continue/regenerate path.
-    async assemblePromptPreview(_chatId: string, options: { excludeMessageId?: MessageId }) {
-      calls.assembleExcludeMessageId = options.excludeMessageId;
-      return assembled;
-    },
-    async appendMessageVariant(_chatId: string, messageId: MessageId, input: { content: string }) {
-      calls.appendedVariants.push({ messageId, content: input.content });
-      return { messages: [] } as never;
-    },
-    async appendAssistantReply(_chatId: string, content: string) {
-      calls.appendedReplies.push(content);
-      return { response: { messages: [] }, branchId: "branch_1", messageId: "new_1" } as never;
-    },
-    patchPendingTrace(_chatId: string, patch: { prefill?: string | null }) {
-      calls.patchedTracePrefills.push(patch.prefill);
-    },
-    discardPendingPromptTrace() {},
-  } as never;
+    "ChatRuntime (live-chat-continue)",
+  );
 }
 
 function makeOrchestrator(calls: RuntimeCalls, profile: StoredProviderProfileRecord, executors: {
-  nonstreaming: (input: ProviderExecutionInput) => Promise<GenerationResult>;
-  stream: (input: ProviderExecutionInput) => Promise<ProviderStreamResult>;
+  nonstreaming: typeof nonstreamingProviderExecute;
+  stream: typeof streamProviderExecutor;
 }, assembledPrefill: string | null = null) {
-  const strategy = {
+  const strategy: ChatModeStrategy = {
+    mode: "rp",
     resolveProvider: async () => ({ profile, model: "model-1" }),
-    onMessageAppended: () => {},
+    onMessageAppended: async () => {},
+    assemble: async () => {
+      throw new Error("strategy.assemble is not exercised by this test");
+    },
   };
   return new LiveChatOrchestrator(
     makeRuntime(calls, assembledPrefill),
-    null as never,
-    null as never,
+    UNSET,
+    UNSET,
     new EventBus(),
-    async () => strategy as never,
+    async () => strategy,
     undefined,
     undefined,
-    executors as never,
+    executors,
   );
 }
 
@@ -138,7 +177,7 @@ describe("LiveChatOrchestrator — continue generation (LS-4a)", () => {
         // LM Studio-style: continuation only, prefill NOT echoed.
         return { text: " and the story went on.", providerResponse: {} } as GenerationResult;
       },
-      stream: null as never,
+      stream: unusedExecutor("stream"),
     });
 
     const result = await orchestrator.continueMessage({
@@ -170,7 +209,7 @@ describe("LiveChatOrchestrator — continue generation (LS-4a)", () => {
     };
     const orchestrator = makeOrchestrator(calls, makeProfile("llamacpp"), {
       nonstreaming: async () => ({ text: "Once upon a time and the story went on.", providerResponse: {} }) as GenerationResult,
-      stream: null as never,
+      stream: unusedExecutor("stream"),
     });
 
     await orchestrator.continueMessage({
@@ -193,7 +232,7 @@ describe("LiveChatOrchestrator — continue generation (LS-4a)", () => {
     };
     const executorInputs: ProviderExecutionInput[] = [];
     const orchestrator = makeOrchestrator(calls, makeProfile("llamacpp"), {
-      nonstreaming: null as never,
+      nonstreaming: unusedExecutor("nonstreaming"),
       stream: async (input) => {
         executorInputs.push(input);
         return {
@@ -239,7 +278,7 @@ describe("LiveChatOrchestrator — continue generation (LS-4a)", () => {
         // The model re-emits the tail before continuing — the stitch trims it.
         return { text: "upon a time, the snow began to fall.", providerResponse: {} } as GenerationResult;
       },
-      stream: null as never,
+      stream: unusedExecutor("stream"),
     });
 
     // CPF-3: no Validation refusal — the user pressed "continue" by hand.
@@ -282,7 +321,7 @@ describe("LiveChatOrchestrator — send-path prefill capability gate (LS-4)", ()
         executorInputs.push(input);
         return { text: "Fresh reply.", providerResponse: {} } as GenerationResult;
       },
-      stream: null as never,
+      stream: unusedExecutor("stream"),
     });
 
     await orchestrator.sendMessage({
@@ -312,7 +351,7 @@ describe("LiveChatOrchestrator — send-path prefill capability gate (LS-4)", ()
         // Provider does NOT echo the prefill.
         return { text: "the actual reply", providerResponse: {} } as GenerationResult;
       },
-      stream: null as never,
+      stream: unusedExecutor("stream"),
     }, "Preset prefill.");
 
     await orchestrator.sendMessage({

@@ -15,9 +15,13 @@ import { DiceBindError } from "@vibe-tavern/db";
 
 import { createRuntimeStore } from "../src/runtime/session/session-runtime-store.js";
 import { ChatRuntime } from "../src/runtime/session/session-runtime-chat.js";
+import { mapChatBranch } from "../src/runtime/session/session-runtime-dto.js";
 import { ChatApplicationService } from "../src/domain/chat/chat-application-service.js";
+import type { ProviderOrchestrator } from "../src/domain/providers/provider-orchestrator.js";
 import type { ChatModeAssembleResult, ChatModeStrategy } from "../src/domain/chat/chat-mode-strategy.js";
 import type { StoredProviderProfileRecord } from "@vibe-tavern/domain";
+import { makeChatBranchRow, makeSessionSnapshot } from "./insights-test-builders.js";
+import { strictTestDouble } from "./strict-test-double.js";
 import {
   resetProviderFetchFactory,
   setProviderFetchFactory,
@@ -135,7 +139,11 @@ function fakeAssembleResult(chatId: string, branchId: string): ChatModeAssembleR
 }
 
 /** Build a ChatRuntime backed by real stores with a controllable assemblePrompt
- *  and stub response builders (unused by prepareLiveTurn). */
+ *  and stub response builders (unused by prepareLiveTurn). The stubs are the
+ *  REAL session-runtime seam return types — SessionSnapshot through the
+ *  standing makeSessionSnapshot builder, the response contracts completed
+ *  with their required members (MessageResponse.promptTrace; BranchResponse's
+ *  five members), chatOrder a complete IChatOrder literal. */
 function makeChatRuntime(
   stores: Awaited<ReturnType<typeof createRuntimeStore>>,
   chatApp: ChatApplicationService,
@@ -151,13 +159,13 @@ function makeChatRuntime(
     experiences: stores.experiences,
     // A 1-arg function is assignable to the deps' wider (chatId, branchId?, opts?) signature.
     assemblePrompt,
-    getSnapshot: async () => ({ messages: [] }) as never,
-    buildMessageResponse: async () => ({ messages: [] }) as never,
-    buildVariantResponse: async () => ({ messages: [] }) as never,
-    buildBranchResponse: async () => ({ branches: [] }) as never,
-    buildBranchMetaResponse: async () => ({ branches: [] }) as never,
-    buildChatListResponse: async () => ({ chats: [] }) as never,
-    chatOrder: { remove() {} } as never,
+    getSnapshot: async () => makeSessionSnapshot(),
+    buildMessageResponse: async () => ({ messages: [], promptTrace: null }),
+    buildVariantResponse: async () => ({ messages: [] }),
+    buildBranchResponse: async () => ({ messages: [], activeBranch: mapChatBranch(makeChatBranchRow()), branches: [], summaries: [], chats: [] }),
+    buildBranchMetaResponse: async () => ({ branches: [] }),
+    buildChatListResponse: async () => ({ chats: [] }),
+    chatOrder: { add() {}, remove() {}, items: [] },
   });
 }
 
@@ -321,6 +329,16 @@ const fakeStrategy: ChatModeStrategy = {
   },
 };
 
+/** Required-but-unused orchestrator ctor dep (providers — resolveProvider
+ *  comes from the strategy, so the ProviderOrchestrator is never touched).
+ *  Every member access throws labeled instead of the old erasure
+ *  (objective-service-fixture.ts's unusedObjectiveDeps semantics through the
+ *  strictTestDouble seam). */
+const UNSET_PROVIDERS: ProviderOrchestrator = strictTestDouble<ProviderOrchestrator>(
+  {},
+  "ProviderOrchestrator unset dep (dice-send-stream-nonstream)",
+);
+
 function makeOrchestrator(
   rt: ChatRuntime,
   chatApp: ChatApplicationService,
@@ -329,7 +347,7 @@ function makeOrchestrator(
   return new LiveChatOrchestrator(
     rt,
     chatApp,
-    null as never,
+    UNSET_PROVIDERS,
     new EventBus(),
     async () => fakeStrategy,
     undefined,

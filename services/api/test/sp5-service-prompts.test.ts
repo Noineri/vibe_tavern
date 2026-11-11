@@ -3,13 +3,20 @@ import { createDb } from "@vibe-tavern/db";
 import { ServicePromptProfileStore } from "@vibe-tavern/db";
 import { UiSettingsStore } from "@vibe-tavern/db";
 import type { StoreClock, StoreIdGenerator } from "@vibe-tavern/db";
+import { brandId } from "@vibe-tavern/domain";
+import type { ChatId } from "@vibe-tavern/domain";
+import type { CopilotProfile } from "@vibe-tavern/api-contracts";
 import { resolveInsightsPromptWithProfile } from "../src/domain/insights/insights-prompts.js";
 import { resolveServicePromptText } from "../src/domain/service-prompts/service-prompt-resolver.js";
 import { assembleCoauthorPrompt } from "../src/domain/chat/coauthor-prompt.js";
 import type { ChatModeAssembleInput } from "../src/domain/chat/chat-mode-strategy.js";
+import type { PromptAssemblyService } from "../src/domain/prompt/prompt-assembly-service.js";
 import { resolveBuiltinCopilotProfile } from "../src/domain/interactive/copilot/experience-copilot-module.js";
 import { assembleExperienceCopilotPrompt } from "../src/domain/interactive/copilot/experience-copilot-prompt.js";
 import { loadPromptAsset } from "../src/shared/prompt-asset-loader.js";
+import { makeCharacterRow } from "./copilot-test-builders.js";
+import { makeChatRow } from "./insights-test-builders.js";
+import { strictTestDouble } from "./strict-test-double.js";
 
 const fixedClock: StoreClock = { now: () => "2026-08-26T00:00:00.000Z" };
 let counter = 0;
@@ -81,34 +88,16 @@ describe("SP-5 coauthor base honors profile", () => {
     });
     await uiSettings.update({ activeServicePromptProfileId: profile.id });
 
-    // Annotated against the REAL loaders seam; the members' own inert `never`
-    // returns keep the partial rows compiling (Wave-D debt, untouched).
+    // Annotated against the REAL loaders seam; rows are the standing complete
+    // row builders (the old erased literals were partial AND carried
+    // nonexistent members — hasFileOnDisk / avatarCrop — nothing reads them;
+    // assembleCoauthorPrompt reads only chat.coauthorModuleId/activeBranchId
+    // and character.id). promptService is a strict double: the coauthor base
+    // path never reads it.
     const loaders: ChatModeAssembleInput["loaders"] = {
-      getChat: async () => ({ id: "chat_test", coauthorModuleId: null }) as never,
-      getMessages: async () => [] as never,
-      getCharacter: async () => ({
-        id: "char_test",
-        name: "Test",
-        description: "desc",
-        personalitySummary: null,
-        defaultScenario: null,
-        firstMessage: "hi",
-        alternateGreetings: [],
-        postHistoryInstructions: null,
-        creatorNotes: null,
-        characterBook: null,
-        depthPrompt: null,
-        depthPromptDepth: null,
-        depthPromptRole: null,
-        extensions: {},
-        systemPrompt: null,
-        tags: [],
-        avatarAssetId: null,
-        avatarFullAssetId: null,
-        avatarCrop: null,
-        avatarExt: null,
-        hasFileOnDisk: true,
-      } as never),
+      getChat: async () => makeChatRow({ id: "chat_test", coauthorModuleId: null }),
+      getMessages: async () => [],
+      getCharacter: async () => makeCharacterRow("char_test", { name: "Test", description: "desc", firstMessage: "hi" }),
       getProfileMdText: async () => "# PERSONALITY\nTest\n",
       getCoauthorContextItems: async () => [],
       getCoauthorBoundResources: async () => ({ lorebooks: [], scripts: [] }),
@@ -118,9 +107,9 @@ describe("SP-5 coauthor base honors profile", () => {
     };
 
     const input = {
-      chatId: "chat_test" as never,
+      chatId: brandId<ChatId>("chat_test"),
       model: "test-model",
-      promptService: {} as never,
+      promptService: strictTestDouble<PromptAssemblyService>({}, "PromptAssemblyService (sp5)"),
       loaders,
       db: db,
     } as ChatModeAssembleInput;
@@ -133,34 +122,12 @@ describe("SP-5 coauthor base honors profile", () => {
 
   test("coauthor base falls back to asset when no profile override", async () => {
     const { db } = await setupDb();
-    // Annotated against the REAL loaders seam; the members' own inert `never`
-    // returns keep the partial rows compiling (Wave-D debt, untouched).
+    // Same honest loaders seam as the override test above (complete row
+    // builders; promptService strict-double — never read on this path).
     const loaders: ChatModeAssembleInput["loaders"] = {
-      getChat: async () => ({ id: "chat_test", coauthorModuleId: null }) as never,
-      getMessages: async () => [] as never,
-      getCharacter: async () => ({
-        id: "char_test",
-        name: "Test",
-        description: "desc",
-        personalitySummary: null,
-        defaultScenario: null,
-        firstMessage: "hi",
-        alternateGreetings: [],
-        postHistoryInstructions: null,
-        creatorNotes: null,
-        characterBook: null,
-        depthPrompt: null,
-        depthPromptDepth: null,
-        depthPromptRole: null,
-        extensions: {},
-        systemPrompt: null,
-        tags: [],
-        avatarAssetId: null,
-        avatarFullAssetId: null,
-        avatarCrop: null,
-        avatarExt: null,
-        hasFileOnDisk: true,
-      } as never),
+      getChat: async () => makeChatRow({ id: "chat_test", coauthorModuleId: null }),
+      getMessages: async () => [],
+      getCharacter: async () => makeCharacterRow("char_test", { name: "Test", description: "desc", firstMessage: "hi" }),
       getProfileMdText: async () => "# PERSONALITY\nTest\n",
       getCoauthorContextItems: async () => [],
       getCoauthorBoundResources: async () => ({ lorebooks: [], scripts: [] }),
@@ -169,9 +136,9 @@ describe("SP-5 coauthor base honors profile", () => {
       getSkillCatalog: async () => [],
     };
     const input = {
-      chatId: "chat_test" as never,
+      chatId: brandId<ChatId>("chat_test"),
       model: "test-model",
-      promptService: {} as never,
+      promptService: strictTestDouble<PromptAssemblyService>({}, "PromptAssemblyService (sp5)"),
       loaders,
       db: db,
     } as ChatModeAssembleInput;
@@ -204,13 +171,17 @@ describe("SP-5 copilot base honors profile only for builtin", () => {
     });
     await uiSettings.update({ activeServicePromptProfileId: globalProfile.id });
 
-    const explicitProfile = {
+    // The real CopilotProfile contract (agentKind is REQUIRED on it — the
+    // erased literal omitted it; the experience assembler reads the kind to
+    // resolve the tool set).
+    const explicitProfile: CopilotProfile = {
       id: "explicit",
       name: "Explicit",
       isBuiltIn: false,
       basePrompt: "EXPLICIT-BASE",
       toolSet: { write_buffer: true },
-    } as never;
+      agentKind: "experience",
+    };
 
     const result = await assembleExperienceCopilotPrompt({
       history: [],

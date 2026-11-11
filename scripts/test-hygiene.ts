@@ -213,7 +213,43 @@ export const BUDGETS = {
 	// members; tts-adapter-voices rebuilt the fake row as a real TtsProfile
 	// (brandId edge) and the deps partial as strictTestDouble. One commit
 	// with the test edits.
-	asNever: 722,
+	// 679 (2026-11-11, TYPE-SAFETY wave D step 14g): the live-chat / sp5 /
+	// dice clusters zeroed — all 43 sites died WITH their erased constructs
+	// (live-chat-continue 13, live-chat-forward-state 8, sp5-service-prompts
+	// 11, live-chat-continue-fallback 3, dice-send-stream-nonstream 8):
+	// chatRuntime mocks → strictTestDouble<ChatRuntime> with the REAL member
+	// returns (appendMessageVariant / buildMessageResponse completed with the
+	// required promptTrace: null; appendAssistantReply a real
+	// AppendedAssistantReply with brandId<ChatBranchId>/<MessageId>; prepare
+	// snapshot → makeSessionSnapshot; assemblePromptPreview / assemblePrompt
+	// completed to the full AssemblePromptResponse / ChatModeAssembleResult);
+	// ctor null-triples (chatRuntime/chatApp/providers, never dereferenced on
+	// the paths under test) → strictTestDouble tokens typed as the dep
+	// intersections (objective-service-fixture.ts's unusedObjectiveDeps
+	// semantics, file-local per the packet scope); strategy literals typed
+	// ChatModeStrategy (mode + a throwing assemble added — the erased stub
+	// lacked both required members); unexercised executor seam members →
+	// a file-local throwing unusedExecutor (the fallback/dice precedent);
+	// the CPF-2b whole-deps cast → strictTestDouble<ChatRuntimeDeps> with
+	// completed store fragments (makeChatRow / makeVariantRow rows — the old
+	// variant fragment carried isSelected: 1 and missed seven required
+	// members) and the guarded-optional members the erased literals answered
+	// with undefined now provided inert (peekPendingPresetName → null,
+	// persistCoauthorReview → no-op — observable-identical); sp5 loaders →
+	// the standing makeChatRow / makeCharacterRow rows (the erased character
+	// literal carried NONEXISTENT members hasFileOnDisk / avatarCrop —
+	// nothing reads them; assembleCoauthorPrompt reads only
+	// chat.coauthorModuleId/activeBranchId and character.id) and its
+	// promptService → strictTestDouble (grep-proven unread), chatId →
+	// brandId<ChatId>, the copilot explicitProfile typed CopilotProfile with
+	// the REQUIRED agentKind the cast omitted; dice's response-builder stubs
+	// typed from ChatRuntimeDeps (getSnapshot → makeSessionSnapshot,
+	// BranchResponse.activeBranch through the mapChatBranch funnel, chatOrder
+	// a complete IChatOrder literal). test-type-gate stayed clean at 852
+	// byte-untouched keys with zero new keys (no shrink — these casts
+	// suppressed diagnostics, they never produced baselined ones). One commit
+	// with the test edits.
+	asNever: 679,
 	/** Global `screen.` usage in apps/web test files (binds at import time). */
 	// 196 (2026-10-04): ratcheted to the merged tree's count after PR #51
 	// (provider-lists unification removed the forked pickers' screen usage;
