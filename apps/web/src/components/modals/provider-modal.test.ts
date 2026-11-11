@@ -1,7 +1,10 @@
 import { describe, expect, it, beforeAll, beforeEach, afterEach, mock } from "bun:test";
 import React from "react";
+import type { ComponentProps } from "react";
 import type { SamplerFieldId } from "@vibe-tavern/domain";
 import type { FormState } from "./ProviderModal.js";
+import type { ProviderProfileRecord } from "../../api/types.js";
+import { wireProviderProfile } from "../../../test/wire-fixtures.js";
 import { useDomEnv } from "../../../test/dom-env.js";
 
 useDomEnv();
@@ -93,17 +96,21 @@ const { useBootstrapStore } = await import("../../stores/api-actions/bootstrap-a
 let ProviderModal: typeof import("./ProviderModal.js").ProviderModal;
 let TooltipProvider: typeof import("../shared/Tooltip.js").TooltipProvider;
 
+// The props interface is unexported — the real component type is the one
+// derivation point (ComponentProps keeps it that way).
+type ModalProps = ComponentProps<typeof ProviderModal>;
+
 beforeAll(async () => {
   ({ ProviderModal } = await import("./ProviderModal.js"));
   ({ TooltipProvider } = await import("../shared/Tooltip.js"));
 });
 
-function renderModal(props: Record<string, unknown>) {
+function renderModal(props: ModalProps) {
   return render(
     React.createElement(
-      TooltipProvider as never,
+      TooltipProvider,
       null,
-      React.createElement(ProviderModal as never, props as never),
+      React.createElement(ProviderModal, props),
     ),
   );
 }
@@ -114,14 +121,13 @@ afterEach(async () => {
   useModalStore.setState({ isProviderModalOpen: false, providerModalOrigin: null });
 });
 
-function makeProfile(overrides: Record<string, unknown> = {}): unknown {
-  return {
+function makeProfile(overrides: Partial<ProviderProfileRecord> = {}): ProviderProfileRecord {
+  return wireProviderProfile({
     id: "p1",
     name: "Alpha",
     providerPreset: "openai",
     endpoint: "https://api.test/v1",
     hasStoredApiKey: false,
-      emotionAnnotation: false,
     defaultModel: "gpt-4o",
     visionModel: null,
     temperature: 0.8,
@@ -160,25 +166,25 @@ function makeProfile(overrides: Record<string, unknown> = {}): unknown {
     proxyMode: "inherit",
     proxyId: null,
     isActive: true,
-    cachedModels: { models: [] },
+    cachedModels: { models: [], cachedAt: "2026-01-01T00:00:00.000Z" },
     ...overrides,
-  };
+  });
 }
 
-function baseProps(overrides: Record<string, unknown> = {}) {
+function baseProps(overrides: Partial<ModalProps> = {}): ModalProps {
   return {
-    providerProfiles: [makeProfile()] as never,
+    providerProfiles: [makeProfile()],
     activeProviderProfileId: "p1",
-    onCreateProfile: async () => null as never,
-    onDuplicateProfile: async () => null as never,
+    onCreateProfile: async () => null,
+    onDuplicateProfile: async () => null,
     onDeleteProfile: async () => {},
     onActivateProfile: async () => {},
-    onSaveProfile: async () => null as never,
-    onTestDraft: async () => ({ success: true }) as never,
-    onTestProfile: async () => ({ success: true }) as never,
-    onTestChat: async () => ({ success: true }) as never,
-    onFetchModels: async () => [] as never,
-    onFetchModelsForProfile: async () => [] as never,
+    onSaveProfile: async () => null,
+    onTestDraft: async () => ({ success: true }),
+    onTestProfile: async () => ({ success: true }),
+    onTestChat: async () => ({ success: true }),
+    onFetchModels: async () => [],
+    onFetchModelsForProfile: async () => [],
     favoriteModelsByProfile: {},
     onToggleFavoriteModel: async () => {},
     onRefreshProfiles: async () => {},
@@ -213,6 +219,7 @@ describe("ProviderModal local connection chip gate (PLU-7 regression)", () => {
             { id: "llama", label: "llama" },
             { id: "llava", label: "llava", capabilities: { vision: true } },
           ],
+          cachedAt: "2026-01-01T00:00:00.000Z",
         },
       })],
     }));
@@ -226,7 +233,7 @@ describe("ProviderModal local connection chip gate (PLU-7 regression)", () => {
 
 describe("ProviderModal — category tabs (TS-7a)", () => {
   beforeEach(() => {
-    useBootstrapStore.setState({ data: null } as never);
+    useBootstrapStore.setState({ data: null });
   });
 
   it("renders with LLM active by default; provider list visible; tab strip shows both labels", async () => {

@@ -183,10 +183,10 @@ function seedBootstrap(providerId: string | null, modelName: string | null) {
       isFirstRun: false,
       allCharacters: [],
       promptPresets: [],
-      personas: [],
       uiSettings: baseSettings({ aiAssistantProviderId: providerId, aiAssistantModelName: modelName }),
+      agentKindSettings: {},
       isArmServer: false,
-    } as never,
+    },
   });
 }
 

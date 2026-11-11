@@ -48,6 +48,8 @@ import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useCoauthorSkillStore } from "../../stores/coauthor-skill-store.js";
 import type { CoauthorModule, CoauthorModuleCreate, CoauthorModuleUpdate } from "@vibe-tavern/api-contracts";
 import { COAUTHOR_TOOL_KEYS } from "@vibe-tavern/api-contracts";
+import { brandId, type ChatId, type CharacterId } from "@vibe-tavern/domain";
+import { wireChat } from "../../../test/wire-fixtures.js";
 import type { TFunc } from "../../i18n/context.js";
 
 // i18n is NOT mocked. The modal renders providerless, so the real `useT`
@@ -239,13 +241,12 @@ function openModal() {
 
 function setActiveChat(coauthorModuleId: string | null) {
 	useSnapshotStore.setState({
-		activeChat: {
-			id: "chat_test",
-			characterId: "char_test",
+		activeChat: wireChat({
+			id: brandId<ChatId>("chat_test"),
+			characterId: brandId<CharacterId>("char_test"),
 			mode: "coauthor",
 			coauthorModuleId,
-			coauthorContextLinks: [],
-		} as never,
+		}),
 	});
 }
 

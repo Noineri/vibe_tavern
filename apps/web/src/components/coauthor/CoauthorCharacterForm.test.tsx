@@ -19,7 +19,7 @@
  * VibeMdView.test.tsx); the header affordance text is the always-present
  * primary assertion.
  */
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock, type Mock } from "bun:test";
 import { wireCharacter, wireChat, wireUiSettings } from "../../../test/wire-fixtures.js";
 import { useDomEnv } from "../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
@@ -236,6 +236,19 @@ describe("CoauthorCharacterForm", () => {
 	const realFetch = globalThis.fetch;
 	/** Original toast.warning — spied by mutation (no mock.module → no sonner collision). */
 	const realToastWarning = toast.warning;
+	/** The fetch implementation seam the Apply/Reject RPC mocks must satisfy
+	 *  (agent-kind-settings-api.test.ts precedent): real input/init types, real
+	 *  Response return — no erased assignments onto globalThis.fetch. */
+	type FetchImplementation = (
+		input: Parameters<typeof fetch>[0],
+		init?: Parameters<typeof fetch>[1],
+	) => ReturnType<typeof fetch>;
+	/** Install a typed fetch mock over the HTTP boundary (restored in afterEach). */
+	function installFetchMock(fn: FetchImplementation): Mock<FetchImplementation> {
+		const fetchMock = mock<FetchImplementation>(fn);
+		globalThis.fetch = Object.assign(fetchMock, { preconnect: realFetch.preconnect });
+		return fetchMock;
+	}
 	const originalSnapshotState = snapshotCoauthorEditorSnapshotStateForTests();
 	const originalAppSnapshotState = useSnapshotStore.getState();
 	const originalBootstrapState = useBootstrapStore.getState();
@@ -453,7 +466,7 @@ describe("CoauthorCharacterForm", () => {
 	it("E5: mobile uses ONE page scroll — the context block rides it and the editor section can fill the screen", async () => {
 		useSnapshotStore.setState({
 			character: makeCharacter(),
-			activeChat: { id: TEST_CHAT } as never,
+			activeChat: wireChat({ id: brandId<ChatId>(TEST_CHAT) }),
 		});
 		const { container, getByTestId } = render(<CoauthorCharacterForm />);
 		const block = getByTestId("coauthor-context-block");
@@ -556,18 +569,12 @@ describe("CoauthorCharacterForm", () => {
 		seedReviewing({ description: "A reserved arachnid weaver." });
 		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeProfileActivity("t1", "Bold and direct."));
 
-		const fetchMock = mock((_url: RequestInfo | URL, init?: RequestInit) =>
-			Promise.resolve({
-				ok: true,
-				status: 200,
-				json: async () => ({
-					character: makeCharacter({ description: "Bold and direct." }),
-					corrections: [],
-				}),
-				text: async () => "",
+		const fetchMock = installFetchMock(async () =>
+			Response.json({
+				character: makeCharacter({ description: "Bold and direct." }),
+				corrections: [],
 			}),
 		);
-		globalThis.fetch = fetchMock as never;
 
 		const { getByText } = render(<CoauthorCharacterForm />);
 		expect(getByText("coauthor.review.apply")).toBeTruthy();
@@ -612,22 +619,17 @@ describe("CoauthorCharacterForm", () => {
 		seedReviewing();
 		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeProfileActivity("t1", "Bold."));
 
-		const warningSpy = mock(() => {});
-		toast.warning = warningSpy as never;
+		const warningSpy = mock<typeof toast.warning>(() => 0);
+		toast.warning = warningSpy;
 
-		globalThis.fetch = mock((_url: RequestInfo | URL, init?: RequestInit) =>
-			Promise.resolve({
-				ok: true,
-				status: 200,
-				json: async () => ({
-					character: makeCharacter({ name: "Kira" }),
-					corrections: [
-						{ field: "name", action: "restored", reason: 'Model returned an empty name; restored "Kira".' },
-					],
-				}),
-				text: async () => "",
+		installFetchMock(async () =>
+			Response.json({
+				character: makeCharacter({ name: "Kira" }),
+				corrections: [
+					{ field: "name", action: "restored", reason: 'Model returned an empty name; restored "Kira".' },
+				],
 			}),
-		) as never;
+		);
 
 		const { getByText } = render(<CoauthorCharacterForm />);
 		fireEvent.click(getByText("coauthor.review.apply"));
@@ -645,8 +647,7 @@ describe("CoauthorCharacterForm", () => {
 		seedReviewing();
 		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeProfileActivity("t1", "Bold."));
 
-		const fetchMock = mock(() => Promise.resolve({ ok: true, status: 200, json: async () => ({}), text: async () => "" }));
-		globalThis.fetch = fetchMock as never;
+		const fetchMock = installFetchMock(async () => Response.json({}));
 
 		const { getByText } = render(<CoauthorCharacterForm />);
 		fireEvent.click(getByText("coauthor.review.reject"));
@@ -1267,10 +1268,9 @@ describe("CoauthorCharacterForm", () => {
 		seedReviewing();
 		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeLoreActivity());
 
-		const fetchMock = mock((_url: RequestInfo | URL, init?: RequestInit) =>
-			Promise.resolve({ ok: true, status: 200, json: async () => ({ character: makeCharacter(), corrections: [] }), text: async () => "" }),
+		const fetchMock = installFetchMock(async () =>
+			Response.json({ character: makeCharacter(), corrections: [] }),
 		);
-		globalThis.fetch = fetchMock as never;
 
 		const { getByText } = render(<CoauthorCharacterForm />);
 		// Lore-only reviewing: the lore review title is shown.
@@ -1323,10 +1323,9 @@ describe("CoauthorCharacterForm", () => {
 			},
 		});
 
-		const fetchMock = mock((_url: RequestInfo | URL, init?: RequestInit) =>
-			Promise.resolve({ ok: true, status: 200, json: async () => ({ character: makeCharacter(), corrections: [] }), text: async () => "" }),
+		const fetchMock = installFetchMock(async () =>
+			Response.json({ character: makeCharacter(), corrections: [] }),
 		);
-		globalThis.fetch = fetchMock as never;
 
 		const { getByRole, getByText } = render(<CoauthorCharacterForm />);
 		await waitFor(() => expect(ariaChecked(getByRole("checkbox"))).toBe(true));
@@ -1348,10 +1347,9 @@ describe("CoauthorCharacterForm", () => {
 		seedReviewing();
 		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeLoreActivity());
 
-		const fetchMock = mock((_url: RequestInfo | URL, init?: RequestInit) =>
-			Promise.resolve({ ok: true, status: 200, json: async () => ({ character: makeCharacter(), corrections: [] }), text: async () => "" }),
+		const fetchMock = installFetchMock(async () =>
+			Response.json({ character: makeCharacter(), corrections: [] }),
 		);
-		globalThis.fetch = fetchMock as never;
 
 		const { getByText } = render(<CoauthorCharacterForm />);
 		await waitFor(() => {
@@ -1380,10 +1378,9 @@ describe("CoauthorCharacterForm", () => {
 		seedReviewing();
 		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeLoreActivity());
 
-		const fetchMock = mock((_url: RequestInfo | URL, init?: RequestInit) =>
-			Promise.resolve({ ok: true, status: 200, json: async () => ({ character: makeCharacter(), corrections: [] }), text: async () => "" }),
+		const fetchMock = installFetchMock(async () =>
+			Response.json({ character: makeCharacter(), corrections: [] }),
 		);
-		globalThis.fetch = fetchMock as never;
 
 		const { getByText, getAllByRole } = render(<CoauthorCharacterForm />);
 		// Checkboxes in DOM order: lb1, e1, lb2, e2. Deselect lb1 (index 0).
@@ -1407,8 +1404,7 @@ describe("CoauthorCharacterForm", () => {
 		seedReviewing();
 		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeLoreActivity());
 
-		const fetchMock = mock(() => Promise.resolve({ ok: true, status: 200, json: async () => ({}), text: async () => "" }));
-		globalThis.fetch = fetchMock as never;
+		const fetchMock = installFetchMock(async () => Response.json({}));
 
 		const { getByText } = render(<CoauthorCharacterForm />);
 		fireEvent.click(getByText("coauthor.review.reject"));
@@ -1451,15 +1447,9 @@ describe("CoauthorCharacterForm", () => {
 		seedReviewing();
 		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, twoHunkProfileActivity());
 
-		const fetchMock = mock((_url: RequestInfo | URL, init?: RequestInit) =>
-			Promise.resolve({
-				ok: true,
-				status: 200,
-				json: async () => ({ character: makeCharacter({ description: "A reserved arachnid weaver.", scenario: "A forest cave at dusk." }), corrections: [] }),
-				text: async () => "",
-			}),
+		const fetchMock = installFetchMock(async () =>
+			Response.json({ character: makeCharacter({ description: "A reserved arachnid weaver.", scenario: "A forest cave at dusk." }), corrections: [] }),
 		);
-		globalThis.fetch = fetchMock as never;
 
 		const { container, getByText } = render(<CoauthorCharacterForm />);
 		const boxes = container.querySelectorAll('[role="checkbox"]');
@@ -1492,10 +1482,9 @@ describe("CoauthorCharacterForm", () => {
 		seedReviewing();
 		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, twoHunkProfileActivity());
 
-		const fetchMock = mock((_url: RequestInfo | URL, init?: RequestInit) =>
-			Promise.resolve({ ok: true, status: 200, json: async () => ({ character: makeCharacter(), corrections: [] }), text: async () => "" }),
+		const fetchMock = installFetchMock(async () =>
+			Response.json({ character: makeCharacter(), corrections: [] }),
 		);
-		globalThis.fetch = fetchMock as never;
 
 		const { getByText } = render(<CoauthorCharacterForm />);
 		fireEvent.click(getByText("coauthor.review.apply")); // no toggling → all selected
@@ -1534,10 +1523,9 @@ describe("CoauthorCharacterForm", () => {
 			args: { edits: [{ search: "A reserved arachnid weaver.", replace: "Bold and direct." }], summary: "sharpen personality" },
 		});
 
-		const fetchMock = mock((_url: RequestInfo | URL, init?: RequestInit) =>
-			Promise.resolve({ ok: true, status: 200, json: async () => ({ character: makeCharacter({ description: "Bold and direct." }), corrections: [] }), text: async () => "" }),
+		const fetchMock = installFetchMock(async () =>
+			Response.json({ character: makeCharacter({ description: "Bold and direct." }), corrections: [] }),
 		);
-		globalThis.fetch = fetchMock as never;
 
 		const { container, getByText } = render(<CoauthorCharacterForm />);
 		// Reviewing entered; exactly one hunk (personality changed; scenario/examples match canonical).
@@ -1564,10 +1552,9 @@ describe("CoauthorCharacterForm", () => {
 		seedReviewing();
 		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, twoHunkProfileActivity());
 
-		const fetchMock = mock((_url: RequestInfo | URL, init?: RequestInit) =>
-			Promise.resolve({ ok: true, status: 200, json: async () => ({ character: makeCharacter(), corrections: [] }), text: async () => "" }),
+		const fetchMock = installFetchMock(async () =>
+			Response.json({ character: makeCharacter(), corrections: [] }),
 		);
-		globalThis.fetch = fetchMock as never;
 
 		const { container, getByText } = render(<CoauthorCharacterForm />);
 		// Click the "None" button (coauthor.review.select_none label).

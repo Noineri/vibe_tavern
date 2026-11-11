@@ -1,19 +1,25 @@
 import { describe, it, expect, beforeAll, beforeEach, mock } from "bun:test";
 
 import { useDomEnv } from "../../../test/dom-env.js";
+import { wireProviderProfile, wireUiSettings } from "../../../test/wire-fixtures.js";
 import type { CoauthorConnectionSettingsRecord, ProviderProfileRecord as ClientProviderProfileRecord } from "../../api/types.js";
 
 useDomEnv();
 
 const { render, fireEvent, waitFor, within } = await import("@testing-library/react");
 
-const patchUiSettingsAction = mock(async (_patch: never) => ({} as never));
+const realBootstrapActions = await import("../../stores/api-actions/bootstrap-actions.js");
+const realProviderActions = await import("../../stores/api-actions/provider-actions.js");
+const patchUiSettingsAction = mock(
+  async (_patch: Parameters<typeof realBootstrapActions.patchUiSettingsAction>[0]) => wireUiSettings(),
+);
 const loadFavoriteModelsAction = mock(async (_profileId: string) => {});
 const loadCoauthorConnectionSettingsAction = mock(async (_profileId: string): Promise<CoauthorConnectionSettingsRecord | null> => null);
 const upsertCoauthorConnectionSettingsAction = mock(async (_profileId: string, _body: unknown) => ({}));
-const updateProviderProfileAction = mock(async (_profileId: string, patch: { coauthorTransport?: "chat_completions" | "responses" }) => ({ coauthorTransport: patch.coauthorTransport ?? "chat_completions" }) as never);
-const realBootstrapActions = await import("../../stores/api-actions/bootstrap-actions.js");
-const realProviderActions = await import("../../stores/api-actions/provider-actions.js");
+const updateProviderProfileAction = mock(
+  async (_profileId: string, patch: Parameters<typeof realProviderActions.updateProviderProfileAction>[1]) =>
+    wireProviderProfile({ coauthorTransport: patch.coauthorTransport ?? "chat_completions" }),
+);
 // i18n is NOT mocked: the modal renders providerless, so the real `useT`
 // returns the STABLE module-scope context default (identity `t`) — key-verbatim
 // assertions work with zero process-global registration. A `useT` override
@@ -61,13 +67,10 @@ function setBinding(coauthorProviderId: string | null) {
   useBootstrapStore.setState({
     data: {
       initialChatId: null, snapshot: null, isFirstRun: false, allCharacters: [], promptPresets: [],
-      uiSettings: {
-        id: "default", theme: "dark", chatFontSize: 15, uiFontSize: 14, messageWidth: 700, language: "en",
-        activePromptPresetId: null, aiAssistantProviderId: null, aiAssistantModelName: null,
-        coauthorProviderId, updatedAt: "2026-01-01",
-      } as never,
+      uiSettings: { ...wireUiSettings(), coauthorProviderId, updatedAt: "2026-01-01" },
+      agentKindSettings: {},
       isArmServer: false,
-    } as never,
+    },
   });
 }
 

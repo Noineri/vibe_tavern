@@ -369,7 +369,49 @@ export const BUDGETS = {
 	// owner ruling 2026-11-11). The sanctioned remedy landed as the
 	// quarantine-guard extraction f4201172c (572/800), and this entry is
 	// hereby restored to its full natural length.
-	asNever: 166,
+	// 122 (2026-11-11, step 15d): −44 — the coauthor + modals batch, the
+	// eight files 14/13/7/4/3/1/1/1 (CoauthorCharacterForm, provider-modal,
+	// use-coauthor-input-area, CoauthorProviderModal, CoauthorInputArea,
+	// CoauthorModuleModal, CoauthorSkillModal, AiAssistantModal). The repo
+	// remainder is apps/web 120 + packages 2. THE SHAPES: CoauthorCharacterForm
+	// — ONE file-local typed seam (installFetchMock, FetchImplementation
+	// derived from typeof fetch, Object.assign carrying realFetch.preconnect —
+	// the agent-kind-settings-api idiom) now carries all 12 fetch-mock sites:
+	// the fake {ok,status,json,text} envelopes became real Response.json
+	// bodies (production unwrapRpc reads ok + json only, apps/web/src/api/
+	// unwrap.ts:26 supervisor-verified); the corrections-toast spy retyped
+	// mock<typeof toast.warning> (sonner 2.0.8: (message, data?) =>
+	// string | number); the E5 activeChat literal completed through wireChat
+	// (the file's own idiom at three other sites). provider-modal —
+	// ModalProps = ComponentProps<typeof ProviderModal> (the props interface
+	// is unexported; the derivation keeps it one-place, the 15b
+	// ProviderSamplerPanel precedent), renderModal's three casts PURE
+	// DELETIONS, makeProfile completed over wireProviderProfile keeping every
+	// real-member value 1:1 (the nonexistent emotionAnnotation member
+	// dropped; cachedModels gains the REQUIRED cachedAt, also on the ollama
+	// call site), baseProps typed and the eight callback returns real
+	// (ProviderProbeResponse takes { success: true }), the setState cast
+	// deleted. The two bootstrap seeds (use-coauthor-input-area,
+	// CoauthorProviderModal) completed as real BootstrapData: the REQUIRED
+	// agentKindSettings added, uiSettings built over wireUiSettings + the
+	// binding override (the 15c seedBootstrapUiSettings shape). Action mocks
+	// retyped through the real modules (Parameters<typeof
+	// real.patchUiSettingsAction>[0] / [1], returning wireUiSettings /
+	// wireProviderProfile — reorder put the real imports above the mocks).
+	// The provider row in use-coauthor-input-area seeds wireProviderProfile
+	// (+cachedAt); the two favorites rows fixed AS VALUES: profileId → the
+	// real providerProfileId member, scope/contextLength/createdAt completed,
+	// the fictional sortOrder dropped (grep: no consumer — array order drives
+	// the list). CoauthorInputArea + CoauthorModuleModal: activeChat seeds
+	// through wireChat with brandId'd chat/character ids; the chat-store
+	// activeChatId branded at the seam. CoauthorSkillModal:
+	// queryByTestId("Other") plain string — the erased assignment bypassed an
+	// already-valid Matcher (pure deletion). AiAssistantModal: seedBootstrap
+	// drops the nonexistent personas member, adds agentKindSettings. apps/web
+	// key-level tsc delta EMPTY before and after (the 8 files carried 0
+	// baseline keys; the 2 pre-existing harness.smoke keys byte-stable), 852
+	// byte-untouched. One commit with the test edits.
+	asNever: 122,
 	/** Global `screen.` usage in apps/web test files (binds at import time). */
 	// 196 (2026-10-04): ratcheted to the merged tree's count after PR #51
 	// (provider-lists unification removed the forked pickers' screen usage;

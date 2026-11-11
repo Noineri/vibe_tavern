@@ -16,6 +16,8 @@ import { describe, it, expect, beforeEach, mock } from "bun:test";
 
 import { useDomEnv } from "../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
+import { wireChat, wireProviderProfile, wireUiSettings } from "../../../test/wire-fixtures.js";
+import { brandId, type ChatId, type CharacterId } from "@vibe-tavern/domain";
 import type { CoauthorModule } from "@vibe-tavern/api-contracts";
 
 useDomEnv();
@@ -30,16 +32,18 @@ const MODULES: CoauthorModule[] = [
 	{ id: "profile-editor", name: "Profile Editor", description: "", basePrompt: "p", openingMessage: "", skillIds: [], toolSet: {}, maxSteps: 3, isBuiltIn: true },
 ];
 
-const listCoauthorModulesAction = mock(() => Promise.resolve(MODULES));
-const setCoauthorModuleAction = mock(async (_chatId: string, _moduleId: string | null) => {});
-const patchUiSettingsAction = mock(async (_patch: never) => ({}) as never);
-const loadFavoriteModelsAction = mock(async (_profileId: string) => {});
-const loadCoauthorConnectionSettingsAction = mock(async (_profileId: string) => null);
-const upsertCoauthorConnectionSettingsAction = mock(async (_profileId: string, _body: unknown) => ({}));
 const realChatActions = await import("../../stores/api-actions/chat-actions.js");
 const realProviderProfiles = await import("../../hooks/use-provider-profiles.js");
 const realBootstrapActions = await import("../../stores/api-actions/bootstrap-actions.js");
 const realProviderActions = await import("../../stores/api-actions/provider-actions.js");
+const listCoauthorModulesAction = mock(() => Promise.resolve(MODULES));
+const setCoauthorModuleAction = mock(async (_chatId: string, _moduleId: string | null) => {});
+const patchUiSettingsAction = mock(
+	async (_patch: Parameters<typeof realBootstrapActions.patchUiSettingsAction>[0]) => wireUiSettings(),
+);
+const loadFavoriteModelsAction = mock(async (_profileId: string) => {});
+const loadCoauthorConnectionSettingsAction = mock(async (_profileId: string) => null);
+const upsertCoauthorConnectionSettingsAction = mock(async (_profileId: string, _body: unknown) => ({}));
 mock.module("../../stores/api-actions/chat-actions.js", () => ({
   ...realChatActions,
   listCoauthorModulesAction,
@@ -112,7 +116,7 @@ describe("useModuleSwitch", () => {
 	it("handleSelect fires setCoauthorModuleAction with the active chat id + module id", async () => {
 		// Seed the snapshot store's active chat — that's where handleSelect reads chatId.
 		useSnapshotStore.setState({
-			activeChat: { id: "chat1", characterId: "char1", mode: "coauthor", coauthorModuleId: null, coauthorContextLinks: [] } as never,
+			activeChat: wireChat({ id: brandId<ChatId>("chat1"), characterId: brandId<CharacterId>("char1"), mode: "coauthor" }),
 		});
 		const { result } = renderHook(() => useModuleSwitch());
 		// Wait for the registry list to load so modules/activeLabel are populated.
@@ -127,7 +131,7 @@ describe("useModuleSwitch", () => {
 	});
 
 	it("handleSelect is a no-op when no active chat is set", async () => {
-		useSnapshotStore.setState({ activeChat: null } as never);
+		useSnapshotStore.setState({ activeChat: null });
 		const { result } = renderHook(() => useModuleSwitch());
 		await waitFor(() => expect(result.current.modules).toHaveLength(2));
 
@@ -146,21 +150,10 @@ describe("useCoauthorInputArea — tool-filtered favorites", () => {
 				isFirstRun: false,
 				allCharacters: [],
 				promptPresets: [],
-				uiSettings: {
-					id: "default",
-					theme: "dark",
-					chatFontSize: 15,
-					uiFontSize: 14,
-					messageWidth: 700,
-					language: "en",
-					activePromptPresetId: null,
-					aiAssistantProviderId: null,
-					aiAssistantModelName: null,
-					coauthorProviderId: "p1",
-					updatedAt: "2026-01-01",
-				},
+				uiSettings: { ...wireUiSettings(), coauthorProviderId: "p1", updatedAt: "2026-01-01" },
+				agentKindSettings: {},
 				isArmServer: false,
-			} as never,
+			},
 		});
 		// CG-2: the Co-Author model comes from the bound connection's row — seed it
 		// so activeModelId stays "gpt-4o" (same value the retired ui_settings
@@ -179,7 +172,7 @@ describe("useCoauthorInputArea — tool-filtered favorites", () => {
 		// Seed the provider-data-store: profile p1 with tool-capable cache + favorites.
 		useProviderDataStore.setState({
 			profiles: [
-				{
+				wireProviderProfile({
 					id: "p1",
 					isActive: false,
 					defaultModel: "gpt-4o",
@@ -190,13 +183,14 @@ describe("useCoauthorInputArea — tool-filtered favorites", () => {
 							{ id: "gpt-4o", label: "GPT-4o", contextLength: 128000, capabilities: { tools: true } },
 							{ id: "gpt-3.5", label: "GPT-3.5 (no tools)", contextLength: 16000, capabilities: { tools: false } },
 						],
+						cachedAt: "2026-01-01",
 					},
-				} as never,
+				}),
 			],
 			coauthorFavoritesByProfile: {
 				p1: [
-					{ id: "f1", profileId: "p1", modelId: "gpt-4o", label: "GPT-4o", sortOrder: 0 } as never,
-					{ id: "f2", profileId: "p1", modelId: "gpt-3.5", label: "GPT-3.5 (no tools)", sortOrder: 1 } as never,
+					{ id: "f1", providerProfileId: "p1", modelId: "gpt-4o", scope: "coauthor", label: "GPT-4o", contextLength: 128000, createdAt: "2026-01-01" },
+					{ id: "f2", providerProfileId: "p1", modelId: "gpt-3.5", scope: "coauthor", label: "GPT-3.5 (no tools)", contextLength: 16000, createdAt: "2026-01-01" },
 				],
 			},
 		});

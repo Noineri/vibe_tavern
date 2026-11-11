@@ -231,7 +231,7 @@ describe("CoauthorSkillModal — delete reference guard (CTX-S7 self-check #2)",
 		await waitFor(() => expect(queryByTestId("confirm-modal")).not.toBeNull());
 		// Plain body (no referencing module name rendered).
 		expect(getByTestId("confirm-body").textContent).toBe("coauthor.skill.delete_confirm_body");
-		expect(queryByTestId("Other" as never)).toBeNull();
+		expect(queryByTestId("Other")).toBeNull();
 	});
 });
 
