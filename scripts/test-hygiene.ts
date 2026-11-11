@@ -302,7 +302,33 @@ export const BUDGETS = {
 	// baselined loaders-missing TS2741 that the brandId edit would have
 	// reworded). test-type-gate: exactly 1 dead key (that TS2741), 0 new
 	// keys, 852 byte-untouched. One commit with the test edits.
-	asNever: 613,
+	// 290 (2026-11-11, step 15a): −323 — the TtsProfileEditor.test.tsx
+	// monster (323 occurrences / 204 lines, the repo's single biggest
+	// as-never file). ONE typed fixture seam now carries the whole file:
+	// asForm (the step-11c seam promoted to the file-wide completion point —
+	// typed-key defaults mirror the hook's startCreate) + TtsFormFixture
+	// (derived Parameters<typeof asForm>[0]) + TtsOverrides (Partial<
+	// Omit<TtsHook, "form">> & { form? }): every per-test form literal wraps
+	// in asForm(...) and types against the real TtsProfileForm; the 84
+	// React.createElement(TtsProfileEditor, { tts }) call sites drop BOTH
+	// casts (the component's Props are { tts: TtsHook } — pure noise, the
+	// file's own mountEditor/rerender seams already proved it); 68 pure
+	// deletions (TTS_BACKEND members ARE TtsBackendSlug — entities.ts:598;
+	// headerMode "view"/"edit" is the real TtsHeaderMode union; editingId is
+	// string | null; the voices-mock envelopes type TtsDraftVoicesResponse
+	// directly — capableEnvelope/sfHint/capableNoHint now carry the
+	// annotation; the TtsPreviewDeps synthesize/play mocks already matched).
+	// FICTION fixed as values, not re-erased: the duplicate-name profiles row
+	// carried a NONEXISTENT apiKey member (TtsProfileRecord never crosses
+	// the wire with the secret — tts-api.ts) and every profile row/viewTts
+	// record lacked the required autoKeyProviderName (+providerRef on the
+	// derived viewTts record) — completed with null, mirroring the real
+	// API rows; normalizeForm folded into asForm; the mock-implementation
+	// envelope casts and the headerMode/editingId pins were the fiction
+	// carriers. test-type-gate: apps/web workspace tsc 0 errors before AND
+	// after (the file carried no baseline keys), 0 new keys, 852
+	// byte-untouched. One commit with the test edits.
+	asNever: 290,
 	/** Global `screen.` usage in apps/web test files (binds at import time). */
 	// 196 (2026-10-04): ratcheted to the merged tree's count after PR #51
 	// (provider-lists unification removed the forked pickers' screen usage;

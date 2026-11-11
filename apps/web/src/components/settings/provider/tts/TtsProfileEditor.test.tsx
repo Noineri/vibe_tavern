@@ -64,30 +64,25 @@ mock.module("../../../../api/tts-api.js", () => ({
   fetchLocalDockerStatus: async () => ({ available: false, version: null }),
 }));
 
-/** TE2-16 fixture normalizer: every form in this file gets the typed-key
- *  defaults (apiKey empty, no provider link, no stored-key flag) unless the
- *  fixture overrides them — the component reads form.apiKey on every render
- *  and the draft seam serializes it, so a missing field crashes the suite;
- *  hand-maintaining 40+ literals is how regressions slip through. */
-function normalizeForm(form: Record<string, unknown> | null | undefined) {
-  if (form === null || form === undefined) return form;
-  return { apiKey: "", providerRef: null, autoKeyProviderName: null, hasStoredApiKey: false, ...form } as never;
-}
-
 type TtsHook = ReturnType<typeof import("../../../../hooks/use-tts-profiles.js").useTtsProfiles>;
 
-function makeTts(overrides: Partial<TtsHook> = {}): TtsHook {
+/** Fixture-override shape: every non-form hook member is optional; the
+ *  form rides the typed fixture seam (TtsFormFixture) and completes through
+ *  asForm — an explicit null form stays the hook's empty state. */
+type TtsOverrides = Partial<Omit<TtsHook, "form">> & { form?: TtsFormFixture | null };
+
+function makeTts(overrides: TtsOverrides = {}): TtsHook {
   const base: TtsHook = {
     profiles: [],
     loading: false,
     editingId: "p1",
-    form: { id: "p1", name: "Alpha", backend: TTS_BACKEND.Kokoro as string, config: {}, apiKey: "", providerRef: null, autoKeyProviderName: null, voiceId: "" } as never,
+    form: asForm({ id: "p1", name: "Alpha", backend: TTS_BACKEND.Kokoro, config: {}, voiceId: "" }),
     dirty: false,
     error: null as string | null,
     saving: false,
     // The main suite pins the EDIT screen (connection form) — the LLM
     // mechanism renders it only in headerMode "edit".
-    headerMode: "edit" as never,
+    headerMode: "edit",
     startEdit: () => {},
     // The base card's default-voice toggle (unread on the pinned paths —
     // the erased literal left it absent, so no test ever invoked it).
@@ -104,11 +99,8 @@ function makeTts(overrides: Partial<TtsHook> = {}): TtsHook {
     draftAutoKeyProviderName: null,
     defaultProfileId: null,
   };
-  const merged = { ...base, ...overrides };
-  if (overrides.form !== undefined) {
-    (merged as { form: unknown }).form = normalizeForm(overrides.form as Record<string, unknown> | null);
-  }
-  return merged;
+  const form = overrides.form === undefined ? base.form : overrides.form === null ? null : asForm(overrides.form);
+  return { ...base, ...overrides, form };
 }
 
 beforeEach(() => {
@@ -129,10 +121,10 @@ afterEach(async () => {
  *  LLM mechanism renders the base card + config sections (voices, model
  *  card, tuning, bindings) only in this state; the connection form is the
  *  separate edit screen. Derives the profiles record from the form. */
-function viewTts(overrides: Partial<TtsHook> = {}) {
+function viewTts(overrides: TtsOverrides = {}) {
   const base = makeTts(overrides);
-  const form = base.form as { id: string | null; name: string; backend: string; config: Record<string, unknown>; voiceId: string; narratorVoiceId?: string; hasStoredApiKey?: boolean } | null;
-  const record =
+  const form = base.form;
+  const record: TtsProfileRecord[] =
     form === null
       ? []
       : [
@@ -142,8 +134,10 @@ function viewTts(overrides: Partial<TtsHook> = {}) {
             backend: form.backend,
             config: form.config,
             voiceId: form.voiceId,
-            narratorVoiceId: form.narratorVoiceId ?? null,
-            hasStoredApiKey: form.hasStoredApiKey ?? false,
+            narratorVoiceId: form.narratorVoiceId,
+            hasStoredApiKey: form.hasStoredApiKey,
+            providerRef: form.providerRef,
+            autoKeyProviderName: form.autoKeyProviderName,
             lang: "en",
             sortOrder: 0,
             isDefault: false,
@@ -151,15 +145,20 @@ function viewTts(overrides: Partial<TtsHook> = {}) {
             updatedAt: "",
           },
         ];
-  return makeTts({ ...overrides, headerMode: "view" as never, profiles: record as never });
+  return makeTts({ ...overrides, headerMode: "view", profiles: record });
 }
 
 
-/** One typed seam for loose form fixtures in the step-11c tests: the caller
- *  pins the connection fields, the typed-key defaults ride the file's own
- *  TE2-16 normalizer rule (same defaults normalizeForm applies). The
- *  file-wide `as never` convenience cast stays a ratchet-budgeted pattern
- *  (test-hygiene) — tests added since do not extend it. */
+/** TE2-16 fixture seam: EVERY loose form fixture in this file completes
+ *  here — the caller pins the boundary fields, the typed-key defaults
+ *  (apiKey empty, no provider link, no stored-key flag, narrator "") fill
+ *  the rest, mirroring the form the hook's startCreate builds. The
+ *  component reads form.apiKey on every render and the draft seam
+ *  serializes it, so a missing field crashes the suite; completing through
+ *  the real TtsProfileForm keeps partial literals honest — regressions
+ *  surface at compile time instead of hiding behind a silencing cast. */
+type TtsFormFixture = Parameters<typeof asForm>[0];
+
 function asForm(form: Partial<TtsProfileForm> & Pick<TtsProfileForm, "id" | "name" | "backend" | "config" | "voiceId">): NonNullable<TtsHook["form"]> {
   return { apiKey: "", providerRef: null, autoKeyProviderName: null, hasStoredApiKey: false, narratorVoiceId: "", ...form };
 }
@@ -167,8 +166,8 @@ function asForm(form: Partial<TtsProfileForm> & Pick<TtsProfileForm, "id" | "nam
 describe("TtsProfileEditor", () => {
   it("typing a name calls setForm and marks dirty", async () => {
     const setForm = mock(() => {});
-    const tts = makeTts({ form: { id: "p1", name: "Alpha", backend: TTS_BACKEND.Kokoro as never, config: {}, apiKey: "", providerRef: null, voiceId: "" } as never, setForm, dirty: false });
-    const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
+    const tts = makeTts({ form: asForm({ id: "p1", name: "Alpha", backend: TTS_BACKEND.Kokoro, config: {}, apiKey: "", providerRef: null, voiceId: "" }), setForm, dirty: false });
+    const view = renderEditor(React.createElement(TtsProfileEditor, { tts }));
     const input = view.getByTestId("tts-profile-name-input") as HTMLInputElement;
     fireEvent.change(input, { target: { value: "Alpha-2" } });
     expect(setForm).toHaveBeenCalled();
@@ -181,8 +180,8 @@ describe("TtsProfileEditor", () => {
     // detail pane has NO inline SaveBar/delete — they render in
     // MasterDetailFooter (pinned in provider-modal.test.ts). If this test
     // fails, someone reintroduced an inline control.
-    const tts = makeTts({ dirty: true, form: { id: "p1", name: "Alpha", backend: TTS_BACKEND.Kokoro as never, config: {}, apiKey: "", providerRef: null, voiceId: "" } as never });
-    const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
+    const tts = makeTts({ dirty: true, form: asForm({ id: "p1", name: "Alpha", backend: TTS_BACKEND.Kokoro, config: {}, apiKey: "", providerRef: null, voiceId: "" }) });
+    const view = renderEditor(React.createElement(TtsProfileEditor, { tts }));
     expect(view.queryAllByRole("button", { name: /save_btn|saving|saved/ })).toHaveLength(0);
     expect(view.queryByTestId("tts-delete-btn")).toBeNull();
   });
@@ -191,17 +190,17 @@ describe("TtsProfileEditor", () => {
     // The editor pane no longer owns delete — nothing to click here. The full
     // trash→confirm→remove flow is pinned end-to-end in provider-modal.test.ts.
     const remove = mock(async () => {});
-    const ttsSaved = makeTts({ form: { id: "p1", name: "Alpha", backend: TTS_BACKEND.Kokoro as never, config: {}, apiKey: "", providerRef: null, voiceId: "" } as never, remove });
-    const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts: ttsSaved } as never));
+    const ttsSaved = makeTts({ form: asForm({ id: "p1", name: "Alpha", backend: TTS_BACKEND.Kokoro, config: {}, apiKey: "", providerRef: null, voiceId: "" }), remove });
+    const view = renderEditor(React.createElement(TtsProfileEditor, { tts: ttsSaved }));
     expect(view.queryByTestId("tts-delete-btn")).toBeNull();
     expect(view.queryByText("tts_profile_delete_confirm_title")).toBeNull();
   });
 
   it("tier-gating: kokoro shows voice + speed only", async () => {
     const tts = viewTts({
-      form: { id: null, name: "Koko", backend: TTS_BACKEND.Kokoro as never, config: {}, apiKey: "", providerRef: null, voiceId: "af_heart" } as never,
+      form: asForm({ id: null, name: "Koko", backend: TTS_BACKEND.Kokoro, config: {}, apiKey: "", providerRef: null, voiceId: "af_heart" }),
     });
-    const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
+    const view = renderEditor(React.createElement(TtsProfileEditor, { tts }));
     // TE2-12 tuning accordion is closed by default — open to check tuning fields.
     fireEvent.click(view.getByTestId("tts-tuning-accordion-toggle"));
     await waitFor(() => expect(view.getByTestId("tts-tuning-accordion-body")).toBeTruthy());
@@ -218,15 +217,15 @@ describe("TtsProfileEditor", () => {
 
   it("tier-gating: openai-compatible shows endpoint/apiKey/model/format/speed/voice", async () => {
     const tts = viewTts({
-      form: {
+      form: asForm({
         id: null,
         name: "Open",
-        backend: TTS_BACKEND.OpenAiCompatible as never,
+        backend: TTS_BACKEND.OpenAiCompatible,
         config: { endpoint: "https://x", apiKey: "k", model: "m", responseFormat: "mp3", speed: 1 },
         voiceId: "",
-      } as never,
+      }),
     });
-    const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
+    const view = renderEditor(React.createElement(TtsProfileEditor, { tts }));
     fireEvent.click(view.getByTestId("tts-tuning-accordion-toggle"));
     await waitFor(() => expect(view.getByTestId("tts-tuning-accordion-body")).toBeTruthy());
     // View mode: config sections only (model/format/tuning/voices) —
@@ -241,12 +240,12 @@ describe("TtsProfileEditor", () => {
     expect(view.queryByText("tts_field_stability")).toBeNull();
     // Edit screen: endpoint + key.
     const editTts = makeTts({
-      form: {
-        id: null, name: "Open", backend: TTS_BACKEND.OpenAiCompatible as never,
+      form: asForm({
+        id: null, name: "Open", backend: TTS_BACKEND.OpenAiCompatible,
         config: { endpoint: "https://x", apiKey: "k", model: "m", responseFormat: "mp3", speed: 1 }, apiKey: "", providerRef: null, voiceId: "",
-      } as never,
+      }),
     });
-    const editView = renderEditor(React.createElement(TtsProfileEditor as never, { tts: editTts } as never));
+    const editView = renderEditor(React.createElement(TtsProfileEditor, { tts: editTts }));
     expect(editView.getByTestId("tts-field-endpoint")).toBeTruthy();
     expect(editView.getByTestId("tts-field-api-key")).toBeTruthy();
     cleanup();
@@ -254,15 +253,15 @@ describe("TtsProfileEditor", () => {
 
   it("tier-gating: gemini shows apiKey/model/styleInstructions/voice and NO speed", async () => {
     const tts = viewTts({
-      form: {
+      form: asForm({
         id: null,
         name: "Gem",
-        backend: TTS_BACKEND.Gemini as never,
+        backend: TTS_BACKEND.Gemini,
         config: { apiKey: "k", model: "m", styleInstructions: "warm" },
         voiceId: "",
-      } as never,
+      }),
     });
-    const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
+    const view = renderEditor(React.createElement(TtsProfileEditor, { tts }));
     fireEvent.click(view.getByTestId("tts-tuning-accordion-toggle"));
     await waitFor(() => expect(view.getByTestId("tts-tuning-accordion-body")).toBeTruthy());
     // View mode: model/style/voices; apiKey is the separate edit screen.
@@ -273,12 +272,12 @@ describe("TtsProfileEditor", () => {
     expect(view.queryByText("tts_field_speed")).toBeNull();
     expect(view.queryByTestId("tts-field-endpoint")).toBeNull();
     const editTts = makeTts({
-      form: {
-        id: null, name: "Gem", backend: TTS_BACKEND.Gemini as never,
+      form: asForm({
+        id: null, name: "Gem", backend: TTS_BACKEND.Gemini,
         config: { apiKey: "k", model: "m", styleInstructions: "warm" }, apiKey: "", providerRef: null, voiceId: "",
-      } as never,
+      }),
     });
-    const editView = renderEditor(React.createElement(TtsProfileEditor as never, { tts: editTts } as never));
+    const editView = renderEditor(React.createElement(TtsProfileEditor, { tts: editTts }));
     expect(editView.getByTestId("tts-field-api-key")).toBeTruthy();
     expect(view.queryByTestId("tts-field-response-format")).toBeNull();
     expect(view.queryByText("tts_field_stability")).toBeNull();
@@ -287,15 +286,15 @@ describe("TtsProfileEditor", () => {
 
   it("tier-gating: elevenlabs shows apiKey/modelId/3 sliders/toggle/speed/voice", async () => {
     const tts = viewTts({
-      form: {
+      form: asForm({
         id: null,
         name: "EL",
-        backend: TTS_BACKEND.ElevenLabs as never,
+        backend: TTS_BACKEND.ElevenLabs,
         config: { apiKey: "k", modelId: "m", stability: 0.5, similarityBoost: 0.7, style: 0.2, useSpeakerBoost: true, speed: 1 },
         voiceId: "",
-      } as never,
+      }),
     });
-    const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
+    const view = renderEditor(React.createElement(TtsProfileEditor, { tts }));
     fireEvent.click(view.getByTestId("tts-tuning-accordion-toggle"));
     await waitFor(() => expect(view.getByTestId("tts-tuning-accordion-body")).toBeTruthy());
     // View mode: modelId/sliders/toggle/voices; apiKey is the edit screen.
@@ -308,12 +307,12 @@ describe("TtsProfileEditor", () => {
     expect(docsLink.getAttribute("href")).toBe("https://elevenlabs.io/docs/models");
     expect(view.queryByText("tts_field_stability")).toBeTruthy();
     const editTts = makeTts({
-      form: {
-        id: null, name: "EL", backend: TTS_BACKEND.ElevenLabs as never,
+      form: asForm({
+        id: null, name: "EL", backend: TTS_BACKEND.ElevenLabs,
         config: { apiKey: "k", modelId: "m", stability: 0.5, similarityBoost: 0.7, style: 0.2, useSpeakerBoost: true, speed: 1 }, apiKey: "", providerRef: null, voiceId: "",
-      } as never,
+      }),
     });
-    const editView = renderEditor(React.createElement(TtsProfileEditor as never, { tts: editTts } as never));
+    const editView = renderEditor(React.createElement(TtsProfileEditor, { tts: editTts }));
     expect(editView.getByTestId("tts-field-api-key")).toBeTruthy();
     expect(view.queryByText("tts_field_similarity")).toBeTruthy();
     // style label appears as tts_field_style (distinct from styleInstructions)
@@ -330,9 +329,9 @@ describe("TtsProfileEditor", () => {
 
   it("kokoro voice picker lists only English voices (human-readable labels)", async () => {
     const tts = viewTts({
-      form: { id: null, name: "Koko", backend: TTS_BACKEND.Kokoro as never, config: {}, apiKey: "", providerRef: null, voiceId: "af_heart" } as never,
+      form: asForm({ id: null, name: "Koko", backend: TTS_BACKEND.Kokoro, config: {}, apiKey: "", providerRef: null, voiceId: "af_heart" }),
     });
-    const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
+    const view = renderEditor(React.createElement(TtsProfileEditor, { tts }));
     const trigger = view.getByTestId("tts-voice-select") as HTMLElement;
     fireEvent.click(trigger);
     await waitFor(() => {
@@ -363,16 +362,16 @@ describe("TtsProfileEditor", () => {
     // before this test's own effect fires (same pattern as the F3 test below).
     listTtsDraftVoicesMock.mockClear();
     const tts = viewTts({
-      form: {
+      form: asForm({
         id: null,
         name: "Draft",
-        backend: TTS_BACKEND.OpenAiCompatible as never,
+        backend: TTS_BACKEND.OpenAiCompatible,
         config: { endpoint: "https://x/v1", apiKey: "k", model: "m" },
         voiceId: "flux-alexis-en",
-      } as never,
+      }),
       dirty: true,
     });
-    const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
+    const view = renderEditor(React.createElement(TtsProfileEditor, { tts }));
     // D18 (owner 2026-08-29): the listen button docks in the VOICE section,
     // under the selection — reachable without opening the tuning accordion.
     const previewBtn = view.getByTestId("tts-preview-btn") as HTMLButtonElement;
@@ -406,15 +405,15 @@ describe("TtsProfileEditor", () => {
     listTtsDraftModelsMock.mockClear();
     listTtsDraftVoicesMock.mockClear();
     const tts = viewTts({
-      form: {
+      form: asForm({
         id: null,
         name: "Gem",
-        backend: TTS_BACKEND.Gemini as never,
+        backend: TTS_BACKEND.Gemini,
         config: { apiKey: "k", model: "gemini-2.5-flash-preview-tts" },
         voiceId: "",
-      } as never,
+      }),
     });
-    const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
+    const view = renderEditor(React.createElement(TtsProfileEditor, { tts }));
     const refresh = view.getByTestId("tts-models-refresh") as HTMLButtonElement;
     expect(refresh).toBeTruthy();
     // Wait for debounced fetch — look for a call with gemini backend specifically.
@@ -444,15 +443,15 @@ describe("TtsProfileEditor", () => {
 
   it("F3: openai model is now a select with refresh, not a plain input", async () => {
     const tts = viewTts({
-      form: {
+      form: asForm({
         id: null,
         name: "Open",
-        backend: TTS_BACKEND.OpenAiCompatible as never,
+        backend: TTS_BACKEND.OpenAiCompatible,
         config: { endpoint: "https://x", apiKey: "k", model: "kokoro" },
         voiceId: "",
-      } as never,
+      }),
     });
-    const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
+    const view = renderEditor(React.createElement(TtsProfileEditor, { tts }));
     // Old plain input gone, select present
     expect(view.queryByTestId("tts-field-model")).toBeTruthy();
     expect(view.getByTestId("tts-models-refresh")).toBeTruthy();
@@ -469,15 +468,15 @@ describe("TtsProfileEditor", () => {
     const setForm = mock(() => {});
     const tts = viewTts({
       setForm,
-      form: {
+      form: asForm({
         id: null,
         name: "Open",
-        backend: TTS_BACKEND.OpenAiCompatible as never,
+        backend: TTS_BACKEND.OpenAiCompatible,
         config: { endpoint: "https://half-configured", apiKey: "k", model: "" },
         voiceId: "",
-      } as never,
+      }),
     });
-    const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
+    const view = renderEditor(React.createElement(TtsProfileEditor, { tts }));
     // Wait out the 400 ms debounce: the empty list leaves the trigger a
     // BUTTON (never a bare input stub, never a fake example id).
     const trigger = await waitFor(() => view.getByTestId("tts-field-model") as HTMLElement, { timeout: 2500 });
@@ -504,15 +503,15 @@ describe("TtsProfileEditor", () => {
 describe("TtsProfileEditor — F5 restructure (sections, local variant, stored key)", () => {
   it("server backends render BOTH section cards, endpoint lives in the connection card", async () => {
     const tts = viewTts({
-      form: {
+      form: asForm({
         id: null,
         name: "Open",
-        backend: TTS_BACKEND.OpenAiCompatible as never,
+        backend: TTS_BACKEND.OpenAiCompatible,
         config: { endpoint: "https://api.example.com/v1", apiKey: "k", model: "m" },
         voiceId: "",
-      } as never,
+      }),
     });
-    const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
+    const view = renderEditor(React.createElement(TtsProfileEditor, { tts }));
     const voice = view.getByTestId("tts-voice-section");
     // LLM mechanism (rework) + owner rule: the MODEL picker is a bare
     // section (no card wrapper) and sits ABOVE the voice section — voices
@@ -529,12 +528,12 @@ describe("TtsProfileEditor — F5 restructure (sections, local variant, stored k
     expect(within(voice).getByTestId("tts-preview-btn")).toBeTruthy();
     // The edit screen carries the endpoint (same profile, headerMode edit).
     const editTts = makeTts({
-      form: {
-        id: null, name: "Open", backend: TTS_BACKEND.OpenAiCompatible as never,
+      form: asForm({
+        id: null, name: "Open", backend: TTS_BACKEND.OpenAiCompatible,
         config: { endpoint: "https://api.example.com/v1", apiKey: "k", model: "m" }, apiKey: "", providerRef: null, voiceId: "",
-      } as never,
+      }),
     });
-    const editView = renderEditor(React.createElement(TtsProfileEditor as never, { tts: editTts } as never));
+    const editView = renderEditor(React.createElement(TtsProfileEditor, { tts: editTts }));
     expect(editView.getByTestId("tts-field-endpoint")).toBeTruthy();
     cleanup();
     // The preview button docks in the voice card (F1 layout preserved).
@@ -545,9 +544,9 @@ describe("TtsProfileEditor — F5 restructure (sections, local variant, stored k
 
   it("kokoro has NO connection card (browser-local: nothing to connect to)", () => {
     const tts = viewTts({
-      form: { id: null, name: "Koko", backend: TTS_BACKEND.Kokoro as never, config: {}, apiKey: "", providerRef: null, voiceId: "af_heart" } as never,
+      form: asForm({ id: null, name: "Koko", backend: TTS_BACKEND.Kokoro, config: {}, apiKey: "", providerRef: null, voiceId: "af_heart" }),
     });
-    const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
+    const view = renderEditor(React.createElement(TtsProfileEditor, { tts }));
     expect(view.queryByTestId("tts-field-model")).toBeNull();
     expect(view.getByTestId("tts-voice-card")).toBeTruthy();
     cleanup();
@@ -555,15 +554,15 @@ describe("TtsProfileEditor — F5 restructure (sections, local variant, stored k
 
   it("D8: the local server panel is gated on the localServer flag, not the backend alone", () => {
     const localTts = makeTts({
-      form: {
+      form: asForm({
         id: null,
         name: "Local",
-        backend: TTS_BACKEND.OpenAiCompatible as never,
+        backend: TTS_BACKEND.OpenAiCompatible,
         config: { endpoint: "http://127.0.0.1:8880/v1", localServer: true },
         voiceId: "af_heart",
-      } as never,
+      }),
     });
-    const localView = renderEditor(React.createElement(TtsProfileEditor as never, { tts: localTts } as never));
+    const localView = renderEditor(React.createElement(TtsProfileEditor, { tts: localTts }));
     expect(localView.getByTestId("tts-local-server-panel")).toBeTruthy();
     // D19: local servers can still REQUIRE a key (openai-edge-tts ships
     // REQUIRE_API_KEY=True) — the key input renders for the local segment,
@@ -574,31 +573,31 @@ describe("TtsProfileEditor — F5 restructure (sections, local variant, stored k
 
     // Same backend WITHOUT the flag = the cloud variant — no local helpers.
     const cloudTts = makeTts({
-      form: {
+      form: asForm({
         id: null,
         name: "Cloud",
-        backend: TTS_BACKEND.OpenAiCompatible as never,
+        backend: TTS_BACKEND.OpenAiCompatible,
         config: { endpoint: "https://api.example.com/v1", apiKey: "k" },
         voiceId: "alloy",
-      } as never,
+      }),
     });
-    const cloudView = renderEditor(React.createElement(TtsProfileEditor as never, { tts: cloudTts } as never));
+    const cloudView = renderEditor(React.createElement(TtsProfileEditor, { tts: cloudTts }));
     expect(cloudView.queryByTestId("tts-local-server-panel")).toBeNull();
     cleanup();
   });
 
   it("F2b: a stored key shows the placeholder status while the field itself stays empty", () => {
     const tts = makeTts({
-      form: {
+      form: asForm({
         id: "p1",
         name: "Cloud",
-        backend: TTS_BACKEND.Gemini as never,
+        backend: TTS_BACKEND.Gemini,
         config: { model: "m" },
         voiceId: "",
         hasStoredApiKey: true,
-      } as never,
+      }),
     });
-    const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
+    const view = renderEditor(React.createElement(TtsProfileEditor, { tts }));
     const status = view.getByTestId("tts-field-api-key-status");
     expect(status.textContent).toContain("tts_field_api_key_status_stored");
     const field = view.getByTestId("tts-field-api-key") as HTMLInputElement;
@@ -608,16 +607,16 @@ describe("TtsProfileEditor — F5 restructure (sections, local variant, stored k
 
   it("F2b: no status line when nothing is stored", () => {
     const tts = makeTts({
-      form: {
+      form: asForm({
         id: "p1",
         name: "Cloud",
-        backend: TTS_BACKEND.Gemini as never,
+        backend: TTS_BACKEND.Gemini,
         config: { model: "m" },
         voiceId: "",
         hasStoredApiKey: false,
-      } as never,
+      }),
     });
-    const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
+    const view = renderEditor(React.createElement(TtsProfileEditor, { tts }));
     expect(view.queryByTestId("tts-field-api-key-status")).toBeNull();
     cleanup();
   });
@@ -635,15 +634,15 @@ describe("TtsProfileEditor — F6 sliders + voice placeholders", () => {
     const setForm = mock(() => {});
     const tts = viewTts({
       setForm,
-      form: {
+      form: asForm({
         id: "p1",
         name: "EL",
-        backend: TTS_BACKEND.ElevenLabs as never,
+        backend: TTS_BACKEND.ElevenLabs,
         config: { stability: 0.5 },
         voiceId: "",
-      } as never,
+      }),
     });
-    const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
+    const view = renderEditor(React.createElement(TtsProfileEditor, { tts }));
     fireEvent.click(view.getByTestId("tts-tuning-accordion-toggle"));
     await waitFor(() => expect(view.getByTestId("tts-tuning-accordion-body")).toBeTruthy());
     const range = view.getByTestId("tts-field-stability-range") as HTMLInputElement;
@@ -666,15 +665,15 @@ describe("TtsProfileEditor — F6 sliders + voice placeholders", () => {
     const setForm = mock(() => {});
     const tts = viewTts({
       setForm,
-      form: {
+      form: asForm({
         id: "p1",
         name: "Open",
-        backend: TTS_BACKEND.OpenAiCompatible as never,
+        backend: TTS_BACKEND.OpenAiCompatible,
         config: { speed: 1 },
         voiceId: "",
-      } as never,
+      }),
     });
-    const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
+    const view = renderEditor(React.createElement(TtsProfileEditor, { tts }));
     fireEvent.click(view.getByTestId("tts-tuning-accordion-toggle"));
     await waitFor(() => expect(view.getByTestId("tts-tuning-accordion-body")).toBeTruthy());
     const range = view.getByTestId("tts-field-speed-range") as HTMLInputElement;
@@ -705,15 +704,15 @@ describe("TtsProfileEditor — F6 sliders + voice placeholders", () => {
     const setForm = mock(() => {});
     const tts = viewTts({
       setForm,
-      form: {
+      form: asForm({
         id: null,
         name: "Open",
-        backend: TTS_BACKEND.OpenAiCompatible as never,
+        backend: TTS_BACKEND.OpenAiCompatible,
         config: { endpoint: "https://x/v1", apiKey: "k", model: "flux-tts" },
         voiceId: "old-voice",
-      } as never,
+      }),
     });
-    const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
+    const view = renderEditor(React.createElement(TtsProfileEditor, { tts }));
     await waitFor(() => expect(setForm).toHaveBeenCalledWith({ voiceId: "new-voice" }), { timeout: 2500 });
     cleanup();
     document.body.innerHTML = "";
@@ -731,15 +730,15 @@ describe("TtsProfileEditor — F6 sliders + voice placeholders", () => {
     const setForm = mock(() => {});
     const tts = viewTts({
       setForm,
-      form: {
+      form: asForm({
         id: null,
         name: "Open",
-        backend: TTS_BACKEND.OpenAiCompatible as never,
+        backend: TTS_BACKEND.OpenAiCompatible,
         config: { endpoint: "https://x/v1", apiKey: "k", model: "m1" },
         voiceId: "",
-      } as never,
+      }),
     });
-    const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
+    const view = renderEditor(React.createElement(TtsProfileEditor, { tts }));
     await waitFor(() => expect(setForm).toHaveBeenCalledWith({ voiceId: "first-voice" }), { timeout: 2500 });
     cleanup();
     document.body.innerHTML = "";
@@ -757,15 +756,15 @@ describe("TtsProfileEditor — F6 sliders + voice placeholders", () => {
     const setForm = mock(() => {});
     const tts = viewTts({
       setForm,
-      form: {
+      form: asForm({
         id: null,
         name: "Open",
-        backend: TTS_BACKEND.OpenAiCompatible as never,
+        backend: TTS_BACKEND.OpenAiCompatible,
         config: { endpoint: "https://x/v1", apiKey: "k", model: "m1" },
         voiceId: "my-voice",
-      } as never,
+      }),
     });
-    const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
+    const view = renderEditor(React.createElement(TtsProfileEditor, { tts }));
     // Wait past the debounce so a (wrong) settle would have fired.
     await new Promise((resolve) => setTimeout(resolve, 900));
     expect(setForm).not.toHaveBeenCalledWith({ voiceId: "first-voice" });
@@ -777,15 +776,15 @@ describe("TtsProfileEditor — F6 sliders + voice placeholders", () => {
   it("manual fallback input placeholder is the neutral i18n hint — no fake example id (openai)", async () => {
     listTtsDraftVoicesMock.mockImplementationOnce(async () => ({ voices: [], capabilities: { supportsCloning: false } }));
     const tts = viewTts({
-      form: {
+      form: asForm({
         id: null,
         name: "Open",
-        backend: TTS_BACKEND.OpenAiCompatible as never,
+        backend: TTS_BACKEND.OpenAiCompatible,
         config: { endpoint: "https://x", apiKey: "k" },
         voiceId: "",
-      } as never,
+      }),
     });
-    const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
+    const view = renderEditor(React.createElement(TtsProfileEditor, { tts }));
     const input = await waitFor(() => view.getByTestId("tts-voice-input") as HTMLInputElement, { timeout: 2500 });
     expect(input.placeholder).toBe("tts_field_voice_manual_placeholder");
     cleanup();
@@ -796,15 +795,15 @@ describe("TtsProfileEditor — F6 sliders + voice placeholders", () => {
   it("manual fallback input placeholder is the neutral i18n hint (gemini)", async () => {
     listTtsDraftVoicesMock.mockImplementationOnce(async () => ({ voices: [], capabilities: { supportsCloning: false } }));
     const tts = viewTts({
-      form: {
+      form: asForm({
         id: null,
         name: "Gem",
-        backend: TTS_BACKEND.Gemini as never,
+        backend: TTS_BACKEND.Gemini,
         config: { apiKey: "k" },
         voiceId: "",
-      } as never,
+      }),
     });
-    const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
+    const view = renderEditor(React.createElement(TtsProfileEditor, { tts }));
     const input = await waitFor(() => view.getByTestId("tts-voice-input") as HTMLInputElement, { timeout: 2500 });
     expect(input.placeholder).toBe("tts_field_voice_manual_placeholder");
     cleanup();
@@ -815,15 +814,15 @@ describe("TtsProfileEditor — F6 sliders + voice placeholders", () => {
   it("manual fallback input placeholder is the neutral i18n hint (elevenlabs)", async () => {
     listTtsDraftVoicesMock.mockImplementationOnce(async () => ({ voices: [], capabilities: { supportsCloning: false } }));
     const tts = viewTts({
-      form: {
+      form: asForm({
         id: null,
         name: "EL",
-        backend: TTS_BACKEND.ElevenLabs as never,
+        backend: TTS_BACKEND.ElevenLabs,
         config: { apiKey: "k" },
         voiceId: "",
-      } as never,
+      }),
     });
-    const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
+    const view = renderEditor(React.createElement(TtsProfileEditor, { tts }));
     const input = await waitFor(() => view.getByTestId("tts-voice-input") as HTMLInputElement, { timeout: 2500 });
     expect(input.placeholder).toBe("tts_field_voice_manual_placeholder");
     cleanup();
@@ -834,15 +833,15 @@ describe("TtsProfileEditor — F6 sliders + voice placeholders", () => {
   it("null voices (no endpoint / empty library, non-clone-capable) → manual input floor, NO red error (TPE-12: null is not a failure)", async () => {
     listTtsDraftVoicesMock.mockImplementationOnce(async () => ({ voices: null, capabilities: { supportsCloning: false } }));
     const tts = viewTts({
-      form: {
+      form: asForm({
         id: null,
         name: "Dead",
-        backend: TTS_BACKEND.OpenAiCompatible as never,
+        backend: TTS_BACKEND.OpenAiCompatible,
         config: { endpoint: "https://dead.example/v1", apiKey: "k" },
         voiceId: "",
-      } as never,
+      }),
     });
-    const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
+    const view = renderEditor(React.createElement(TtsProfileEditor, { tts }));
     const input = await waitFor(() => view.getByTestId("tts-voice-input") as HTMLInputElement, { timeout: 2500 });
     // Owner 2026-09-05 (TPE-12): null voices is never a load failure — the
     // manual floor stays, the red error is reserved for transport rejections
@@ -857,9 +856,9 @@ describe("TtsProfileEditor — F6 sliders + voice placeholders", () => {
 
   it("kokoro voice select placeholder is the neutral field label (no example id)", async () => {
     const tts = viewTts({
-      form: { id: null, name: "Koko", backend: TTS_BACKEND.Kokoro as never, config: {}, apiKey: "", providerRef: null, voiceId: "" } as never,
+      form: asForm({ id: null, name: "Koko", backend: TTS_BACKEND.Kokoro, config: {}, apiKey: "", providerRef: null, voiceId: "" }),
     });
-    const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
+    const view = renderEditor(React.createElement(TtsProfileEditor, { tts }));
     const trigger = view.getByTestId("tts-voice-select") as HTMLElement;
     expect(trigger.textContent).toContain("tts_field_voice");
     expect(trigger.textContent).not.toContain("af_heart");
@@ -868,9 +867,9 @@ describe("TtsProfileEditor — F6 sliders + voice placeholders", () => {
 
   it("narrator row renders with — none — selected by default (kokoro)", async () => {
     const tts = viewTts({
-      form: { id: null, name: "Koko", backend: TTS_BACKEND.Kokoro as never, config: {}, apiKey: "", providerRef: null, voiceId: "af_heart", narratorVoiceId: "" } as never,
+      form: asForm({ id: null, name: "Koko", backend: TTS_BACKEND.Kokoro, config: {}, apiKey: "", providerRef: null, voiceId: "af_heart", narratorVoiceId: "" }),
     });
-    const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
+    const view = renderEditor(React.createElement(TtsProfileEditor, { tts }));
     expect(view.getByText("tts_field_narrator_voice")).toBeTruthy();
     const trigger = view.getByTestId("tts-narrator-voice-select") as HTMLElement;
     expect(trigger.textContent).toContain("tts_field_narrator_voice_none");
@@ -880,16 +879,16 @@ describe("TtsProfileEditor — F6 sliders + voice placeholders", () => {
 
   it("narrator row renders for server backend with voices list (none option + voices)", async () => {
     const tts = viewTts({
-      form: {
+      form: asForm({
         id: null,
         name: "Open",
-        backend: TTS_BACKEND.OpenAiCompatible as never,
+        backend: TTS_BACKEND.OpenAiCompatible,
         config: { endpoint: "https://x", apiKey: "k" },
         voiceId: "alloy",
         narratorVoiceId: "",
-      } as never,
+      }),
     });
-    const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
+    const view = renderEditor(React.createElement(TtsProfileEditor, { tts }));
     // Wait for draft voices to load
     await waitFor(() => expect(view.getByTestId("tts-narrator-voice-select")).toBeTruthy(), { timeout: 2500 });
     const trigger = view.getByTestId("tts-narrator-voice-select") as HTMLElement;
@@ -909,9 +908,9 @@ describe("TtsProfileEditor — F6 sliders + voice placeholders", () => {
     const setForm = mock(() => {});
     const tts = viewTts({
       setForm,
-      form: { id: null, name: "Koko", backend: TTS_BACKEND.Kokoro as never, config: {}, apiKey: "", providerRef: null, voiceId: "af_heart", narratorVoiceId: "" } as never,
+      form: asForm({ id: null, name: "Koko", backend: TTS_BACKEND.Kokoro, config: {}, apiKey: "", providerRef: null, voiceId: "af_heart", narratorVoiceId: "" }),
     });
-    const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
+    const view = renderEditor(React.createElement(TtsProfileEditor, { tts }));
     const trigger = view.getByTestId("tts-narrator-voice-select") as HTMLElement;
     fireEvent.click(trigger);
     await waitFor(() => {
@@ -942,16 +941,16 @@ describe("TtsProfileEditor — F6 sliders + voice placeholders", () => {
   it("narrator manual input shown when server voices unavailable", async () => {
     listTtsDraftVoicesMock.mockImplementationOnce(async () => ({ voices: null, capabilities: { supportsCloning: false } }));
     const tts = viewTts({
-      form: {
+      form: asForm({
         id: null,
         name: "Dead",
-        backend: TTS_BACKEND.OpenAiCompatible as never,
+        backend: TTS_BACKEND.OpenAiCompatible,
         config: { endpoint: "https://dead.example/v1", apiKey: "k" },
         voiceId: "",
         narratorVoiceId: "custom-narrator",
-      } as never,
+      }),
     });
-    const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
+    const view = renderEditor(React.createElement(TtsProfileEditor, { tts }));
     const input = await waitFor(() => view.getByTestId("tts-narrator-voice-input") as HTMLInputElement, { timeout: 2500 });
     expect(input.value).toBe("custom-narrator");
     expect(input.placeholder).toBe("tts_field_narrator_voice_none");
@@ -973,18 +972,18 @@ describe("TtsProfileEditor — TE2-8 provider form fork", () => {
   it("re-open: preset config → Cloud with that preset selected", async () => {
     const tts = makeTts({
       profiles: [],
-      form: {
+      form: asForm({
         id: "p1",
         name: "P",
-        backend: TTS_BACKEND.OpenAiCompatible as never,
+        backend: TTS_BACKEND.OpenAiCompatible,
         config: { preset: "openai", endpoint: "https://api.openai.com/v1" },
         voiceId: "alloy",
         narratorVoiceId: "",
-      } as never,
+      }),
     });
     let view!: ReturnType<typeof render>;
     await act(async () => {
-      view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
+      view = renderEditor(React.createElement(TtsProfileEditor, { tts }));
     });
     expect(checkedSegment(view)).toContain("Cloud");
     // Preset endpoint readonly shows the preset baseUrl
@@ -999,20 +998,20 @@ describe("TtsProfileEditor — TE2-8 provider form fork", () => {
   it("D15: applying a preset stamps modelFilter into the config (openrouter → modality)", async () => {
     const tts = makeTts({
       profiles: [],
-      form: {
+      form: asForm({
         id: "p1",
         name: "P",
-        backend: TTS_BACKEND.OpenAiCompatible as never,
+        backend: TTS_BACKEND.OpenAiCompatible,
         config: { preset: "openai", endpoint: "https://api.openai.com/v1" },
         voiceId: "alloy",
         narratorVoiceId: "",
-      } as never,
+      }),
     });
     const calls: Array<Partial<TtsProfileForm>> = [];
     tts.setForm = (patch) => calls.push(patch);
     let view!: ReturnType<typeof render>;
     await act(async () => {
-      view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
+      view = renderEditor(React.createElement(TtsProfileEditor, { tts }));
     });
     // api_format dropdown → OpenRouter option
     const fmtTrigger = Array.from(view.container.querySelectorAll("button")).find((b) => b.textContent?.includes("OpenAI"));
@@ -1038,7 +1037,7 @@ describe("TtsProfileEditor — TE2-8 provider form fork", () => {
     // mapping; this pins every native row end-to-end through the dropdown.
     const calls: Array<{ backend?: string; config?: Record<string, unknown> }> = [];
     const tts = makeTts({
-      form: { id: "p1", name: "P", backend: TTS_BACKEND.Gemini as never, config: {}, apiKey: "", providerRef: null, voiceId: "", narratorVoiceId: "" } as never,
+      form: asForm({ id: "p1", name: "P", backend: TTS_BACKEND.Gemini, config: {}, apiKey: "", providerRef: null, voiceId: "", narratorVoiceId: "" }),
       setForm: mock((patch: { backend?: string; config?: Record<string, unknown> }) => {
         calls.push(patch);
       }),
@@ -1055,7 +1054,7 @@ describe("TtsProfileEditor — TE2-8 provider form fork", () => {
     ];
     let view!: ReturnType<typeof render>;
     await act(async () => {
-      view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
+      view = renderEditor(React.createElement(TtsProfileEditor, { tts }));
     });
     // `calls` records EVERY form patch — async follow-ups (e.g. a voices
     // refresh) can land AFTER the preset patch and become the array tail on
@@ -1086,18 +1085,18 @@ describe("TtsProfileEditor — TE2-8 provider form fork", () => {
 
   it("re-open: bare endpoint (no preset) → Custom", async () => {
     const tts = makeTts({
-      form: {
+      form: asForm({
         id: "p1",
         name: "P",
-        backend: TTS_BACKEND.OpenAiCompatible as never,
+        backend: TTS_BACKEND.OpenAiCompatible,
         config: { endpoint: "https://custom.example/v1" },
         voiceId: "alloy",
         narratorVoiceId: "",
-      } as never,
+      }),
     });
     let view!: ReturnType<typeof render>;
     await act(async () => {
-      view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
+      view = renderEditor(React.createElement(TtsProfileEditor, { tts }));
     });
     expect(checkedSegment(view).toLowerCase()).toContain("custom");
     const input = view.getByTestId("tts-field-endpoint") as HTMLInputElement;
@@ -1107,20 +1106,20 @@ describe("TtsProfileEditor — TE2-8 provider form fork", () => {
 
   it("re-open: kokoro backend → Browser (no connection card)", async () => {
     const tts = viewTts({
-      form: { id: "p1", name: "P", backend: TTS_BACKEND.Kokoro as never, config: {}, apiKey: "", providerRef: null, voiceId: "af_heart", narratorVoiceId: "" } as never,
+      form: asForm({ id: "p1", name: "P", backend: TTS_BACKEND.Kokoro, config: {}, apiKey: "", providerRef: null, voiceId: "af_heart", narratorVoiceId: "" }),
     });
     let view!: ReturnType<typeof render>;
     await act(async () => {
-      view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
+      view = renderEditor(React.createElement(TtsProfileEditor, { tts }));
     });
     // View mode: base card + no connection card (kokoro is browser-local).
     expect(view.getByTestId("tts-base-card")).toBeTruthy();
     expect(view.queryByTestId("tts-field-model")).toBeNull();
     // Segment state is pinned on the edit screen.
     const editTts = makeTts({
-      form: { id: "p1", name: "P", backend: TTS_BACKEND.Kokoro as never, config: {}, apiKey: "", providerRef: null, voiceId: "af_heart", narratorVoiceId: "" } as never,
+      form: asForm({ id: "p1", name: "P", backend: TTS_BACKEND.Kokoro, config: {}, apiKey: "", providerRef: null, voiceId: "af_heart", narratorVoiceId: "" }),
     });
-    const editView = renderEditor(React.createElement(TtsProfileEditor as never, { tts: editTts } as never));
+    const editView = renderEditor(React.createElement(TtsProfileEditor, { tts: editTts }));
     expect(checkedSegment(editView).toLowerCase()).toContain("tts_segment_browser");
     expect(checkedSegment(editView).toLowerCase()).not.toContain("custom");
     cleanup();
@@ -1128,11 +1127,11 @@ describe("TtsProfileEditor — TE2-8 provider form fork", () => {
 
   it("re-open: gemini backend without preset → Native (SPE-8: natives are their own segment)", async () => {
     const tts = makeTts({
-      form: { id: "p1", name: "P", backend: TTS_BACKEND.Gemini as never, config: { apiKey: "k" }, apiKey: "", providerRef: null, voiceId: "", narratorVoiceId: "" } as never,
+      form: asForm({ id: "p1", name: "P", backend: TTS_BACKEND.Gemini, config: { apiKey: "k" }, apiKey: "", providerRef: null, voiceId: "", narratorVoiceId: "" }),
     });
     let view!: ReturnType<typeof render>;
     await act(async () => {
-      view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
+      view = renderEditor(React.createElement(TtsProfileEditor, { tts }));
     });
     expect(checkedSegment(view)).toContain("Native");
     cleanup();
@@ -1140,11 +1139,11 @@ describe("TtsProfileEditor — TE2-8 provider form fork", () => {
 
   it("re-open: elevenlabs backend without preset → Native", async () => {
     const tts = makeTts({
-      form: { id: "p1", name: "P", backend: TTS_BACKEND.ElevenLabs as never, config: { apiKey: "k" }, apiKey: "", providerRef: null, voiceId: "", narratorVoiceId: "" } as never,
+      form: asForm({ id: "p1", name: "P", backend: TTS_BACKEND.ElevenLabs, config: { apiKey: "k" }, apiKey: "", providerRef: null, voiceId: "", narratorVoiceId: "" }),
     });
     let view!: ReturnType<typeof render>;
     await act(async () => {
-      view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
+      view = renderEditor(React.createElement(TtsProfileEditor, { tts }));
     });
     expect(checkedSegment(view)).toContain("Native");
     cleanup();
@@ -1152,11 +1151,11 @@ describe("TtsProfileEditor — TE2-8 provider form fork", () => {
 
   it("re-open: gemini WITH a native preset → Native with that preset selected", async () => {
     const tts = makeTts({
-      form: { id: "p1", name: "P", backend: TTS_BACKEND.Gemini as never, config: { preset: "gemini" }, apiKey: "", providerRef: null, voiceId: "", narratorVoiceId: "" } as never,
+      form: asForm({ id: "p1", name: "P", backend: TTS_BACKEND.Gemini, config: { preset: "gemini" }, apiKey: "", providerRef: null, voiceId: "", narratorVoiceId: "" }),
     });
     let view!: ReturnType<typeof render>;
     await act(async () => {
-      view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
+      view = renderEditor(React.createElement(TtsProfileEditor, { tts }));
     });
     expect(checkedSegment(view)).toContain("Native");
     expect(view.container.textContent ?? "").toContain("Gemini");
@@ -1165,11 +1164,11 @@ describe("TtsProfileEditor — TE2-8 provider form fork", () => {
 
   it("native segment: the preset dropdown offers native rows only (no cloud transports)", async () => {
     const tts = makeTts({
-      form: { id: "p1", name: "P", backend: TTS_BACKEND.Gemini as never, config: {}, apiKey: "", providerRef: null, voiceId: "", narratorVoiceId: "" } as never,
+      form: asForm({ id: "p1", name: "P", backend: TTS_BACKEND.Gemini, config: {}, apiKey: "", providerRef: null, voiceId: "", narratorVoiceId: "" }),
     });
     let view!: ReturnType<typeof render>;
     await act(async () => {
-      view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
+      view = renderEditor(React.createElement(TtsProfileEditor, { tts }));
     });
     expect(checkedSegment(view)).toContain("Native");
     // The preset trigger shows the "custom" placeholder (no stored preset);
@@ -1191,12 +1190,12 @@ describe("TtsProfileEditor — TE2-8 provider form fork", () => {
   });
 
   it("duplicate-name warning renders for a colliding profile name", async () => {
-    const profiles = [{ id: "other", name: "Alpha", backend: TTS_BACKEND.Kokoro, config: {}, apiKey: "", providerRef: null, voiceId: "", narratorVoiceId: null, hasStoredApiKey: false, lang: "en", sortOrder: 0, isDefault: false, createdAt: "", updatedAt: "" } as never];
+    const profiles: TtsProfileRecord[] = [{ id: "other", name: "Alpha", backend: TTS_BACKEND.Kokoro, config: {}, providerRef: null, autoKeyProviderName: null, voiceId: "", narratorVoiceId: null, hasStoredApiKey: false, lang: "en", sortOrder: 0, isDefault: false, createdAt: "", updatedAt: "" }];
     const tts = makeTts({
       profiles,
-      form: { id: "p1", name: "Alpha", backend: TTS_BACKEND.Kokoro as never, config: {}, apiKey: "", providerRef: null, voiceId: "" } as never,
+      form: asForm({ id: "p1", name: "Alpha", backend: TTS_BACKEND.Kokoro, config: {}, apiKey: "", providerRef: null, voiceId: "" }),
     });
-    const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
+    const view = renderEditor(React.createElement(TtsProfileEditor, { tts }));
     expect(view.getByText("profile_name_exists")).toBeTruthy();
     cleanup();
   });
@@ -1206,18 +1205,18 @@ describe("TtsProfileEditor — TE2-8 provider form fork", () => {
     const tts = makeTts({
       setForm,
       profiles: [],
-      form: {
+      form: asForm({
         id: "p1",
         name: "P",
-        backend: TTS_BACKEND.OpenAiCompatible as never,
+        backend: TTS_BACKEND.OpenAiCompatible,
         config: { preset: "openai", endpoint: "https://api.openai.com/v1" },
         voiceId: "alloy",
         narratorVoiceId: "",
-      } as never,
+      }),
     });
     let view!: ReturnType<typeof render>;
     await act(async () => {
-      view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
+      view = renderEditor(React.createElement(TtsProfileEditor, { tts }));
     });
     // Pick the Custom segment in the dropdown (P7: cmdk pick replaces the
     // old radio click — same boundary: segment switch resets config).
@@ -1247,25 +1246,25 @@ describe("TtsProfileEditor — TE2-8 provider form fork", () => {
 describe("TtsProfileEditor — TE2-9 test card states", () => {
   it("no-key dot when cloud needsKey and no stored key", async () => {
     const tts = makeTts({
-      form: { id: "p1", name: "P", backend: TTS_BACKEND.OpenAiCompatible as never, config: { preset: "openai", endpoint: "https://api.openai.com/v1" }, apiKey: "", providerRef: null, voiceId: "alloy", narratorVoiceId: "" } as never,
+      form: asForm({ id: "p1", name: "P", backend: TTS_BACKEND.OpenAiCompatible, config: { preset: "openai", endpoint: "https://api.openai.com/v1" }, apiKey: "", providerRef: null, voiceId: "alloy", narratorVoiceId: "" }),
     });
-    const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
+    const view = renderEditor(React.createElement(TtsProfileEditor, { tts }));
     expect(view.getByTestId("tts-test-dot-enter-key")).toBeTruthy();
     cleanup();
   });
   it("no-voice dot when voiceId empty", async () => {
     const tts = makeTts({
-      form: { id: "p1", name: "P", backend: TTS_BACKEND.Gemini as never, config: {}, apiKey: "k", providerRef: null, voiceId: "", narratorVoiceId: "" } as never,
+      form: asForm({ id: "p1", name: "P", backend: TTS_BACKEND.Gemini, config: {}, apiKey: "k", providerRef: null, voiceId: "", narratorVoiceId: "" }),
     });
-    const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
+    const view = renderEditor(React.createElement(TtsProfileEditor, { tts }));
     expect(view.getByTestId("tts-test-dot-no-voice")).toBeTruthy();
     cleanup();
   });
   it("test card shows buttons when key and voice present", async () => {
     const tts = makeTts({
-      form: { id: "p1", name: "P", backend: TTS_BACKEND.Gemini as never, config: { model: "m" }, apiKey: "k", providerRef: null, voiceId: "Kore", narratorVoiceId: "" } as never,
+      form: asForm({ id: "p1", name: "P", backend: TTS_BACKEND.Gemini, config: { model: "m" }, apiKey: "k", providerRef: null, voiceId: "Kore", narratorVoiceId: "" }),
     });
-    const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
+    const view = renderEditor(React.createElement(TtsProfileEditor, { tts }));
     expect(view.getByTestId("tts-test-connection-btn")).toBeTruthy();
     expect(view.getByTestId("tts-test-preview-btn")).toBeTruthy();
     cleanup();
@@ -1273,8 +1272,8 @@ describe("TtsProfileEditor — TE2-9 test card states", () => {
 });
 
 describe("TtsProfileEditor — TE2-10 view mode (LLM headerMode mechanism)", () => {
-  function collapsedTts(overrides: Partial<TtsHook> = {}): TtsHook {
-    const profiles = [
+  function collapsedTts(overrides: TtsOverrides = {}): TtsHook {
+    const profiles: TtsProfileRecord[] = [
       {
         id: "p1",
         name: "Kokoro Voice",
@@ -1284,12 +1283,13 @@ describe("TtsProfileEditor — TE2-10 view mode (LLM headerMode mechanism)", () 
         narratorVoiceId: null,
         hasStoredApiKey: false,
         providerRef: null,
+        autoKeyProviderName: null,
         lang: "en",
         sortOrder: 0,
         isDefault: false,
         createdAt: "",
         updatedAt: "",
-      } as never,
+      },
       {
         id: "p2",
         name: "Default Gem",
@@ -1299,12 +1299,13 @@ describe("TtsProfileEditor — TE2-10 view mode (LLM headerMode mechanism)", () 
         narratorVoiceId: null,
         hasStoredApiKey: true,
         providerRef: null,
+        autoKeyProviderName: null,
         lang: "en",
         sortOrder: 1,
         isDefault: true,
         createdAt: "",
         updatedAt: "",
-      } as never,
+      },
     ];
     const base: TtsHook = {
       profiles,
@@ -1338,18 +1339,15 @@ describe("TtsProfileEditor — TE2-10 view mode (LLM headerMode mechanism)", () 
       draftAutoKeyProviderName: null,
       defaultProfileId: null,
     };
-    const merged = { ...base, ...overrides };
-    if (overrides.form !== undefined) {
-      (merged as { form: unknown }).form = normalizeForm(overrides.form as Record<string, unknown> | null);
-    }
-    return merged;
+    const form = overrides.form === undefined ? base.form : overrides.form === null ? null : asForm(overrides.form);
+    return { ...base, ...overrides, form };
   }
 
   it("collapsed keeps voices, speed and bindings visible (plan row)", async () => {
     const tts = collapsedTts();
     let view!: ReturnType<typeof render>;
     await act(async () => {
-      view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
+      view = renderEditor(React.createElement(TtsProfileEditor, { tts }));
     });
     expect(view.getByTestId("tts-base-card")).toBeTruthy();
     expect(view.getByTestId("tts-voice-section")).toBeTruthy();
@@ -1364,7 +1362,7 @@ describe("TtsProfileEditor — TE2-10 view mode (LLM headerMode mechanism)", () 
     const startEdit = mock(() => {});
     const setDefault = mock(async () => {});
     const tts = collapsedTts({ startEdit, setDefault });
-    const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
+    const view = renderEditor(React.createElement(TtsProfileEditor, { tts }));
     expect(view.getByTestId("tts-base-card")).toBeTruthy();
     expect(view.getByTestId("tts-base-card-name").textContent).toContain("Kokoro Voice");
     expect(view.getByTestId("tts-base-card-status")).toBeTruthy();
@@ -1393,7 +1391,7 @@ describe("TtsProfileEditor — TE2-10 view mode (LLM headerMode mechanism)", () 
   });
 
   it("collapsed when already default: default button disabled and shows tts_is_default", async () => {
-    const profiles = [
+    const profiles: TtsProfileRecord[] = [
       {
         id: "p1",
         name: "Default Voice",
@@ -1403,17 +1401,18 @@ describe("TtsProfileEditor — TE2-10 view mode (LLM headerMode mechanism)", () 
         narratorVoiceId: null,
         hasStoredApiKey: false,
         providerRef: null,
+        autoKeyProviderName: null,
         lang: "en",
         sortOrder: 0,
         isDefault: true,
         createdAt: "",
         updatedAt: "",
-      } as never,
+      },
     ];
     const tts = collapsedTts({
       profiles,
-      editingId: "p1" as never,
-      form: {
+      editingId: "p1",
+      form: asForm({
         id: "p1",
         name: "Default Voice",
         backend: TTS_BACKEND.Kokoro,
@@ -1421,9 +1420,9 @@ describe("TtsProfileEditor — TE2-10 view mode (LLM headerMode mechanism)", () 
         voiceId: "af_heart",
         narratorVoiceId: "",
         hasStoredApiKey: false,
-      } as never,
+      }),
     });
-    const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
+    const view = renderEditor(React.createElement(TtsProfileEditor, { tts }));
     const btn = view.getByTestId("tts-base-card-default-btn") as HTMLButtonElement;
     expect(btn.disabled).toBe(true);
     expect(btn.textContent).toContain("tts_is_default");
@@ -1433,7 +1432,7 @@ describe("TtsProfileEditor — TE2-10 view mode (LLM headerMode mechanism)", () 
   it("Edit settings click calls startEdit", async () => {
     const startEdit = mock(() => {});
     const tts = collapsedTts({ startEdit });
-    const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
+    const view = renderEditor(React.createElement(TtsProfileEditor, { tts }));
     fireEvent.click(view.getByTestId("tts-base-card-edit-btn"));
     expect(startEdit).toHaveBeenCalled();
     cleanup();
@@ -1441,8 +1440,8 @@ describe("TtsProfileEditor — TE2-10 view mode (LLM headerMode mechanism)", () 
 
   it("edit screen shows ONLY the connection form — no voices/tuning/bindings (LLM mechanism)", async () => {
     const setForm = mock(() => {});
-    const tts = collapsedTts({ headerMode: "edit" as never, setForm });
-    const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
+    const tts = collapsedTts({ headerMode: "edit", setForm });
+    const view = renderEditor(React.createElement(TtsProfileEditor, { tts }));
     // The connection form is the whole edit screen.
     expect(view.getByTestId("tts-profile-name-input")).toBeTruthy();
     // Config sections do NOT render on the edit screen.
@@ -1461,7 +1460,7 @@ describe("TtsProfileEditor — TE2-10 view mode (LLM headerMode mechanism)", () 
 
   it("view mode: connection form not in DOM, base card present", async () => {
     const tts = collapsedTts({});
-    const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
+    const view = renderEditor(React.createElement(TtsProfileEditor, { tts }));
     expect(view.queryByTestId("tts-profile-name-input")).toBeNull();
     expect(view.getByTestId("tts-base-card")).toBeTruthy();
     cleanup();
@@ -1470,7 +1469,7 @@ describe("TtsProfileEditor — TE2-10 view mode (LLM headerMode mechanism)", () 
   it("default button click calls setDefault with the saved profile id", async () => {
     const setDefault = mock(async () => {});
     const tts = collapsedTts({ setDefault });
-    const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
+    const view = renderEditor(React.createElement(TtsProfileEditor, { tts }));
     fireEvent.click(view.getByTestId("tts-base-card-default-btn"));
     expect(setDefault).toHaveBeenCalled();
     const arg = (setDefault.mock.calls[0] as unknown[])[0] as string;
@@ -1482,9 +1481,9 @@ describe("TtsProfileEditor — TE2-10 view mode (LLM headerMode mechanism)", () 
     const { __setTtsPreviewDepsForTests } = await import("../../../../hooks/use-tts-preview.js");
     const synthesize = mock(async () => ({ blob: new Blob(["x"], { type: "audio/mpeg" }), mime: "audio/mpeg" }));
     const play = mock(async () => {});
-    __setTtsPreviewDepsForTests({ synthesize: synthesize as never, play: play as never });
+    __setTtsPreviewDepsForTests({ synthesize, play });
     const tts = collapsedTts({});
-    const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
+    const view = renderEditor(React.createElement(TtsProfileEditor, { tts }));
     // D18: the trigger is the voice-section listen button now (kokoro voiceId af_heart → enabled).
     const btn = view.getByTestId("tts-preview-btn") as HTMLButtonElement;
     expect(btn.disabled).toBe(false);
@@ -1500,11 +1499,11 @@ describe("TtsProfileEditor — TE2-10 view mode (LLM headerMode mechanism)", () 
   it("status line for kokoro shows tts_kokoro_model_ready, for cloud with key shows api_key_saved", async () => {
     // Kokoro -> model ready
     const ttsKokoro = collapsedTts({});
-    const view1 = renderEditor(React.createElement(TtsProfileEditor as never, { tts: ttsKokoro } as never));
+    const view1 = renderEditor(React.createElement(TtsProfileEditor, { tts: ttsKokoro }));
     expect(view1.getByTestId("tts-base-card-status").textContent).toContain("tts_kokoro_model_ready");
     cleanup();
     // Cloud gemini with stored key -> api_key_saved
-    const profiles = [
+    const profiles: TtsProfileRecord[] = [
       {
         id: "p1",
         name: "Gemini Voice",
@@ -1514,16 +1513,17 @@ describe("TtsProfileEditor — TE2-10 view mode (LLM headerMode mechanism)", () 
         narratorVoiceId: null,
         hasStoredApiKey: true,
         providerRef: null,
+        autoKeyProviderName: null,
         lang: "en",
         sortOrder: 0,
         isDefault: false,
         createdAt: "",
         updatedAt: "",
-      } as never,
+      },
     ];
     const ttsGem = collapsedTts({
       profiles,
-      form: {
+      form: asForm({
         id: "p1",
         name: "Gemini Voice",
         backend: TTS_BACKEND.Gemini,
@@ -1531,17 +1531,17 @@ describe("TtsProfileEditor — TE2-10 view mode (LLM headerMode mechanism)", () 
         voiceId: "Kore",
         narratorVoiceId: "",
         hasStoredApiKey: true,
-      } as never,
-      editingId: "p1" as never,
+      }),
+      editingId: "p1",
     });
-    const view2 = renderEditor(React.createElement(TtsProfileEditor as never, { tts: ttsGem } as never));
+    const view2 = renderEditor(React.createElement(TtsProfileEditor, { tts: ttsGem }));
     expect(view2.getByTestId("tts-base-card-status").textContent).toContain("api_key_saved");
     cleanup();
   });
 
   it("bindings stay visible below the collapsed card", async () => {
     const tts = collapsedTts({});
-    const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
+    const view = renderEditor(React.createElement(TtsProfileEditor, { tts }));
     // Bindings are rendered by TtsBindingFields when form.id !== null — should still be there when collapsed
     // The bindings card renders with at least the bind section visible for default profiles or fallback
     // For kokoro non-default, mute section hidden but bind section hidden as well? We at least check the voice tuning card is there
@@ -1553,9 +1553,9 @@ describe("TtsProfileEditor — TE2-10 view mode (LLM headerMode mechanism)", () 
 describe("TtsProfileEditor — TE2-12 tuning accordion + toggle-card", () => {
   it("tuning accordion is closed by default, opens on toggle click → sliders reachable; the listen button stays OUTSIDE (D18)", async () => {
     const tts = viewTts({
-      form: { id: "p1", name: "Kokoro", backend: TTS_BACKEND.Kokoro as never, config: {}, apiKey: "", providerRef: null, voiceId: "af_heart" } as never,
+      form: asForm({ id: "p1", name: "Kokoro", backend: TTS_BACKEND.Kokoro, config: {}, apiKey: "", providerRef: null, voiceId: "af_heart" }),
     });
-    const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
+    const view = renderEditor(React.createElement(TtsProfileEditor, { tts }));
     expect(view.getByTestId("tts-tuning-accordion")).toBeTruthy();
     expect(view.getByTestId("tts-tuning-accordion-toggle")).toBeTruthy();
     // Closed by default — tuning fields hidden (progressive disclosure)…
@@ -1577,15 +1577,15 @@ describe("TtsProfileEditor — TE2-12 tuning accordion + toggle-card", () => {
 
   it("D18 gate: the listen button is disabled while no voice is chosen (no voiceId → server 500)", () => {
     const tts = viewTts({
-      form: {
+      form: asForm({
         id: "p1",
         name: "Open",
-        backend: TTS_BACKEND.OpenAiCompatible as never,
+        backend: TTS_BACKEND.OpenAiCompatible,
         config: { endpoint: "https://x/v1", apiKey: "k", model: "m" },
         voiceId: "",
-      } as never,
+      }),
     });
-    const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
+    const view = renderEditor(React.createElement(TtsProfileEditor, { tts }));
     const btn = view.getByTestId("tts-preview-btn") as HTMLButtonElement;
     expect(btn.disabled).toBe(true);
     cleanup();
@@ -1593,15 +1593,15 @@ describe("TtsProfileEditor — TE2-12 tuning accordion + toggle-card", () => {
 
   it("toggle-card renders with title + Toggle for a toggle-kind field (elevenlabs useSpeakerBoost)", async () => {
     const tts = viewTts({
-      form: {
+      form: asForm({
         id: "p1",
         name: "EL",
-        backend: TTS_BACKEND.ElevenLabs as never,
+        backend: TTS_BACKEND.ElevenLabs,
         config: { apiKey: "k", modelId: "eleven_multilingual_v2", useSpeakerBoost: true, speed: 1 },
         voiceId: "JBFqnCBsd6RMkjVDRZzb",
-      } as never,
+      }),
     });
-    const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
+    const view = renderEditor(React.createElement(TtsProfileEditor, { tts }));
     fireEvent.click(view.getByTestId("tts-tuning-accordion-toggle"));
     await waitFor(() => expect(view.getByTestId("tts-tuning-accordion-body")).toBeTruthy());
     const card = view.getByTestId("tts-toggle-card-useSpeakerBoost");
@@ -1620,7 +1620,7 @@ describe("TtsProfileEditor — TE2-12 tuning accordion + toggle-card", () => {
   });
 
   it("collapsed view also has tuning accordion (closed by default, toggle-card reachable)", async () => {
-    const profiles = [
+    const profiles: TtsProfileRecord[] = [
       {
         id: "p1",
         name: "EL Voice",
@@ -1630,28 +1630,29 @@ describe("TtsProfileEditor — TE2-12 tuning accordion + toggle-card", () => {
         narratorVoiceId: null,
         hasStoredApiKey: true,
         providerRef: null,
+        autoKeyProviderName: null,
         lang: "en",
         sortOrder: 0,
         isDefault: false,
         createdAt: "",
         updatedAt: "",
-      } as never,
+      },
     ];
     const tts: TtsHook = {
       profiles,
       loading: false,
       editingId: "p1",
-      form: {
+      form: asForm({
         id: "p1",
         name: "EL Voice",
-        backend: TTS_BACKEND.ElevenLabs as never,
+        backend: TTS_BACKEND.ElevenLabs,
         config: { modelId: "eleven_multilingual_v2", useSpeakerBoost: false, speed: 1 },
         apiKey: "",
         providerRef: null,
         voiceId: "JBFqnCBsd6RMkjVDRZzb",
         narratorVoiceId: "",
         hasStoredApiKey: true,
-      } as never,
+      }),
       dirty: false,
       error: null,
       saving: false,
@@ -1668,7 +1669,7 @@ describe("TtsProfileEditor — TE2-12 tuning accordion + toggle-card", () => {
       draftAutoKeyProviderName: null,
       defaultProfileId: null,
     };
-    const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
+    const view = renderEditor(React.createElement(TtsProfileEditor, { tts }));
     expect(view.getByTestId("tts-base-card")).toBeTruthy();
     expect(view.getByTestId("tts-tuning-accordion")).toBeTruthy();
     expect(view.queryByTestId("tts-tuning-accordion-body")).toBeNull();
@@ -1685,23 +1686,20 @@ describe("TtsProfileEditor — TE2-12 tuning accordion + toggle-card", () => {
 // manual linking); the user only overrides by typing an own key.
 
 describe("TTS editor — auto key hint + gate (D16)", () => {
-  const orForm = (extra: Record<string, unknown> = {}) =>
-    ({
+  const orForm = (extra: Partial<TtsProfileForm> = {}) =>
+    asForm({
       id: "p1",
       name: "OR",
-      backend: TTS_BACKEND.OpenAiCompatible as never,
+      backend: TTS_BACKEND.OpenAiCompatible,
       config: { endpoint: "https://openrouter.ai/api/v1", model: "deepgram/flux-tts" },
-      apiKey: "",
-      providerRef: null,
       autoKeyProviderName: "LLM Hub",
-      hasStoredApiKey: false,
       voiceId: "",
       ...extra,
-    }) as never;
+    });
 
   it("key field shows the provider-key hint when no own/stored key exists", () => {
     const tts = makeTts({ form: orForm() });
-    const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
+    const view = renderEditor(React.createElement(TtsProfileEditor, { tts }));
     expect(view.getByTestId("tts-key-source-hint").textContent).toContain("tts_key_from_provider_hint");
     cleanup();
   });
@@ -1710,26 +1708,26 @@ describe("TTS editor — auto key hint + gate (D16)", () => {
     // A brand-new draft has autoKeyProviderName null — the old behavior hid
     // the hint until save. The hook's client-side mirror feeds the form now.
     const tts = makeTts({ form: orForm({ autoKeyProviderName: null, id: null }), draftAutoKeyProviderName: "NanoLLM" });
-    const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
+    const view = renderEditor(React.createElement(TtsProfileEditor, { tts }));
     expect(view.getByTestId("tts-key-source-hint").textContent).toContain("tts_key_from_provider_hint");
   });
 
   it("no hint once an own key is typed (own beats the auto key)", () => {
     const tts = makeTts({ form: orForm({ apiKey: "sk-own" }) });
-    const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
+    const view = renderEditor(React.createElement(TtsProfileEditor, { tts }));
     expect(view.queryByTestId("tts-key-source-hint")).toBeNull();
     cleanup();
   });
 
   it("test-card gate passes with an auto key instead of demanding one", () => {
     const autoTts = makeTts({ form: orForm({ voiceId: "alloy" }) });
-    const autoView = renderEditor(React.createElement(TtsProfileEditor as never, { tts: autoTts } as never));
+    const autoView = renderEditor(React.createElement(TtsProfileEditor, { tts: autoTts }));
     expect(autoView.queryByTestId("tts-test-dot-enter-key")).toBeNull();
     expect(autoView.getByTestId("tts-test-connection-btn")).toBeTruthy();
     cleanup();
 
     const bareTts = makeTts({ form: orForm({ voiceId: "alloy", autoKeyProviderName: null }) });
-    const bareView = renderEditor(React.createElement(TtsProfileEditor as never, { tts: bareTts } as never));
+    const bareView = renderEditor(React.createElement(TtsProfileEditor, { tts: bareTts }));
     expect(bareView.getByTestId("tts-test-dot-enter-key")).toBeTruthy();
     cleanup();
   });
@@ -1739,7 +1737,7 @@ describe("TTS editor — auto key hint + gate (D16)", () => {
     // 2026-10-15): was "base card status row names the auto-key provider";
     // the hint now lives only in the editor form.
     const tts = viewTts({ form: orForm({ id: "p1", voiceId: "alloy" }) });
-    const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
+    const view = renderEditor(React.createElement(TtsProfileEditor, { tts }));
     expect(view.queryByTestId("tts-key-source-hint")).toBeNull();
     const status = view.getByTestId("tts-base-card-status").textContent ?? "";
     expect(status).toContain("api_key_saved");
@@ -1750,18 +1748,18 @@ describe("TTS editor — auto key hint + gate (D16)", () => {
 
 // ── Voice cloning section (TPE-3, clone field design agreed 2026-08-31) ─────
 describe("TtsProfileEditor — voice clone section", () => {
-  const capableEnvelope = { voices: [], capabilities: { supportsCloning: true, formats: ["wav", "mp3", "flac", "m4a", "ogg"], maxSizeMb: 10 } };
+  const capableEnvelope: TtsDraftVoicesResponse = { voices: [], capabilities: { supportsCloning: true, formats: ["wav", "mp3", "flac", "m4a", "ogg"], maxSizeMb: 10 } };
   const openaiForm = {
     id: "p1",
     name: "Chatter",
-    backend: TTS_BACKEND.OpenAiCompatible as never,
+    backend: TTS_BACKEND.OpenAiCompatible,
     config: { endpoint: "http://localhost:4123/v1", apiKey: "k", model: "chatterbox-tts-1" },
     voiceId: "",
   };
 
   it("gated on capability: absent without cloning, present for a library backend even with an EMPTY voice list", async () => {
     // Base mock declares no cloning — the section must not render.
-    const view1 = renderEditor(React.createElement(TtsProfileEditor as never, { tts: viewTts({ form: { ...openaiForm } as never }) } as never));
+    const view1 = renderEditor(React.createElement(TtsProfileEditor, { tts: viewTts({ form: asForm({ ...openaiForm }) }) }));
     await view1.findByTestId("tts-voice-section");
     expect(view1.queryByTestId("tts-clone-section")).toBeNull();
     cleanup();
@@ -1771,8 +1769,8 @@ describe("TtsProfileEditor — voice clone section", () => {
     // Library-capable backend (chatterbox shape): voices EMPTY but the
     // capability rides the envelope — uploading the first voice IS the
     // feature, so the section appears under the voice picker.
-    listTtsDraftVoicesMock.mockImplementationOnce(async () => capableEnvelope as never);
-    const view2 = renderEditor(React.createElement(TtsProfileEditor as never, { tts: viewTts({ form: { ...openaiForm } as never }) } as never));
+    listTtsDraftVoicesMock.mockImplementationOnce(async () => capableEnvelope);
+    const view2 = renderEditor(React.createElement(TtsProfileEditor, { tts: viewTts({ form: asForm({ ...openaiForm }) }) }));
     const section = await view2.findByTestId("tts-clone-section", undefined, { timeout: 2500 });
     // The hint element renders (raw i18n key without a provider; formats
     // interpolation is i18n's job, pinned by i18n:check).
@@ -1788,13 +1786,13 @@ describe("TtsProfileEditor — voice clone section", () => {
     const setForm = mock(() => {});
     // Mount → capable empty library; post-clone refresh → library holds the clone.
     const callsBefore = listTtsDraftVoicesMock.mock.calls.length;
-    listTtsDraftVoicesMock.mockImplementationOnce(async () => capableEnvelope as never);
+    listTtsDraftVoicesMock.mockImplementationOnce(async () => capableEnvelope);
     listTtsDraftVoicesMock.mockImplementationOnce(async () => ({
       voices: [{ id: "my-voice", label: "my-voice", lang: "en" }],
       capabilities: { supportsCloning: true },
-    }) as never);
+    }));
 
-    const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts: viewTts({ form: { ...openaiForm } as never, setForm }) } as never));
+    const view = renderEditor(React.createElement(TtsProfileEditor, { tts: viewTts({ form: asForm({ ...openaiForm }), setForm }) }));
     await view.findByTestId("tts-clone-section", undefined, { timeout: 2500 });
 
     // 1) No name → inline error, no upload.
@@ -1848,7 +1846,7 @@ describe("TtsProfileEditor — voice clone section", () => {
     const setForm = mock(() => {});
     // Phase-based stub (the SF-test lesson in this file): every listVoices of
     // the mount answers the capable envelope; no Once-slots to leak forward.
-    listTtsDraftVoicesMock.mockImplementation(async () => capableEnvelope as never);
+    listTtsDraftVoicesMock.mockImplementation(async () => capableEnvelope);
 
     // Fake decode seam: every file is 4 s @ 8 kHz mono — two files = 8 s +
     // one 0.4 s gap → Σ 8.4 s (below 10 → warning must show).
@@ -1859,7 +1857,7 @@ describe("TtsProfileEditor — voice clone section", () => {
     }));
 
     try {
-      const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts: viewTts({ form: { ...openaiForm } as never, setForm }) } as never));
+      const view = renderEditor(React.createElement(TtsProfileEditor, { tts: viewTts({ form: asForm({ ...openaiForm }), setForm }) }));
       await view.findByTestId("tts-clone-section", undefined, { timeout: 2500 });
 
       const a = new File([new Uint8Array([1])], "a.mp3", { type: "audio/mpeg" });
@@ -1889,12 +1887,12 @@ describe("TtsProfileEditor — voice clone section", () => {
   });
 
   it("single-file flow unchanged: passthrough (no glue) when exactly one file is selected", async () => {
-    listTtsDraftVoicesMock.mockImplementation(async () => capableEnvelope as never);
+    listTtsDraftVoicesMock.mockImplementation(async () => capableEnvelope);
 
     const { __setGlueDecoderForTests } = await import("../../../../lib/tts/glue-voice-samples.js");
     __setGlueDecoderForTests(async () => ({ channels: [new Float32Array(32000)], sampleRate: 8000 }));
     try {
-      const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts: viewTts({ form: { ...openaiForm } as never }) } as never));
+      const view = renderEditor(React.createElement(TtsProfileEditor, { tts: viewTts({ form: asForm({ ...openaiForm }) }) }));
       await view.findByTestId("tts-clone-section", undefined, { timeout: 2500 });
 
       const audio = new File([new Uint8Array([1, 2, 3])], "solo.mp3", { type: "audio/mpeg" });
@@ -1923,10 +1921,10 @@ describe("TtsProfileEditor — voice clone section", () => {
     listTtsDraftVoicesMock.mockImplementation(async () => ({
       voices: null,
       capabilities: { supportsCloning: true, formats: ["wav", "mp3"], maxSizeMb: 10 },
-    }) as never);
+    }));
 
     try {
-      const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts: viewTts({ form: { ...openaiForm } as never }) } as never));
+      const view = renderEditor(React.createElement(TtsProfileEditor, { tts: viewTts({ form: asForm({ ...openaiForm }) }) }));
       await view.findByTestId("tts-voices-empty", undefined, { timeout: 2500 });
 
       // The empty library is NOT a failure — the red error state must stay absent.
@@ -1963,7 +1961,7 @@ describe("TtsProfileEditor — voice clone section", () => {
       throw new Error("server unreachable");
     });
     try {
-      const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts: viewTts({ form: { ...openaiForm } as never }) } as never));
+      const view = renderEditor(React.createElement(TtsProfileEditor, { tts: viewTts({ form: asForm({ ...openaiForm }) }) }));
       await view.findByTestId("tts-voice-input", undefined, { timeout: 2500 });
       expect(view.queryByTestId("tts-voices-load-error")).toBeNull();
       expect(view.queryByTestId("tts-voices-empty")).toBeNull();
@@ -2012,8 +2010,8 @@ describe("TtsProfileEditor — voice clone section", () => {
       ],
       capabilities: { supportsCloning: false },
     };
-    const capableNoHint = { voices: [], capabilities: { supportsCloning: true, formats: ["wav", "mp3"], maxSizeMb: 10 } };
-    const sfHint = {
+    const capableNoHint: TtsDraftVoicesResponse = { voices: [], capabilities: { supportsCloning: true, formats: ["wav", "mp3"], maxSizeMb: 10 } };
+    const sfHint: TtsDraftVoicesResponse = {
       voices: [],
       capabilities: {
         supportsCloning: true,
@@ -2024,10 +2022,10 @@ describe("TtsProfileEditor — voice clone section", () => {
       },
     };
     let sfPhase = false;
-    listTtsDraftVoicesMock.mockImplementation(async () => (sfPhase ? sfHint : capableNoHint) as never);
+    listTtsDraftVoicesMock.mockImplementation(async () => (sfPhase ? sfHint : capableNoHint));
     try {
       // Default phase (no transcript hint) → the field must NOT render.
-      const plain = renderEditor(React.createElement(TtsProfileEditor as never, { tts: viewTts({ form: { ...openaiForm } as never }) } as never));
+      const plain = renderEditor(React.createElement(TtsProfileEditor, { tts: viewTts({ form: asForm({ ...openaiForm }) }) }));
       await plain.findByTestId("tts-clone-section", undefined, { timeout: 2500 });
       expect(plain.queryByTestId("tts-clone-reference-text")).toBeNull();
       expect(plain.queryByTestId("tts-clone-hint-siliconflow")).toBeNull();
@@ -2038,7 +2036,7 @@ describe("TtsProfileEditor — voice clone section", () => {
       // SiliconFlow phase: transcript hint + caveat key ride capabilities —
       // EVERY voices answer of this mount (mount, refresh) is SF.
       sfPhase = true;
-      const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts: viewTts({ form: { ...openaiForm } as never }) } as never));
+      const view = renderEditor(React.createElement(TtsProfileEditor, { tts: viewTts({ form: asForm({ ...openaiForm }) }) }));
       await view.findByTestId("tts-clone-reference-text", undefined, { timeout: 2500 });
       expect(view.getByTestId("tts-clone-hint-siliconflow")).toBeTruthy();
 
@@ -2083,12 +2081,12 @@ describe("TtsProfileEditor — voice clone section", () => {
     // write changed the config key and re-ran the voices effect). D20 is gone,
     // so a failed clone makes exactly ONE voices call - a second slot would
     // sit unused in the queue and leak into later tests.
-    listTtsDraftVoicesMock.mockImplementationOnce(async () => capableEnvelope as never);
+    listTtsDraftVoicesMock.mockImplementationOnce(async () => capableEnvelope);
     cloneTtsVoiceMock.mockImplementationOnce(async () => {
       throw new Error("voice name already exists");
     });
 
-    const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts: viewTts({ form: { ...openaiForm } as never, setForm }) } as never));
+    const view = renderEditor(React.createElement(TtsProfileEditor, { tts: viewTts({ form: asForm({ ...openaiForm }), setForm }) }));
     await view.findByTestId("tts-clone-section", undefined, { timeout: 2500 });
     fireEvent.change(view.getByTestId("tts-clone-name"), { target: { value: "dupe" } });
     fireEvent.change(view.getByTestId("tts-clone-file"), { target: { files: [new File([new Uint8Array([1])], "s.mp3", { type: "audio/mpeg" })] } });
@@ -2365,9 +2363,9 @@ describe("TtsProfileEditor — TPE-16 playback wait-full flag (common section)",
   it("renders on kokoro AND openai-compatible forms (backend-agnostic), off by default", () => {
     for (const backend of [TTS_BACKEND.Kokoro, TTS_BACKEND.OpenAiCompatible]) {
       const tts = viewTts({
-        form: { id: "p1", name: "X", backend: backend as never, config: {}, voiceId: "v" } as never,
+        form: asForm({ id: "p1", name: "X", backend: backend, config: {}, voiceId: "v" }),
       });
-      const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
+      const view = renderEditor(React.createElement(TtsProfileEditor, { tts }));
       const card = view.getByTestId("tts-toggle-card-waitForFullGeneration");
       expect(card.textContent).toContain("tts_playback_wait_full_label");
       expect(card.textContent).toContain("tts_playback_wait_full_hint");
@@ -2381,10 +2379,10 @@ describe("TtsProfileEditor — TPE-16 playback wait-full flag (common section)",
   it("checked state reflects config; clicking writes the flag through setForm", async () => {
     const setForm = mock(() => {});
     const tts = viewTts({
-      setForm: setForm as never,
-      form: { id: "p1", name: "X", backend: TTS_BACKEND.OpenAiCompatible as never, config: { waitForFullGeneration: true }, voiceId: "v" } as never,
+      setForm,
+      form: asForm({ id: "p1", name: "X", backend: TTS_BACKEND.OpenAiCompatible, config: { waitForFullGeneration: true }, voiceId: "v" }),
     });
-    const view = renderEditor(React.createElement(TtsProfileEditor as never, { tts } as never));
+    const view = renderEditor(React.createElement(TtsProfileEditor, { tts }));
     const card = view.getByTestId("tts-toggle-card-waitForFullGeneration");
     expect((card.querySelector('[role="switch"]') as HTMLElement | null)?.getAttribute("aria-checked")).toBe("true");
     fireEvent.click(card.querySelector('[role="switch"]') as HTMLElement);
