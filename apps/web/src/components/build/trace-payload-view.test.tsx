@@ -172,7 +172,7 @@ describe("TracePayloadView (DOM)", () => {
 
 	it("renders preamble layer cards and a collapsed Chat History accordion", () => {
 		const { getByText, queryByText } = render(
-			<TracePayloadView trace={traceFixture() as never} searchQuery="" formatTokens={formatTokens} />,
+			<TracePayloadView trace={traceFixture()} searchQuery="" formatTokens={formatTokens} />,
 		);
 		// Preamble cards visible.
 		expect(getByText("System Prompt")).toBeTruthy();
@@ -186,7 +186,7 @@ describe("TracePayloadView (DOM)", () => {
 
 	it("expanding Chat History reveals the inject divider and message groups", () => {
 		const { getByText, queryByText, container } = render(
-			<TracePayloadView trace={traceFixture() as never} searchQuery="" formatTokens={formatTokens} />,
+			<TracePayloadView trace={traceFixture()} searchQuery="" formatTokens={formatTokens} />,
 		);
 		// Collapsed: divider + group content hidden.
 		expect(queryByText("Post-History Instructions")).toBeNull();
@@ -207,7 +207,7 @@ describe("TracePayloadView (DOM)", () => {
 
 	it("an inject expands to reveal its injected text", async () => {
 		const { getByText, queryByText, container } = render(
-			<TracePayloadView trace={traceFixture() as never} searchQuery="" formatTokens={formatTokens} />,
+			<TracePayloadView trace={traceFixture()} searchQuery="" formatTokens={formatTokens} />,
 		);
 		fireEvent.click(getByText("trace_chat_history"));
 		// Inject body hidden until the inject header itself is clicked.
@@ -229,7 +229,7 @@ describe("TracePayloadView (DOM)", () => {
 
 	it("a search query force-expands history, shows matching groups, and filters out non-matching injects", () => {
 		const { getByText, queryByText, container } = render(
-			<TracePayloadView trace={traceFixture() as never} searchQuery="hello" formatTokens={formatTokens} />,
+			<TracePayloadView trace={traceFixture()} searchQuery="hello" formatTokens={formatTokens} />,
 		);
 		// Search auto-expands the accordion.
 		// The inject ("Post-History Instructions" / "NOTE_TEXT") does NOT match
@@ -243,7 +243,7 @@ describe("TracePayloadView (DOM)", () => {
 
 	it("a search query matching an inject's text expands that inject", () => {
 		const { container } = render(
-			<TracePayloadView trace={traceFixture() as never} searchQuery="NOTE_TEXT" formatTokens={formatTokens} />,
+			<TracePayloadView trace={traceFixture()} searchQuery="NOTE_TEXT" formatTokens={formatTokens} />,
 		);
 		// The inject matches the query and is auto-expanded to reveal its text.
 		expect(container.textContent).toContain("NOTE_TEXT");
@@ -255,7 +255,7 @@ describe("TracePayloadView (DOM)", () => {
 			finalPayload: {},
 		};
 		const { getByText, queryByText } = render(
-			<TracePayloadView trace={trace as never} searchQuery="" formatTokens={formatTokens} />,
+			<TracePayloadView trace={trace} searchQuery="" formatTokens={formatTokens} />,
 		);
 		expect(getByText("System Prompt")).toBeTruthy();
 		// No history accordion without messages.
@@ -279,7 +279,7 @@ describe("TracePayloadView (DOM)", () => {
 			},
 		};
 		const { getByText, queryByText, container } = render(
-			<TracePayloadView trace={trace as never} searchQuery="" formatTokens={formatTokens} />,
+			<TracePayloadView trace={trace} searchQuery="" formatTokens={formatTokens} />,
 		);
 		// Collapsed header shows the card title + the merged badge (i18n key verbatim).
 		expect(getByText("Character")).toBeTruthy();
@@ -307,7 +307,7 @@ describe("TracePayloadView (DOM)", () => {
 			},
 		};
 		const { getByText, container } = render(
-			<TracePayloadView trace={trace as never} searchQuery="" formatTokens={formatTokens} />,
+			<TracePayloadView trace={trace} searchQuery="" formatTokens={formatTokens} />,
 		);
 		// Expand history, then the message group.
 		fireEvent.click(getByText("trace_chat_history"));

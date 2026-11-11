@@ -475,7 +475,54 @@ export const BUDGETS = {
 	// per-file spot runs carry identical counts before and after
 	// (9/3/4/15/1/4/8/12/22/45/2/20/6/10, 0 fail). One commit with the test
 	// edits.
-	asNever: 68,
+	// 29 (2026-11-11, step 15f): −39 — the build/experience/layout batch, the
+	// nine files 18/8/3/3/2/2/1/1/1 (ObjectiveConfig, trace-payload-view,
+	// TopBar.narrate, ScriptEditor, ExperienceAssignment, ExperienceSetupModal,
+	// CharacterForm, SceneHistoryBackfill, SetupWizard.fields). The repo
+	// remainder is apps/web 27 (a stores/lib cluster) + packages 2. THE SHAPES:
+	// ObjectiveConfig — all 17 "chat_1" props take the file's own CHAT_ID
+	// (brandId<ChatId>, already imported) and the switch-chats rerender brands
+	// its "chat_2" inline; pure value substitution, zero shape change (the
+	// prop is the branded ChatId, ObjectiveConfig.tsx:60 supervisor-verified).
+	// trace-payload-view — all 8 casts PURE DELETIONS: the fixtures already
+	// satisfy AssemblePromptResponse as written (the layer() helper returns a
+	// complete PromptLayerDto; finalPayload is Record<string, unknown> so the
+	// message rows carry no member constraint; domain api-types.ts:26).
+	// TopBar.narrate — the two createElement(TopBar, { update: null }) casts
+	// PURE DELETIONS (every TopBarProps member is optional, TopBar.tsx:27);
+	// the profile row completes through the EXISTING wireTtsProfile builder
+	// (wire-fixtures.ts:178, consumed unmodified — no new builder file) with
+	// currentData retyped to the real VoiceMapData (voice-map-data.ts:5).
+	// ScriptEditor — the three create/update/import default mocks resolve
+	// Promise<ScriptRecord>(wireScript()) instead of an erased undefined
+	// (wireScript already imported; beforeEach re-seeds all three before any
+	// test, and production reads .id off every resolved record,
+	// ScriptEditor.tsx:326/340/432, so the honest default is the safe one).
+	// ExperienceAssignment + ExperienceSetupModal — the listPersonas mocks:
+	// the two empty-array casts PURE DELETIONS (the untyped mock()'s
+	// ResolveType accepts the array), the partial {id, name} rows completed
+	// through wirePersona (wire-fixtures.ts:454) — both components read
+	// id/name only (ExperienceSetupModal.tsx:313, ExperienceAssignment.tsx:188).
+	// CharacterForm — the Harness useForm types BuildCharacterDraft and seeds
+	// the canonical EMPTY_BUILD_DRAFT (character-draft.ts:52 — the file
+	// header's own one-place seed law) spread with the alternateGreetings pin;
+	// the old 6-field literal was missing 10 required draft members.
+	// SceneHistoryBackfill — the tracker literal gains the REQUIRED
+	// rulesPrompt: "" (entities.ts:2554) and drops its cast (schema {} fits
+	// the Record SceneTrackerDsl). SetupWizard.fields — the bootstrap seed is
+	// a real BootstrapData: the NONEXISTENT personas member dropped (the
+	// 15d/15e fiction class — it lives on BootstrapState, set separately in
+	// the same seed, and the wizard reads s.personas, never data.personas),
+	// the REQUIRED agentKindSettings added, uiSettings spreads wireUiSettings
+	// and keeps the githubStarred pin the wizard's first-run banner reads
+	// (SetupWizard.tsx:43). apps/web key-level tsc delta EMPTY before and
+	// after, measured on the MAIN workspace config (the 15e method: the
+	// src/** include carries the collocated tests; tsconfig.test.json covers
+	// apps/web/test/** only): 0 diagnostics at the base commit and after, 0
+	// new keys; 852 byte-untouched. The nine per-file spot runs carry
+	// identical counts before and after (23/13/2/36/29/68/7/14/6, 0 fail).
+	// One commit with the test edits.
+	asNever: 29,
 	/** Global `screen.` usage in apps/web test files (binds at import time). */
 	// 196 (2026-10-04): ratcheted to the merged tree's count after PR #51
 	// (provider-lists unification removed the forked pickers' screen usage;

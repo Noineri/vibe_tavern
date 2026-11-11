@@ -40,6 +40,7 @@ import type { ReactNode } from "react";
 import { brandId, type ChatId, type ExperienceCapability } from "@vibe-tavern/domain";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
+import { wirePersona } from "../../../../test/wire-fixtures.js";
 import type { ExperienceAssignmentProps } from "./ExperienceAssignment.js";
 
 useDomEnv();
@@ -206,7 +207,7 @@ describe("ExperienceAssignment (IR-72A)", () => {
     mocks.listAllScripts.mockResolvedValue([]);
     mocks.listExperienceVisuals.mockResolvedValue([]);
     mocks.testScript.mockResolvedValue(interactiveOk("m", "M", []));
-    mocks.listPersonas.mockResolvedValue([] as never);
+    mocks.listPersonas.mockResolvedValue([]);
   });
 
   it("lists only interactive-kind scripts; selecting one clears grants + context; visual is independent and optional", async () => {
@@ -623,7 +624,7 @@ describe("ExperienceAssignment — RP-context source row", () => {
     mocks.listAllScripts.mockResolvedValue([scriptRec("s1", "Echo", "interactive")]);
     mocks.listExperienceVisuals.mockResolvedValue([]);
     mocks.testScript.mockResolvedValue(interactiveOk("echo", "Echo", [{ capability: "rp_context" }]));
-    mocks.listPersonas.mockResolvedValue([{ id: "persona_v", name: "Vera" }] as never);
+    mocks.listPersonas.mockResolvedValue([wirePersona({ id: "persona_v", name: "Vera" })]);
     mocks.onPatch.mockReset();
   });
 

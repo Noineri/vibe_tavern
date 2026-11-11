@@ -25,8 +25,8 @@ const mocks = (() => {
   const tracker: SceneTrackerConfig = {
     schema: {}, autoMode: "assistant", contextWindow: 6, continuityLastN: 3,
     injectionDepth: 1, injectLastN: 1, promptFormat: "json", useChatModel: true,
-    generatePrompt: "", injectPrompt: "", providerProfileId: null, model: null, revision: 0, schemaHash: "",
-  } as never;
+    generatePrompt: "", injectPrompt: "", rulesPrompt: "", providerProfileId: null, model: null, revision: 0, schemaHash: "",
+  };
   const state: {
     activeChat: { insightsConfig: { tracker: SceneTrackerConfig; trackerEnabled: boolean } };
     messageOrder: string[];

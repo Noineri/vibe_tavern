@@ -39,6 +39,7 @@ import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 import { installSnapshotStoreSeam } from "../../../test/snapshot-store-seam.js";
 import { installExperienceStoreSeam } from "../../../test/experience-store-seam.js";
 import { installPersonaApiSeam } from "../../../test/persona-api-seam.js";
+import { wirePersona } from "../../../test/wire-fixtures.js";
 
 import type { ReactNode } from "react";
 import type {
@@ -327,7 +328,7 @@ function setupDefaultMocks(): void {
   // record from the script list before any request — default to an in-app
   // record so the pre-existing matrix keeps its exact prior behavior.
   mocks.listAllScripts.mockResolvedValue([scriptRec()]);
-  mocks.listPersonas.mockResolvedValue([] as never);
+  mocks.listPersonas.mockResolvedValue([]);
   mocks.listProviderProfiles.mockResolvedValue([profile("p1", "Acme", "model-a"), profile("p2", "Beta")]);
   mocks.fetchProviderProfileModels.mockResolvedValue({ models: [{ id: "model-a", label: "Model A" }, { id: "model-b", label: "Model B" }] });
   mocks.getExperiencePromptOverrides.mockResolvedValue(makeOverrides(null, null));
@@ -1230,9 +1231,9 @@ describe("ExperienceSetupModal — layout", () => {
 describe("ExperienceSetupModal — context source picker", () => {
   beforeEach(() => {
     mocks.listPersonas.mockResolvedValue([
-      { id: "persona_v", name: "Vera" },
-      { id: "persona_k", name: "Kat" },
-    ] as never);
+      wirePersona({ id: "persona_v", name: "Vera" }),
+      wirePersona({ id: "persona_k", name: "Kat" }),
+    ]);
     fakeAllCharacters = [
       { id: "char_a", name: "Aria" },
       { id: "char_b", name: "Bruno" },

@@ -9,9 +9,11 @@
  * is the REAL boundary.
  */
 import { afterEach, beforeAll, describe, expect, it, mock } from "bun:test";
+import type { BuildCharacterDraft } from "@vibe-tavern/api-contracts";
 import { defaultObjectiveState, normalizeTrackerTemplate, type TrackerTemplate } from "@vibe-tavern/domain";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
+import { EMPTY_BUILD_DRAFT } from "../../../lib/character-draft.js";
 
 useDomEnv();
 const { fireEvent, render, waitFor } = await import("@testing-library/react");
@@ -156,9 +158,9 @@ function makeTrackerTemplate({ sceneFieldCount = 0, objectiveMode, objectiveCoun
 }
 
 function Harness({ greetings, onReset = mock() }: { greetings: string[]; onReset?: () => void }) {
-  const form = useForm({ defaultValues: { description: "", firstMessage: "", mesExample: "", scenario: "", personalitySummary: "", alternateGreetings: greetings } });
+  const form = useForm<BuildCharacterDraft>({ defaultValues: { ...EMPTY_BUILD_DRAFT, alternateGreetings: greetings } });
   return createElement(CharacterForm, {
-    form: form as never,
+    form,
     avatarPreview: null,
     setAvatarPreview: () => {},
     isDirty: false,

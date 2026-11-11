@@ -38,10 +38,10 @@ useDomEnv();
 const listScripts = mock((_characterId?: string) => Promise.resolve<ScriptRecord[]>([]));
 const listAllScripts = mock(() => Promise.resolve<ScriptRecord[]>([]));
 const listParticipatingScripts = mock((_chatId: string) => Promise.resolve<ScriptRecord[]>([]));
-const createScript = mock((_body: unknown) => Promise.resolve<ScriptRecord>(undefined as never));
-const updateScript = mock((_id: string, _patch: Partial<ScriptRecord>) => Promise.resolve<ScriptRecord>(undefined as never));
+const createScript = mock((_body: unknown) => Promise.resolve<ScriptRecord>(wireScript()));
+const updateScript = mock((_id: string, _patch: Partial<ScriptRecord>) => Promise.resolve<ScriptRecord>(wireScript()));
 const deleteScript = mock(() => Promise.resolve());
-const importScript = mock((_body: unknown) => Promise.resolve<ScriptRecord>(undefined as never));
+const importScript = mock((_body: unknown) => Promise.resolve<ScriptRecord>(wireScript()));
 const getScriptLinks = mock((_scriptId: string) => Promise.resolve<ScriptLinkRecord[]>([]));
 const setScriptLinks = mock((_scriptId: string, _links: Array<{ targetType: "character" | "persona"; targetId: string }>) => Promise.resolve<ScriptLinkRecord[]>([]));
 const testScript = mock(() => Promise.resolve({

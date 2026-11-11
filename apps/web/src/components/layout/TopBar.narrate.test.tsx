@@ -2,6 +2,8 @@ import { describe, expect, test, mock, beforeEach, afterAll } from "bun:test";
 import React from "react";
 import { useDomEnv } from "../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
+import { wireTtsProfile } from "../../../test/wire-fixtures.js";
+import type { VoiceMapData } from "../../lib/tts/voice-map-data.js";
 
 useDomEnv();
 
@@ -14,7 +16,7 @@ mock.module("../../hooks/use-mobile.js", () => ({
 }));
 
 // Control voice-map data per test
-let currentData: { profiles: Array<{ id: string }>; links: unknown[] } | null = null;
+let currentData: VoiceMapData | null = null;
 const realVoiceMapData = await import("../../lib/tts/voice-map-data.js");
 mock.module("../../lib/tts/voice-map-data.js", () => ({
   ...realVoiceMapData,
@@ -72,13 +74,13 @@ afterAll(() => {
 describe("TopBar auto-narrate toggle", () => {
   test("hidden when no TTS profiles exist", async () => {
     currentData = { profiles: [], links: [] };
-    const { container } = renderWithTooltip(React.createElement(TopBar, { update: null } as never));
+    const { container } = renderWithTooltip(React.createElement(TopBar, { update: null }));
     expect(container.querySelector('[data-testid="topbar-autonarrate-toggle"]')).toBeNull();
   });
 
   test("visible when profiles exist and flips autoNarrate", async () => {
-    currentData = { profiles: [{ id: "p1" } as never], links: [] };
-    const { container } = renderWithTooltip(React.createElement(TopBar, { update: null } as never));
+    currentData = { profiles: [wireTtsProfile({ id: "p1" })], links: [] };
+    const { container } = renderWithTooltip(React.createElement(TopBar, { update: null }));
     const btn = container.querySelector('[data-testid="topbar-autonarrate-toggle"]');
     expect(btn).not.toBeNull();
     expect(btn?.getAttribute("aria-pressed")).toBe("false");
