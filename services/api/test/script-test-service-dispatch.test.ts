@@ -33,7 +33,9 @@ function makeScript(overrides: Partial<Script> & { id: string; code: string }): 
   };
 }
 
-function storesWith(script: Script): StoreContainer {
+function storesWith(
+  script: Omit<Script, "scriptKind"> & { scriptKind?: Script["scriptKind"] },
+): StoreContainer {
   return strictTestDouble<StoreContainer>(
     {
       scripts: strictTestDouble<ScriptStore>(
@@ -75,20 +77,18 @@ describe("testScript — prompt dispatch", () => {
 
   test("a legacy script with no scriptKind defaults to prompt dispatch", async () => {
     // Simulate a mock that omits scriptKind (undefined) — must be treated as prompt.
-    const script = makeScript({
+    // Tested input: a script whose scriptKind key is ABSENT — dispatch reads the
+    // VALUE (script-test-service.ts:116-122), so the absent key falls through to
+    // prompt. The rest-destructure omit (not `= undefined`) keeps the key
+    // genuinely absent; the widened builder seam (copilot-test-builders.ts
+    // makeScriptRow takes `scriptKind: string | undefined`) accepts the absent
+    // kind through the same documented fixture seam as the union-unrepresentable
+    // bogus kinds. Killed the last type-gate ts-directive (step 13b).
+    const { scriptKind: _omitted, ...legacyScript } = makeScript({
       id: "s1",
       code: `context.character.scenario += " rain";`,
     });
-    // Tested input: a script whose scriptKind key is ABSENT — dispatch reads the
-    // VALUE (script-test-service.ts:116-122), so the absent key falls through to
-    // prompt. `delete` (not `= undefined`) keeps the key absent; the typed
-    // rest-destructure omit was tried and cannot thread storesWith →
-    // makeScriptRow (copilot-test-builders.ts:108 takes `scriptKind: string`;
-    // widening it to `string | undefined` is the sanctioned fix, out of this
-    // unit's single-file scope). Recorded type-gate survivor (step 13).
-    // @ts-expect-error — deliberately omit scriptKind to simulate legacy/mock
-    delete script.scriptKind;
-    const result = await testScript(storesWith(script), { scriptId: "s1" });
+    const result = await testScript(storesWith(legacyScript), { scriptId: "s1" });
 
     expect(result.kind).toBe("prompt");
     if (result.kind !== "prompt") return;
