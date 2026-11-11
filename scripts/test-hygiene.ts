@@ -39,6 +39,39 @@ export const BUDGETS = {
 	// 2026-11-11 per the file-size ratchet's extract-only law). The
 	// LATEST entry stays directly below; new entries append above the
 	// value line as always.
+	// 0 (2026-11-11, step 16): −2 — the two packages survivors, wave D's
+	// FINAL batch: **WAVE D CLOSES, the as-never category EXTINCT repo-wide —
+	// ratchet 1243 → 0 (every earlier step in
+	// scripts/test-hygiene-budget-log.ts; the closing re-query prints 0 over
+	// all 1281 test files).** THE SHAPES: prompt-preset-schema.test.ts — the
+	// hostile-depth pin's cast was PURE NOISE, deleted: the withDepth
+	// literal goes straight into createPromptPresetSchema.safeParse whose
+	// parameter is `data: unknown` (zod 4.6.7 classic/schemas.d.ts:27) and
+	// the helper already took `depth: unknown`, so the cast erased nothing
+	// the compiler could have flagged; the hostile VALUES stay hostile
+	// (null / undefined / 5 / "5" flow unchanged) and the pin still
+	// rejects "5"; the member stays `.number().nullable().optional()`
+	// (prompt-preset-schema.ts:56). image-prompt-profile-store.test.ts —
+	// the JSON.parse hostile blob narrows to the REAL member type (the
+	// idiomatic specific-type cast from any): `as ImagePromptOverridesInput`
+	// — the store's own boundary input (image-prompt-profile-store.ts:27,
+	// the CreateImagePromptProfileData .overrides param at :15,
+	// serializeOverrides re-validating at :58-67); the hostile blob is
+	// byte-identical (unknown keys, a flat-string payload, qualityText 42)
+	// and the pin (store sanitizes to {}) is unchanged. The stale "stays
+	// budgeted" comment reworded with the pattern — the one non-code
+	// site. The type rides the store module's EXISTING export (inline
+	// `type` member on the import — no new builder file; the cluster's
+	// character-store.test.ts idiom). packages key-level tsc deltas EMPTY
+	// before and after (the 15e/15f method adapted; the honest BEFORE
+	// captured at the clean base commit 0d9e1efd1): the api-contracts test
+	// file rides its workspace's MAIN tsconfig, whose include carries
+	// test/** — 0 diagnostics at the base commit and after; the db test
+	// file rides packages/db/tsconfig.test.json — 193 diagnostics / 68
+	// unique keys at the base commit and after, all pre-existing
+	// branded-ID assert-seam debt, untouched; 852 keys byte-untouched. The
+	// two per-file spot runs carry identical counts before and after (25/0
+	// and 8/0, 0 fail). One commit with the budget.
 	// 2 (2026-11-11, step 15g): −27 — the stores/lib batch, the LAST apps/web
 	// batch, closes apps/web at zero: the eleven files 7/4/3/2/2/2/2/2/1/1/1
 	// (gallery-store, chat-selectors, message-meta-registry,
@@ -141,7 +174,7 @@ export const BUDGETS = {
 	// new keys; 852 byte-untouched. The nine per-file spot runs carry
 	// identical counts before and after (23/13/2/36/29/68/7/14/6, 0 fail).
 	// One commit with the test edits.
-	asNever: 2,
+	asNever: 0,
 	/** Global `screen.` usage in apps/web test files (binds at import time). */
 	// 196 (2026-10-04): ratcheted to the merged tree's count after PR #51
 	// (provider-lists unification removed the forked pickers' screen usage;

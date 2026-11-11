@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import { createDb } from '../src/db-connection.js';
-import { ImagePromptProfileStore } from '../src/stores/image-prompt-profile-store.js';
+import { ImagePromptProfileStore, type ImagePromptOverridesInput } from '../src/stores/image-prompt-profile-store.js';
 import { UiSettingsStore } from '../src/stores/ui-settings-store.js';
 import type { StoreClock, StoreIdGenerator } from '../src/persistence.js';
 
@@ -75,14 +75,14 @@ describe('ImagePromptProfileStore', () => {
     // Bogus input shape cast in — the store must filter it, not persist it.
     // A hand-written request body is exactly how a NUMBER reaches the
     // string-typed qualityText in production: the JSON.parse boundary names
-    // the wire seam (single narrowing; the never-spell below stays budgeted).
+    // the wire seam — a single narrowing to the store's own overrides input type.
     const bogus = JSON.parse(`{
       "not-a-mode|pony": { "body": "x" },
       "portrait|not-a-family": { "body": "x" },
       "portrait|prose": "flat-string-payload",
       "no-separator": { "body": "x" },
       "negative|prose": { "body": "ok", "qualityText": 42 }
-    }`) as never;
+    }`) as ImagePromptOverridesInput;
     const profile = await store.createImagePromptProfile({ name: 'Dirty', overrides: bogus });
     expect(profile.overrides).toEqual({});
   });
