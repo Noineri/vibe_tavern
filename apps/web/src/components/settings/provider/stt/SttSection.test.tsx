@@ -93,15 +93,15 @@ describe("SttSection", () => {
     const stt = makeStt();
     const view = render(
       React.createElement(
-        MasterDetailModal as never,
+        MasterDetailModal,
         {
           isOpen: true,
           title: "x",
-          masterContent: () => React.createElement(SectionHost, { stt: stt as never }) as never,
+          masterContent: () => React.createElement(SectionHost, { stt }),
           detailContent: null,
           onClose: () => {},
-        } as never,
-        null as never,
+        },
+        null,
       ),
     );
     await waitFor(() => expect(view.getByTestId("stt-section")).toBeTruthy());
@@ -145,15 +145,15 @@ describe("SttSection", () => {
     const stt = makeStt({ loading: true, profiles: [] });
     const view = render(
       React.createElement(
-        MasterDetailModal as never,
+        MasterDetailModal,
         {
           isOpen: true,
           title: "x",
-          masterContent: () => React.createElement(SectionHost, { stt: stt as never }) as never,
+          masterContent: () => React.createElement(SectionHost, { stt }),
           detailContent: null,
           onClose: () => {},
-        } as never,
-        null as never,
+        },
+        null,
       ),
     );
     await waitFor(() => expect(view.getByTestId("stt-section")).toBeTruthy());
@@ -166,15 +166,15 @@ describe("SttSection", () => {
     const stt = makeStt({ error: "boom" });
     const view = render(
       React.createElement(
-        MasterDetailModal as never,
+        MasterDetailModal,
         {
           isOpen: true,
           title: "x",
-          masterContent: () => React.createElement(SectionHost, { stt: stt as never }) as never,
+          masterContent: () => React.createElement(SectionHost, { stt }),
           detailContent: null,
           onClose: () => {},
-        } as never,
-        null as never,
+        },
+        null,
       ),
     );
     await waitFor(() => expect(view.getByTestId("stt-load-error")).toBeTruthy());
@@ -186,15 +186,15 @@ describe("SttSection", () => {
     });
     const view = render(
       React.createElement(
-        MasterDetailModal as never,
+        MasterDetailModal,
         {
           isOpen: true,
           title: "x",
-          masterContent: () => React.createElement(SectionHost, { stt: stt as never }) as never,
+          masterContent: () => React.createElement(SectionHost, { stt }),
           detailContent: null,
           onClose: () => {},
-        } as never,
-        null as never,
+        },
+        null,
       ),
     );
     await waitFor(() => expect(view.getByTestId("stt-profile-row")).toBeTruthy());

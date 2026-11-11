@@ -137,7 +137,7 @@ describe("SttProfileEditor — view mode base card auto-key", () => {
 describe("SttProfileEditor — view mode (level-2 recognition settings)", () => {
   it("renders the base card with the profile name; model picker + language below, NO endpoint field (connection-level)", async () => {
     const stt = makeStt();
-    const view = render(React.createElement(SttProfileEditor, { stt: stt as never }));
+    const view = render(React.createElement(SttProfileEditor, { stt }));
     await waitFor(() => expect(view.getByTestId("stt-base-card")).toBeTruthy());
     expect(view.getByTestId("stt-base-card-name").textContent).toBe("Dictation");
     // The fetched picker trigger (openai-compat → fetch mode).
@@ -165,7 +165,7 @@ describe("SttProfileEditor — view mode (level-2 recognition settings)", () => 
       form: makeForm({ backend: "whisper-browser", config: { model: DEFAULT_WHISPER_MODEL_ID } }),
       profiles: [makeRecord({ backend: "whisper-browser", config: { model: DEFAULT_WHISPER_MODEL_ID } })],
     });
-    const view = render(React.createElement(SttProfileEditor, { stt: stt as never }));
+    const view = render(React.createElement(SttProfileEditor, { stt }));
     await waitFor(() => expect(view.getByTestId("stt-whisper-model-select")).toBeTruthy());
     // No key field for a browser profile.
     expect(view.queryByTestId("stt-field-api-key")).toBeNull();
@@ -188,7 +188,7 @@ describe("SttProfileEditor — view mode (level-2 recognition settings)", () => 
         }),
       ],
     });
-    const view = render(React.createElement(SttProfileEditor, { stt: stt as never }));
+    const view = render(React.createElement(SttProfileEditor, { stt }));
     await waitFor(() => expect(view.getByTestId("stt-whisper-model-select")).toBeTruthy());
     expect(view.queryByTestId("stt-field-language")).toBeNull();
   });
@@ -201,7 +201,7 @@ describe("SttProfileEditor — view mode (level-2 recognition settings)", () => 
     const stt = makeStt({
       form: makeForm({ config: { endpoint: "https://api.openai.com/v1" } }),
     });
-    const view = render(React.createElement(SttProfileEditor, { stt: stt as never }));
+    const view = render(React.createElement(SttProfileEditor, { stt }));
     await waitFor(() => expect(listSttDraftModelsMock).toHaveBeenCalled(), { timeout: 2000 });
     // The list has arrived once the refresh button leaves its loading state.
     await waitFor(() => expect((view.getByTestId("stt-models-refresh") as HTMLButtonElement).disabled).toBe(false));
@@ -212,7 +212,7 @@ describe("SttProfileEditor — view mode (level-2 recognition settings)", () => 
 
   it("refresh button re-runs the fetch on demand", async () => {
     const stt = makeStt();
-    const view = render(React.createElement(SttProfileEditor, { stt: stt as never }));
+    const view = render(React.createElement(SttProfileEditor, { stt }));
     await waitFor(() => expect(view.getByTestId("stt-field-model").textContent).toBe("Whisper v1"), { timeout: 2000 });
     const before = listSttDraftModelsMock.mock.calls.length;
     await act(async () => {
@@ -230,7 +230,7 @@ describe("SttProfileEditor — view mode (level-2 recognition settings)", () => 
 describe("SttProfileEditor — edit mode (level-1 connection card)", () => {
   it("renders the connection form (health: exposes test card)", async () => {
     const stt = makeStt({ headerMode: "edit", dirty: false });
-    const view = render(React.createElement(SttProfileEditor, { stt: stt as never }));
+    const view = render(React.createElement(SttProfileEditor, { stt }));
     await waitFor(() => expect(view.getByTestId("stt-profile-name-input")).toBeTruthy());
     // A saved + clean openai-compat profile gets the test connection card.
     expect(view.getByTestId("stt-test-card")).toBeTruthy();
@@ -241,7 +241,7 @@ describe("SttProfileEditor — edit mode (level-1 connection card)", () => {
 
   it("GOVERNING-RULE PIN: no model / language / emotion inside the connection form", async () => {
     const stt = makeStt({ headerMode: "edit", dirty: true });
-    const view = render(React.createElement(SttProfileEditor, { stt: stt as never }));
+    const view = render(React.createElement(SttProfileEditor, { stt }));
     await waitFor(() => expect(view.getByTestId("stt-profile-name-input")).toBeTruthy());
     expect(view.queryByTestId("stt-field-model")).toBeNull();
     expect(view.queryByTestId("stt-field-language")).toBeNull();
@@ -252,7 +252,7 @@ describe("SttProfileEditor — edit mode (level-1 connection card)", () => {
 
   it("P10 PIN: a dirty/unsaved draft gets the probe button (TTS parity — no save-first)", async () => {
     const stt = makeStt({ headerMode: "edit", dirty: true, form: makeForm({ id: null }) });
-    const view = render(React.createElement(SttProfileEditor, { stt: stt as never }));
+    const view = render(React.createElement(SttProfileEditor, { stt }));
     await waitFor(() => expect(view.getByTestId("stt-profile-name-input")).toBeTruthy());
     expect(view.queryByTestId("stt-test-dot-save-first")).toBeNull();
     expect(view.getByTestId("stt-test-connection-btn")).toBeTruthy();
@@ -263,7 +263,7 @@ describe("SttProfileEditor — edit mode (level-1 connection card)", () => {
       headerMode: "edit",
       form: makeForm({ apiKey: "sk-live", config: { endpoint: "https://api.openai.com/v1", model: "whisper-1" } }),
     });
-    const view = render(React.createElement(SttProfileEditor, { stt: stt as never }));
+    const view = render(React.createElement(SttProfileEditor, { stt }));
     await waitFor(() => expect(view.getByTestId("stt-test-connection-btn")).toBeTruthy());
     await act(async () => {
       view.getByTestId("stt-test-connection-btn").click();
@@ -279,7 +279,7 @@ describe("SttProfileEditor — edit mode (level-1 connection card)", () => {
 
   it("P10: a rejected probe shows the failure badge (probe semantics, no transcription)", async () => {
     const stt = makeStt({ headerMode: "edit" });
-    const view = render(React.createElement(SttProfileEditor, { stt: stt as never }));
+    const view = render(React.createElement(SttProfileEditor, { stt }));
     await waitFor(() => expect(view.getByTestId("stt-test-connection-btn")).toBeTruthy());
     listSttDraftModelsMock.mockImplementationOnce(() => Promise.reject(new Error("probe failed: 502")));
     await act(async () => {
@@ -291,7 +291,7 @@ describe("SttProfileEditor — edit mode (level-1 connection card)", () => {
   it("SPE-8 gating: the preset dropdown renders for cloud + native, never for custom/local/browser", async () => {
     // Cloud (endpoint-matched openai row) → offered.
     const cloud = makeStt({ headerMode: "edit" });
-    const cloudView = render(React.createElement(SttProfileEditor, { stt: cloud as never }));
+    const cloudView = render(React.createElement(SttProfileEditor, { stt: cloud }));
     await waitFor(() => expect(cloudView.getByTestId("stt-backend-select").textContent).toContain("Cloud"));
     expect(cloudView.getByTestId("stt-quickstart-select")).toBeTruthy();
     // The cloud arm never shows the local panel (TTS localHelpers twin).
@@ -302,7 +302,7 @@ describe("SttProfileEditor — edit mode (level-1 connection card)", () => {
       headerMode: "edit",
       form: makeForm({ config: { endpoint: "https://custom.example/v1", model: "whisper-1" } }),
     });
-    const customView = render(React.createElement(SttProfileEditor, { stt: custom as never }));
+    const customView = render(React.createElement(SttProfileEditor, { stt: custom }));
     await waitFor(() => expect(customView.getByTestId("stt-backend-select").textContent).toContain("custom"));
     expect(customView.queryByTestId("stt-quickstart-select")).toBeNull();
     expect(customView.getByTestId("stt-field-endpoint")).toBeTruthy();
@@ -312,7 +312,7 @@ describe("SttProfileEditor — edit mode (level-1 connection card)", () => {
       headerMode: "edit",
       form: makeForm({ config: { localServer: true, endpoint: "http://127.0.0.1:8000/v1", model: "whisper-1" } }),
     });
-    const localView = render(React.createElement(SttProfileEditor, { stt: local as never }));
+    const localView = render(React.createElement(SttProfileEditor, { stt: local }));
     await waitFor(() =>
       expect(localView.getByTestId("stt-backend-select").textContent).toContain("stt_segment_local"),
     );
@@ -336,7 +336,7 @@ describe("SttProfileEditor — edit mode (level-1 connection card)", () => {
 
   it("cloud preset apply fills endpoint + default model (openrouter)", async () => {
     const stt = makeStt({ headerMode: "edit" });
-    const view = render(React.createElement(SttProfileEditor, { stt: stt as never }));
+    const view = render(React.createElement(SttProfileEditor, { stt }));
     await waitFor(() => expect(view.getByTestId("stt-quickstart-select")).toBeTruthy());
     await act(async () => {
       view.getByTestId("stt-quickstart-select").click();
@@ -379,7 +379,7 @@ describe("SttProfileEditor — Gemini backend + emotion toggle (ST-7, level-2 si
 
   it("gemini view: picker + language + key-less base card — and the emotion toggle renders", async () => {
     const stt = geminiStt();
-    const view = render(React.createElement(SttProfileEditor, { stt: stt as never }));
+    const view = render(React.createElement(SttProfileEditor, { stt }));
     await waitFor(() => expect(view.getByTestId("stt-emotion-toggle-block")).toBeTruthy());
     // Fixed endpoint: no endpoint input even as a connection field in view.
     expect(view.queryByTestId("stt-field-endpoint")).toBeNull();
@@ -393,7 +393,7 @@ describe("SttProfileEditor — Gemini backend + emotion toggle (ST-7, level-2 si
 
   it("gemini edit form: Native segment — connection only, preset dropdown offers the native rows", async () => {
     const stt = geminiStt(false, "edit");
-    const view = render(React.createElement(SttProfileEditor, { stt: stt as never }));
+    const view = render(React.createElement(SttProfileEditor, { stt }));
     await waitFor(() => expect(view.getByTestId("stt-profile-editor")).toBeTruthy());
     // SPE-8: gemini is a native preset row — the segment reads Native.
     expect(view.getByTestId("stt-backend-select").textContent).toContain("Native");
@@ -417,7 +417,7 @@ describe("SttProfileEditor — Gemini backend + emotion toggle (ST-7, level-2 si
         form: makeForm({ backend, config, emotionAnnotation: false }),
         profiles: [makeRecord({ backend, config })],
       });
-      const view = render(React.createElement(SttProfileEditor, { stt: stt as never }));
+      const view = render(React.createElement(SttProfileEditor, { stt }));
       await waitFor(() => expect(view.getByTestId("stt-profile-editor")).toBeTruthy());
       expect(view.queryByTestId("stt-emotion-toggle-block")).toBeNull();
       cleanup();
@@ -426,7 +426,7 @@ describe("SttProfileEditor — Gemini backend + emotion toggle (ST-7, level-2 si
 
   it("clicking the toggle flips the form flag through setForm", async () => {
     const stt = geminiStt();
-    const view = render(React.createElement(SttProfileEditor, { stt: stt as never }));
+    const view = render(React.createElement(SttProfileEditor, { stt }));
     await waitFor(() => expect(view.getByTestId("stt-emotion-toggle-block")).toBeTruthy());
     // This file's useT mock returns keys VERBATIM (identity), so the switch's
     // accessible name is the KEY, not the translated string (FS-7's update
@@ -454,7 +454,7 @@ describe("SttProfileEditor — P12 language dropdown", () => {
 
   it("empty language shows the pinned interface entry in the trigger", async () => {
     const stt = whisperView({ model: "onnx-community/whisper-small" });
-    const view = render(React.createElement(SttProfileEditor, { stt: stt as never }));
+    const view = render(React.createElement(SttProfileEditor, { stt }));
     await waitFor(() => expect(view.getByTestId("stt-field-language")).toBeTruthy());
     // The mocked t() returns the key — the trigger shows the entry label.
     expect(view.getByTestId("stt-field-language").textContent).toContain("stt_field_language_interface");
@@ -462,19 +462,19 @@ describe("SttProfileEditor — P12 language dropdown", () => {
 
   it("a stored code renders the matching human label", async () => {
     const stt = whisperView({ model: "onnx-community/whisper-small", language: "ru" });
-    const view = render(React.createElement(SttProfileEditor, { stt: stt as never }));
+    const view = render(React.createElement(SttProfileEditor, { stt }));
     await waitFor(() => expect(view.getByTestId("stt-field-language")).toBeTruthy());
     expect(view.getByTestId("stt-field-language").textContent).toContain("Russian (ru)");
   });
 
   it("level-2 model detail follows the lane (cpu q8, gpu fp32+q4)", async () => {
     const stt = whisperView({ model: "onnx-community/whisper-small" });
-    const view = render(React.createElement(SttProfileEditor, { stt: stt as never }));
+    const view = render(React.createElement(SttProfileEditor, { stt }));
     await waitFor(() => expect(view.getByTestId("stt-whisper-model-select")).toBeTruthy());
     expect(view.getByTestId("stt-whisper-model-select").textContent).toContain("250 MB");
     cleanup();
     __setWhisperLaneProbeForTests(() => "webgpu");
-    const gpu = render(React.createElement(SttProfileEditor, { stt: stt as never }));
+    const gpu = render(React.createElement(SttProfileEditor, { stt }));
     await waitFor(() => expect(gpu.getByTestId("stt-whisper-model-select")).toBeTruthy());
     expect(gpu.getByTestId("stt-whisper-model-select").textContent).toContain("570 MB");
   });
@@ -493,7 +493,7 @@ describe('SttProfileEditor — native backends (SPE-4..6, SPE-7 picker)', () => 
 
   it('edit form: SPE-8 group taxonomy — segment offers browser/Cloud/Native/Local/Custom; the native preset dropdown offers the native rows', async () => {
     const stt = nativeStt('nvidia', 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning', 'edit');
-    const view = render(React.createElement(SttProfileEditor, { stt: stt as never }));
+    const view = render(React.createElement(SttProfileEditor, { stt }));
     await waitFor(() => expect(view.getByTestId('stt-backend-select')).toBeTruthy());
     // The closed segment trigger shows the SELECTED segment (literal).
     expect(view.getByTestId('stt-backend-select').textContent).toContain('Native');
@@ -534,7 +534,7 @@ describe('SttProfileEditor — native backends (SPE-4..6, SPE-7 picker)', () => 
 
   it('edit form: native preset apply switches the backend slug (nvidia → gemini)', async () => {
     const stt = nativeStt('nvidia', 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning', 'edit');
-    const view = render(React.createElement(SttProfileEditor, { stt: stt as never }));
+    const view = render(React.createElement(SttProfileEditor, { stt }));
     await waitFor(() => expect(view.getByTestId('stt-quickstart-select')).toBeTruthy());
     await act(async () => {
       view.getByTestId('stt-quickstart-select').click();
@@ -556,7 +556,7 @@ describe('SttProfileEditor — native backends (SPE-4..6, SPE-7 picker)', () => 
 
   it('edit form: segment switch to Local stamps the flag + port suggestion; to Custom wipes the config', async () => {
     const stt = makeStt({ headerMode: 'edit' });
-    const view = render(React.createElement(SttProfileEditor, { stt: stt as never }));
+    const view = render(React.createElement(SttProfileEditor, { stt }));
     await waitFor(() => expect(view.getByTestId('stt-backend-select')).toBeTruthy());
     async function pickSegment(label: string) {
       await act(async () => {
@@ -597,14 +597,14 @@ describe('SttProfileEditor — native backends (SPE-4..6, SPE-7 picker)', () => 
   // the SAME test would see the first form's DOM — one render per test.
   it('edit form: deepgram renders the RU note, not the EN-only warning', async () => {
     const stt = nativeStt('deepgram', 'nova-3', 'edit');
-    const view = render(React.createElement(SttProfileEditor, { stt: stt as never }));
+    const view = render(React.createElement(SttProfileEditor, { stt }));
     await waitFor(() => expect(view.getByTestId('stt-deepgram-ru-note')).toBeTruthy());
     expect(view.queryByTestId('stt-nvidia-en-only-hint')).toBeNull();
   });
 
   it('edit form: natives get the key field + probe button + native preset dropdown, no endpoint field', async () => {
     const stt = nativeStt('elevenlabs', 'scribe_v2', 'edit');
-    const view = render(React.createElement(SttProfileEditor, { stt: stt as never }));
+    const view = render(React.createElement(SttProfileEditor, { stt }));
     await waitFor(() => expect(view.getByTestId('stt-test-connection-btn')).toBeTruthy());
     expect(view.getByTestId('stt-field-api-key')).toBeTruthy();
     expect(view.queryByTestId('stt-field-endpoint')).toBeNull();
@@ -614,7 +614,7 @@ describe('SttProfileEditor — native backends (SPE-4..6, SPE-7 picker)', () => 
 
   it('elevenlabs view: the STATIC Scribe roster feeds the picker, refresh hidden, language kept', async () => {
     const stt = nativeStt('elevenlabs', 'scribe_v2');
-    const view = render(React.createElement(SttProfileEditor, { stt: stt as never }));
+    const view = render(React.createElement(SttProfileEditor, { stt }));
     await waitFor(() => expect(view.getByTestId('stt-field-model')).toBeTruthy());
     // No draft-models call — the roster is preset data, not a fetch.
     expect(listSttDraftModelsMock).not.toHaveBeenCalled();
@@ -627,7 +627,7 @@ describe('SttProfileEditor — native backends (SPE-4..6, SPE-7 picker)', () => 
 
   it('nvidia view: static roster, language hidden (adapter ignores it — EN-only)', async () => {
     const stt = nativeStt('nvidia', 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning');
-    const view = render(React.createElement(SttProfileEditor, { stt: stt as never }));
+    const view = render(React.createElement(SttProfileEditor, { stt }));
     await waitFor(() => expect(view.getByTestId('stt-field-model')).toBeTruthy());
     expect(listSttDraftModelsMock).not.toHaveBeenCalled();
     expect(view.queryByTestId('stt-field-language')).toBeNull();
@@ -635,7 +635,7 @@ describe('SttProfileEditor — native backends (SPE-4..6, SPE-7 picker)', () => 
 
   it('deepgram view: FETCHED picker (live /v1/models catalog)', async () => {
     const stt = nativeStt('deepgram', 'nova-3');
-    const view = render(React.createElement(SttProfileEditor, { stt: stt as never }));
+    const view = render(React.createElement(SttProfileEditor, { stt }));
     await waitFor(() => expect(listSttDraftModelsMock).toHaveBeenCalled(), { timeout: 2000 });
     expect(listSttDraftModelsMock.mock.calls[0][0].backend).toBe('deepgram');
     expect(view.getByTestId('stt-models-refresh')).toBeTruthy();
@@ -661,7 +661,7 @@ describe('SttProfileEditor — whisper.cpp own-wire local backend (SPE-9)', () =
 
   it('edit form: resolves the LOCAL segment, offers the named local rows, editable endpoint, no key field', async () => {
     const stt = whisperCppStt('edit');
-    const view = render(React.createElement(SttProfileEditor, { stt: stt as never }));
+    const view = render(React.createElement(SttProfileEditor, { stt }));
     await waitFor(() => expect(view.getByTestId('stt-backend-select')).toBeTruthy());
     // Segment derivation: the own-wire local backend resolves LOCAL, never
     // native (the sttProviderSegmentOf whisper-cpp branch).
@@ -689,7 +689,7 @@ describe('SttProfileEditor — whisper.cpp own-wire local backend (SPE-9)', () =
 
   it('view mode: server-bound model — the picker is replaced by the server-flags hint; language stays', async () => {
     const stt = whisperCppStt('view');
-    const view = render(React.createElement(SttProfileEditor, { stt: stt as never }));
+    const view = render(React.createElement(SttProfileEditor, { stt }));
     await waitFor(() => expect(view.getByTestId('stt-whispercpp-server-model-hint')).toBeTruthy());
     // No model picker — the model is bound at server start. The ONE
     // draft-models call is the OUTSIDE-card connection chip's honest ping
@@ -712,7 +712,7 @@ describe('SttProfileEditor — whisper.cpp own-wire local backend (SPE-9)', () =
       emotionAnnotation: false,
     });
     const stt = makeStt({ headerMode: 'edit', form });
-    const view = render(React.createElement(SttProfileEditor, { stt: stt as never }));
+    const view = render(React.createElement(SttProfileEditor, { stt }));
     await waitFor(() => expect(view.getByTestId('stt-quickstart-select')).toBeTruthy());
     await act(async () => {
       view.getByTestId('stt-quickstart-select').click();

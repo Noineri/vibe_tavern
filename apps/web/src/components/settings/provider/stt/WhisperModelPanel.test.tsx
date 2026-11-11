@@ -118,7 +118,7 @@ function makeFakeEngine(options: { alreadyLoaded?: boolean; startActive?: string
 function renderPanel(configModel: string = BASE, setForm = mock((_patch: unknown) => {})) {
   const stt = { setForm };
   return {
-    view: render(React.createElement(WhisperModelPanel, { form: makeForm(configModel), stt: stt as never })),
+    view: render(React.createElement(WhisperModelPanel, { form: makeForm(configModel), stt })),
     setForm,
   };
 }
@@ -271,7 +271,7 @@ describe("useWhisperModel + WhisperModelPanel", () => {
       view.rerender(
         React.createElement(WhisperModelPanel, {
           form: makeForm(SMALL),
-          stt: { setForm } as never,
+          stt: { setForm },
         }),
       );
     });

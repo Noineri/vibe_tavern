@@ -78,7 +78,7 @@ describe("TtsSection", () => {
       select,
       startCreate,
     });
-    const view = render(React.createElement(TtsSection as never, { tts } as never));
+    const view = render(React.createElement(TtsSection, { tts }));
     expect(within(view.baseElement).getByText("Alpha")).toBeTruthy();
     expect(within(view.baseElement).getByText("Beta")).toBeTruthy();
     const rows = view.baseElement.querySelectorAll('[data-testid="tts-profile-row"]');
@@ -137,7 +137,7 @@ describe("TtsSection", () => {
       select,
       startCreate,
     });
-    const view = render(React.createElement(TtsSection as never, { tts } as never));
+    const view = render(React.createElement(TtsSection, { tts }));
     const row = view.baseElement.querySelector('[data-profile-id="p2"]') as HTMLElement;
     const { fireEvent } = await import("@testing-library/react");
     fireEvent.pointerDown(row);
@@ -150,7 +150,7 @@ describe("TtsSection", () => {
 
   it("shows load error when tts.error is set", async () => {
     const tts = makeTts({ error: "boom", profiles: [] });
-    const view = render(React.createElement(TtsSection as never, { tts } as never));
+    const view = render(React.createElement(TtsSection, { tts }));
     expect(view.getByTestId("tts-load-error").textContent).toContain("boom");
   });
 

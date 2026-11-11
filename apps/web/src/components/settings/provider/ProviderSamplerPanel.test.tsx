@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it, mock, beforeEach, afterEach } from "bun:test";
-import type { ReactNode } from "react";
+import type { ComponentProps, ReactNode } from "react";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 import type { FormState } from "../../modals/ProviderModal.js";
@@ -446,12 +446,12 @@ function confirmModalButtons(): { confirm: HTMLElement | null; open: boolean } {
 describe("ProviderSamplerPanel sampler-set row (LS-5)", () => {
   let view: PanelView;
 
-  function panelElement(h: ReturnType<typeof makeHarness>, capabilities?: Record<string, unknown>) {
+  function panelElement(h: ReturnType<typeof makeHarness>, capabilities?: ComponentProps<typeof ProviderSamplerPanel>["capabilities"]) {
     return (
       <ProviderSamplerPanel
         values={{ ...h.current }}
-        onChange={h.updateForm as never}
-        capabilities={capabilities as never}
+        onChange={h.updateForm}
+        capabilities={capabilities}
       />
     );
   }

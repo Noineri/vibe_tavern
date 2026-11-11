@@ -328,7 +328,29 @@ export const BUDGETS = {
 	// carriers. test-type-gate: apps/web workspace tsc 0 errors before AND
 	// after (the file carried no baseline keys), 0 new keys, 852
 	// byte-untouched. One commit with the test edits.
-	asNever: 290,
+	// 216 (2026-11-11, step 15b): −74 — the provider-settings rest (74
+	// sites / 7 files: SttProfileEditor 33 — the STT twin of 15a's monster,
+	// SttSection 20, TtsApiKeyField 8, TtsSection 6, RegexAiAssistantModal 3,
+	// WhisperModelPanel 2, ProviderSamplerPanel 2). MOSTLY PURE DELETIONS
+	// where the files' own typed fixtures already satisfied: SttProfileEditor's
+	// 33 React.createElement sites (Props { stt: SttHook }, the makeStt/
+	// makeForm fixtures and the file's own typed props literal proved it);
+	// SttSection's 4 MasterDetailModal blocks (its own JSX render is the
+	// proof); TtsApiKeyField's component+props pairs (real props value/
+	// onChange/placeholder?/stored?); TtsSection's pairs (its own JSX renders
+	// again); WhisperModelPanel's stt literals (the panel takes
+	// Pick<SttHook, "setForm">). TYPED SEAMS replacing fiction: the
+	// RegexAiAssistantModal Harness now types onApply/currentRule as the real
+	// Partial<RegexPresetDraft> props (regex-rule-draft.ts) and seeds the
+	// provider store through the shared wireProviderProfile builder
+	// (test/wire-fixtures.ts) instead of bare { id, name } rows;
+	// ProviderSamplerPanel's capabilities param derives ComponentProps<
+	// typeof ProviderSamplerPanel>["capabilities"] and its updateForm
+	// harness satisfies ProviderSamplerOnChange (FormState extends
+	// ProviderSamplerValues). test-type-gate: apps/web workspace tsc keys
+	// identical before AND after — the batch files carried 0 keys, 0 new,
+	// 852 byte-untouched. One commit with the test edits.
+	asNever: 216,
 	/** Global `screen.` usage in apps/web test files (binds at import time). */
 	// 196 (2026-10-04): ratcheted to the merged tree's count after PR #51
 	// (provider-lists unification removed the forked pickers' screen usage;
