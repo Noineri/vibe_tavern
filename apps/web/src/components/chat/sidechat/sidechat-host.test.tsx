@@ -4,10 +4,15 @@
  * Drives the REAL generic AgentShell with kind "sidechat-ooc" through the
  * host's real transport (fetch-level router — no mock.module on the api
  * modules, so this file coexists with any other test file sharing the bun
- * worker; the script-agent-host.test.tsx reliability contract). Fetch is
- * swapped per test and restored after each (beforeEach install, afterEach +
- * afterAll restore); every process-global store touched here is re-seeded in
- * beforeEach.
+ * worker; the script-agent-host.test.tsx reliability contract). The
+ * router/seed/reset/drain scaffolding comes from the shared harness
+ * (apps/web/test/agent-shell-harness.ts — ASHU-6, fork #5 of 7): the harness
+ * serves the agent-chats triple over live router state, the copilot context
+ * family, the bootstrap quartet and the fail-loud tail; this file's stateful
+ * routes (feed page, live messages, the SC-23d context-links GET/PATCH) ride
+ * the custom-first escape hatch. Fetch is swapped per test and restored after
+ * each (beforeEach install, afterEach + afterAll restore); every
+ * process-global store touched here is re-seeded in beforeEach.
  *
  * Pins:
  *   - module-load registration: the chat-only host (no editor pane), the
@@ -43,7 +48,15 @@ import type {
   ExperienceCopilotThreadWire,
 } from "@vibe-tavern/api-contracts";
 import { useDomEnv } from "../../../../test/dom-env.js";
-import { wireProviderProfile, wireUiSettings } from "../../../../test/wire-fixtures.js";
+import {
+  chatThread,
+  flushSessionLoad,
+  jsonResponse,
+  resetShellStores,
+  seedShellStores,
+  shellRouter,
+} from "../../../../test/agent-shell-harness.js";
+import { wireProviderProfile } from "../../../../test/wire-fixtures.js";
 import type { ProviderProfileRecord } from "../../../api/types.js";
 import type { AgentToolActivity } from "../../../stores/agent-turn-store.js";
 import { getAgentHost, registerAgentHost, type AgentHostTransport } from "../../../lib/agent-host-registry.js";
@@ -51,10 +64,8 @@ import { useAgentTurnStore } from "../../../stores/agent-turn-store.js";
 import { useChatStore } from "../../../stores/chat-store.js";
 import { useSidechatMobileStore } from "../../../stores/sidechat-mobile-store.js";
 import { Icons } from "../../shared/icons.js";
-import { useAgentReviewRoundStore } from "../../../stores/agent-review-store.js";
 import { useProviderDataStore } from "../../../stores/provider-data-store.js";
 import { useSnapshotStore } from "../../../stores/snapshot-store.js";
-import { useBootstrapStore } from "../../../stores/api-actions/bootstrap-actions.js";
 import { selectSidechatServedChatModes, SIDECHAT_AGENT_KIND } from "../../../api/agent-kind-served-modes.js";
 import { selectSidechatOwner } from "./sidechat-host.js";
 import { DIRECTOR_MESSAGE_RECORD_TYPES } from "@vibe-tavern/api-contracts";
@@ -70,11 +81,16 @@ useDomEnv();
 let mobileOverride = false;
 
 // ── Fetch-level API router ───────────────────────────────────────────────
-// Same rationale as script-agent-host.test.tsx: mock.module on the api
-// modules is process-global and silently stops applying when another test
-// file shares the bun process, so the transport seam is faked at the FETCH
-// level instead. The REAL hono clients run against a router serving canned
-// payloads.
+// The shared harness router (agent-shell-harness.ts, fork #5 of 7 migrated)
+// serves the agent-chats triple over the live router state (SC-0b chat-owner
+// lifecycle), the copilot context family, the bootstrap quartet and the
+// fail-loud tail; this file's STATEFUL routes (the feed page, the live
+// messages pair, the SC-23d pinned-context-links GET/PATCH) ride the
+// custom-first escape hatch. Same rationale as script-agent-host.test.tsx:
+// mock.module on the api modules is process-global and silently stops
+// applying when another test file shares the bun process, so the transport
+// seam is faked at the FETCH level instead — the REAL hono clients run
+// against a router serving canned payloads.
 interface RouterState {
   activeThread: ExperienceCopilotThreadWire | null;
   messages: ExperienceCopilotMessageWire[];
@@ -83,54 +99,41 @@ interface RouterState {
   /** SC-23d: the pinned-context links served by GET/PATCH …/context-links. */
   contextLinks: ExperienceCopilotContextLink[];
 }
-let router: RouterState;
+// A STABLE object the harness reads per-request — beforeEach mutates FIELDS,
+// never reassigns (the harness captures the reference at build time).
+const router: RouterState = {
+  activeThread: null,
+  messages: [],
+  sessions: [],
+  newSession: chatThread({ id: "sidechat-thread-new" }),
+  contextLinks: [],
+};
 
-const jsonResponse = (payload: unknown) =>
-  new Response(JSON.stringify(payload), { status: 200, headers: { "Content-Type": "application/json" } });
-
-const fetchRouter = mock(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-  const path = new URL(String(input), "http://gateway.test").pathname;
-  const method = (init?.method ?? "GET").toUpperCase();
-  const feedThreadId = /\/api\/agent\/threads\/([^/]+)\/feed$/.exec(path)?.[1];
-  if (method === "GET" && feedThreadId) return jsonResponse(agentFeedPageFromMessages(feedThreadId, router.messages));
-  // SC-0b chat-owner lifecycle (the sidechat transport's owner-keyed members).
-  if (method === "GET" && /\/api\/agent\/chats\/[^/]+\/branches\/[^/]+\/[^/]+\/active$/.test(path)) {
-    return jsonResponse(router.activeThread);
-  }
-  if (method === "GET" && /\/api\/agent\/chats\/[^/]+\/branches\/[^/]+\/[^/]+\/sessions$/.test(path)) {
-    return jsonResponse(router.sessions);
-  }
-  if (method === "POST" && /\/api\/agent\/chats\/[^/]+\/branches\/[^/]+\/[^/]+\/session$/.test(path)) {
-    return jsonResponse(router.newSession);
-  }
-  // Per-thread routes (owner-agnostic — the experience client's members).
-  if (method === "GET" && /\/api\/experience-copilot\/[^/]+\/messages$/.test(path)) {
-    return jsonResponse(router.messages);
-  }
-  if (method === "GET" && /\/api\/experience-copilot\/[^/]+\/context$/.test(path)) {
-    return jsonResponse({ metrics: null, autoCompact: true });
-  }
-  if (method === "GET" && /\/api\/experience-copilot\/[^/]+\/context-links$/.test(path)) {
-    return jsonResponse(router.contextLinks);
-  }
-  if (method === "PATCH" && /\/api\/experience-copilot\/[^/]+\/context-links$/.test(path)) {
-    const body = JSON.parse(String(init?.body ?? "{}")) as { links?: ExperienceCopilotContextLink[] };
-    router.contextLinks = body.links ?? [];
-    return jsonResponse(router.contextLinks);
-  }
-  // NOTE: the gateway base resolves to "/null" under happy-dom (unset env
-  // falls back to `String(null)` in build-config) — route on path SUFFIXES,
-  // never exact equality.
-  if (method === "GET" && path.includes("/branches/") && path.endsWith("/plan")) {
-    return jsonResponse({ plan: { goal: "", constraints: [], tasks: [] } });
-  }
-  if (method === "GET" && path.endsWith("/api/personas")) return jsonResponse([]);
-  if (method === "GET" && path.endsWith("/api/lorebooks/all")) return jsonResponse([]);
-  if (method === "GET" && path.endsWith("/api/scripts/all")) return jsonResponse([]);
-  if (method === "GET" && path.endsWith("/api/coauthor/skills")) return jsonResponse({ entries: [], errors: [] });
-  if (method === "GET" && path.endsWith("/model-favorites")) return jsonResponse([]);
-  return new Response(JSON.stringify({ error: { message: `Unhandled fetch in test: ${method} ${path}` } }), { status: 500 });
-});
+const fetchRouter = mock(
+  shellRouter({
+    agentChats: router,
+    custom: ({ path, method, init }) => {
+      // NOTE: the gateway base resolves to "/null" under happy-dom (unset env
+      // falls back to `String(null)` in build-config) — route on path SUFFIXES,
+      // never exact equality.
+      const feedThreadId = /\/api\/agent\/threads\/([^/]+)\/feed$/.exec(path)?.[1];
+      if (method === "GET" && feedThreadId) return jsonResponse(agentFeedPageFromMessages(feedThreadId, router.messages));
+      // Per-thread routes (owner-agnostic — the experience client's members).
+      if (method === "GET" && /\/api\/experience-copilot\/[^/]+\/messages$/.test(path)) {
+        return jsonResponse(router.messages);
+      }
+      if (method === "GET" && /\/api\/experience-copilot\/[^/]+\/context-links$/.test(path)) {
+        return jsonResponse(router.contextLinks);
+      }
+      if (method === "PATCH" && /\/api\/experience-copilot\/[^/]+\/context-links$/.test(path)) {
+        const body = JSON.parse(String(init?.body ?? "{}")) as { links?: ExperienceCopilotContextLink[] };
+        router.contextLinks = body.links ?? [];
+        return jsonResponse(router.contextLinks);
+      }
+      return null; // fall through to the harness routes
+    },
+  }),
+);
 
 /** Router fetch calls matching method + path pattern. Strips the "/null"
  *  gateway-base prefix happy-dom produces (unset env falls back to
@@ -147,7 +150,8 @@ function apiCalls(method: string, pattern: RegExp): string[] {
 }
 
 // Radix Tooltip needs a global Provider the isolated render here doesn't mount.
-const realTooltip = await import("../../shared/Tooltip.js");
+// R15: load-time COPY of the real namespace — never spread the live binding.
+const realTooltip = { ...(await import("../../shared/Tooltip.js")) };
 mock.module("../../shared/Tooltip.js", () => ({
   ...realTooltip,
   CustomTooltip: ({ children }: { children: ReactNode }) => <>{children}</>,
@@ -156,7 +160,8 @@ mock.module("../../shared/Tooltip.js", () => ({
 
 // The shell takes isMobile as a prop, but nested surfaces read the hook —
 // override it with the same mutable cell so both halves agree.
-const realMobile = await import("../../../hooks/use-mobile.js");
+// R15: load-time COPY of the real namespace — never spread the live binding.
+const realMobile = { ...(await import("../../../hooks/use-mobile.js")) };
 mock.module("../../../hooks/use-mobile.js", () => ({
   ...realMobile,
   useIsMobile: () => mobileOverride,
@@ -187,25 +192,6 @@ afterAll(() => {
 });
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
-
-// The literal carries the thread schema's complete field set (verified against
-// experienceCopilotThreadSchema) — the old double cast was pure noise. The
-// `chatId`/`branchId` params are identity echoes of the caller's seed and are
-// not part of the thread wire shape.
-function chatThread(id: string, chatId: string, branchId: string): ExperienceCopilotThreadWire {
-  return {
-    id,
-    scriptId: null,
-    draftSessionId: null,
-    title: "Sidechat",
-    archivedAt: null,
-    createdAt: "",
-    updatedAt: "",
-    metrics: null,
-    contextLinks: [],
-    todo: [],
-  };
-}
 
 // p1 is the ACTIVE provider profile (the RP pair, SC-7); each profile carries
 // one tool-capable cached model so the REAL `useProviderModels` hook serves
@@ -240,20 +226,9 @@ function kindEntry(kind: string, providerProfileId: string | null, modelName: st
   };
 }
 
+/** File-local seeding delta on the harness seedShellStores (the shared agent-kind map + this suite's profiles and prompt presets). */
 function seedStores(map: Record<string, AgentKindSettingsWire>, presets: PromptPresetDto[] = []): void {
-  useBootstrapStore.setState({
-    data: {
-      initialChatId: null,
-      snapshot: null,
-      isFirstRun: false,
-      allCharacters: [],
-      promptPresets: presets,
-      uiSettings: wireUiSettings(),
-      agentKindSettings: map,
-      isArmServer: false,
-    },
-  });
-  useProviderDataStore.setState({ profiles: PROFILES });
+  seedShellStores({ agentKinds: map, profiles: PROFILES, promptPresets: presets });
 }
 
 const CHAT_OWNER: AgentThreadOwner = { kind: "chat", chatId: "chat-1", branchId: "branch-1", agentKind: SIDECHAT_AGENT_KIND };
@@ -261,18 +236,16 @@ const CHAT_OWNER: AgentThreadOwner = { kind: "chat", chatId: "chat-1", branchId:
 beforeEach(() => {
   mobileOverride = false;
   globalThis.fetch = testFetch(fetchRouter);
-  useAgentTurnStore.setState({ turnsByThread: {}, todoByThread: {} });
-  useAgentReviewRoundStore.setState({ roundsByThread: {} });
+  resetShellStores();
   useSnapshotStore.setState({ allCharacters: [] });
   localStorage.clear();
   seedStores({});
-  router = {
-    activeThread: null,
-    messages: [],
-    sessions: [],
-    newSession: chatThread("sidechat-thread-new", "chat-1", "branch-1"),
-    contextLinks: [],
-  };
+  // Field mutation, never reassignment — the harness holds the reference.
+  router.activeThread = null;
+  router.messages = [];
+  router.sessions = [];
+  router.newSession = chatThread({ id: "sidechat-thread-new" });
+  router.contextLinks = [];
   fetchRouter.mockClear();
 });
 
@@ -302,20 +275,6 @@ function makeIsolatedI18n() {
 
 function withIsolatedI18n(node: ReactNode) {
   return <I18nextProvider i18n={makeIsolatedI18n()}>{node}</I18nextProvider>;
-}
-
-/**
- * Drain the chained async `loadSession` microtasks (and React's scheduler
- * macrotasks) inside `act`, so its `setThreadId`/`setMessages` updates are
- * captured and do not emit React 19 "not wrapped in act" warnings. Mirrors
- * the bounded drain in `test/dom-env.ts`.
- */
-async function flushSessionLoad() {
-  await act(async () => {
-    for (let i = 0; i < 5; i++) {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    }
-  });
 }
 
 // ── Registration + selectors ────────────────────────────────────────────────
@@ -448,7 +407,7 @@ describe("sidechat-host — owner and served modes (SC-13b)", () => {
 describe("sidechat-host — sessions scoped to chat+branch (SC-13b)", () => {
   it("the lifecycle members call the chat routes with chat+branch+kind", async () => {
     const host = getAgentHost(SIDECHAT_AGENT_KIND);
-    router.activeThread = chatThread("sidechat-thread-1", "chat-1", "branch-1");
+    router.activeThread = chatThread({ id: "sidechat-thread-1" });
     router.sessions = [router.activeThread];
 
     await host.transport.getActiveThread(CHAT_OWNER);
@@ -641,7 +600,7 @@ describe("sidechat-host — copy to composer (SC-16)", () => {
 describe("sidechat-host — chat-only shell render (SC-13b)", () => {
   it("a chat owner mounts the chat pane with the empty hint and no editor pane", async () => {
     const owner: AgentThreadOwner = { ...CHAT_OWNER, branchId: "chat-only-branch" };
-    router.activeThread = chatThread("sidechat-thread-1", "chat-1", "chat-only-branch");
+    router.activeThread = chatThread({ id: "sidechat-thread-1" });
     const { getByText, getByTestId, queryByTestId } = render(
       withIsolatedI18n(<AgentShell kind={SIDECHAT_AGENT_KIND} owner={owner} isMobile={false} />),
     );
@@ -718,7 +677,7 @@ function mentionOptions(): HTMLElement[] {
 const OTHER_KIND = "sc23d-other-assistant";
 
 function otherTransport(): AgentHostTransport {
-  const thread = chatThread("other-thread-1", "chat-1", "branch-1");
+  const thread = chatThread({ id: "other-thread-1" });
   return {
     sendStream: async () => ({ finishReason: "stop", metrics: null }),
     answerAsk: async () => ({ finishReason: "stop", metrics: null }),
@@ -748,7 +707,7 @@ function otherTransport(): AgentHostTransport {
 
 describe("sidechat-host — prompt preset pins (SC-23d)", () => {
   function renderSidechat() {
-    router.activeThread = chatThread("sidechat-thread-1", "chat-1", "branch-1");
+    router.activeThread = chatThread({ id: "sidechat-thread-1" });
     return render(
       withIsolatedI18n(<AgentShell kind={SIDECHAT_AGENT_KIND} owner={CHAT_OWNER} isMobile={false} />),
     );
@@ -859,7 +818,7 @@ describe("sidechat-host — prompt preset pins (SC-23d)", () => {
   it("unpinning a preset PATCHes the filtered set and removes its chip", async () => {
     seedStores({}, [presetFixture("pp1", "Deep RP")]);
     router.activeThread = {
-      ...chatThread("sidechat-thread-1", "chat-1", "branch-1"),
+      ...chatThread({ id: "sidechat-thread-1" }),
       contextLinks: [{ targetType: "prompt_preset", targetId: "pp1" }],
     };
     const { getByTestId, queryByTestId } = render(
