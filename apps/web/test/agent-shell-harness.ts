@@ -131,7 +131,7 @@ export function seedShellStores(seed: ShellStoreSeed = {}): void {
 
 /** Reset the per-test volatile store surface (the common subset of the seven files' beforeEach blocks; file-specific extras stay in the file). */
 export function resetShellStores(): void {
-	useAgentTurnStore.setState({ turnsByThread: {}, todoByThread: {} });
+	useAgentTurnStore.setState({ turnsByThread: {}, feedByThread: {}, todoByThread: {} });
 	useAgentReviewRoundStore.setState({ roundsByThread: {} });
 	useSnapshotStore.setState({ activeChat: null, activeBranch: null });
 }
