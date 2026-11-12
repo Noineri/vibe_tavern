@@ -26,7 +26,7 @@
  * 12. endgame restart pair replaces the primary for terminal sessions (Б3);
  *     the in-session settings entry is wired only for ACTIVE matches (Б4)
  */
-import { describe, it, expect, mock, beforeEach, afterEach } from "bun:test";
+import { describe, it, expect, mock, beforeEach, afterEach, jest } from "bun:test";
 import { useDomEnv } from "../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 import { installSnapshotStoreSeam } from "../../../test/snapshot-store-seam.js";
@@ -740,11 +740,23 @@ describe("ExperienceLauncher — LB-10 Option C: effect runner lifetime", () => 
       effects: [{ id: "eff_t", kind: "timer", status: "pending" }],
       modalOpen: false,
     });
-    render(<ExperienceLauncher />);
-    await act(async () => {
-      await new Promise((r) => setTimeout(r, TIMER_RESYNC_INTERVAL_MS + 150));
-    });
-    expect(storeMocks.rehydrate.mock.calls.length).toBeGreaterThanOrEqual(1);
+    // Deterministic clock (owner ruling 2026-11-12, TQ12-F04): the resync
+    // interval is production-paced (2s) — advancing the fake clock proves the
+    // poll fires without 2.15s of real wall clock. Real timers return in the
+    // finally (the TQ-8b shell :3052 / ExperiencePlayground :2388 idiom).
+    jest.useFakeTimers();
+    try {
+      render(<ExperienceLauncher />);
+      await act(async () => {
+        jest.advanceTimersByTime(0);
+      });
+      await act(async () => {
+        jest.advanceTimersByTime(TIMER_RESYNC_INTERVAL_MS + 150);
+      });
+      expect(storeMocks.rehydrate.mock.calls.length).toBeGreaterThanOrEqual(1);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });
 

@@ -167,6 +167,21 @@ describe("test-hygiene guard (TH-4c, L2 layer)", () => {
 		expect(metrics.longSleeps).toBe(2);
 	});
 
+	test("long sleeps include the EXPRESSION form only when the constant resolves in-file (owner ruling 2026-11-12, TQ12-F04)", () => {
+		const content = [
+			`const RESYNC_MS = 2000;`,
+			`const SMALL_MS = 100;`,
+			`const UNRELATED_MS = 5;`,
+			`await new Promise((r) => setTimeout(r, RESYNC_MS + 150));`, // 2150 -- counted
+			`await new Promise((r) => setTimeout(r, SMALL_MS + 50));`, // 150 -- under threshold
+			`await new Promise((r) => setTimeout(r, NOT_DECLARED_HERE + 900));`, // unresolvable -- skipped
+			`// await new Promise((r) => setTimeout(r, RESYNC_MS + 9)); -- comment, not a usage`,
+			`await new Promise((r) => setTimeout(r, 700));`, // literal control -- counted
+		].join("\n");
+		const { metrics } = scanFile(content, "a.test.ts");
+		expect(metrics.longSleeps).toBe(2);
+	});
+
 	test("ratchet metrics skip comment lines -- a mention is not a usage (owner ruling 2026-11-12)", () => {
 		const content = [
 			`// const a = m as never; -- incident prose quoting the pattern`,

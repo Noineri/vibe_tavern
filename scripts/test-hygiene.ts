@@ -363,7 +363,21 @@ export const BUDGETS = {
 	// Sub-200ms promise drains (0/5/10/…ms act-drains) stay invisible by
 	// the same threshold as the original form. Each survivor is fix-queue
 	// debt; every fix lowers this number again.
-	longSleeps: 7,
+	// (2026-11-12, owner ruling — TQ12-F04, «окей давай как рекомендуешь»:
+	// «(б) для этого сайта + (а) в узкой форме (ловить только \w+\s*\+\s*\d+…)»):
+	// the EXPRESSION form `setTimeout(r, CONST + n)` joins the budget — counted
+	// only when CONST resolves to a numeric literal in the same file. The
+	// launcher site the ruling targeted (ExperienceLauncher.test.tsx:745,
+	// TIMER_RESYNC_INTERVAL_MS + 150 = 2150ms) was REWRITTEN deterministically
+	// (fake timers) in the same unit, so it is NOT budgeted. The first scan
+	// under the new rule surfaced ONE pre-existing site the old regex could
+	// never see — a deliberate negative-wait of the same sanctioned class as
+	// the ScriptEditor survivor (waiting out the SDK's 750ms flush window to
+	// prove nothing arrives; in-file comment cites the CI incident):
+	//   experience-sdk-diag.test.ts:93 (DIAG_FLUSH_MS 750 + 60 = 810).
+	// Budget 7→8 accordingly — same owner-authorized-baseline-reset rule as
+	// above, surfaced for confirmation; a fix-queue rewrite lowers it again.
+	longSleeps: 8,
 } as const;
 
 const EXCLUDED_DIRS = new Set([".git", "node_modules", "out", "data", "dist", ".cache"]);
@@ -442,6 +456,16 @@ const SCREEN_DOT = /\bscreen\./g;
 const LONG_SLEEP = /await\s+(?:Bun\.)?(?:sleep|delay|wait)\(\s*(\d+)\s*\)/g;
 /** The promise-setTimeout sleep form (owner ruling 2026-11-12, TQ7a-F03): a bare timing floor written as a resolved promise — same budget, same 200ms threshold. */
 const PROMISE_SETTIMEOUT_SLEEP = /new Promise\s*\(\s*\(\s*\w+\s*\)\s*=>\s*setTimeout\s*\(\s*\w+\s*,\s*(\d+)\s*\)/g;
+/**
+ * The EXPRESSION form of the same sleep (owner ruling 2026-11-12, TQ12-F04):
+ * `new Promise((r) => setTimeout(r, CONST + 150))` — the delay is a constant
+ * plus a delta, so the literal regex above cannot see it. Counted ONLY when
+ * CONST resolves to a numeric literal declared in the same file (the value is
+ * then const+delta, same 200ms threshold); an unresolvable name is skipped —
+ * an in-file numeric declaration is the proof the value is computable.
+ */
+const PROMISE_SETTIMEOUT_SLEEP_EXPR = /new Promise\s*\(\s*\(\s*\w+\s*\)\s*=>\s*setTimeout\s*\(\s*\w+\s*,\s*([A-Za-z_$][\w$]*)\s*\+\s*(\d+)\s*\)/g;
+const NUMERIC_CONST_DECL = /\bconst\s+([A-Za-z_$][\w$]*)\s*=\s*(\d+)\b/g;
 const STATIC_RTL_IMPORT = /^[ \t]*import(?!\s+type\b)\s+(?:[^;]*?\s+from\s+)?["']@testing-library\/react["'][ \t]*;/gm;
 
 /** Blank/comment lines never count as calls — incident reports are quoted in comments. */
@@ -515,6 +539,20 @@ export function scanFile(content: string, file: string): { violations: Violation
 		}
 		for (const m of line.matchAll(PROMISE_SETTIMEOUT_SLEEP)) {
 			if (Number.parseInt(m[1] ?? "0", 10) > 200) metrics.longSleeps++;
+		}
+		for (const m of line.matchAll(PROMISE_SETTIMEOUT_SLEEP_EXPR)) {
+			const constName = m[1] ?? "";
+			const delta = Number.parseInt(m[2] ?? "0", 10);
+			// Resolve CONST to a numeric literal declared anywhere in this file.
+			NUMERIC_CONST_DECL.lastIndex = 0;
+			let resolved: number | null = null;
+			for (const decl of content.matchAll(NUMERIC_CONST_DECL)) {
+				if (decl[1] === constName) {
+					resolved = Number.parseInt(decl[2] ?? "0", 10);
+					break;
+				}
+			}
+			if (resolved !== null && resolved + delta > 200) metrics.longSleeps++;
 		}
 	}
 
