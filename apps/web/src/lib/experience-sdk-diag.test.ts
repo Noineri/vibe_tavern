@@ -13,8 +13,20 @@
  * The RM-12c lesson, encoded: a loop that dies WITHOUT ever posting a view
  * must still reach the host (arm on the first vt-loop:* event; a boot
  * error surfaces through the errors tail).
+ *
+ * Deterministic time (owner ruling 2026-11-12, the TQ12-F04 follow-up): the
+ * flush cadence is driven by jest fake timers. The harness/handshake is built
+ * under REAL timers (its settle rides a real 0ms macrotask); each test then
+ * installs fakes, dispatches its vt-loop:* events (arming the SDK's own
+ * setTimeout), and advances past DIAG_FLUSH_MS. Port delivery is settled
+ * with setImmediate turns — a macrotask OUTSIDE the faked timer queue,
+ * probe-verified to deliver under fake timers (microtasks alone do not).
+ * The POSITIVE tests prove delivery works in this regime, so the negative
+ * test's empty-samples assert is not vacuous. This killed the wall-clock
+ * race class wholesale: CI linux run 34665657469 once forced a 100ms poll
+ * loop here (up-to-5s tail under load); the poll is gone.
  */
-import { describe, expect, test } from "bun:test";
+import { describe, expect, jest, test } from "bun:test";
 import { useDomEnv } from "../../test/dom-env.js";
 import { ExperienceHostBridge } from "./experience-bridge.js";
 import { VIBE_EXPERIENCE_SDK_SOURCE } from "./experience-sdk.js";
@@ -86,33 +98,35 @@ async function createHarness(): Promise<SdkHarness> {
   return harness;
 }
 
-/** Advance past the SDK's flush window (750ms) and settle the macrotask.
- * Only for NEGATIVE assertions — where the terminal event is "nothing ever
- * arrives" and waiting out the window IS the mechanism. */
-async function flushDiag(): Promise<void> {
-  await new Promise((resolve) => setTimeout(resolve, DIAG_FLUSH_MS + 60));
+/** Fire the SDK's flush window under fake timers (one DIAG_FLUSH_MS cadence;
+ * the re-armed next cadence lands outside this window — one sample per test). */
+function advanceFlushWindow(): void {
+  jest.advanceTimersByTime(DIAG_FLUSH_MS + 60);
 }
 
-/** Poll until the SDK's periodic flush delivers a sample matching `pred`.
- * The flush fires on its own 750ms cadence; a fixed 810ms sleep raced it under
- * CI load (linux run 34665657469 — samples 0 after flushDiag). Sample arrival
- * is the terminal event; only the bounded deadline tail is timing-sensitive. */
-async function waitForSample(h: SdkHarness, pred: (sample: unknown) => boolean, attempts = 50): Promise<void> {
-  for (let i = 0; i < attempts; i++) {
-    if (h.samples.some(pred)) return;
-    await new Promise((resolve) => setTimeout(resolve, 100));
+/** Settle MessageChannel port delivery while timers stay faked: port delivery
+ * rides a macrotask OUTSIDE the faked timer queue (setImmediate is not faked
+ * by bun's jest shim — probe-verified 2026-11-12; microtasks alone do not
+ * deliver). Two turns: diagFlush posts synchronously, the second is
+ * insurance — both deterministic, no wall clock involved. */
+async function settlePort(): Promise<void> {
+  for (let i = 0; i < 2; i++) {
+    await new Promise((resolve) => setImmediate(resolve));
   }
 }
 
 describe("SDK loop diagnostics channel (RM-13)", () => {
   test("samples the latest view + event/error/console tails in one loop_diag message", async () => {
     const h = await createHarness();
-    h.dispatchLoop("vt-loop:event", { kind: "round_started", seed: 7 });
-    h.dispatchLoop("vt-loop:view", { score: 1 });
-    h.dispatchLoop("vt-loop:view", { score: 2 }); // latest wins in the sample
-    h.console.error("boom", { x: 1 });
-    await waitForSample(h, (s) => (s as { view?: { score?: number } }).view?.score === 2);
-    expect(h.samples.length).toBeGreaterThanOrEqual(1);
+    jest.useFakeTimers();
+    try {
+      h.dispatchLoop("vt-loop:event", { kind: "round_started", seed: 7 });
+      h.dispatchLoop("vt-loop:view", { score: 1 });
+      h.dispatchLoop("vt-loop:view", { score: 2 }); // latest wins in the sample
+      h.console.error("boom", { x: 1 });
+      advanceFlushWindow();
+      await settlePort();
+      expect(h.samples.length).toBeGreaterThanOrEqual(1);
     const last = h.samples[h.samples.length - 1] as {
       view?: unknown;
       events: unknown[];
@@ -124,20 +138,28 @@ describe("SDK loop diagnostics channel (RM-13)", () => {
     expect(last.events.some((e) => (e as { kind: string }).kind === "round_started")).toBe(true);
     expect(last.console.some((c) => c.level === "error" && c.text.includes("boom"))).toBe(true);
     expect(last.final).toBe(false);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   test("a dead loop still reports: arm on the first event, boot errors reach the host", async () => {
     const h = await createHarness();
-    // The RM-12c signature: the loop emits round_started, then dies with an
-    // error. No view EVER flows.
-    h.dispatchLoop("vt-loop:event", { kind: "round_started", seed: 1 });
-    h.dispatchLoop("vt-loop:error", { kind: "boot_failed", message: "no config tag" });
-    await waitForSample(h, (s) =>
-      (s as { errors: Array<{ kind: string }> }).errors.some((e) => e.kind === "boot_failed"));
-    expect(h.samples.length).toBeGreaterThanOrEqual(1);
-    const last = h.samples[h.samples.length - 1] as { errors: unknown[]; view?: unknown };
-    expect(last.errors.some((e) => (e as { kind: string }).kind === "boot_failed")).toBe(true);
-    expect(last.view).toBeUndefined();
+    jest.useFakeTimers();
+    try {
+      // The RM-12c signature: the loop emits round_started, then dies with an
+      // error. No view EVER flows.
+      h.dispatchLoop("vt-loop:event", { kind: "round_started", seed: 1 });
+      h.dispatchLoop("vt-loop:error", { kind: "boot_failed", message: "no config tag" });
+      advanceFlushWindow();
+      await settlePort();
+      expect(h.samples.length).toBeGreaterThanOrEqual(1);
+      const last = h.samples[h.samples.length - 1] as { errors: unknown[]; view?: unknown };
+      expect(last.errors.some((e) => (e as { kind: string }).kind === "boot_failed")).toBe(true);
+      expect(last.view).toBeUndefined();
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   test("round finish posts a final sample (final: true) with the last view", async () => {
@@ -147,7 +169,7 @@ describe("SDK loop diagnostics channel (RM-13)", () => {
     h.dispatchLoop("vt-loop:finish", { status: "completed", finalState: { score: 5 }, log: [] });
     // The final flush is synchronous inside the finish listener — settle the
     // macrotask so the port delivery lands.
-    await new Promise((resolve) => setTimeout(resolve, 30));
+    await settlePort();
     const finals = h.samples.filter((s) => (s as { final: boolean }).final === true);
     expect(finals.length).toBe(1);
     const f = finals[0] as { view?: unknown; final: boolean };
@@ -156,8 +178,14 @@ describe("SDK loop diagnostics channel (RM-13)", () => {
 
   test("a turn-based frame (no vt-loop:* events) never sends loop_diag", async () => {
     const h = await createHarness();
-    h.console.log("turn-mode noise"); // collected into the ring, never sent
-    await flushDiag();
-    expect(h.samples).toEqual([]);
+    jest.useFakeTimers();
+    try {
+      h.console.log("turn-mode noise"); // collected into the ring, never sent
+      advanceFlushWindow();
+      await settlePort();
+      expect(h.samples).toEqual([]);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });

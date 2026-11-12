@@ -377,7 +377,15 @@ export const BUDGETS = {
 	//   experience-sdk-diag.test.ts:93 (DIAG_FLUSH_MS 750 + 60 = 810).
 	// Budget 7→8 accordingly — same owner-authorized-baseline-reset rule as
 	// above, surfaced for confirmation; a fix-queue rewrite lowers it again.
-	longSleeps: 8,
+	// (2026-11-12, owner ruling — «да, ставь», logged @ a3c8827e): the
+	// confirmation chose the REWRITE, not keep-sanctioned. Executed same
+	// day: experience-sdk-diag.test.ts now drives the SDK's 750ms flush
+	// cadence with jest fake timers (harness/handshake built under real
+	// timers; port delivery settled via setImmediate turns, probe-verified
+	// to deliver under fakes) — flushDiag/waitForSample and every wall-clock
+	// wait are gone. The site is budgeted NO MORE:
+	//   experience-sdk-diag.test.ts — REWRITTEN (was :93, 810ms).
+	longSleeps: 7,
 } as const;
 
 const EXCLUDED_DIRS = new Set([".git", "node_modules", "out", "data", "dist", ".cache"]);
