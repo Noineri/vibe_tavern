@@ -32,6 +32,8 @@ export interface ProviderModelSelectorProps {
   value: string;
   onChange: (value: string) => void;
   options: ProviderModelListOption[];
+  /** Full catalog when options is a capability-specific subset (for example vision). */
+  catalogOptions?: ProviderModelListOption[];
   fetching: boolean;
   fetchError: string | null;
   onRefreshOptions?: () => void;
@@ -72,6 +74,7 @@ export function ProviderModelSelector({
   value,
   onChange,
   options,
+  catalogOptions = options,
   fetching,
   fetchError,
   onRefreshOptions,
@@ -110,7 +113,7 @@ export function ProviderModelSelector({
   const modelListOpen = controlledModelListOpen ?? uncontrolledModelListOpen;
   const setModelSearch = onModelSearchChange ?? setUncontrolledModelSearch;
   const setModelListOpen = onModelListOpenChange ?? setUncontrolledModelListOpen;
-  const showsDropdown = options.length > 0 || keepDropdownWhenOptionsEmpty;
+  const showsDropdown = options.length > 0 || favoriteModels.length > 0 || keepDropdownWhenOptionsEmpty || modelListOpen;
   const selectedModel = options.find((model) => model.id === value);
   // "Free only" narrows the text-searched list further (computed live each render
   // against fetched pricing — never stored as a tag). The selected model is
@@ -180,7 +183,7 @@ export function ProviderModelSelector({
             height (owner 2026-09-22; same fix in the STT/TTS/image-gen model
             pickers). */}
         <div className="flex items-end gap-3">
-        {showsDropdown ? <div className="relative min-w-0 flex-1"><Popover.Root open={modelListOpen} onOpenChange={setModelListOpen}><Popover.Trigger asChild><button type="button" data-testid={triggerTestId} className="flex w-full items-center justify-between rounded-md border border-border bg-s2 px-3 py-[6px] font-ui text-[calc(var(--ui-fs)-1px)] text-t1 transition-colors hover:border-accent"><span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-left">{fetching && options.length === 0 && emptyOptionsLabel ? emptyOptionsLabel : selectedModel?.label || value || placeholder || t("select_model")}{showContextLength && formatContext(selectedModel?.contextLength) && <span className="ml-2 text-[calc(var(--ui-fs)-3px)] font-medium text-t2">{formatContext(selectedModel?.contextLength)}</span>}</span><span className="text-t3"><Icons.Caret direction="d" /></span></button></Popover.Trigger><Popover.Portal container={portalContainer}><Popover.Content sideOffset={4} align="start" onCloseAutoFocus={(event) => event.preventDefault()} className="glass-blur z-[600] overflow-hidden rounded-md border border-border bg-surface shadow-[0_8px_30px_rgba(0,0,0,0.6)]" style={{ width: "var(--radix-popover-trigger-width)", maxHeight: 260 }}><Command shouldFilter={false} loop className="flex flex-col outline-none"><div className="border-b border-border2 bg-s2 p-2"><Command.Input placeholder={t("search_models")} value={modelSearch} onValueChange={setModelSearch} className="w-full rounded border border-border bg-surface px-2 py-[5px] font-ui text-[calc(var(--ui-fs)-2px)] text-t1 outline-none focus:border-accent" /></div><ProviderModelList models={listModels} selectedId={value} search={modelSearch} favorites={favoriteModels} onSelect={selectModel} onToggleFavorite={onToggleFavoriteModel} onUseCustomSlug={useCustomSlug} groupByOwner={groupByOwner?.checked} showContextLength={showContextLength} renderRowBadges={renderRowBadges} renderRowDescription={renderRowDescription} showPricing={showPricing} optionTestId={optionTestId} favoriteTestId={favoriteTestId} /></Command></Popover.Content></Popover.Portal></Popover.Root></div> : <div className="min-w-0 flex-1"><TextInput value={value} onChange={(event) => onChange(event.target.value)} placeholder={t("custom_model_id_placeholder")} /></div>}
+        {showsDropdown ? <div className="relative min-w-0 flex-1"><Popover.Root open={modelListOpen} onOpenChange={setModelListOpen}><Popover.Trigger asChild><button type="button" data-testid={triggerTestId} className="flex w-full items-center justify-between rounded-md border border-border bg-s2 px-3 py-[6px] font-ui text-[calc(var(--ui-fs)-1px)] text-t1 transition-colors hover:border-accent"><span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-left">{fetching && options.length === 0 && emptyOptionsLabel ? emptyOptionsLabel : selectedModel?.label || value || placeholder || t("select_model")}{showContextLength && formatContext(selectedModel?.contextLength) && <span className="ml-2 text-[calc(var(--ui-fs)-3px)] font-medium text-t2">{formatContext(selectedModel?.contextLength)}</span>}</span><span className="text-t3"><Icons.Caret direction="d" /></span></button></Popover.Trigger><Popover.Portal container={portalContainer}><Popover.Content sideOffset={4} align="start" onCloseAutoFocus={(event) => event.preventDefault()} className="glass-blur z-[600] overflow-hidden rounded-md border border-border bg-surface shadow-[0_8px_30px_rgba(0,0,0,0.6)]" style={{ width: "var(--radix-popover-trigger-width)", maxHeight: 260 }}><Command shouldFilter={false} loop className="flex flex-col outline-none"><div className="border-b border-border2 bg-s2 p-2"><Command.Input placeholder={t("search_models")} value={modelSearch} onValueChange={setModelSearch} className="w-full rounded border border-border bg-surface px-2 py-[5px] font-ui text-[calc(var(--ui-fs)-2px)] text-t1 outline-none focus:border-accent" /></div><ProviderModelList models={listModels} catalogModels={catalogOptions} selectedId={value} search={modelSearch} favorites={favoriteModels} onSelect={selectModel} onToggleFavorite={onToggleFavoriteModel} onUseCustomSlug={useCustomSlug} groupByOwner={groupByOwner?.checked} showContextLength={showContextLength} renderRowBadges={renderRowBadges} renderRowDescription={renderRowDescription} showPricing={showPricing} optionTestId={optionTestId} favoriteTestId={favoriteTestId} /></Command></Popover.Content></Popover.Portal></Popover.Root></div> : <div className="min-w-0 flex-1"><TextInput value={value} onChange={(event) => onChange(event.target.value)} placeholder={t("custom_model_id_placeholder")} /></div>}
         {/* Mobile keeps the icon-only 34px shape matched to the closed dropdown's
             height: 2px borders + 2×6px py + 13px×1.5 line box (Tailwind
             preflight html line-height) = 33.5px. The row is items-end, so a

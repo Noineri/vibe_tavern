@@ -1103,6 +1103,7 @@
 	"use_custom_model_id": "Использовать свою модель «{id}»",
 	"enter_api_key_for_models": "Введите API ключ для загрузки списка моделей",
 	"remove_from_favorites": "Убрать из избранного",
+	"favorites_outside_catalog": "Избранное вне каталога",
 	"add_to_favorites": "Добавить в избранное",
 	"filter_free_only": "Только бесплатные",
 	"filter_group_by_owner": "Группировать по владельцу",

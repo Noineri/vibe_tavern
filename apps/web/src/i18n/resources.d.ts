@@ -1444,6 +1444,7 @@ export default interface Resources {
     "failed_to_export_vtf": "Failed to export VTF.",
     "failed_to_fetch_models": "Failed to fetch models.",
     "failed_to_set_default_persona": "Failed to set default persona.",
+    "favorites_outside_catalog": "Favorites outside the catalog",
     "file_too_large": "File too large. Maximum size is 20 MB.",
     "filter_by_tags": "Filter by tags",
     "filter_free_only": "Free only",

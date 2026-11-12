@@ -30,7 +30,7 @@
     "apps/web/src/components/experience/ExperienceSetupModal.tsx": 1542,
     "apps/web/src/components/layout/SetupWizard.tsx": 954,
     "apps/web/src/components/modals/PromptManagerModal.tsx": 1304,
-    "apps/web/src/components/modals/ProviderModal.tsx": 820,
+    "apps/web/src/components/modals/ProviderModal.tsx": 816,
     "apps/web/src/components/settings/prompt/ImagePromptTemplatesPane.tsx": 905,
     "apps/web/src/components/settings/provider/imagegen/ImageGenPane.tsx": 1890,
     "apps/web/src/components/settings/provider/ProviderSamplerPanel.tsx": 1139,

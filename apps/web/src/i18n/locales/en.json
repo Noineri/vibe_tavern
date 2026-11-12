@@ -1087,6 +1087,7 @@
 	"use_custom_model_id": "Use custom model “{id}”",
 	"enter_api_key_for_models": "Enter an API key to load model list",
 	"remove_from_favorites": "Remove from favorites",
+	"favorites_outside_catalog": "Favorites outside the catalog",
 	"add_to_favorites": "Add to favorites",
 	"filter_free_only": "Free only",
 	"filter_group_by_owner": "Group by owner",
