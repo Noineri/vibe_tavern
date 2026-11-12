@@ -5,8 +5,12 @@
  * through the sidechat host's module-load registration) with a fetch-level
  * router — no mock.module on the api modules, so this file coexists with any
  * other test file sharing the bun worker (the script-agent-host.test.tsx
- * reliability contract). Fetch is swapped per test and restored after each;
- * every process-global store touched here is re-seeded in beforeEach.
+ * reliability contract). The router/seed/reset/drain scaffolding comes from
+ * the shared harness (apps/web/test/agent-shell-harness.ts — ASHU-4, fork #3
+ * of 7); file-specific extras (viewport override, isolated i18n, the
+ * slide-transition dispatcher, the sidechat open/call-director stores) stay
+ * here. Fetch is swapped per test and restored after each; every
+ * process-global store touched here is re-seeded in beforeEach.
  *
  * Pins (the four named SC-14 steps, plus the served-modes gate):
  *   - the closed handle opens the panel; the chevron flips `<` → `>`;
@@ -30,19 +34,19 @@ import type { ReactNode } from "react";
 import { createInstance } from "i18next";
 import { I18nextProvider } from "react-i18next";
 import { CHAT_MODE, brandId, type ChatBranchId, type ChatId } from "@vibe-tavern/domain";
-import type {
-  AgentKindSettingsWire,
-  ExperienceCopilotMessageWire,
-  ExperienceCopilotThreadWire,
-} from "@vibe-tavern/api-contracts";
+import type { AgentKindSettingsWire } from "@vibe-tavern/api-contracts";
 import { useDomEnv } from "../../../../test/dom-env.js";
-import { wireBranch, wireChat, wireProviderProfile, wireUiSettings } from "../../../../test/wire-fixtures.js";
+import {
+  chatThread,
+  flushSessionLoad,
+  resetShellStores,
+  seedShellStores,
+  shellRouter,
+  type AgentChatsRouterState,
+} from "../../../../test/agent-shell-harness.js";
+import { wireBranch, wireChat, wireProviderProfile } from "../../../../test/wire-fixtures.js";
 import type { ProviderProfileRecord } from "../../../api/types.js";
 import { useSnapshotStore } from "../../../stores/snapshot-store.js";
-import { useAgentTurnStore } from "../../../stores/agent-turn-store.js";
-import { useAgentReviewRoundStore } from "../../../stores/agent-review-store.js";
-import { useProviderDataStore } from "../../../stores/provider-data-store.js";
-import { useBootstrapStore } from "../../../stores/api-actions/bootstrap-actions.js";
 import { SIDECHAT_AGENT_KIND } from "../../../api/agent-kind-served-modes.js";
 import { SIDECHAT_WIDTH_KEY } from "./SidechatPanel.js";
 import { useSidechatOpenStore } from "../../../stores/sidechat-open-store.js";
@@ -60,61 +64,24 @@ function setViewportWidth(value: number): void {
 }
 
 // ── Fetch-level API router ───────────────────────────────────────────────
-// Same rationale as script-agent-host.test.tsx: the transport seam is faked at
-// the FETCH level so the REAL hono clients run against canned payloads.
-interface RouterState {
-  activeThread: ExperienceCopilotThreadWire | null;
-  messages: ExperienceCopilotMessageWire[];
-  sessions: ExperienceCopilotThreadWire[];
-  newSession: ExperienceCopilotThreadWire;
-}
-let router: RouterState;
+// The shared harness router (agent-shell-harness.ts, fork #3 of 7 migrated):
+// agent-chats triple over live routerState + the copilot family + bootstrap
+// quartet + fail-loud tail. Same rationale as script-agent-host.test.tsx: the
+// transport seam is faked at the FETCH level so the REAL hono clients run
+// against canned payloads. The harness `mock()` wrapper keeps call recording
+// for the DR-12 stream-body assertions below.
+const routerState: AgentChatsRouterState = {
+  activeThread: null,
+  sessions: [],
+  newSession: {},
+  messages: [],
+};
 
-const jsonResponse = (payload: unknown) =>
-  new Response(JSON.stringify(payload), { status: 200, headers: { "Content-Type": "application/json" } });
-
-const fetchRouter = mock(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-  const path = new URL(String(input), "http://gateway.test").pathname;
-  const method = (init?.method ?? "GET").toUpperCase();
-  if (method === "GET" && /\/api\/agent\/chats\/[^/]+\/branches\/[^/]+\/[^/]+\/active$/.test(path)) {
-    return jsonResponse(router.activeThread);
-  }
-  if (method === "GET" && /\/api\/agent\/chats\/[^/]+\/branches\/[^/]+\/[^/]+\/sessions$/.test(path)) {
-    return jsonResponse(router.sessions);
-  }
-  if (method === "POST" && /\/api\/agent\/chats\/[^/]+\/branches\/[^/]+\/[^/]+\/session$/.test(path)) {
-    return jsonResponse(router.newSession);
-  }
-  if (method === "POST" && /\/api\/experience-copilot\/[^/]+\/stream/.test(path)) {
-    // DR-12: a minimal well-formed SSE stream (one finishReason event) so
-    // the queued-call send settles cleanly through the real parser.
-    return new Response('data: {"finishReason":"stop"}\n\n', {
-      status: 200,
-      headers: { "Content-Type": "text/event-stream" },
-    });
-  }
-  if (method === "GET" && /\/api\/experience-copilot\/[^/]+\/messages$/.test(path)) {
-    return jsonResponse(router.messages);
-  }
-  if (method === "GET" && /\/api\/experience-copilot\/[^/]+\/context$/.test(path)) {
-    return jsonResponse({ metrics: null, autoCompact: true });
-  }
-  if (method === "GET" && /\/api\/experience-copilot\/[^/]+\/context-links$/.test(path)) {
-    return jsonResponse([]);
-  }
-  if (method === "GET" && path.includes("/branches/") && path.endsWith("/plan")) {
-    return jsonResponse({ plan: { goal: "", constraints: [], tasks: [] } });
-  }
-  if (method === "GET" && path.endsWith("/api/personas")) return jsonResponse([]);
-  if (method === "GET" && path.endsWith("/api/lorebooks/all")) return jsonResponse([]);
-  if (method === "GET" && path.endsWith("/api/scripts/all")) return jsonResponse([]);
-  if (method === "GET" && path.endsWith("/api/coauthor/skills")) return jsonResponse({ entries: [], errors: [] });
-  if (method === "GET" && path.endsWith("/model-favorites")) return jsonResponse([]);
-  return new Response(JSON.stringify({ error: { message: `Unhandled fetch in test: ${method} ${path}` } }), { status: 500 });
-});
+const fetchRouter = mock(shellRouter({ agentChats: routerState }));
 
 // Radix Tooltip needs a global Provider the isolated render here doesn't mount.
-const realTooltip = await import("../../shared/Tooltip.js");
+// R15: load-time COPY of the real namespace — never spread the live binding.
+const realTooltip = { ...(await import("../../shared/Tooltip.js")) };
 mock.module("../../shared/Tooltip.js", () => ({
   ...realTooltip,
   CustomTooltip: ({ children }: { children: ReactNode }) => <>{children}</>,
@@ -123,7 +90,8 @@ mock.module("../../shared/Tooltip.js", () => ({
 
 // The panel reads isMobile through the hook — override it with the same
 // mutable cell so the suite stays on desktop unless a test opts out.
-const realMobile = await import("../../../hooks/use-mobile.js");
+// R15: load-time COPY of the real namespace — never spread the live binding.
+const realMobile = { ...(await import("../../../hooks/use-mobile.js")) };
 mock.module("../../../hooks/use-mobile.js", () => ({
   ...realMobile,
   useIsMobile: () => mobileOverride,
@@ -156,23 +124,6 @@ const CHAT_A = wireChat({ id: brandId<ChatId>("chat-a"), mode: "rp" });
 const BRANCH_A = wireBranch({ id: brandId<ChatBranchId>("branch-a"), chatId: brandId<ChatId>("chat-a") });
 const CHAT_B = wireChat({ id: brandId<ChatId>("chat-b"), mode: "rp" });
 const BRANCH_B = wireBranch({ id: brandId<ChatBranchId>("branch-b"), chatId: brandId<ChatId>("chat-b") });
-
-// The literal carries the thread schema's complete field set (verified against
-// experienceCopilotThreadSchema) — the old double cast was pure noise.
-function chatThread(id: string): ExperienceCopilotThreadWire {
-  return {
-    id,
-    scriptId: null,
-    draftSessionId: null,
-    title: "Sidechat",
-    archivedAt: null,
-    createdAt: "",
-    updatedAt: "",
-    metrics: null,
-    contextLinks: [],
-    todo: [],
-  };
-}
 
 // p1 is the ACTIVE provider profile; each profile carries one tool-capable
 // cached model so the REAL `useProviderModels` hook serves the model list
@@ -207,20 +158,9 @@ function kindEntry(kind: string, servesChatModes: string[]): AgentKindSettingsWi
   };
 }
 
+/** File-local seeding delta on the harness seedShellStores (the shared agent-kind map + this suite's profiles). */
 function seedStores(map: Record<string, AgentKindSettingsWire>): void {
-  useBootstrapStore.setState({
-    data: {
-      initialChatId: null,
-      snapshot: null,
-      isFirstRun: false,
-      allCharacters: [],
-      promptPresets: [],
-      uiSettings: wireUiSettings(),
-      agentKindSettings: map,
-      isArmServer: false,
-    },
-  });
-  useProviderDataStore.setState({ profiles: PROFILES });
+  seedShellStores({ agentKinds: map, profiles: PROFILES });
 }
 
 function seedChat(chat: ActiveChat, branch: ActiveBranch): void {
@@ -230,8 +170,7 @@ function seedChat(chat: ActiveChat, branch: ActiveBranch): void {
 beforeEach(() => {
   mobileOverride = false;
   globalThis.fetch = testFetch(fetchRouter);
-  useAgentTurnStore.setState({ turnsByThread: {}, todoByThread: {} });
-  useAgentReviewRoundStore.setState({ roundsByThread: {} });
+  resetShellStores();
   localStorage.clear();
   // The open flag is shared process state now (SC-18a) — reset it alongside
   // localStorage so no test reads the previous test's in-memory entry.
@@ -239,12 +178,9 @@ beforeEach(() => {
   setViewportWidth(1024);
   seedStores({ [SIDECHAT_AGENT_KIND]: kindEntry(SIDECHAT_AGENT_KIND, [CHAT_MODE.rp]) });
   seedChat(CHAT_A, BRANCH_A);
-  router = {
-    activeThread: chatThread("sidechat-thread-a"),
-    messages: [],
-    sessions: [],
-    newSession: chatThread("sidechat-thread-new"),
-  };
+  routerState.activeThread = chatThread({ id: "sidechat-thread-a" });
+  routerState.sessions = [];
+  routerState.newSession = chatThread({ id: "sidechat-thread-new" });
   fetchRouter.mockClear();
 });
 
@@ -290,19 +226,6 @@ function endSlideTransition(el: HTMLElement): void {
   end.propertyName = "transform";
   act(() => {
     el.dispatchEvent(end);
-  });
-}
-
-/**
- * Drain the chained async `loadSession` microtasks (and React's scheduler
- * macrotasks) inside `act`, so the shell's thread/messages updates are
- * captured and do not emit React 19 "not wrapped in act" warnings.
- */
-async function flushSessionLoad() {
-  await act(async () => {
-    for (let i = 0; i < 5; i++) {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    }
   });
 }
 
@@ -574,7 +497,7 @@ describe("sidechat-panel — the pending director call (DR-12)", () => {
         modelName: "d12-model",
       },
     });
-    router.activeThread = null;
+    routerState.activeThread = null;
     // What `callDirector` leaves behind: an open surface + a queued call.
     useSidechatOpenStore.getState().setOpen(CHAT_A.id, true);
     useSidechatCallDirectorStore.getState().enqueue(CALL_KEY);

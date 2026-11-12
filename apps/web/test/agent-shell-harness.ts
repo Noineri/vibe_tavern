@@ -51,7 +51,15 @@ export function jsonResponse(payload: unknown, status = 200): Response {
 }
 
 export function sseResponse(events: readonly string[]): Response {
-	return new Response(events.join("") + (events.length > 0 ? "\n" : ""), {
+	// Each event is terminated by its own blank-line dispatch terminator:
+	// eventsource-parser (the real consumer, apps/web/src/lib/sse-parser.ts)
+	// dispatches an EventSourceMessage only on an EMPTY line, and consecutive
+	// `data:` lines WITHOUT one MERGE into a single multi-line event (JSON.parse
+	// of the joined data then throws). One "\n\n" per event is the only framing
+	// that both settles a send and keeps multi-event streams independent
+	// (proven at ASHU-4: the SidechatPanel DR-12 send is the first real-parser
+	// consumer).
+	return new Response(events.map((event) => `${event}\n\n`).join(""), {
 		status: 200,
 		headers: { "Content-Type": "text/event-stream" },
 	});

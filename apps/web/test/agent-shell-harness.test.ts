@@ -22,7 +22,20 @@ describe("agent-shell-harness micro-helpers", () => {
 	it("sseResponse emits text/event-stream frames", async () => {
 		const res = sseResponse(['data: {"finishReason":"stop"}']);
 		expect(res.headers.get("Content-Type")).toBe("text/event-stream");
-		expect(await res.text()).toBe('data: {"finishReason":"stop"}\n');
+		expect(await res.text()).toBe('data: {"finishReason":"stop"}\n\n');
+	});
+
+	it("sseResponse frames DISPATCH through the real eventsource-parser (the ASHU-4 gap)", async () => {
+		const { createParser } = await import("eventsource-parser");
+		const body = await sseResponse(['data: {"a":1}', 'data: {"b":2}']).text();
+		const messages: Array<{ data: string }> = [];
+		const parser = createParser({ onEvent: (message) => void messages.push(message) });
+		parser.feed(body);
+		// The blank-line terminator must dispatch EVERY buffered event — the
+		// old single-"\n" framing left them pending (a send would never settle).
+		expect(messages).toHaveLength(2);
+		expect(messages[0]!.data).toBe('{"a":1}');
+		expect(messages[1]!.data).toBe('{"b":2}');
 	});
 
 	it("chatThread carries the full wire schema and applies overrides", () => {
@@ -83,7 +96,7 @@ describe("shellRouter", () => {
 		const router = shellRouter({ copilot: { messages: [{ id: "m1" }] } });
 		const stream = await router("/api/experience-copilot/x/stream", { method: "POST" });
 		expect(stream.headers.get("Content-Type")).toBe("text/event-stream");
-		expect(await stream.text()).toBe('data: {"finishReason":"stop"}\n');
+		expect(await stream.text()).toBe('data: {"finishReason":"stop"}\n\n');
 		const messages = await (await router("/api/experience-copilot/x/messages", { method: "GET" })).json();
 		expect(messages).toEqual([{ id: "m1" }]);
 		const context = await (await router("/api/experience-copilot/x/context", { method: "GET" })).json();
