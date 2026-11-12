@@ -341,6 +341,8 @@ Nothing here touches stored history or model context — prompt assembly, compac
 **Retained memory, stated honestly.** The mounted render set is bounded by the stable suffix + viewport overscan regardless of thread length; the initial and settle reads are bounded pages; older pages a user explicitly requests accumulate for the active session and are released on a real session/owner change (no silent eviction — AFP-19 owns any residual-growth fix after the owner's long-session check). Browser find cannot search unmounted/unloaded rows; whole-thread search and quoting stay in `SIDECHAT_SEARCH_QUOTES_PLAN`, which consumes this plan's around-message navigation seam.
 
 **Feedback chrome.** Initial loading/error/retry, older-page load/error, refresh and neighborhood errors, stale-edge revalidation, missing-range continuation and the true loaded-history start are explicit compact actions (`AgentFeedFeedback`) — never a viewport-measurement fetch loop, so hidden mobile tabs and panel resizes cannot chase all history.
+For loaded history, these controls are quiet inline content at the start of the scrolling transcript, not a fixed panel beneath the chat header.
+Virtuoso measures the core's stable header slot; loading and retries keep using the existing prepend anchor and navigation controller without adding render rows or changing inverse indexes.
 
 
 ---
