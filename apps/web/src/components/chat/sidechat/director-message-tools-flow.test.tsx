@@ -28,11 +28,17 @@
  *     snapshot store through the canonical action (the full
  *     route → card → ingest chain over the HTTP boundary).
  *
- * Runner: bun:test with scoped happy-dom. Fetch is swapped per test and
- * restored after each (beforeEach install, afterEach + afterAll restore);
- * every process-global store touched here is re-seeded in beforeEach; the
- * global i18next `t` and the sonner toast are spied and restored in
- * afterAll (the use-agent-controller.test.ts precedent).
+ * Runner: bun:test with scoped happy-dom. The router/seed/reset/drain
+ * scaffolding comes from the shared harness (apps/web/test/agent-shell-harness.ts
+ * — ASHU-5, fork #4 of 7): the harness serves the agent-chats triple, the
+ * copilot context family, the bootstrap quartet and the fail-loud tail; this
+ * file's STATEFUL routes (stream recorder, run replay, live feed/messages,
+ * canned proposal outcomes) ride the custom-first escape hatch over the
+ * mutable router state. Fetch is swapped per test and restored after each
+ * (beforeEach install, afterEach + afterAll restore); every process-global
+ * store touched here is re-seeded in beforeEach; the global i18next `t` and
+ * the sonner toast are spied and restored in afterAll (the
+ * use-agent-controller.test.ts precedent).
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
 import { testFetch } from "@vibe-tavern/test-fetch";
@@ -46,16 +52,23 @@ import {
   type ExperienceCopilotMessageWire,
   type RecordProposal,
 } from "@vibe-tavern/api-contracts";
-import { CHAT_MODE, type AgentThreadOwner, type PromptPresetDto } from "@vibe-tavern/domain";
+import { CHAT_MODE, type AgentThreadOwner } from "@vibe-tavern/domain";
 import { useDomEnv } from "../../../../test/dom-env.js";
+import {
+  chatThread,
+  flushSessionLoad,
+  jsonResponse,
+  resetShellStores,
+  seedShellStores,
+  shellRouter,
+  sseResponse as harnessSse,
+  type AgentChatsRouterState,
+} from "../../../../test/agent-shell-harness.js";
 import { agentFeedPageFromMessages } from "../../../../test/agent-feed-page.js";
-import { wireBranch, wireChat, wireProviderProfile, wireUiSettings } from "../../../../test/wire-fixtures.js";
+import { wireBranch, wireChat, wireProviderProfile } from "../../../../test/wire-fixtures.js";
 import type { ProviderProfileRecord } from "../../../api/types.js";
 import { SIDECHAT_AGENT_KIND } from "../../../api/agent-kind-served-modes.js";
-import { useAgentTurnStore } from "../../../stores/agent-turn-store.js";
-import { useBootstrapStore } from "../../../stores/api-actions/bootstrap-actions.js";
 import { useDirectorSwipeDraftStore } from "../../../stores/director-swipe-draft-store.js";
-import { useProviderDataStore } from "../../../stores/provider-data-store.js";
 import { useSnapshotStore } from "../../../stores/snapshot-store.js";
 import { brandId, type ChatBranchId, type ChatId, type MessageId, type MessageVariantId } from "@vibe-tavern/domain";
 import type { AppMessage } from "../../../api/types.js";
@@ -67,7 +80,8 @@ let mobileOverride = false;
 
 // Radix Tooltip needs a global Provider the isolated render here doesn't mount
 // (the sidechat-host.test.tsx registration, byte-identical).
-const realTooltip = await import("../../shared/Tooltip.js");
+// R15: load-time COPY of the real namespace — never spread the live binding.
+const realTooltip = { ...(await import("../../shared/Tooltip.js")) };
 mock.module("../../shared/Tooltip.js", () => ({
   ...realTooltip,
   CustomTooltip: ({ children }: { children: ReactNode }) => <>{children}</>,
@@ -76,7 +90,8 @@ mock.module("../../shared/Tooltip.js", () => ({
 
 // The shell takes isMobile as a prop, but nested surfaces read the hook —
 // override it with the same mutable cell so both halves agree.
-const realMobile = await import("../../../hooks/use-mobile.js");
+// R15: load-time COPY of the real namespace — never spread the live binding.
+const realMobile = { ...(await import("../../../hooks/use-mobile.js")) };
 mock.module("../../../hooks/use-mobile.js", () => ({
   ...realMobile,
   useIsMobile: () => mobileOverride,
@@ -248,102 +263,68 @@ interface RouterState {
 }
 let router: RouterState;
 
-const jsonResponse = (payload: unknown, status = 200) =>
-  new Response(JSON.stringify(payload), { status, headers: { "Content-Type": "application/json" } });
-
+/** The file's frame form → the harness string-event form (byte-identical:
+ *  one blank-line terminator per frame — the ASHU-4 harness contract). */
 function sseResponse(frames: readonly StreamFrame[]): Response {
-  const encoder = new TextEncoder();
-  const text = frames
-    .map((frame) => `${frame.id !== undefined ? `id: ${frame.id}\n` : ""}event: ${frame.event}\ndata: ${JSON.stringify(frame.data)}\n\n`)
-    .join("");
-  return new Response(
-    new ReadableStream<Uint8Array>({
-      start(controller) {
-        controller.enqueue(encoder.encode(text));
-        controller.close();
-      },
-    }),
-    { status: 200, headers: { "Content-Type": "text/event-stream" } },
+  return harnessSse(
+    frames.map(
+      (frame) =>
+        `${frame.id !== undefined ? `id: ${frame.id}\n` : ""}event: ${frame.event}\ndata: ${JSON.stringify(frame.data)}`,
+    ),
   );
 }
 
 const FINISH: StreamFrame = { event: "finish", data: { finishReason: "stop" } };
 
-const fetchRouter = mock(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-  const path = new URL(String(input), "http://gateway.test").pathname;
-  const method = (init?.method ?? "GET").toUpperCase();
-  // Run discovery (BR-3a replay) — the thread currently running.
-  if (method === "GET" && path.endsWith("/api/agent-runs")) {
-    return jsonResponse(router.runningThread === null ? [] : [{ threadId: router.runningThread }]);
-  }
-  // Run replay: the recorded frames with their numbered cursors.
-  if (method === "GET" && /\/api\/experience-copilot\/[^/]+\/run$/.test(path)) {
-    return sseResponse(router.replayScript);
-  }
-  // The stream endpoint: send (content) or answer (answer) — recorded.
-  if (method === "POST" && /\/api\/experience-copilot\/[^/]+\/stream$/.test(path)) {
-    router.streamBodies.push(JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>);
-    const frames = router.streamScript;
-    router.streamScript = [];
-    return sseResponse(frames.length > 0 ? frames : [FINISH]);
-  }
-  const feedThreadId = /\/api\/agent\/threads\/([^/]+)\/feed$/.exec(path)?.[1];
-  if (method === "GET" && feedThreadId) return jsonResponse(agentFeedPageFromMessages(feedThreadId, router.feedMessages));
-  if (method === "GET" && /\/api\/experience-copilot\/[^/]+\/messages$/.test(path)) {
-    return jsonResponse(router.feedMessages);
-  }
-  // The proposals apply/reject routes — canned per-test outcomes.
-  const proposalMatch = /\/api\/agent\/threads\/([^/]+)\/proposals\/([^/]+)\/(apply|reject)$/.exec(path);
-  if (method === "POST" && proposalMatch) {
-    router.proposalPosts.push(path);
-    const outcome = router.applyOutcomes[proposalMatch[2] ?? ""];
-    if (outcome === undefined) return jsonResponse({ error: { message: `No canned outcome for ${proposalMatch[2]}` } }, 500);
-    return jsonResponse(outcome.body, outcome.status);
-  }
-  // SC-0b chat-owner lifecycle (the sidechat transport's owner-keyed members).
-  if (method === "GET" && /\/api\/agent\/chats\/[^/]+\/branches\/[^/]+\/[^/]+\/active$/.test(path)) {
-    return jsonResponse(chatThread(THREAD));
-  }
-  if (method === "GET" && /\/api\/agent\/chats\/[^/]+\/branches\/[^/]+\/[^/]+\/sessions$/.test(path)) {
-    return jsonResponse([chatThread(THREAD)]);
-  }
-  if (method === "POST" && /\/api\/agent\/chats\/[^/]+\/branches\/[^/]+\/[^/]+\/session$/.test(path)) {
-    return jsonResponse(chatThread(THREAD));
-  }
-  if (method === "GET" && /\/api\/experience-copilot\/[^/]+\/context$/.test(path)) {
-    return jsonResponse({ metrics: null, autoCompact: true });
-  }
-  if (method === "GET" && /\/api\/experience-copilot\/[^/]+\/context-links$/.test(path)) {
-    return jsonResponse([]);
-  }
-  // NOTE: the gateway base resolves to "/null" under happy-dom (unset env
-  // falls back to `String(null)` in build-config) — route on path SUFFIXES,
-  // never exact equality (the sidechat-host NOTE).
-  if (method === "GET" && path.includes("/branches/") && path.endsWith("/plan")) {
-    return jsonResponse({ plan: { goal: "", constraints: [], tasks: [] } });
-  }
-  if (method === "GET" && path.endsWith("/api/personas")) return jsonResponse([]);
-  if (method === "GET" && path.endsWith("/api/lorebooks/all")) return jsonResponse([]);
-  if (method === "GET" && path.endsWith("/api/scripts/all")) return jsonResponse([]);
-  if (method === "GET" && path.endsWith("/api/coauthor/skills")) return jsonResponse({ entries: [], errors: [] });
-  if (method === "GET" && path.endsWith("/model-favorites")) return jsonResponse([]);
-  return new Response(JSON.stringify({ error: { message: `Unhandled fetch in test: ${method} ${path}` } }), { status: 500 });
-});
+// The harness serves the agent-chats triple over this constant state (SC-0b
+// chat-owner lifecycle — the sidechat transport's owner-keyed members), plus
+// the copilot context family, the bootstrap quartet and the fail-loud tail.
+const agentChatsState: AgentChatsRouterState = {
+  activeThread: chatThread({ id: THREAD }),
+  sessions: [chatThread({ id: THREAD })],
+  newSession: chatThread({ id: THREAD }),
+  messages: [],
+};
 
-function chatThread(id: string) {
-  return {
-    id,
-    scriptId: null,
-    draftSessionId: null,
-    title: "Sidechat",
-    archivedAt: null,
-    createdAt: "",
-    updatedAt: "",
-    metrics: null,
-    contextLinks: [],
-    todo: [],
-  };
-}
+const fetchRouter = mock(
+  shellRouter({
+    agentChats: agentChatsState,
+    custom: ({ path, method, init }) => {
+      // NOTE: the gateway base resolves to "/null" under happy-dom (unset env
+      // falls back to `String(null)` in build-config) — route on path SUFFIXES,
+      // never exact equality (the sidechat-host NOTE).
+      // Run discovery (BR-3a replay) — the thread currently running.
+      if (method === "GET" && path.endsWith("/api/agent-runs")) {
+        return jsonResponse(router.runningThread === null ? [] : [{ threadId: router.runningThread }]);
+      }
+      // Run replay: the recorded frames with their numbered cursors.
+      if (method === "GET" && /\/api\/experience-copilot\/[^/]+\/run$/.test(path)) {
+        return sseResponse(router.replayScript);
+      }
+      // The stream endpoint: send (content) or answer (answer) — recorded.
+      if (method === "POST" && /\/api\/experience-copilot\/[^/]+\/stream$/.test(path)) {
+        router.streamBodies.push(JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>);
+        const frames = router.streamScript;
+        router.streamScript = [];
+        return sseResponse(frames.length > 0 ? frames : [FINISH]);
+      }
+      const feedThreadId = /\/api\/agent\/threads\/([^/]+)\/feed$/.exec(path)?.[1];
+      if (method === "GET" && feedThreadId) return jsonResponse(agentFeedPageFromMessages(feedThreadId, router.feedMessages));
+      if (method === "GET" && /\/api\/experience-copilot\/[^/]+\/messages$/.test(path)) {
+        return jsonResponse(router.feedMessages);
+      }
+      // The proposals apply/reject routes — canned per-test outcomes.
+      const proposalMatch = /\/api\/agent\/threads\/([^/]+)\/proposals\/([^/]+)\/(apply|reject)$/.exec(path);
+      if (method === "POST" && proposalMatch) {
+        router.proposalPosts.push(path);
+        const outcome = router.applyOutcomes[proposalMatch[2] ?? ""];
+        if (outcome === undefined) return jsonResponse({ error: { message: `No canned outcome for ${proposalMatch[2]}` } }, 500);
+        return jsonResponse(outcome.body, outcome.status);
+      }
+      return null; // fall through to the harness routes
+    },
+  }),
+);
 
 // p1 is the ACTIVE provider profile (each profile carries one tool-capable
 // cached model so the REAL `useProviderModels` hook serves the model list).
@@ -371,31 +352,18 @@ function kindEntry(kind: string): AgentKindSettingsWire {
   };
 }
 
-function seedStores(presets: PromptPresetDto[] = []): void {
-  useBootstrapStore.setState({
-    data: {
-      initialChatId: null,
-      snapshot: null,
-      isFirstRun: false,
-      allCharacters: [],
-      promptPresets: presets,
-      uiSettings: wireUiSettings(),
-      agentKindSettings: { [SIDECHAT_AGENT_KIND]: kindEntry(SIDECHAT_AGENT_KIND) },
-      isArmServer: false,
-    },
-  });
-  useProviderDataStore.setState({ profiles: PROFILES });
-}
-
 beforeEach(() => {
   mobileOverride = false;
   globalThis.fetch = testFetch(fetchRouter);
-  useAgentTurnStore.setState({ turnsByThread: {}, todoByThread: {}, feedByThread: {} });
+  resetShellStores();
   useSnapshotStore.setState({ allCharacters: [] });
   useDirectorSwipeDraftStore.setState({ draftsByThread: {} });
   toastError.mockClear();
   localStorage.clear();
-  seedStores();
+  seedShellStores({
+    agentKinds: { [SIDECHAT_AGENT_KIND]: kindEntry(SIDECHAT_AGENT_KIND) },
+    profiles: PROFILES,
+  });
   router = {
     feedMessages: [],
     streamScript: [],
@@ -436,17 +404,6 @@ function renderShell(over: { owner?: AgentThreadOwner } = {}) {
       <AgentShell kind={SIDECHAT_AGENT_KIND} owner={over.owner ?? CHAT_OWNER} isMobile={false} />
     </I18nextProvider>,
   );
-}
-
-/** Drain the chained async `loadSession` microtasks (and React's scheduler
- *  macrotasks) inside `act` — the sidechat-host bounded drain. */
-async function flushSessionLoad() {
-  const { act } = await import("@testing-library/react");
-  await act(async () => {
-    for (let i = 0; i < 5; i++) {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    }
-  });
 }
 
 async function sendComposerTurn(getByTestId: (id: string) => HTMLElement, content: string): Promise<void> {
