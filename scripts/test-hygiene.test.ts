@@ -153,6 +153,20 @@ describe("test-hygiene guard (TH-4c, L2 layer)", () => {
 		expect(metrics.longSleeps).toBe(2);
 	});
 
+	test("long sleeps include the promise-setTimeout form above the same threshold (owner ruling 2026-11-12, TQ7a-F03)", () => {
+		const content = [
+			`await new Promise((resolve) => setTimeout(resolve, 700));`,
+			`await new Promise((r) => setTimeout(r, 350));`,
+			`const settle = () => new Promise((resolve) => setTimeout(resolve, 10));`,
+			`await new Promise((r) => setTimeout(r, 0));`,
+			`await new Promise((r) => setTimeout(r, 200));`,
+			`// await new Promise((r) => setTimeout(r, 900)); -- quoted in an incident report`,
+			`await new Promise((r) => otherThing(r));`,
+		].join("\n");
+		const { metrics } = scanFile(content, "a.test.ts");
+		expect(metrics.longSleeps).toBe(2);
+	});
+
 	test("ratchet metrics skip comment lines -- a mention is not a usage (owner ruling 2026-11-12)", () => {
 		const content = [
 			`// const a = m as never; -- incident prose quoting the pattern`,

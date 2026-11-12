@@ -349,7 +349,21 @@ export const BUDGETS = {
 	// commit). The four hygiene budgets close: as-never 0/0 (step 16),
 	// screen 1/1 (dom-env pin, step 18b), innerHTML 0/0 (step 19), sleeps
 	// 2/2 (these survivors).
-	longSleeps: 2,
+	// (2026-11-12, owner ruling — TQ7a-F03 scanner-gap class): the
+	// longSleeps budget now ALSO matches the promise-setTimeout sleep form
+	// `await new Promise((r) => setTimeout(r, N))`, which the original
+	// regex silently skipped (sightings: TQ4b-F03 700ms, TQ7a-F03 350ms ×2
+	// in TtsLocalServerPanel.test.tsx). Raising a ratchet budget is
+	// normally forbidden ("down, never up") — this is a deliberate
+	// owner-authorized baseline reset, NOT a cleanup. The five newly
+	// visible survivors (all >200ms in test files):
+	//   ScriptEditor.test.tsx:473 (700), AiAssistantModal.test.tsx:723
+	//   (700), TtsLocalServerPanel.test.tsx:118/:310 (350 ×2),
+	//   TtsProfileEditor.test.tsx:764 (900).
+	// Sub-200ms promise drains (0/5/10/…ms act-drains) stay invisible by
+	// the same threshold as the original form. Each survivor is fix-queue
+	// debt; every fix lowers this number again.
+	longSleeps: 7,
 } as const;
 
 const EXCLUDED_DIRS = new Set([".git", "node_modules", "out", "data", "dist", ".cache"]);
@@ -426,6 +440,8 @@ const INNER_HTML_EMPTY = /innerHTML\s*=\s*(?:""|'')/g;
 const AS_NEVER = /\bas\s+never\b/g;
 const SCREEN_DOT = /\bscreen\./g;
 const LONG_SLEEP = /await\s+(?:Bun\.)?(?:sleep|delay|wait)\(\s*(\d+)\s*\)/g;
+/** The promise-setTimeout sleep form (owner ruling 2026-11-12, TQ7a-F03): a bare timing floor written as a resolved promise — same budget, same 200ms threshold. */
+const PROMISE_SETTIMEOUT_SLEEP = /new Promise\s*\(\s*\(\s*\w+\s*\)\s*=>\s*setTimeout\s*\(\s*\w+\s*,\s*(\d+)\s*\)/g;
 const STATIC_RTL_IMPORT = /^[ \t]*import(?!\s+type\b)\s+(?:[^;]*?\s+from\s+)?["']@testing-library\/react["'][ \t]*;/gm;
 
 /** Blank/comment lines never count as calls — incident reports are quoted in comments. */
@@ -495,6 +511,9 @@ export function scanFile(content: string, file: string): { violations: Violation
 		metrics.screen += countMatches(line, SCREEN_DOT);
 		metrics.innerHTMLEmpty += countMatches(line, INNER_HTML_EMPTY);
 		for (const m of line.matchAll(LONG_SLEEP)) {
+			if (Number.parseInt(m[1] ?? "0", 10) > 200) metrics.longSleeps++;
+		}
+		for (const m of line.matchAll(PROMISE_SETTIMEOUT_SLEEP)) {
 			if (Number.parseInt(m[1] ?? "0", 10) > 200) metrics.longSleeps++;
 		}
 	}
