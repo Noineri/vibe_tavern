@@ -549,6 +549,15 @@ export async function* streamAgentTurn<
         isStepCount(seams.limits.toolLoopCeiling),
         ...(seams.waitStopConditions ?? DEFAULT_WAIT_STOP_CONDITIONS),
       ],
+      // Retry-storm guard (owner 2026-11-13): the AI SDK's DEFAULT maxRetries
+      // is 2 — a retryable upstream hiccup (429/5xx/reset) silently re-fires
+      // the ENTIRE prompt up to 3 times, and each attempt can fan out across
+      // proxy rotation accounts with identical giant bodies. That mechanical
+      // back-to-back burst is the prime suspect in the TOS ban of a fresh
+      // Antigravity account (sidechat usage 2026-11-12: the model visibly
+      // received the request twice). One attempt only — errors surface
+      // immediately and the user retries deliberately through the UI.
+      maxRetries: 0,
     });
   } catch (err) {
     // Setup error (streamText() failed before iteration began).
