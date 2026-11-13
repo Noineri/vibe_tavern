@@ -31,6 +31,7 @@ import type { ProviderStreamChunk } from "../../infrastructure/ai/provider-execu
 import { classifyProviderError } from "../../infrastructure/ai/provider-error-classifier.js";
 import { extractProviderErrorMessage } from "../../infrastructure/ai/provider-error-message.js";
 import { logSendDebug } from "../../shared/send-debug-log.js";
+import { createAgentTransportTrace } from "../../shared/agent-transport-trace.js";
 import { notFound, validation } from "../../shared/errors.js";
 import { promptVisibleAttachments, type Attachment, type AttachmentPatch, type PromptAttachment } from "@vibe-tavern/domain";
 import { prepareAgentModelMessages, type AgentVisionAssets } from "./agent-attachments.js";
@@ -357,9 +358,24 @@ export async function* streamAgentTurn<
   seams: AgentStreamSeams<REQ, THREAD, CTX, PROFILE, ASM>,
   signal?: AbortSignal,
 ): AsyncGenerator<AgentStreamEvent> {
-  const debug = (event: string, data: Record<string, unknown>) =>
+  const debug = (event: string, data: Record<string, unknown>) => {
     logSendDebug(`${seams.logChannelPrefix}.${event}`, data);
+    trace?.record(`debug.${event}`, data);
+  };
 
+  const trace = createAgentTransportTrace({
+    threadId: request.threadId,
+    operation: request.regenerate ? "regenerate" : request.answer ? "answer" : "send",
+    content: request.content,
+  });
+  const persistStore = trace ? {
+    appendMessage: async (threadId: string, input: AgentTurnAppendInput) => {
+      const row = await deps.store.appendMessage(threadId, input);
+      trace.record("persisted.row", { threadId, input, row });
+      return row;
+    },
+  } : deps.store;
+  try {
   // ── 1. Load thread ──
   const thread = await deps.store.getById(request.threadId);
   if (!thread) {
@@ -498,6 +514,7 @@ export async function* streamAgentTurn<
     model: modelName,
   });
 
+  trace?.record("assembled", { model: modelName, providerProfileId, messages: assembled.messages, priorMessages });
   debug("prompt-assembled", {
     threadId: request.threadId,
     systemMessageLength: assembled.systemMessage.length,
@@ -516,7 +533,8 @@ export async function* streamAgentTurn<
   });
 
   // ── 9. Resolve the model + start streaming ──
-  const providerFetch = await resolveProviderFetchForProfile(effectiveProfile);
+  const baseProviderFetch = await resolveProviderFetchForProfile(effectiveProfile);
+  const providerFetch = trace ? trace.wrapFetch(baseProviderFetch) : baseProviderFetch;
   const aiModel = deps.resolveModel(effectiveProfile, modelName, providerFetch);
 
   const stream = deps.streamText ?? streamText;
@@ -527,6 +545,7 @@ export async function* streamAgentTurn<
       appendedRow: appendedUserRow, currentAttachments: request.attachments,
       resolveVisionAssets: deps.resolveVisionAssets, providerFetch, signal, convert: toModelMessages,
     });
+    trace?.record("model.messages", { model: modelName, messages: modelMessages });
     result = stream({
       model: aiModel,
       messages: modelMessages,
@@ -593,9 +612,10 @@ export async function* streamAgentTurn<
 
   try {
     for await (const chunk of mapped as AsyncIterable<ProviderStreamChunk>) {
+      trace?.record("mapped.chunk", chunk);
       if (signal?.aborted) {
         yield { event: "abort", data: JSON.stringify({ partialLength: textAccumulator.length }) };
-        await persistTurn(deps.store, request.threadId, segments, reasoningCapture, nowMs);
+        await persistTurn(persistStore, request.threadId, segments, reasoningCapture, nowMs);
         return;
       }
       // AP-28: a non-reasoning chunk closes the open reasoning burst (the
@@ -652,7 +672,7 @@ export async function* streamAgentTurn<
   } catch (err) {
     if (signal?.aborted) {
       yield { event: "abort", data: JSON.stringify({ partialLength: textAccumulator.length }) };
-      await persistTurn(deps.store, request.threadId, segments, reasoningCapture, nowMs);
+      await persistTurn(persistStore, request.threadId, segments, reasoningCapture, nowMs);
       return;
     }
     const message = extractProviderErrorMessage(err);
@@ -660,13 +680,13 @@ export async function* streamAgentTurn<
     debug("provider-error", { threadId: request.threadId, message, category });
     yield { event: "error", data: JSON.stringify({ message, category }) };
     // Still persist whatever was accumulated so far (partial turn).
-    await persistTurn(deps.store, request.threadId, segments, reasoningCapture, nowMs);
+    await persistTurn(persistStore, request.threadId, segments, reasoningCapture, nowMs);
     return;
   }
 
   if (signal?.aborted) {
     yield { event: "abort", data: JSON.stringify({ partialLength: textAccumulator.length }) };
-    await persistTurn(deps.store, request.threadId, segments, reasoningCapture, nowMs);
+    await persistTurn(persistStore, request.threadId, segments, reasoningCapture, nowMs);
     return;
   }
 
@@ -681,7 +701,7 @@ export async function* streamAgentTurn<
     finishReason = "error";
   }
 
-  await persistTurn(deps.store, request.threadId, segments, reasoningCapture, nowMs);
+  await persistTurn(persistStore, request.threadId, segments, reasoningCapture, nowMs);
 
   if (reasoningAccumulator) {
     yield { event: "reasoning-done", data: JSON.stringify({}) };
@@ -720,4 +740,11 @@ export async function* streamAgentTurn<
     event: "finish",
     data: JSON.stringify({ finishReason, usage, modelId: modelName, metrics: contextMetrics }),
   };
+  } catch (error) {
+    trace?.record("turn.error", { message: error instanceof Error ? error.message : String(error) });
+    throw error;
+  } finally {
+    trace?.record("turn.end", {});
+    await trace?.flush();
+  }
 }
