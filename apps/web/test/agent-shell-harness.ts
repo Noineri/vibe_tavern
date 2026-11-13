@@ -148,12 +148,19 @@ export function resetShellStores(): void {
 
 /** What a custom handler sees; return a Response to answer, null to fall through to the built-in routes. */
 export interface RouterRequestContext {
-	path: string;
-	method: string;
-	init?: RequestInit;
+  path: string;
+  method: string;
+  init?: RequestInit;
 }
 
-export type CustomRoute = (ctx: RouterRequestContext) => Response | null;
+/**
+ * A Response may be returned SYNCHRONOUSLY or as a PROMISE (ASHU-7: the script
+ * host's onActiveRead hook is async). The router AWAITS the handler before the
+ * null fall-through check, so an async handler may resolve null to fall
+ * through to the built-in routes like a sync one (at one microtask's cost on
+ * every request).
+ */
+export type CustomRoute = (ctx: RouterRequestContext) => Response | Promise<Response | null> | null;
 
 /** Mutable per-request state for the agent-chats triple — the test holds the object and may reassign fields between tests. */
 export interface AgentChatsRouterState {
@@ -189,7 +196,7 @@ export function shellRouter(
 	return async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
 		const path = new URL(String(input), "http://gateway.test").pathname;
 		const method = (init?.method ?? "GET").toUpperCase();
-		const custom = options.custom?.({ path, method, init });
+		const custom = await options.custom?.({ path, method, init });
 		if (custom) return custom;
 		if (agentChats) {
 			if (method === "GET" && /\/api\/agent\/chats\/[^/]+\/branches\/[^/]+\/[^/]+\/active$/.test(path)) {

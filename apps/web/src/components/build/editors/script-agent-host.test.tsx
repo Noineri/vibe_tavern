@@ -7,7 +7,16 @@
  * The RELIABILITY contract mirrors ExperienceCopilotShell.test.tsx: the
  * router serves canned payloads, globalThis.fetch is swapped in beforeAll
  * and restored in afterAll, and every process-global store touched here is
- * reset in beforeEach.
+ * reset in beforeEach. The router/seed/reset/drain scaffolding comes from
+ * the shared harness (apps/web/test/agent-shell-harness.ts — ASHU-7, fork #6
+ * of 7): the harness serves the copilot GET context/context-links defaults,
+ * the bootstrap quartet and the fail-loud tail (500 — the original 404 was
+ * never asserted); this file's stateful routes (the script-shaped owner
+ * triple with its onActiveRead hook, the review envelope map, the run
+ * stream with its reader handle, the feed, live messages, the PATCH pair,
+ * the agent-plan route) ride the custom-first escape hatch; the
+ * streamEvents literals carry their own framing and adapt through the
+ * harness sseResponse (one stripped-and-readded terminator per event).
  *
  * Pins:
  *   - a write_buffer proposal for `code` shows hunk review and Apply writes
@@ -29,6 +38,14 @@ import type { ReactNode } from "react";
 import { createInstance } from "i18next";
 import { I18nextProvider } from "react-i18next";
 import { useDomEnv } from "../../../../test/dom-env.js";
+import {
+  chatThread,
+  flushSessionLoad,
+  jsonResponse,
+  resetShellStores,
+  shellRouter,
+  sseResponse as harnessSse,
+} from "../../../../test/agent-shell-harness.js";
 import { agentFeedPageFromMessages } from "../../../../test/agent-feed-page.js";
 import type { ExperienceCopilotMessageWire, ExperienceCopilotThreadWire } from "@vibe-tavern/api-contracts";
 import { agentReviewEnvelopeSchema, buildScriptAgentReviewEnvelope, type AgentReviewEnvelope } from "@vibe-tavern/api-contracts";
@@ -84,90 +101,74 @@ function emitRun(event: string, data: unknown) {
   }
 }
 
-const jsonResponse = (payload: unknown) =>
-  new Response(JSON.stringify(payload), { status: 200, headers: { "Content-Type": "application/json" } });
-
 const FINISH_STOP = 'event: finish\ndata: {"finishReason":"stop"}\n\n';
 
-const sseResponse = (events: readonly string[]) =>
-  new Response(
-    new ReadableStream<Uint8Array>({
-      start(controller) {
-        const encoder = new TextEncoder();
-        for (const chunk of events) controller.enqueue(encoder.encode(chunk));
-        controller.close();
-      },
-    }),
-    { status: 200, headers: { "Content-Type": "text/event-stream" } },
-  );
+/** This file's stream literals carry their OWN framing (trailing "\n\n" per
+ *  event) — strip one terminator per event so the harness re-adds exactly one
+ *  (byte-identical bodies; the string-list census form adapted to the shared
+ *  primitive). */
+const sseResponse = (events: readonly string[]) => harnessSse(events.map((event) => event.replace(/\n\n$/, "")));
 
-const fetchRouter = mock(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-  const path = new URL(String(input), "http://gateway.test").pathname;
-  const method = (init?.method ?? "GET").toUpperCase();
-  if (method === "GET" && path.endsWith("/api/agent-runs")) return jsonResponse(runningThread ? [{ threadId: runningThread }] : []);
-  if (method === "GET" && /\/api\/experience-copilot\/[^/]+\/run$/.test(path)) {
-    return new Response(new ReadableStream<Uint8Array>({
-      start(controller) {
-        for (const frame of runFrames) controller.enqueue(new TextEncoder().encode(frame));
-        if (runningThread) runReader = controller;
-        else controller.close();
-      },
-      cancel() { runReader = null; detachedReaders++; },
-    }), { headers: { "content-type": "text/event-stream" } });
-  }
-  const reviewId = path.match(/\/api\/experience-copilot\/([^/]+)\/review$/)?.[1];
-  if (reviewId) {
-    if (method === "PUT") serverReviews.set(reviewId, agentReviewEnvelopeSchema.parse(JSON.parse(String(init?.body))));
-    if (method === "DELETE") { serverReviews.delete(reviewId); return jsonResponse({ ok: true }); }
-    return jsonResponse(serverReviews.get(reviewId) ?? null);
-  }
-  if (method === "GET" && /\/api\/experience-copilot\/script\/[^/]+\/active$/.test(path)) {
-    if (onActiveRead) return jsonResponse(await onActiveRead(path.split("/").at(-2)!));
-    return jsonResponse(router.activeThread);
-  }
-  if (method === "POST" && /\/api\/experience-copilot\/script\/[^/]+\/session$/.test(path)) {
-    return jsonResponse(router.newSession);
-  }
-  if (method === "GET" && /\/api\/experience-copilot\/script\/[^/]+\/sessions$/.test(path)) {
-    return jsonResponse(router.sessions);
-  }
-  if (method === "GET" && /\/api\/agent\/threads\/([^/]+)\/feed$/.test(path)) {
-    // AFP-14: the shell's paged feed read — one coherent newest page over
-    // the SAME rows the legacy `/messages` fixture serves.
-    const feedThreadId = path.match(/\/api\/agent\/threads\/([^/]+)\/feed$/)?.[1] ?? "";
-    return jsonResponse(agentFeedPageFromMessages(feedThreadId, router.messages));
-  }
-  if (method === "GET" && /\/api\/experience-copilot\/[^/]+\/messages$/.test(path)) {
-    return jsonResponse(router.messages);
-  }
-  if (method === "GET" && /\/api\/experience-copilot\/[^/]+\/context$/.test(path)) {
-    return jsonResponse({ metrics: null, autoCompact: true });
-  }
-  if (method === "PATCH" && /\/api\/experience-copilot\/[^/]+\/context$/.test(path)) {
-    return jsonResponse({ metrics: null, autoCompact: true });
-  }
-  if (method === "GET" && /\/api\/experience-copilot\/[^/]+\/context-links$/.test(path)) {
-    return jsonResponse([]);
-  }
-  if (method === "PATCH" && /\/api\/experience-copilot\/[^/]+\/context-links$/.test(path)) {
-    return jsonResponse([]);
-  }
-  if (method === "POST" && /\/api\/experience-copilot\/[^/]+\/stream$/.test(path)) {
-    return sseResponse(router.streamEvents);
-  }
-  // NOTE: the gateway base resolves to "/null" under happy-dom (unset env
-  // falls back to `String(null)` in build-config) — route on path SUFFIXES,
-  // never exact equality.
-  if (method === "GET" && /\/api\/scripts\/[^/]+\/agent-plan$/.test(path)) {
-    return jsonResponse({ plan: { goal: "", constraints: [], tasks: [] } });
-  }
-  if (method === "GET" && path.endsWith("/api/personas")) return jsonResponse([]);
-  if (method === "GET" && path.endsWith("/api/lorebooks/all")) return jsonResponse([]);
-  if (method === "GET" && path.endsWith("/api/scripts/all")) return jsonResponse([]);
-  if (method === "GET" && path.endsWith("/api/coauthor/skills")) return jsonResponse({ entries: [], errors: [] });
-  if (method === "GET" && path.endsWith("/model-favorites")) return jsonResponse([]);
-  return new Response(JSON.stringify({ error: { message: `Unhandled fetch in test: ${method} ${path}` } }), { status: 404 });
-});
+const fetchRouter = mock(
+  shellRouter({
+    custom: async ({ path, method, init }) => {
+      // NOTE: the gateway base resolves to "/null" under happy-dom (unset env
+      // falls back to `String(null)` in build-config) — route on path SUFFIXES,
+      // never exact equality.
+      if (method === "GET" && path.endsWith("/api/agent-runs")) return jsonResponse(runningThread ? [{ threadId: runningThread }] : []);
+      if (method === "GET" && /\/api\/experience-copilot\/[^/]+\/run$/.test(path)) {
+        return new Response(new ReadableStream<Uint8Array>({
+          start(controller) {
+            for (const frame of runFrames) controller.enqueue(new TextEncoder().encode(frame));
+            if (runningThread) runReader = controller;
+            else controller.close();
+          },
+          cancel() { runReader = null; detachedReaders++; },
+        }), { headers: { "content-type": "text/event-stream" } });
+      }
+      const reviewId = path.match(/\/api\/experience-copilot\/([^/]+)\/review$/)?.[1];
+      if (reviewId) {
+        if (method === "PUT") serverReviews.set(reviewId, agentReviewEnvelopeSchema.parse(JSON.parse(String(init?.body))));
+        if (method === "DELETE") { serverReviews.delete(reviewId); return jsonResponse({ ok: true }); }
+        return jsonResponse(serverReviews.get(reviewId) ?? null);
+      }
+      // The script host's owner triple (SC-0b): the EXPERIENCE-COPILOT path
+      // shape, not the harness's agent/chats one — with the onActiveRead hook.
+      if (method === "GET" && /\/api\/experience-copilot\/script\/[^/]+\/active$/.test(path)) {
+        if (onActiveRead) return jsonResponse(await onActiveRead(path.split("/").at(-2)!));
+        return jsonResponse(router.activeThread);
+      }
+      if (method === "POST" && /\/api\/experience-copilot\/script\/[^/]+\/session$/.test(path)) {
+        return jsonResponse(router.newSession);
+      }
+      if (method === "GET" && /\/api\/experience-copilot\/script\/[^/]+\/sessions$/.test(path)) {
+        return jsonResponse(router.sessions);
+      }
+      if (method === "GET" && /\/api\/agent\/threads\/([^/]+)\/feed$/.test(path)) {
+        // AFP-14: the shell's paged feed read — one coherent newest page over
+        // the SAME rows the legacy `/messages` fixture serves.
+        const feedThreadId = path.match(/\/api\/agent\/threads\/([^/]+)\/feed$/)?.[1] ?? "";
+        return jsonResponse(agentFeedPageFromMessages(feedThreadId, router.messages));
+      }
+      if (method === "GET" && /\/api\/experience-copilot\/[^/]+\/messages$/.test(path)) {
+        return jsonResponse(router.messages);
+      }
+      if (method === "PATCH" && /\/api\/experience-copilot\/[^/]+\/context$/.test(path)) {
+        return jsonResponse({ metrics: null, autoCompact: true });
+      }
+      if (method === "PATCH" && /\/api\/experience-copilot\/[^/]+\/context-links$/.test(path)) {
+        return jsonResponse([]);
+      }
+      if (method === "POST" && /\/api\/experience-copilot\/[^/]+\/stream$/.test(path)) {
+        return sseResponse(router.streamEvents);
+      }
+      if (method === "GET" && /\/api\/scripts\/[^/]+\/agent-plan$/.test(path)) {
+        return jsonResponse({ plan: { goal: "", constraints: [], tasks: [] } });
+      }
+      return null; // fall through to the harness routes (GET context/context-links, quartet, fail-loud tail)
+    },
+  }),
+);
 
 /** Router fetch calls matching method + path pattern, with parsed JSON bodies. */
 function apiCalls(
@@ -190,14 +191,16 @@ const streamCalls = () => apiCalls("POST", /\/api\/experience-copilot\/[^/]+\/st
 
 // Markdown is heavy and its internals are pinned elsewhere; the shell test
 // only cares that message/activity text reaches the list.
-const realMarkdown = await import("../../../lib/markdown.js");
+// R15: load-time COPY of the real namespace — never spread the live binding.
+const realMarkdown = { ...(await import("../../../lib/markdown.js")) };
 mock.module("../../../lib/markdown.js", () => ({
   ...realMarkdown,
   Markdown: ({ text }: { text: string }) => <div>{text}</div>,
 }));
 
 // Radix Tooltip needs a global Provider the isolated render here doesn't mount.
-const realTooltip = await import("../../shared/Tooltip.js");
+// R15: load-time COPY of the real namespace — never spread the live binding.
+const realTooltip = { ...(await import("../../shared/Tooltip.js")) };
 mock.module("../../shared/Tooltip.js", () => ({
   ...realTooltip,
   CustomTooltip: ({ children }: { children: ReactNode }) => <>{children}</>,
@@ -207,8 +210,13 @@ mock.module("../../shared/Tooltip.js", () => ({
 // The editing surface's owner picker (LinkBindingPopover) anchors Radix
 // popovers that never mount under happy-dom. The picker is pinned in its own
 // suite — stub it here to a deterministic double (same shape as the
-// ScriptEditor suite's double).
+// ScriptEditor suite's double). R4+R15 (ASHU-7 letter-gap fix): the factory
+// now spreads a LOAD-TIME COPY of the real namespace — the wholesale replace
+// silently undefined'd the module's other exports (resolveTargetAvatarUrl)
+// for co-loaded files.
+const realLinkBinding = { ...(await import("../../shared/LinkBindingPopover.js")) };
 mock.module("../../shared/LinkBindingPopover.js", () => ({
+  ...realLinkBinding,
   LinkBindingPopover: (props: {
     links: Array<{ targetType: string; targetId: string }>;
     onSetLinks: (links: Array<{ targetType: string; targetId: string }>) => void;
@@ -232,7 +240,8 @@ mock.module("../../shared/LinkBindingPopover.js", () => ({
 // The shell reads `useIsMobile` only through the host props here (AgentShell
 // takes isMobile as a prop), but the editing surface reads the hook —
 // override it with the same mutable cell so both halves agree.
-const realMobile = await import("../../../hooks/use-mobile.js");
+// R15: load-time COPY of the real namespace — never spread the live binding.
+const realMobile = { ...(await import("../../../hooks/use-mobile.js")) };
 mock.module("../../../hooks/use-mobile.js", () => ({
   ...realMobile,
   useIsMobile: () => mobileOverride,
@@ -269,19 +278,9 @@ afterAll(() => {
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
 
+/** The script-host thread fixture: the harness base + this host's title/scriptId deltas. */
 function thread(id: string, scriptId: string): ExperienceCopilotThreadWire {
-  return {
-    id,
-    scriptId,
-    draftSessionId: null,
-    title: "Script agent",
-    archivedAt: null,
-    createdAt: "",
-    updatedAt: "",
-    metrics: null,
-    contextLinks: [],
-    todo: [],
-  };
+  return chatThread({ id, scriptId, title: "Script agent" });
 }
 
 // p1 carries one tool-capable cached model so the REAL `useProviderModels`
@@ -341,8 +340,7 @@ beforeEach(() => {
   serverReviews = new Map();
   runningThread = null; runReader = null; runFrames = []; detachedReaders = 0; onActiveRead = undefined;
   mobileOverride = false;
-  useAgentTurnStore.setState({ turnsByThread: {}, todoByThread: {} });
-  useAgentReviewRoundStore.setState({ roundsByThread: {} });
+  resetShellStores();
   // AP-15: the pending-review summary seam — same rationale as the round
   // store reset (an unmounted test's entry must not leak into the next mount).
   useAgentPendingReviewStore.setState({ summariesByThread: {} });
@@ -414,20 +412,6 @@ function renderScriptShell(
     ),
   );
   return { ...utils, hostProps };
-}
-
-/**
- * Drain the chained async `loadSession` microtasks (and React's scheduler
- * macrotasks) inside `act`, so its `setThreadId`/`setMessages` updates are
- * captured and do not emit React 19 "not wrapped in act" warnings. Mirrors
- * the bounded drain in `test/dom-env.ts`.
- */
-async function flushSessionLoad() {
-  await act(async () => {
-    for (let i = 0; i < 5; i++) {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    }
-  });
 }
 
 function hasHiddenClass(el: HTMLElement): boolean {
