@@ -4,8 +4,8 @@
  * coincidence analysis: reports/AGENT_SHELL_TEST_HARNESS_UNIFICATION_ANALYSIS;
  * execution plan: plans/AGENT_SHELL_TEST_HARNESS_UNIFICATION_PLAN).
  *
- * serves: 7 suites (as of ASHU-1 the module exists; the census list migrates
- * unit by unit):
+ * serves: 7 suites (CENSUS CLOSED at ASHU-8 — all seven forks migrated onto
+ * this module):
  *   - components/layout/app-shell-render-isolation.test.tsx (ASHU-2)
  *   - components/shared/agent-shell/agent-shell-stream-isolation.test.tsx (ASHU-3)
  *   - components/chat/sidechat/SidechatPanel.test.tsx (ASHU-4)

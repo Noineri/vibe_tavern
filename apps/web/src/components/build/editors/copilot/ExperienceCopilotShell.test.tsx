@@ -1,3 +1,16 @@
+/**
+ * ExperienceCopilotShell — the campaign's largest behavioral suite (ER waves).
+ * The router/seed/reset/drain scaffolding comes from the shared harness
+ * (apps/web/test/agent-shell-harness.ts — ASHU-8, fork #7 of 7, the census
+ * CLOSES here): the harness supplies the micro/fixture/reset primitives and
+ * the fail-loud tail; this file's stateful routes (the script-shaped owner
+ * triple, activate, the review envelope map, the feed with per-thread
+ * messages, context GET/PATCH with live metrics, context-links, compact, the
+ * stream with failure/hold modes, the experience test/playground endpoints,
+ * the skills catalog, agent-plan) ride the custom-first escape hatch; the
+ * streamEvents literals carry their own framing and adapt through the
+ * harness sseResponse (one stripped-and-readded terminator per event).
+ */
 import { afterAll, beforeAll, beforeEach, describe, expect, it, jest, mock } from "bun:test";
 import { testFetch } from "@vibe-tavern/test-fetch";
 import { wireProviderProfile, wireUiSettings } from "../../../../../test/wire-fixtures.js";
@@ -6,6 +19,14 @@ import { useEffect, useState } from "react";
 import { createInstance } from "i18next";
 import { I18nextProvider } from "react-i18next";
 import { useDomEnv } from "../../../../../test/dom-env.js";
+import {
+  chatThread,
+  flushSessionLoad,
+  jsonResponse,
+  resetShellStores,
+  shellRouter,
+  sseResponse as harnessSse,
+} from "../../../../../test/agent-shell-harness.js";
 import { agentFeedPageFromMessages } from "../../../../../test/agent-feed-page.js";
 import { installRadixPopoverSeam } from "../../../../../test/radix-popover-seam.js";
 import { installToggleSeam } from "../../../../../test/toggle-seam.js";
@@ -79,22 +100,12 @@ const CONTEXT_METRICS: ExperienceCopilotContextMetrics = {
   measuredAt: "2026-08-15T00:00:00.000Z",
 };
 
-const jsonResponse = (payload: unknown) =>
-  new Response(JSON.stringify(payload), { status: 200, headers: { "Content-Type": "application/json" } });
-
 const FINISH_STOP = 'event: finish\ndata: {"finishReason":"stop"}\n\n';
 
-const sseResponse = (events: readonly string[]) =>
-  new Response(
-    new ReadableStream<Uint8Array>({
-      start(controller) {
-        const encoder = new TextEncoder();
-        for (const chunk of events) controller.enqueue(encoder.encode(chunk));
-        controller.close();
-      },
-    }),
-    { status: 200, headers: { "Content-Type": "text/event-stream" } },
-  );
+/** This file's stream literals carry their OWN framing (trailing "\n\n" per
+ *  event) — strip one terminator per event so the harness re-adds exactly one
+ *  (byte-identical bodies; the ASHU-7 adapter form). */
+const sseResponse = (events: readonly string[]) => harnessSse(events.map((event) => event.replace(/\n\n$/, "")));
 
 function makeDigest(threadId: string): ExperienceCopilotMessageWire {
   return {
@@ -110,105 +121,107 @@ function makeDigest(threadId: string): ExperienceCopilotMessageWire {
   };
 }
 
-const fetchRouter = mock(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-  const path = new URL(String(input), "http://gateway.test").pathname;
-  const method = (init?.method ?? "GET").toUpperCase();
-  if (method === "GET" && path.endsWith("/api/agent-runs")) return jsonResponse([]);
-  const reviewId = path.match(/\/api\/experience-copilot\/([^/]+)\/review$/)?.[1];
-  if (reviewId) {
-    if (method === "PUT") serverReviews.set(reviewId, JSON.parse(String(init?.body)));
-    if (method === "DELETE") { serverReviews.delete(reviewId); return jsonResponse({ ok: true }); }
-    return jsonResponse(serverReviews.get(reviewId) ?? null);
-  }
-  if (method === "GET" && /\/api\/experience-copilot\/script\/[^/]+\/active$/.test(path)) {
-    return jsonResponse(router.activeThread);
-  }
-  if (method === "GET" && /\/api\/agent\/threads\/([^/]+)\/feed$/.test(path)) {
-    // AFP-14: the built-in hosts' paged feed read — one coherent newest
-    // page over the SAME rows the legacy `/messages` fixture serves.
-    const feedThreadId = path.match(/\/api\/agent\/threads\/([^/]+)\/feed$/)?.[1] ?? "";
-    return jsonResponse(agentFeedPageFromMessages(feedThreadId, router.messagesFor ? router.messagesFor(feedThreadId) : router.messages));
-  }
-  if (method === "GET" && /\/api\/experience-copilot\/([^/]+)\/messages$/.test(path)) {
-    const threadId = path.match(/\/api\/experience-copilot\/([^/]+)\/messages$/)?.[1] ?? "";
-    return jsonResponse(router.messagesFor ? router.messagesFor(threadId) : router.messages);
-  }
-  if (method === "POST" && /\/api\/experience-copilot\/script\/[^/]+\/session$/.test(path)) {
-    return jsonResponse(router.newSession);
-  }
-  if (method === "GET" && /\/api\/experience-copilot\/script\/[^/]+\/sessions$/.test(path)) {
-    return jsonResponse(router.sessions);
-  }
-  if (method === "POST" && /\/api\/experience-copilot\/[^/]+\/activate$/.test(path)) {
-    return jsonResponse(router.activateReturns);
-  }
-  if (method === "GET" && /\/api\/experience-copilot\/[^/]+\/context$/.test(path)) {
-    return jsonResponse({ metrics: router.contextMetrics, autoCompact: true });
-  }
-  if (method === "PATCH" && /\/api\/experience-copilot\/[^/]+\/context$/.test(path)) {
-    const body = JSON.parse(String(init?.body ?? "{}")) as { autoCompact?: boolean };
-    return jsonResponse({ metrics: router.contextMetrics, autoCompact: body.autoCompact ?? true });
-  }
-  if (method === "GET" && /\/api\/experience-copilot\/[^/]+\/context-links$/.test(path)) {
-    return jsonResponse(router.contextLinks);
-  }
-  if (method === "PATCH" && /\/api\/experience-copilot\/[^/]+\/context-links$/.test(path)) {
-    if (router.contextLinksFail) {
-      return new Response(JSON.stringify({ error: { message: "boom" } }), { status: 500 });
-    }
-    const body = JSON.parse(String(init?.body ?? "{}")) as { links?: ExperienceCopilotContextLink[] };
-    router.contextLinks = body.links ?? [];
-    return jsonResponse(router.contextLinks);
-  }
-  if (method === "POST" && /\/api\/experience-copilot\/[^/]+\/compact$/.test(path)) {
-    const threadId = path.match(/\/api\/experience-copilot\/([^/]+)\/compact$/)?.[1] ?? "";
-    return jsonResponse({ digest: makeDigest(threadId), metrics: null });
-  }
-  if (method === "POST" && /\/api\/experience-copilot\/[^/]+\/stream$/.test(path)) {
-    if (router.nextStreamFailures > 0) {
-      router.nextStreamFailures--;
-      return new Response(JSON.stringify({ error: { message: "pre-stream failure" } }), { status: 400 });
-    }
-    if (router.holdStreamOpen) {
-      return new Response(
-        new ReadableStream<Uint8Array>({
-          start(controller) {
-            const encoder = new TextEncoder();
-            router.releaseStream = () => {
-              controller.enqueue(encoder.encode(FINISH_STOP));
-              controller.close();
-            };
-          },
-        }),
-        { status: 200, headers: { "Content-Type": "text/event-stream" } },
-      );
-    }
-    return sseResponse(router.streamEvents);
-  }
-  // NOTE: the gateway base resolves to "/null" under happy-dom (unset env
-  // falls back to `String(null)` in build-config) — route on path SUFFIXES,
-  // never exact equality.
-  if (method === "POST" && path.endsWith("/api/experience/test/discover")) return jsonResponse({ definition: TEST_RUN_DATA.definition });
-  if (method === "POST" && path.endsWith("/api/experience/test/run")) return jsonResponse(TEST_RUN_DATA);
-  if (method === "POST" && path.endsWith("/api/experience/playground/start")) return jsonResponse(PLAYGROUND_DATA);
-  // CX-6: the shell fetches the mention catalog on mount (best-effort). Serve
-  // the empty/default shapes so the picks come from the test-seeded snapshot
-  // store instead of the router.
-  if (method === "GET" && path.endsWith("/api/personas")) return jsonResponse([]);
-  if (method === "GET" && path.endsWith("/api/lorebooks/all")) return jsonResponse([]);
-  if (method === "GET" && path.endsWith("/api/scripts/all")) return jsonResponse([]);
-  if (method === "GET" && path.endsWith("/api/coauthor/skills")) return jsonResponse({ entries: SKILL_CATALOG_ENTRIES, errors: [] });
-  // PM-6: the shell's useAgentPlan fetches the script-owned plan once per
-  // scriptId (module-level cache in use-agent-plan.ts — one GET per unique
-  // id per process, which is exactly what the apiCalls assertions below see).
-  if (method === "GET" && /\/api\/scripts\/[^/]+\/agent-plan$/.test(path)) {
-    return jsonResponse({ plan: router.agentPlan });
-  }
-  // Unmodeled endpoints (e.g. best-effort model-favorites) get a 404 body —
-  // callers treat it like any RPC failure and swallow it.
-  if (method === "GET" && path.endsWith("/model-favorites")) return jsonResponse([]);
-  return new Response(JSON.stringify({ error: { message: `Unhandled fetch in test: ${method} ${path}` } }), { status: 404 });
-});
+const fetchRouter = mock(
+  shellRouter({
+    custom: ({ path, method, init }) => {
+      // NOTE: the gateway base resolves to "/null" under happy-dom (unset env
+      // falls back to `String(null)` in build-config) — route on path SUFFIXES,
+      // never exact equality.
+      if (method === "GET" && path.endsWith("/api/agent-runs")) return jsonResponse([]);
+      const reviewId = path.match(/\/api\/experience-copilot\/([^/]+)\/review$/)?.[1];
+      if (reviewId) {
+        if (method === "PUT") serverReviews.set(reviewId, JSON.parse(String(init?.body)));
+        if (method === "DELETE") { serverReviews.delete(reviewId); return jsonResponse({ ok: true }); }
+        return jsonResponse(serverReviews.get(reviewId) ?? null);
+      }
+      if (method === "GET" && /\/api\/experience-copilot\/script\/[^/]+\/active$/.test(path)) {
+        return jsonResponse(router.activeThread);
+      }
+      if (method === "GET" && /\/api\/agent\/threads\/([^/]+)\/feed$/.test(path)) {
+        // AFP-14: the built-in hosts' paged feed read — one coherent newest
+        // page over the SAME rows the legacy `/messages` fixture serves.
+        const feedThreadId = path.match(/\/api\/agent\/threads\/([^/]+)\/feed$/)?.[1] ?? "";
+        return jsonResponse(agentFeedPageFromMessages(feedThreadId, router.messagesFor ? router.messagesFor(feedThreadId) : router.messages));
+      }
+      if (method === "GET" && /\/api\/experience-copilot\/([^/]+)\/messages$/.test(path)) {
+        const threadId = path.match(/\/api\/experience-copilot\/([^/]+)\/messages$/)?.[1] ?? "";
+        return jsonResponse(router.messagesFor ? router.messagesFor(threadId) : router.messages);
+      }
+      if (method === "POST" && /\/api\/experience-copilot\/script\/[^/]+\/session$/.test(path)) {
+        return jsonResponse(router.newSession);
+      }
+      if (method === "GET" && /\/api\/experience-copilot\/script\/[^/]+\/sessions$/.test(path)) {
+        return jsonResponse(router.sessions);
+      }
+      if (method === "POST" && /\/api\/experience-copilot\/[^/]+\/activate$/.test(path)) {
+        return jsonResponse(router.activateReturns);
+      }
+      if (method === "GET" && /\/api\/experience-copilot\/[^/]+\/context$/.test(path)) {
+        return jsonResponse({ metrics: router.contextMetrics, autoCompact: true });
+      }
+      if (method === "PATCH" && /\/api\/experience-copilot\/[^/]+\/context$/.test(path)) {
+        const body = JSON.parse(String(init?.body ?? "{}")) as { autoCompact?: boolean };
+        return jsonResponse({ metrics: router.contextMetrics, autoCompact: body.autoCompact ?? true });
+      }
+      if (method === "GET" && /\/api\/experience-copilot\/[^/]+\/context-links$/.test(path)) {
+        return jsonResponse(router.contextLinks);
+      }
+      if (method === "PATCH" && /\/api\/experience-copilot\/[^/]+\/context-links$/.test(path)) {
+        if (router.contextLinksFail) {
+          return new Response(JSON.stringify({ error: { message: "boom" } }), { status: 500 });
+        }
+        const body = JSON.parse(String(init?.body ?? "{}")) as { links?: ExperienceCopilotContextLink[] };
+        router.contextLinks = body.links ?? [];
+        return jsonResponse(router.contextLinks);
+      }
+      if (method === "POST" && /\/api\/experience-copilot\/[^/]+\/compact$/.test(path)) {
+        const threadId = path.match(/\/api\/experience-copilot\/([^/]+)\/compact$/)?.[1] ?? "";
+        return jsonResponse({ digest: makeDigest(threadId), metrics: null });
+      }
+      if (method === "POST" && /\/api\/experience-copilot\/[^/]+\/stream$/.test(path)) {
+        if (router.nextStreamFailures > 0) {
+          router.nextStreamFailures--;
+          return new Response(JSON.stringify({ error: { message: "pre-stream failure" } }), { status: 400 });
+        }
+        if (router.holdStreamOpen) {
+          return new Response(
+            new ReadableStream<Uint8Array>({
+              start(controller) {
+                const encoder = new TextEncoder();
+                router.releaseStream = () => {
+                  controller.enqueue(encoder.encode(FINISH_STOP));
+                  controller.close();
+                };
+              },
+            }),
+            { status: 200, headers: { "Content-Type": "text/event-stream" } },
+          );
+        }
+        return sseResponse(router.streamEvents);
+      }
+      if (method === "POST" && path.endsWith("/api/experience/test/discover")) return jsonResponse({ definition: TEST_RUN_DATA.definition });
+      if (method === "POST" && path.endsWith("/api/experience/test/run")) return jsonResponse(TEST_RUN_DATA);
+      if (method === "POST" && path.endsWith("/api/experience/playground/start")) return jsonResponse(PLAYGROUND_DATA);
+      // CX-6: the shell fetches the mention catalog on mount (best-effort). Serve
+      // the empty/default shapes so the picks come from the test-seeded snapshot
+      // store instead of the router.
+      if (method === "GET" && path.endsWith("/api/personas")) return jsonResponse([]);
+      if (method === "GET" && path.endsWith("/api/lorebooks/all")) return jsonResponse([]);
+      if (method === "GET" && path.endsWith("/api/scripts/all")) return jsonResponse([]);
+      if (method === "GET" && path.endsWith("/api/coauthor/skills")) return jsonResponse({ entries: SKILL_CATALOG_ENTRIES, errors: [] });
+      // PM-6: the shell's useAgentPlan fetches the script-owned plan once per
+      // scriptId (module-level cache in use-agent-plan.ts — one GET per unique
+      // id per process, which is exactly what the apiCalls assertions below see).
+      if (method === "GET" && /\/api\/scripts\/[^/]+\/agent-plan$/.test(path)) {
+        return jsonResponse({ plan: router.agentPlan });
+      }
+      // Unmodeled endpoints (e.g. best-effort model-favorites) get an error
+      // body — callers treat it like any RPC failure and swallow it.
+      if (method === "GET" && path.endsWith("/model-favorites")) return jsonResponse([]);
+      return null; // fall through to the harness fail-loud tail (500 — the original 404 was never asserted)
+    },
+  }),
+);
 
 /** Router fetch calls matching method + path pattern, with parsed JSON bodies. */
 function apiCalls(
@@ -234,7 +247,7 @@ let serverReviews = new Map<string, unknown>();
 // cares only that message text reaches the list.
 // CD-8: capture the conflict toast (safe pattern — spread real sonner first).
 const toastWarning = mock();
-const realSonner = await import("sonner");
+const realSonner = { ...(await import("sonner")) }; // R15 load-time copy
 mock.module("sonner", () => ({
   ...realSonner,
   toast: Object.assign((...a: Parameters<typeof realSonner.toast>) => realSonner.toast(...a), realSonner.toast, {
@@ -242,14 +255,14 @@ mock.module("sonner", () => ({
   }),
 }));
 
-const realMarkdown = await import("../../../../lib/markdown.js");
+const realMarkdown = { ...(await import("../../../../lib/markdown.js")) }; // R15 load-time copy
 mock.module("../../../../lib/markdown.js", () => ({
   ...realMarkdown,
   Markdown: ({ text }: { text: string }) => <div>{text}</div>,
 }));
 
 // Radix Tooltip needs a global Provider the isolated render here doesn't mount.
-const realTooltip = await import("../../../shared/Tooltip.js");
+const realTooltip = { ...(await import("../../../shared/Tooltip.js")) }; // R15 load-time copy
 mock.module("../../../shared/Tooltip.js", () => ({
   ...realTooltip,
   CustomTooltip: ({ children }: { children: ReactNode }) => <>{children}</>,
@@ -270,7 +283,7 @@ installToggleSeam({ stub: true });
 function FakeToolbarSelect(props: { trigger: ReactElement }) {
   return <>{props.trigger}</>;
 }
-const realToolbarSelect = await import("../../../shared/ToolbarSelect.js");
+const realToolbarSelect = { ...(await import("../../../shared/ToolbarSelect.js")) }; // R15 load-time copy
 mock.module("../../../shared/ToolbarSelect.js", () => ({
   ...realToolbarSelect,
   ToolbarSelect: FakeToolbarSelect,
@@ -333,7 +346,7 @@ const PLAYGROUND_DATA: Awaited<ReturnType<typeof import("../../../../api/experie
 };
 
 // The shell reads `useIsMobile` (matchMedia). Mock it to a controllable flag.
-const realMobile = await import("../../../../hooks/use-mobile.js");
+const realMobile = { ...(await import("../../../../hooks/use-mobile.js")) }; // R15 load-time copy
 mock.module("../../../../hooks/use-mobile.js", () => ({
   ...realMobile,
   useIsMobile: () => mobileOverride,
@@ -343,7 +356,7 @@ mock.module("../../../../hooks/use-mobile.js", () => ({
 // in its own suite — stub it here so the gear test only pins the gear →
 // modal wiring (click sets settingsModalOpen → the modal mounts). SAFE:
 // capture real first.
-const realAgentSettingsModal = await import("../../../shared/agent-shell/AgentSettingsModal.js");
+const realAgentSettingsModal = { ...(await import("../../../shared/agent-shell/AgentSettingsModal.js")) }; // R15 load-time copy
 mock.module("../../../shared/agent-shell/AgentSettingsModal.js", () => ({
   ...realAgentSettingsModal,
   AgentSettingsModal: ({ isOpen }: { isOpen: boolean }) => (isOpen ? <div data-testid="agent-settings-modal-stub" /> : null),
@@ -362,7 +375,7 @@ installRadixPopoverSeam({ stubAllRoots: true });
 // DOM/CSP/URL lifecycle is pinned in ExperienceFrame.test.tsx. The shell test
 // only needs to assert the shell mounts the frame in the preview modal, so
 // replace the component with a marker stub (SAFE: capture real first, spread).
-const realFrame = await import("../../../experience/ExperienceFrame.js");
+const realFrame = { ...(await import("../../../experience/ExperienceFrame.js")) }; // R15 load-time copy
 mock.module("../../../experience/ExperienceFrame.js", () => ({
   ...realFrame,
   ExperienceFrame: () => <div data-testid="experience-frame-stub" />,
@@ -393,19 +406,9 @@ afterAll(() => {
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
 
+/** The shell's thread fixture: the harness base + this suite's scriptId/title deltas. */
 function thread(id: string): ExperienceCopilotThreadWire {
-  return {
-    id,
-    scriptId: "script-1",
-    draftSessionId: null,
-    title: "Copilot",
-    archivedAt: null,
-    createdAt: "",
-    updatedAt: "",
-    metrics: null,
-    contextLinks: [],
-    todo: [],
-  };
+  return chatThread({ id, scriptId: "script-1", title: "Copilot" });
 }
 
 function msg(over: Partial<ExperienceCopilotMessageWire> = {}): ExperienceCopilotMessageWire {
@@ -451,12 +454,8 @@ function hasHiddenClass(el: HTMLElement): boolean {
 beforeEach(() => {
   serverReviews = new Map();
   mobileOverride = false;
-  useAgentTurnStore.setState({ turnsByThread: {}, todoByThread: {} });
+  resetShellStores();
   useAgentReviewOutcomeStore.setState({ outcomesByThread: outcomesBeforeShellSuite, supersededByThread: supersededBeforeShellSuite });
-  // The review round + the persisted server review now SURVIVE shell
-  // unmounts (the whole point of the round store) — reset both, or a
-  // previous test's hanging review leaks into the next mount.
-  useAgentReviewRoundStore.setState({ roundsByThread: {} });
   // AP-15: the pending-review summary seam — same rationale (an unmounted
   // test's entry must not leak into the next mount).
   useAgentPendingReviewStore.setState({ summariesByThread: {} });
@@ -529,20 +528,6 @@ function renderShell(over: Partial<Parameters<typeof ExperienceCopilotShell>[0]>
   };
   const utils = render(withIsolatedI18n(<ExperienceCopilotShell {...props} />));
   return { ...utils, props };
-}
-
-/**
- * Drain the chained async `loadSession` microtasks (and React's scheduler
- * macrotasks) inside `act`, so its `setThreadId`/`setMessages`/`setSessionLoading`
- * updates are captured and do not emit React 19 "not wrapped in act" warnings.
- * Mirrors the bounded drain in `test/dom-env.ts`.
- */
-async function flushSessionLoad() {
-  await act(async () => {
-    for (let i = 0; i < 5; i++) {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    }
-  });
 }
 
 describe("ExperienceCopilotShell — session lifecycle", () => {
