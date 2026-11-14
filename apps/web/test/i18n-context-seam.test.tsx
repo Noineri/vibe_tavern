@@ -67,10 +67,12 @@ function StabilityProbe() {
 	);
 }
 
-// R13: the delegation test drives the process-global i18next language.
+// R13: the delegation test drives the process-global i18next language. The
+// `isInitialized` guard keeps `-t` subsets that exclude that test from
+// crashing inside i18next's restore (nothing has initialized the instance).
 afterAll(async () => {
 	cleanup();
-	await i18next.changeLanguage("en");
+	if (i18next.isInitialized) await i18next.changeLanguage("en");
 });
 
 describe("i18n context seam — provider-less modes", () => {

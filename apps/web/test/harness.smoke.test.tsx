@@ -2,8 +2,12 @@ import { test, expect, describe } from "bun:test";
 import { Profiler, useReducer, type ProfilerOnRenderCallback } from "react";
 import { useDomEnv } from "./dom-env.js";
 
-// Register a global happy-dom window for THIS file only (unregisters in
-// afterAll) so DOM-averse tests elsewhere keep their no-window environment.
+// Register a global happy-dom window. dom-env registers ONCE per process and
+// NEVER unregisters (unregistering closes the window and kills React flushing
+// for every later DOM file — see dom-env.ts's register-once header; the
+// afterAll here only drains the scheduler queue). DOM-averse files elsewhere
+// stay windowless because they never import dom-env and the runner's
+// `--parallel` ⇒ `--isolate` contract gives every file a fresh registry.
 useDomEnv();
 
 // Load @testing-library only AFTER useDomEnv() — the standard pattern for every

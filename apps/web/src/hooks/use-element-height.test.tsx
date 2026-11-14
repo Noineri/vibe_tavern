@@ -54,35 +54,40 @@ describe("useElementHeight", () => {
   it("measures synchronously on mount, follows ResizeObserver callbacks, tears down on unmount", async () => {
     const originalRO = globalThis.ResizeObserver;
     globalThis.ResizeObserver = MockResizeObserver;
-    const { render, cleanup, act } = await import("@testing-library/react");
+    // try/finally: the mock RO is restored even when an assertion above throws
+    // (an unrestored globalThis patch leaks into whatever runs next — R3).
+    try {
+      const { render, cleanup, act } = await import("@testing-library/react");
 
-    const { getByTestId, unmount } = render(<Probe />);
-    const probe = getByTestId("probe") as HTMLDivElement;
-    // Initial synchronous measure: happy-dom reports offsetHeight 0 — the
-    // contract is "0 until real layout says otherwise".
-    expect(hookHeight).toBe(0);
-    expect(MockResizeObserver.instances.length).toBe(1);
-    expect(MockResizeObserver.instances[0]?.observed).toBe(probe);
+      const { getByTestId, unmount } = render(<Probe />);
+      const probe = getByTestId("probe") as HTMLDivElement;
+      // Initial synchronous measure: happy-dom reports offsetHeight 0 — the
+      // contract is "0 until real layout says otherwise".
+      expect(hookHeight).toBe(0);
+      expect(MockResizeObserver.instances.length).toBe(1);
+      expect(MockResizeObserver.instances[0]?.observed).toBe(probe);
 
-    // Simulate the bar growing (chips appeared): offsetHeight changes and the
-    // RO callback fires.
-    Object.defineProperty(probe, "offsetHeight", { value: 42, configurable: true });
-    await act(async () => {
-      MockResizeObserver.instances[0]?.callback([], MockResizeObserver.instances[0]!);
-    });
-    expect(hookHeight).toBe(42);
+      // Simulate the bar growing (chips appeared): offsetHeight changes and the
+      // RO callback fires.
+      Object.defineProperty(probe, "offsetHeight", { value: 42, configurable: true });
+      await act(async () => {
+        MockResizeObserver.instances[0]?.callback([], MockResizeObserver.instances[0]!);
+      });
+      expect(hookHeight).toBe(42);
 
-    // Shrink (chips disappeared) → 0 clearance again.
-    Object.defineProperty(probe, "offsetHeight", { value: 0, configurable: true });
-    await act(async () => {
-      MockResizeObserver.instances[0]?.callback([], MockResizeObserver.instances[0]!);
-    });
-    expect(hookHeight).toBe(0);
+      // Shrink (chips disappeared) → 0 clearance again.
+      Object.defineProperty(probe, "offsetHeight", { value: 0, configurable: true });
+      await act(async () => {
+        MockResizeObserver.instances[0]?.callback([], MockResizeObserver.instances[0]!);
+      });
+      expect(hookHeight).toBe(0);
 
-    const teardownsBefore = MockResizeObserver.teardowns;
-    unmount();
-    expect(MockResizeObserver.teardowns).toBe(teardownsBefore + 1);
-    cleanup();
-    globalThis.ResizeObserver = originalRO;
+      const teardownsBefore = MockResizeObserver.teardowns;
+      unmount();
+      expect(MockResizeObserver.teardowns).toBe(teardownsBefore + 1);
+      cleanup();
+    } finally {
+      globalThis.ResizeObserver = originalRO;
+    }
   });
 });

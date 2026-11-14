@@ -87,6 +87,8 @@ describe("shellRouter", () => {
 		expect(active).toEqual(state.activeThread);
 		const created = await (await router("/api/agent/chats/chat-1/branches/branch-1/sidechat-ooc/session", { method: "POST" })).json();
 		expect(created).toEqual(state.newSession);
+		const sessions = await (await router("/api/agent/chats/chat-1/branches/branch-1/sidechat-ooc/sessions", { method: "GET" })).json();
+		expect(sessions).toEqual(state.sessions);
 		state.activeThread = chatThread({ id: "t-b" });
 		const after = await (await router("/api/agent/chats/chat-1/branches/branch-1/sidechat-ooc/active", { method: "GET" })).json();
 		expect(after).toEqual(state.activeThread);

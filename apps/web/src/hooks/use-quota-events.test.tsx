@@ -9,7 +9,7 @@
  * Toast wording is deliberately NOT asserted — only the i18n key and the
  * interpolation values, so translating a string never breaks a test.
  */
-import { beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
 
 import {
 	PROVIDER_QUOTA_EVENT_KIND,
@@ -55,6 +55,7 @@ mock.module("sonner", () => ({
 // (same JSON.stringify delivery — a real MessageEvent instead of a bare
 // `{ data }` object), `fire(kind)` is the seam's `fire(kind)`.
 const MockEventSource = TestEventSource;
+const originalEventSource = globalThis.EventSource;
 
 const { useQuotaStore } = await import("../stores/quota-store.js");
 const { useProviderDataStore } = await import("../stores/provider-data-store.js");
@@ -102,6 +103,12 @@ beforeEach(() => {
 	globalThis.EventSource = MockEventSource;
 	useQuotaStore.getState().reset();
 	useProviderDataStore.setState({ profiles: [] });
+});
+
+// R3: the mock EventSource is installed in beforeEach — restore the original
+// after the file's last test (the use-agent-run-events form).
+afterAll(() => {
+	globalThis.EventSource = originalEventSource;
 });
 
 describe("useQuotaEvents", () => {
