@@ -3,6 +3,7 @@ import { generateText, streamText } from "ai";
 import { googleInteractionsProtocol } from "../src/domain/providers/google-interactions-adapter.js";
 import { resolveProtocol, PROTOCOL_CAPABILITIES } from "../src/domain/providers/protocol-registry.js";
 import { normalizeProviderType, resolveSamplerSet, PROVIDER_TYPE } from "@vibe-tavern/domain";
+import { testFetch } from "./test-fetch-seam.js";
 
 // ─── Mock fetch ──────────────────────────────────────────────────────────
 
@@ -40,7 +41,7 @@ function setupMockFetch(response: () => Response) {
     };
     return response();
   });
-  globalThis.fetch = mockFetch as typeof fetch;
+  globalThis.fetch = testFetch(mockFetch);
 }
 
 // Canned non-stream Interaction response (shape captured from the live API;

@@ -48,6 +48,7 @@ import { mergeContinuation } from "../src/infrastructure/ai/merge-continuation.j
 import { nonstreamingProviderExecute } from "../src/infrastructure/ai/nonstreaming-provider-executor.js";
 import { streamProviderExecutor } from "../src/infrastructure/ai/stream-provider-executor.js";
 import { ProviderExecutionError } from "../src/infrastructure/ai/provider-execution-types.js";
+import { testFetch } from "./test-fetch-seam.js";
 
 const CHAT = "chat_1";
 const MESSAGE = "msg_1";
@@ -78,7 +79,7 @@ let restoreFetch: (() => void) | null = null;
 function installFetchQueue(responses: Array<() => Response>): WireCall[] {
   const calls: WireCall[] = [];
   let index = 0;
-  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+  globalThis.fetch = testFetch(async (input: Parameters<typeof fetch>[0], init?: RequestInit): Promise<Response> => {
     const url = typeof input === "string" ? input : input.toString();
     const rawBody = typeof init?.body === "string" ? init.body : "";
     let messages: Array<{ role: string; content: string }> = [];
@@ -91,7 +92,7 @@ function installFetchQueue(responses: Array<() => Response>): WireCall[] {
     index += 1;
     if (!next) throw new Error(`unexpected provider fetch #${index} (${url})`);
     return next();
-  }) as typeof fetch;
+  });
   restoreFetch = () => {
     globalThis.fetch = realFetch;
     restoreFetch = null;

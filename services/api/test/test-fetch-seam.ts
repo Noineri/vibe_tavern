@@ -32,10 +32,10 @@
  * never the reverse).
  */
 export function testFetch(
-	impl: (input: RequestInfo | URL, init?: RequestInit) => Response | Promise<Response>,
+	impl: (input: Parameters<typeof fetch>[0], init?: RequestInit) => Response | Promise<Response>,
 ): typeof fetch {
 	return Object.assign(
-		async (input: RequestInfo | URL, init?: RequestInit) => impl(input, init),
+		async (input: Parameters<typeof fetch>[0], init?: RequestInit) => impl(input, init),
 		{ preconnect: globalThis.fetch.preconnect },
 	);
 }

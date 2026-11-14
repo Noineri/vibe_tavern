@@ -25,6 +25,7 @@ import { setTokenCountFn } from "@vibe-tavern/prompt-pipeline";
 import { countTokens } from "../src/infrastructure/ai/tokenizer-service.js";
 import { waitForTokenWarmIdle, resetTokenCountCache } from "../src/infrastructure/ai/token-count-cache.js";
 import { afterAll } from "bun:test";
+import { testFetch } from "./test-fetch-seam.js";
 
 const originalFetch = globalThis.fetch;
 /** Marker exactness: the stubbed llama-server counts 1000 + text.length tokens. */
@@ -97,7 +98,7 @@ async function createTestRuntime(profile: StoredProviderProfileRecord | null): P
 }
 
 function stubTokenizeEndpoint(): void {
-	globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+	globalThis.fetch = testFetch(async (url: string | URL | Request, init?: RequestInit) => {
 		const urlText = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
 		if (!urlText.endsWith("/tokenize")) {
 			return new Response(JSON.stringify({ error: "unexpected fetch in test" }), { status: 404 });
@@ -108,7 +109,7 @@ function stubTokenizeEndpoint(): void {
 			status: 200,
 			headers: { "Content-Type": "application/json" },
 		});
-	}) as typeof fetch;
+	});
 }
 
 describe("Provider-exact token counts reach trace layers after warm (LS-1e)", () => {

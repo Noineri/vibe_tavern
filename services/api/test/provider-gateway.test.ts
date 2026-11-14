@@ -1,7 +1,12 @@
 import { describe, it, expect, mock, beforeEach, afterEach } from "bun:test";
 import { listProviderModels, probeProviderConnection, testProviderChat } from "../src/domain/providers/provider-gateway.js";
+import { testFetch } from "./test-fetch-seam.js";
 
 const originalFetch = globalThis.fetch;
+// The bun mock variable — installs wrap it through the seam; call-tracking
+// reads below use it directly (call state resets with each beforeEach
+// reassignment, exactly as the former globalThis.fetch re-cast reads saw).
+let fetchMock: ReturnType<typeof mock> = mock(mockFetch);
 
 function mockFetch(url: string | URL | Request, init?: RequestInit): Response {
 	const urlStr = typeof url === "string" ? url : url.toString();
@@ -91,7 +96,8 @@ function mockFetch(url: string | URL | Request, init?: RequestInit): Response {
 }
 
 beforeEach(() => {
-	globalThis.fetch = mock(mockFetch);
+	fetchMock = mock(mockFetch);
+	globalThis.fetch = testFetch(fetchMock);
 });
 
 afterEach(() => {
@@ -110,7 +116,7 @@ describe("provider gateway", () => {
 			});
 
 			expect(result).toEqual({ success: true, modelCount: 2 });
-			const callArgs = (globalThis.fetch as ReturnType<typeof mock>).mock.calls[0];
+			const callArgs = fetchMock.mock.calls[0];
 			expect(callArgs[0]).toBe("http://localhost:11434/api/tags");
 		});
 
@@ -122,7 +128,7 @@ describe("provider gateway", () => {
 			});
 
 			expect(result).toEqual({ success: true, modelCount: 1 });
-			const callArgs = (globalThis.fetch as ReturnType<typeof mock>).mock.calls[0];
+			const callArgs = fetchMock.mock.calls[0];
 			expect(callArgs[0]).toBe("http://localhost:5001/api/v1/model");
 		});
 	});
@@ -137,7 +143,7 @@ describe("provider gateway", () => {
 			});
 
 			expect(result).toEqual({ success: true, reply: "hello from ollama native" });
-			const callArgs = (globalThis.fetch as ReturnType<typeof mock>).mock.calls[0];
+			const callArgs = fetchMock.mock.calls[0];
 			expect(callArgs[0]).toBe("http://localhost:11434/api/chat");
 			const body = JSON.parse(callArgs[1]?.body as string);
 			expect(body).toMatchObject({ model: "llama3:8b", stream: false, options: { num_predict: 64 } });
@@ -152,7 +158,7 @@ describe("provider gateway", () => {
 			});
 
 			expect(result).toEqual({ success: true, reply: "hello from koboldcpp native" });
-			const callArgs = (globalThis.fetch as ReturnType<typeof mock>).mock.calls[0];
+			const callArgs = fetchMock.mock.calls[0];
 			expect(callArgs[0]).toBe("http://localhost:5001/api/v1/generate");
 			const body = JSON.parse(callArgs[1]?.body as string);
 			expect(body).toMatchObject({ prompt: "User: Hi\nAssistant:", max_length: 64, stream: false });
@@ -167,7 +173,7 @@ describe("provider gateway", () => {
 			});
 
 			expect(result).toEqual({ success: true, reply: "I should answer the greeting briefly." });
-			const callArgs = (globalThis.fetch as ReturnType<typeof mock>).mock.calls[0];
+			const callArgs = fetchMock.mock.calls[0];
 			expect(callArgs[0]).toBe("https://api.kimi.com/coding/v1/chat/completions");
 			const body = JSON.parse(callArgs[1]?.body as string);
 			expect(body).toMatchObject({
@@ -189,7 +195,7 @@ describe("provider gateway", () => {
 			});
 
 			expect(result).toEqual({ success: true, reply: "I should greet the user." });
-			const callArgs = (globalThis.fetch as ReturnType<typeof mock>).mock.calls[0];
+			const callArgs = fetchMock.mock.calls[0];
 			expect(callArgs[0]).toBe("https://api.anthropic.com/v1/messages");
 			const body = JSON.parse(callArgs[1]?.body as string);
 			expect(body).not.toHaveProperty("temperature");
@@ -225,14 +231,15 @@ describe("provider gateway", () => {
 				{ id: "gpt-4o-mini", label: "gpt-4o-mini" },
 			]);
 
-			const callArgs = (globalThis.fetch as ReturnType<typeof mock>).mock.calls[0];
+			const callArgs = fetchMock.mock.calls[0];
 			expect(callArgs[0]).toBe("http://localhost:11434/v1/models");
 			const headers = callArgs[1]?.headers as Record<string, string>;
 			expect(headers["Authorization"]).toBe("Bearer test-key");
 		});
 
 		it("throws on non-OK response", async () => {
-			globalThis.fetch = mock(() => new Response("Bad Gateway", { status: 502 }));
+			fetchMock = mock(() => new Response("Bad Gateway", { status: 502 }));
+			globalThis.fetch = testFetch(fetchMock);
 			expect(
 				listProviderModels({ ...baseInput, providerType: "openai_compat" }),
 			).rejects.toThrow("Model list request failed: 502");
@@ -249,7 +256,7 @@ describe("provider gateway", () => {
 				providerType: "anthropic",
 			});
 
-			const callArgs = (globalThis.fetch as ReturnType<typeof mock>).mock.calls[0];
+			const callArgs = fetchMock.mock.calls[0];
 			expect(callArgs[0]).toBe("https://api.anthropic.com/models");
 			const headers = callArgs[1]?.headers as Record<string, string>;
 			expect(headers["x-api-key"]).toBe("sk-ant-key");
@@ -277,14 +284,15 @@ describe("provider gateway", () => {
 				providerType: "anthropic",
 			});
 
-			const callArgs = (globalThis.fetch as ReturnType<typeof mock>).mock.calls[0];
+			const callArgs = fetchMock.mock.calls[0];
 			const headers = callArgs[1]?.headers as Record<string, string>;
 			expect(headers["x-api-key"]).toBeUndefined();
 			expect(headers["anthropic-version"]).toBeUndefined();
 		});
 
 		it("throws on non-OK response", async () => {
-			globalThis.fetch = mock(() => new Response("Unauthorized", { status: 401 }));
+			fetchMock = mock(() => new Response("Unauthorized", { status: 401 }));
+			globalThis.fetch = testFetch(fetchMock);
 			expect(
 				listProviderModels({ baseUrl: "https://api.anthropic.com", apiKey: "key", providerType: "anthropic" }),
 			).rejects.toThrow("Anthropic model list failed: 401");
@@ -295,13 +303,14 @@ describe("provider gateway", () => {
 
 	describe("google", () => {
 		it("fetches models from Google API and returns chat-capable models", async () => {
-			globalThis.fetch = mock(() => new Response(JSON.stringify({
+			fetchMock = mock(() => new Response(JSON.stringify({
 				models: [
 					{ name: "models/gemini-2.0-flash", displayName: "Gemini 2.0 Flash", supportedGenerationMethods: ["generateContent"] },
 					{ name: "models/gemini-2.5-pro", displayName: "Gemini 2.5 Pro", supportedGenerationMethods: ["generateContent"] },
 					{ name: "models/text-embedding-004", displayName: "Text Embedding", supportedGenerationMethods: ["embedContent"] },
 				],
 			}), { status: 200, headers: { "Content-Type": "application/json" } }));
+			globalThis.fetch = testFetch(fetchMock);
 
 			const models = await listProviderModels({
 				baseUrl: "https://generativelanguage.googleapis.com",
@@ -327,7 +336,7 @@ describe("provider gateway", () => {
 				providerType: "llamacpp",
 			});
 
-			const callArgs = (globalThis.fetch as ReturnType<typeof mock>).mock.calls[0];
+			const callArgs = fetchMock.mock.calls[0];
 			expect(callArgs[0]).toBe("http://localhost:8080/v1/models");
 		});
 	});
@@ -342,7 +351,7 @@ describe("provider gateway", () => {
 				providerType: "koboldcpp",
 			});
 
-			const callArgs = (globalThis.fetch as ReturnType<typeof mock>).mock.calls[0];
+			const callArgs = fetchMock.mock.calls[0];
 			expect(callArgs[0]).toBe("http://localhost:5001/api/v1/model");
 			expect(models).toEqual([
 				{ id: "koboldcpp/qwen2.5-3b-instruct-q4_k_m", label: "koboldcpp/qwen2.5-3b-instruct-q4_k_m" },
@@ -350,7 +359,8 @@ describe("provider gateway", () => {
 		});
 
 		it("throws on non-OK response", async () => {
-			globalThis.fetch = mock(() => new Response("Not Found", { status: 404 }));
+			fetchMock = mock(() => new Response("Not Found", { status: 404 }));
+			globalThis.fetch = testFetch(fetchMock);
 			expect(
 				listProviderModels({ baseUrl: "http://localhost:5001", apiKey: "", providerType: "koboldcpp" }),
 			).rejects.toThrow("KoboldCPP model list failed: 404");
@@ -367,7 +377,7 @@ describe("provider gateway", () => {
 				providerType: "ollama",
 			});
 
-			const callArgs = (globalThis.fetch as ReturnType<typeof mock>).mock.calls[0];
+			const callArgs = fetchMock.mock.calls[0];
 			expect(callArgs[0]).toBe("http://localhost:11434/api/tags");
 			const headers = callArgs[1]?.headers as Record<string, string>;
 			expect(headers["Authorization"]).toBeUndefined();
@@ -385,12 +395,12 @@ describe("provider gateway", () => {
 				providerType: "ollama",
 			});
 
-			const callArgs = (globalThis.fetch as ReturnType<typeof mock>).mock.calls[0];
+			const callArgs = fetchMock.mock.calls[0];
 			expect(callArgs[0]).toBe("http://localhost:11434/api/tags");
 		});
 
 		it("enriches models from /api/show metadata when available", async () => {
-			globalThis.fetch = mock((url: string | URL | Request, init?: RequestInit) => {
+			fetchMock = mock((url: string | URL | Request, init?: RequestInit) => {
 				const urlStr = typeof url === "string" ? url : url.toString();
 				if (urlStr.endsWith("/api/tags")) {
 					return new Response(JSON.stringify({ models: [{ name: "gemma3:4b" }] }), {
@@ -410,6 +420,7 @@ describe("provider gateway", () => {
 				}
 				return new Response("Not Found", { status: 404 });
 			});
+			globalThis.fetch = testFetch(fetchMock);
 
 			const models = await listProviderModels({
 				baseUrl: "http://localhost:11434",
@@ -426,13 +437,14 @@ describe("provider gateway", () => {
 					capabilities: { vision: true },
 				},
 			]);
-			const showCall = (globalThis.fetch as ReturnType<typeof mock>).mock.calls[1];
+			const showCall = fetchMock.mock.calls[1];
 			expect(showCall[0]).toBe("http://localhost:11434/api/show");
 			expect(JSON.parse(showCall[1]?.body as string)).toEqual({ model: "gemma3:4b" });
 		});
 
 		it("throws on non-OK response", async () => {
-			globalThis.fetch = mock(() => new Response("Not Found", { status: 404 }));
+			fetchMock = mock(() => new Response("Not Found", { status: 404 }));
+			globalThis.fetch = testFetch(fetchMock);
 			expect(
 				listProviderModels({ baseUrl: "http://localhost:11434", apiKey: "", providerType: "ollama" }),
 			).rejects.toThrow("Ollama model list failed: 404");

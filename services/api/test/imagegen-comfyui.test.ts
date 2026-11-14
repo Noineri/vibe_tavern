@@ -50,7 +50,7 @@ interface RecordedCall {
  *  `handler`; an already-aborted signal rejects like a real transport. */
 function makeTransport(handler: (url: URL, init: RequestInit | undefined) => Response | Promise<Response>) {
   const calls: RecordedCall[] = [];
-  const transport = testFetch(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+  const transport = testFetch(async (input: Parameters<typeof fetch>[0], init?: RequestInit): Promise<Response> => {
     calls.push({ url: String(input), init });
     if (init?.signal?.aborted) {
       throw new DOMException("The operation was aborted.", "AbortError");

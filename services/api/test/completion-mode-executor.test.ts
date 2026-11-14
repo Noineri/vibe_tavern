@@ -24,6 +24,7 @@ import { setImmediate } from "node:timers/promises";
 import type { AssemblePromptResponse, GenerationFormat, StoredProviderProfileRecord } from "@vibe-tavern/domain";
 import { GENERATION_MODE } from "@vibe-tavern/domain";
 import { resetProviderFetchFactory } from "../src/domain/providers/provider-fetch-factory.js";
+import { testFetch } from "./test-fetch-seam.js";
 import { buildCoauthorTools } from "../src/domain/chat/coauthor-tools.js";
 import { createCopilotTodoTool } from "../src/domain/interactive/copilot/copilot-todo-tool.js";
 import { nonstreamingProviderExecute } from "../src/infrastructure/ai/nonstreaming-provider-executor.js";
@@ -124,12 +125,12 @@ let calls: CapturedCall[] = [];
 
 function installFetchStub(respond: (url: string, init: RequestInit) => Response | Promise<Response>) {
   calls = [];
-  globalThis.fetch = mock(async (url: string | URL | Request, init?: RequestInit) => {
+  globalThis.fetch = testFetch(mock(async (url: string | URL | Request, init?: RequestInit) => {
     const urlText = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
     const initRecord = (init ?? {}) as RequestInit;
     calls.push({ url: urlText, init: initRecord });
     return respond(urlText, initRecord);
-  }) as typeof fetch;
+  }));
 }
 
 function sseResponse(events: unknown[]): Response {

@@ -38,7 +38,7 @@ interface RecordedCall {
 
 function makeTransport(handler: (url: URL, init: RequestInit | undefined) => Response | Promise<Response>) {
   const calls: RecordedCall[] = [];
-  const transport = testFetch(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+  const transport = testFetch(async (input: Parameters<typeof fetch>[0], init?: RequestInit): Promise<Response> => {
     calls.push({ url: String(input), init });
     return handler(new URL(String(input)), init);
   });

@@ -9,6 +9,7 @@ import {
   testNovelAiChat,
 } from "../src/domain/providers/novelai-adapter.js";
 import { generationFormatToTemplate } from "../src/domain/providers/completion-prompt.js";
+import { testFetch } from "./test-fetch-seam.js";
 
 // ─── Mock fetch ──────────────────────────────────────────────────────────
 
@@ -31,7 +32,7 @@ function setupMockFetch(responses: Array<{ ok: boolean; status: number; json?: u
       headers,
     });
   });
-  globalThis.fetch = mockFetch as typeof fetch;
+  globalThis.fetch = testFetch(mockFetch);
 }
 
 function setupMockSSEStream(tokens: string[], doneText = "full text") {
@@ -47,7 +48,7 @@ function setupMockSSEStream(tokens: string[], doneText = "full text") {
       headers: new Headers({ "Content-Type": "text/event-stream" }),
     });
   });
-  globalThis.fetch = mockFetch as typeof fetch;
+  globalThis.fetch = testFetch(mockFetch);
 }
 
 function sentBody(): Record<string, unknown> {
@@ -354,7 +355,7 @@ describe("NovelAI adapter — doStream", () => {
       'data: {"token":"partial"}\n\n',
       { status: 200, headers: { "Content-Type": "text/event-stream" } },
     ));
-    globalThis.fetch = mockFetch as typeof fetch;
+    globalThis.fetch = testFetch(mockFetch);
     const result = await kayraModel().doStream({
       prompt: [{ role: "user", content: [{ type: "text", text: "go" }] }],
     });
@@ -377,7 +378,7 @@ describe("NovelAI adapter — doStream", () => {
       }),
       { status: 200, headers: { "Content-Type": "text/event-stream" } },
     ));
-    globalThis.fetch = mockFetch as typeof fetch;
+    globalThis.fetch = testFetch(mockFetch);
     const result = await kayraModel().doStream({
       prompt: [{ role: "user", content: [{ type: "text", text: "go" }] }],
       abortSignal: abort.signal,

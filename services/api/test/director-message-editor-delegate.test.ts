@@ -12,6 +12,7 @@ import { createAiAssistantDeps } from "../src/domain/ai-assistant/ai-assistant-d
 import { countAiAssistantTokens, streamAiAssistant, type StreamDeps } from "../src/domain/ai-assistant/ai-assistant-stream.js";
 import { runDirectorMessageEditorDelegate, type DirectorMessageEditorDelegateDeps } from "../src/domain/director/director-message-editor-delegate.js";
 import { createOllamaModel } from "../src/domain/providers/ollama-adapter.js";
+import { testFetch } from "./test-fetch-seam.js";
 
 const ORDINARY_INSTRUCTION = "ordinary user instruction: fix the pose";
 const DIRECTOR_INSTRUCTION = "director instruction: fix the pose";
@@ -104,10 +105,10 @@ describe("director message editor delegate", () => {
       const before = await persistedState(fixture);
       const bodies: string[] = [];
       const originalFetch = globalThis.fetch;
-      globalThis.fetch = async (input, init) => {
+      globalThis.fetch = testFetch(async (input, init) => {
         bodies.push(await new Request(input, init).text());
         return new Response(`${JSON.stringify({ message: { role: "assistant", content: "candidate-only" }, done: false })}\n${JSON.stringify({ message: { role: "assistant", content: "" }, done: true, done_reason: "stop" })}\n`, { headers: { "Content-Type": "application/x-ndjson" } });
-      };
+      });
       let delegateResult: Awaited<ReturnType<typeof runDirectorMessageEditorDelegate>>;
       try {
         for await (const chunk of streamAiAssistant(ordinaryRequest, runtimeDeps)) void chunk;
@@ -162,10 +163,10 @@ describe("director message editor delegate", () => {
       };
       const bodies: string[] = [];
       const originalFetch = globalThis.fetch;
-      globalThis.fetch = async (input, init) => {
+      globalThis.fetch = testFetch(async (input, init) => {
         bodies.push(await new Request(input, init).text());
         return new Response(`${JSON.stringify({ message: { role: "assistant", content: "candidate-only" }, done: false })}\n${JSON.stringify({ message: { role: "assistant", content: "" }, done: true, done_reason: "stop" })}\n`, { headers: { "Content-Type": "application/x-ndjson" } });
-      };
+      });
       let delegateResult: Awaited<ReturnType<typeof runDirectorMessageEditorDelegate>>;
       let ordinaryResult: Awaited<ReturnType<typeof countAiAssistantTokens>>;
       try {
@@ -307,10 +308,10 @@ describe("director message editor delegate", () => {
       // thread's own (non-active) branch works.
       const bodies: string[] = [];
       const originalFetch = globalThis.fetch;
-      globalThis.fetch = async (input, init) => {
+      globalThis.fetch = testFetch(async (input, init) => {
         bodies.push(await new Request(input, init).text());
         return new Response(`${JSON.stringify({ message: { role: "assistant", content: "fork-candidate" }, done: false })}\n${JSON.stringify({ message: { role: "assistant", content: "" }, done: true, done_reason: "stop" })}\n`, { headers: { "Content-Type": "application/x-ndjson" } });
-      };
+      });
       let delegateResult: Awaited<ReturnType<typeof runDirectorMessageEditorDelegate>>;
       try {
         delegateResult = await runDirectorMessageEditorDelegate({
@@ -339,10 +340,10 @@ describe("director message editor delegate", () => {
 
       let providerCalled = false;
       const originalFetch = globalThis.fetch;
-      globalThis.fetch = async () => {
+      globalThis.fetch = testFetch(async () => {
         providerCalled = true;
         throw new Error("no provider call may happen without a configured editor");
-      };
+      });
       try {
         const result = await runDirectorMessageEditorDelegate({
           chatId: fixture.chat.id, branchId: fixture.chat.activeBranchId, targetMessageId: target.id,

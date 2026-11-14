@@ -48,7 +48,7 @@ interface RecordedCall {
 
 function makeTransport(handler: (url: URL, init: RequestInit | undefined) => Response | Promise<Response>) {
   const calls: RecordedCall[] = [];
-  const transport = testFetch(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+  const transport = testFetch(async (input: Parameters<typeof fetch>[0], init?: RequestInit): Promise<Response> => {
     calls.push({ url: String(input), init });
     if (init?.signal?.aborted) {
       throw new DOMException("The operation was aborted.", "AbortError");
@@ -254,9 +254,9 @@ describe("a1111 adapter", () => {
     });
 
     it("wraps a transport-level failure into the typed error (not a silent pass)", async () => {
-      const failing = (async () => {
+      const failing = testFetch(async () => {
         throw new Error("ECONNREFUSED");
-      }) as typeof fetch;
+      });
       const backend = backendWith(failing);
       const promise = backend.generate({ prompt: "p" });
       await expect(promise).rejects.toBeInstanceOf(A1111ImageGenError);
@@ -634,9 +634,9 @@ describe("a1111 adapter", () => {
     });
 
     it("reports a transport-level failure without throwing", async () => {
-      const failing = (async () => {
+      const failing = testFetch(async () => {
         throw new Error("ECONNREFUSED");
-      }) as typeof fetch;
+      });
       const backend = backendWith(failing);
       const result = await backend.probe();
       expect(result.ok).toBe(false);

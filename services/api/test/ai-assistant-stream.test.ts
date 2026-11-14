@@ -13,6 +13,7 @@ import { buildUserMessage, countAiAssistantTokens, streamAiAssistant, type Strea
 import { getModeConfig } from "../src/domain/ai-assistant/ai-assistant-modes.js";
 import { createOllamaModel } from "../src/domain/providers/ollama-adapter.js";
 import { makeBuiltPipelineContext } from "./insights-test-builders.js";
+import { testFetch } from "./test-fetch-seam.js";
 
 async function deps(overrides: Partial<StreamDeps> = {}): Promise<StreamDeps> {
   const base: Omit<StreamDeps, "db"> = {
@@ -239,10 +240,10 @@ describe("AI assistant stream abort", () => {
   async function stubFetchRecordingSignal(lines: string[], delayMs: number): Promise<{ signal: () => AbortSignal | null | undefined; restore: () => void }> {
     let recorded: AbortSignal | null | undefined;
     const originalFetch = globalThis.fetch;
-    globalThis.fetch = async (_input: unknown, init?: RequestInit) => {
+    globalThis.fetch = testFetch(async (_input: unknown, init?: RequestInit) => {
       recorded = init?.signal ?? null;
       return new Response(slowNdjson(lines, delayMs), { headers: { "Content-Type": "application/x-ndjson" } });
-    };
+    });
     return { signal: () => recorded, restore: () => { globalThis.fetch = originalFetch; } };
   }
 
@@ -425,10 +426,10 @@ describe("AI assistant stream prompt preparation", () => {
 
       const originalFetch = globalThis.fetch;
       const serializedModelRequests: string[] = [];
-      globalThis.fetch = async (input, init) => {
+      globalThis.fetch = testFetch(async (input, init) => {
         serializedModelRequests.push(await new Request(input, init).text());
         return new Response(`${JSON.stringify({ message: { role: "assistant", content: "candidate-only" }, done: false })}\n${JSON.stringify({ message: { role: "assistant", content: "" }, done: true, done_reason: "stop" })}\n`, { headers: { "Content-Type": "application/x-ndjson" } });
-      };
+      });
       try {
         const editChunks = [];
         for await (const chunk of streamAiAssistant(request, runtimeDeps)) editChunks.push(chunk);
@@ -507,10 +508,10 @@ describe("AI assistant stream prompt preparation", () => {
       };
       const bodies: string[] = [];
       const originalFetch = globalThis.fetch;
-      globalThis.fetch = async (input, init) => {
+      globalThis.fetch = testFetch(async (input, init) => {
         bodies.push(await new Request(input, init).text());
         return new Response(`${JSON.stringify({ message: { role: "assistant", content: "candidate-only" }, done: false })}\n${JSON.stringify({ message: { role: "assistant", content: "" }, done: true, done_reason: "stop" })}\n`, { headers: { "Content-Type": "application/x-ndjson" } });
-      };
+      });
       try {
         const baseRequest = {
           mode: "message_edit" as const, instruction: "revise the selected source", providerProfileId: fixture.profile.id, model: "editor-model",

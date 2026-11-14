@@ -55,6 +55,7 @@ import {
 } from "../src/domain/providers/socks-bridge.js";
 import { classifyProviderError } from "../src/infrastructure/ai/provider-error-classifier.js";
 import { resolveModel } from "../src/infrastructure/ai/provider-executor-utils.js";
+import { testFetch } from "./test-fetch-seam.js";
 
 const TARGET_CERT = Bun.file(new URL("./fixtures/provider-proxy-cert.pem", import.meta.url));
 const TARGET_KEY = Bun.file(new URL("./fixtures/provider-proxy-key.pem", import.meta.url));
@@ -275,8 +276,8 @@ function startSocksFixture(): SocksFixture {
 /** A transport fetch that trusts the test HTTPS target's certificate (whose SAN
  *  includes `provider.test`) via the existing per-request CA injection. */
 function createTrustedFetch(): typeof fetch {
-	const trusted = ((input: RequestInfo | URL, init?: RequestInit) =>
-		fetch(input, { ...init, tls: { ca: [TARGET_CERT] } })) as typeof fetch;
+	const trusted = testFetch((input: Parameters<typeof fetch>[0], init?: RequestInit) =>
+		fetch(input, { ...init, tls: { ca: [TARGET_CERT] } }));
 	trusted.preconnect = () => {};
 	return trusted;
 }
