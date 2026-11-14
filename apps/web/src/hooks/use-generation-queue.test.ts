@@ -10,6 +10,7 @@ import { cancelQueueJob, clearQueuePending, enqueueGenerateMore, useGenerationQu
 import { refreshGenerationQueue } from "../lib/chat-generation-queue-client.js";
 import { useDomEnv } from "../../test/dom-env.js";
 import { wireMessage, wireVariant } from "../../test/wire-fixtures.js";
+import { testFetch } from "@vibe-tavern/test-fetch";
 
 useDomEnv();
 const { act, renderHook, waitFor } = await import("@testing-library/react");
@@ -36,7 +37,7 @@ beforeEach(() => {
   useGenerationQueueStore.setState({ jobsByChat: {}, batchesByChat: {}, recordsByChat: {} });
   useSnapshotStore.setState({ activeChat: { id: A, mode: "rp" } as AppSnapshot["activeChat"] });
   setVariants(["original"]);
-  globalThis.fetch = (async (input, init) => {
+  globalThis.fetch = testFetch(async (input, init) => {
     const path = new URL(String(input), "http://localhost").pathname;
     const method = init?.method ?? "GET";
     const body = typeof init?.body === "string" ? JSON.parse(init.body) : undefined;
@@ -49,7 +50,7 @@ beforeEach(() => {
     if (method === "DELETE") jobs = jobs.map((item) => path.endsWith(`/${item.id}`) ? { ...item, status: "cancelled" } : item);
     if (path.endsWith("/clear")) jobs = jobs.filter((item) => item.status !== "pending");
     return Response.json({ ok: true });
-  }) as typeof fetch;
+  });
 });
 afterAll(() => {
   globalThis.fetch = originalFetch; errorToast.mockRestore();
@@ -140,10 +141,10 @@ test("a parked older hydration cannot overwrite a later cancellation", async () 
   let entered!: () => void;
   const ready = new Promise<void>((resolve) => { entered = resolve; });
   let park = true;
-  globalThis.fetch = (async (input, init) => {
+  globalThis.fetch = testFetch(async (input, init) => {
     if (park && (!init?.method || init.method === "GET")) { park = false; entered(); return new Promise<Response>((resolve) => { release = resolve; }); }
     return transport(input, init);
-  }) as typeof fetch;
+  });
   const older = refreshGenerationQueue(A); await ready;
   const cancel = cancelQueueJob("cancel");
   release(Response.json(jobs)); await older; await cancel;

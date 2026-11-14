@@ -14,6 +14,7 @@
  */
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { brandId, type ChatId } from "@vibe-tavern/domain";
+import { testFetch } from "@vibe-tavern/test-fetch";
 
 import { useDomEnv } from "../../../test/dom-env.js";
 import { wireCharacter, wireChat, wireProviderProfile, wireUiSettings } from "../../../test/wire-fixtures.js";
@@ -122,12 +123,12 @@ function expectRetainedReview(body: Record<string, unknown>): void {
 
 async function expectOmittedFromBothSendModes(): Promise<void> {
   const requests: Record<string, unknown>[] = [];
-  globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+  globalThis.fetch = testFetch(async (_input: RequestInfo | URL, init?: RequestInit) => {
     requests.push(JSON.parse(String(init?.body)));
     return requests.length === 1
       ? new Response(JSON.stringify({}), { status: 200 })
       : new Response('event: finish\ndata: {"finishReason":"stop"}\n\n', { status: 200 });
-  }) as typeof fetch;
+  });
   await sendChatMessage(CHAT, { content: "normal omission" });
   await sendStream(CHAT, { content: "stream omission" }, { onStatus: () => {}, onChunk: () => {} });
   expect(requests).toHaveLength(2);
@@ -166,10 +167,10 @@ describe("coauthor review send through useChatController", () => {
   it("keeps awaiting choices in the real non-stream HTTP body after sendChatMessageAction clears the turn", async () => {
     const unregister = seed(false);
     const requests: Record<string, unknown>[] = [];
-    globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+    globalThis.fetch = testFetch(async (_input: RequestInfo | URL, init?: RequestInit) => {
       requests.push(JSON.parse(String(init?.body)));
       return new Response(JSON.stringify({}), { status: 200 });
-    }) as typeof fetch;
+    });
     const { result } = renderHook(() => useChatController());
 
     await act(async () => { await result.current.handleSend(); });
@@ -183,10 +184,10 @@ describe("coauthor review send through useChatController", () => {
   it("keeps awaiting choices in the real stream HTTP body after executeStreamAction clears the turn", async () => {
     const unregister = seed(true);
     const requests: Record<string, unknown>[] = [];
-    globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+    globalThis.fetch = testFetch(async (_input: RequestInfo | URL, init?: RequestInit) => {
       requests.push(JSON.parse(String(init?.body)));
       return new Response('event: finish\ndata: {"finishReason":"stop"}\n\n', { status: 200 });
-    }) as typeof fetch;
+    });
     const { result } = renderHook(() => useChatController());
 
     await act(async () => { await result.current.handleSend(); });

@@ -24,6 +24,7 @@
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
 import { wireUiSettings } from "../../../test/wire-fixtures.js";
+import { testFetch } from "@vibe-tavern/test-fetch";
 import { useDomEnv } from "../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 import type { ChatId } from "@vibe-tavern/domain";
@@ -40,7 +41,7 @@ async function stateFetch(input: RequestInfo | URL, init?: RequestInit): Promise
   if (method === "GET" && path === "/api/chats/chat/summaries/generate") return Response.json(null);
   throw new Error(`Unexpected fetch: ${method} ${path}`);
 }
-globalThis.fetch = stateFetch as typeof fetch;
+globalThis.fetch = testFetch(stateFetch);
 afterAll(() => { globalThis.fetch = originalFetch; });
 
 // Load-time copies (mock.module rewrites export slots in place — spreading the

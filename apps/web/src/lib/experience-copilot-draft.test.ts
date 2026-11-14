@@ -15,6 +15,7 @@
 import { describe, it, expect, beforeEach, afterAll } from "bun:test";
 import type { AgentReviewEnvelope } from "@vibe-tavern/api-contracts";
 import { useDomEnv } from "../../test/dom-env.js";
+import { testFetch } from "@vibe-tavern/test-fetch";
 import {
 	isFinalizedActivity,
 	finalizeForPersistence,
@@ -266,7 +267,7 @@ describe("experience-copilot-draft — store rehydration (the reload contract)",
   beforeEach(() => {
     globalThis.fetch = originalFetch;
     reviews = new Map();
-    globalThis.fetch = (async (input, init) => {
+    globalThis.fetch = testFetch(async (input, init) => {
       const path = new URL(String(input), "http://gateway.test").pathname;
       if (path.endsWith("/api/agent-runs")) return Response.json([]);
       const id = path.match(/\/experience-copilot\/([^/]+)\/review$/)?.[1];
@@ -274,7 +275,7 @@ describe("experience-copilot-draft — store rehydration (the reload contract)",
       if (init?.method === "PUT") reviews.set(id, JSON.parse(String(init.body)));
       if (init?.method === "DELETE") { reviews.delete(id); return Response.json({ ok: true }); }
       return Response.json(reviews.get(id) ?? null);
-    }) as typeof fetch;
+    });
 		localStorage.clear();
 		useAgentTurnStore.setState({ turnsByThread: {} });
 		useAgentReviewRoundStore.setState({ roundsByThread: {} });

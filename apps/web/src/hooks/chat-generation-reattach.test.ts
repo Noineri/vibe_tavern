@@ -5,6 +5,7 @@ import type { ChatGenerationOperation } from "@vibe-tavern/api-contracts";
 import type { AppSnapshot, ProviderProfileRecord } from "../api/types.js";
 import { useDomEnv } from "../../test/dom-env.js";
 import { wireBranch, wireCharacter, wireChat, wireMessage } from "../../test/wire-fixtures.js";
+import { testFetch } from "@vibe-tavern/test-fetch";
 
 useDomEnv();
 const { act, renderHook, waitFor } = await import("@testing-library/react");
@@ -69,7 +70,7 @@ function setup(mode: "rp" | "coauthor", operation: ChatGenerationOperation) {
   const send = (reader: typeof readers[number], event: string, data: unknown) => {
     if (!reader.closed) reader.writer.enqueue(encoder.encode(frame(++reader.seq, event, data)));
   };
-  globalThis.fetch = (async (input, init) => {
+  globalThis.fetch = testFetch(async (input, init) => {
     const url = new URL(String(input), "http://gateway.test");
     const path = url.pathname.slice(url.pathname.indexOf("/api/")), method = init?.method ?? "GET";
     requests.push(`${method} ${path}`);
@@ -99,7 +100,7 @@ function setup(mode: "rp" | "coauthor", operation: ChatGenerationOperation) {
     if (path === `/api/chats/${B}`) return Response.json(snapshot(B, "rp", "Other chat"));
     if (method === "POST" && refused) return Response.json({ code: "AGENT_RUN_ACTIVE", error: "Already running" }, { status: 409 });
     throw new Error(`Unexpected request ${method} ${path}`);
-  }) as typeof fetch;
+  });
   useSnapshotStore.getState().clear();
   useSnapshotStore.getState().ingestSnapshot(current);
   useChatStore.setState({ activeChatId: A, generations: {}, draft: "Keep my draft", draftAttachments: [], messageActionId: null });

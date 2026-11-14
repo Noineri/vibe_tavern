@@ -3,7 +3,6 @@
   "apps/web/src/api/chat-api.ts:TS2322:Type 'unknown' is not assignable to type '{ description: string; }'.",
   "apps/web/src/api/chat-api.ts:TS2322:Type 'unknown' is not assignable to type '{ ok: boolean; }'.",
   "apps/web/src/api/client.ts:TS2304:Cannot find name 'window'.",
-  "apps/web/src/api/client.ts:TS2552:Cannot find name 'RequestInfo'. Did you mean 'RequestInit'?",
   "apps/web/src/api/persona-api.ts:TS2322:Type 'unknown' is not assignable to type '{ avatarExt: string; avatarFullExt: string | null; }'.",
   "apps/web/src/api/persona-api.ts:TS2322:Type 'unknown' is not assignable to type '{ created: number; skipped: number; errors: string[]; }'.",
   "apps/web/src/api/persona-api.ts:TS2584:Cannot find name 'document'. Do you need to change your target library? Try changing the 'lib' compiler option to include 'dom'.",

@@ -1,6 +1,7 @@
 /** BR-2c2: exercise the real RPC/auth seam at the fetch boundary. */
 import { afterAll, beforeEach, expect, test } from "bun:test";
 import { buildAgentReviewEnvelope } from "@vibe-tavern/api-contracts";
+import { testFetch } from "@vibe-tavern/test-fetch";
 import { getExperienceCopilotReview, putExperienceCopilotReview, deleteExperienceCopilotReview, isExperienceCopilotRunning } from "./experience-copilot-api.js";
 
 const originalFetch = globalThis.fetch;
@@ -12,10 +13,10 @@ beforeEach(() => {
   requests = [];
   response = null;
   status = 200;
-  globalThis.fetch = (async (input, init) => {
+  globalThis.fetch = testFetch(async (input, init) => {
     requests.push({ method: init?.method ?? "GET", path: new URL(String(input), "http://gateway.test").pathname, body: init?.body ? JSON.parse(String(init.body)) : null });
     return new Response(JSON.stringify(response), { status, headers: { "content-type": "application/json" } });
-  }) as typeof fetch;
+  });
 });
 afterAll(() => { globalThis.fetch = originalFetch; });
 

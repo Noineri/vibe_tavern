@@ -4,6 +4,7 @@ import { useDomEnv } from "../../test/dom-env.js";
 import { installI18nContextSeam } from "../../test/i18n-context-seam.js";
 import { TestEventSource } from "../../test/event-source-seam.js";
 import { toastClickEvent } from "../../test/react-event-seam.js";
+import { testFetch } from "@vibe-tavern/test-fetch";
 useDomEnv();
 const { renderHook, waitFor, act } = await import("@testing-library/react");
 const { toast } = await import("sonner");
@@ -191,12 +192,12 @@ const coauthorEvent = (state = "finished") => ({ threadId: "chat:coauthor-chat",
 for (const [state, level] of [["finished", success], ["failed", error]] as const) {
   test(`Co-Author ${state} notification opens the exact existing character chat, not an agent thread`, async () => {
     const requests: string[] = [];
-    globalThis.fetch = (async (input) => {
+    globalThis.fetch = testFetch(async (input) => {
       const url = String(input); requests.push(url);
       if (url.endsWith("/api/agent-runs")) return Response.json([]);
       if (url.endsWith("/coauthor/review")) return Response.json(null);
       return Response.json({ activeChat: { id: "coauthor-chat", characterId: "coauthor-character", mode: "coauthor" }, activeBranch: { id: "branch" } });
-    }) as typeof fetch;
+    });
     const h = renderHook(() => useAgentRunEvents());
     try {
       Source.instances[0]!.emit(coauthorEvent(state));
@@ -281,11 +282,11 @@ test("ready discovers running chats after reload and reconnect without overwriti
 
 test("a background RP reply uses the header name and Open navigates to its exact roleplay chat", async () => {
   const requests: string[] = [];
-  globalThis.fetch = (async (input) => {
+  globalThis.fetch = testFetch(async (input) => {
     const url = String(input); requests.push(url);
     if (url.endsWith("/queue")) return Response.json([]);
     return Response.json({ activeChat: { id: "rp-chat", characterId: "rp-character", mode: "rp" }, activeBranch: { id: "branch" } });
-  }) as typeof fetch;
+  });
   const h = renderHook(() => useAgentRunEvents());
   try {
     Source.instances[0]!.emit(replyEvent());
@@ -338,7 +339,7 @@ test("fast queue finishes cannot race late canonical reads into multiple complet
 
 test("visible RP, errors, stops, asking and owner/key mismatches stay quiet", async () => {
   const requests: string[] = [];
-  globalThis.fetch = (async (input) => { requests.push(String(input)); return Response.json([]); }) as typeof fetch;
+  globalThis.fetch = testFetch(async (input) => { requests.push(String(input)); return Response.json([]); });
   const h = renderHook(() => useAgentRunEvents());
   try {
     useChatStore.setState({ activeChatId: brandId<ChatId>("rp-chat") });
