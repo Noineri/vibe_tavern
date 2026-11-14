@@ -17,27 +17,19 @@ import {
 import { createDb } from "../src/db-connection.js";
 import { providerQuotaEvents, providerQuotaSettings, providerQuotaSnapshots } from "../src/db-schema.js";
 import { QuotaStore } from "../src/stores/quota-store.js";
-import { ProviderStore } from "../src/stores/provider-store.js";
+import { ProviderStore, type CreateProviderData } from "../src/stores/provider-store.js";
 import type { AppDb } from "../src/db-connection.js";
+import { makeCreateProviderData } from "./provider-test-builders.js";
 
-const BASE_CREATE = {
-  providerPreset: "zai" as const,
-  endpoint: "https://api.z.ai/api/paas/v4",
-  apiKey: "sk-test",
-  defaultModel: "glm-4.6",
-  contextBudget: null as null,
-  temperature: 1, topP: 1, minP: 0, topK: 0, topA: 0,
-  typicalP: 1, tfsZ: 1, repeatLastN: 0,
-  mirostat: 0, mirostatTau: 5, mirostatEta: 0.1,
-  dryMultiplier: 0, dryBase: 1.75, dryAllowedLength: 2,
-  drySequenceBreakers: null as null,
-  xtcThreshold: 0.1, xtcProbability: 0,
-  frequencyPenalty: 0, presencePenalty: 0, repetitionPenalty: 1,
-  maxTokens: 2000,
-  stopSequences: null as null, logitBias: null as null, seed: null as null,
-  reasoningEffort: "auto" as const,
-  showReasoning: false, streamResponse: true, customSamplers: false,
-};
+function zaiProvider(over: Partial<CreateProviderData> = {}): CreateProviderData {
+  return makeCreateProviderData({
+    providerPreset: "zai",
+    endpoint: "https://api.z.ai/api/paas/v4",
+    apiKey: "sk-test",
+    defaultModel: "glm-4.6",
+    ...over,
+  });
+}
 
 function windowedSnapshot(providerProfileId: string, usedPercent: number): WindowedProviderQuotaSnapshot {
   return {
@@ -100,7 +92,7 @@ describe("QuotaStore", () => {
     db = await createDb(":memory:");
     store = new QuotaStore(db);
     providers = new ProviderStore(db);
-    const created = await providers.create({ name: "ZAI", ...BASE_CREATE });
+    const created = await providers.create(zaiProvider({ name: "ZAI" }));
     profileId = created.id;
   });
 
@@ -210,7 +202,7 @@ describe("QuotaStore", () => {
   });
 
   test("listSettings returns every persisted profile", async () => {
-    const second = await providers.create({ name: "DeepSeek", ...BASE_CREATE, providerPreset: "deepseek" });
+    const second = await providers.create(zaiProvider({ name: "DeepSeek", providerPreset: "deepseek" }));
     await store.upsertSettings(profileId, {
       kind: PROVIDER_QUOTA_KIND.windowed,
       displayEnabled: true,

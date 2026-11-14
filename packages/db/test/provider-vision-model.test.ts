@@ -3,6 +3,7 @@ import { createDb } from "../src/db-connection.js";
 import * as schema from "../src/db-schema.js";
 import { ProviderStore } from "../src/stores/provider-store.js";
 import type { StoreClock, StoreIdGenerator } from "../src/persistence.js";
+import { makeCreateProviderData } from "./provider-test-builders.js";
 
 const FIXED_NOW = "2025-05-04T12:00:00.000Z";
 
@@ -39,25 +40,6 @@ function bootstrap(db: Awaited<ReturnType<typeof createTestDb>>) {
   }).run();
 }
 
-const BASE_CREATE = {
-  providerPreset: "openrouter" as const,
-  endpoint: "https://openrouter.ai/api/v1",
-  apiKey: "sk-test",
-  defaultModel: "model-a",
-  contextBudget: null as null,
-  temperature: 1, topP: 1, minP: 0, topK: 0, topA: 0,
-  typicalP: 1, tfsZ: 1, repeatLastN: 0,
-  mirostat: 0, mirostatTau: 5, mirostatEta: 0.1,
-  dryMultiplier: 0, dryBase: 1.75, dryAllowedLength: 2,
-  drySequenceBreakers: null as null,
-  xtcThreshold: 0.1, xtcProbability: 0,
-  frequencyPenalty: 0, presencePenalty: 0, repetitionPenalty: 1,
-  maxTokens: 2000,
-  stopSequences: null as null, logitBias: null as null, seed: null as null,
-  reasoningEffort: "auto" as const,
-  showReasoning: false, streamResponse: true, customSamplers: false,
-};
-
 describe("ProviderStore visionModel persistence", () => {
   let db: Awaited<ReturnType<typeof createTestDb>>;
   let store: ProviderStore;
@@ -71,11 +53,12 @@ describe("ProviderStore visionModel persistence", () => {
   });
 
   test("create with visionModel → read back", async () => {
-    const created = await store.create({
-      name: "Test",
-      visionModel: "vision-model-x",
-      ...BASE_CREATE,
-    });
+    const created = await store.create(
+      makeCreateProviderData({
+        name: "Test",
+        visionModel: "vision-model-x",
+      }),
+    );
     expect(created.visionModel).toBe("vision-model-x");
 
     const reloaded = await store.getById(created.id);
@@ -83,11 +66,12 @@ describe("ProviderStore visionModel persistence", () => {
   });
 
   test("update other field → visionModel preserved", async () => {
-    const created = await store.create({
-      name: "Test",
-      visionModel: "vision-kept",
-      ...BASE_CREATE,
-    });
+    const created = await store.create(
+      makeCreateProviderData({
+        name: "Test",
+        visionModel: "vision-kept",
+      }),
+    );
 
     await store.update(created.id, { temperature: 0.7 });
 
@@ -97,11 +81,12 @@ describe("ProviderStore visionModel persistence", () => {
   });
 
   test("update visionModel to new value", async () => {
-    const created = await store.create({
-      name: "Test",
-      visionModel: "vision-old",
-      ...BASE_CREATE,
-    });
+    const created = await store.create(
+      makeCreateProviderData({
+        name: "Test",
+        visionModel: "vision-old",
+      }),
+    );
 
     await store.update(created.id, { visionModel: "vision-new" });
 
@@ -110,11 +95,12 @@ describe("ProviderStore visionModel persistence", () => {
   });
 
   test("update with visionModel=null clears it", async () => {
-    const created = await store.create({
-      name: "Test",
-      visionModel: "vision-clear-me",
-      ...BASE_CREATE,
-    });
+    const created = await store.create(
+      makeCreateProviderData({
+        name: "Test",
+        visionModel: "vision-clear-me",
+      }),
+    );
 
     await store.update(created.id, { visionModel: null });
 
@@ -123,11 +109,12 @@ describe("ProviderStore visionModel persistence", () => {
   });
 
   test("partial update (no visionModel key) preserves it", async () => {
-    const created = await store.create({
-      name: "Test",
-      visionModel: "vision-kept",
-      ...BASE_CREATE,
-    });
+    const created = await store.create(
+      makeCreateProviderData({
+        name: "Test",
+        visionModel: "vision-kept",
+      }),
+    );
 
     // Only send name — visionModel not in the update data at all
     await store.update(created.id, { name: "Updated Name" });
@@ -138,11 +125,12 @@ describe("ProviderStore visionModel persistence", () => {
   });
 
   test("full-form update sending visionModel preserves it", async () => {
-    const created = await store.create({
-      name: "Test",
-      visionModel: "my-vision-model",
-      ...BASE_CREATE,
-    });
+    const created = await store.create(
+      makeCreateProviderData({
+        name: "Test",
+        visionModel: "my-vision-model",
+      }),
+    );
 
     await store.update(created.id, {
       name: "Test",

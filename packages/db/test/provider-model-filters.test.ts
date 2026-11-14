@@ -3,6 +3,7 @@ import { createDb } from "../src/db-connection.js";
 import * as schema from "../src/db-schema.js";
 import { ProviderStore } from "../src/stores/provider-store.js";
 import type { StoreClock, StoreIdGenerator } from "../src/persistence.js";
+import { makeCreateProviderData } from "./provider-test-builders.js";
 
 // Round-trip pin for the model-list display prefs (MODEL_LIST_FILTERS step 3).
 // These are pure-UI booleans with no backend logic, but they MUST survive the
@@ -44,25 +45,6 @@ function bootstrap(db: Awaited<ReturnType<typeof createTestDb>>) {
 	}).run();
 }
 
-const BASE_CREATE = {
-	providerPreset: "openrouter" as const,
-	endpoint: "https://openrouter.ai/api/v1",
-	apiKey: "sk-test",
-	defaultModel: "model-a",
-	contextBudget: null as null,
-	temperature: 1, topP: 1, minP: 0, topK: 0, topA: 0,
-	typicalP: 1, tfsZ: 1, repeatLastN: 0,
-	mirostat: 0, mirostatTau: 5, mirostatEta: 0.1,
-	dryMultiplier: 0, dryBase: 1.75, dryAllowedLength: 2,
-	drySequenceBreakers: null as null,
-	xtcThreshold: 0.1, xtcProbability: 0,
-	frequencyPenalty: 0, presencePenalty: 0, repetitionPenalty: 1,
-	maxTokens: 2000,
-	stopSequences: null as null, logitBias: null as null, seed: null as null,
-	reasoningEffort: "auto" as const,
-	showReasoning: false, streamResponse: true, customSamplers: false,
-};
-
 describe("ProviderStore model-list filter prefs persistence (MODEL_LIST_FILTERS)", () => {
 	let db: Awaited<ReturnType<typeof createTestDb>>;
 	let store: ProviderStore;
@@ -76,18 +58,19 @@ describe("ProviderStore model-list filter prefs persistence (MODEL_LIST_FILTERS)
 	});
 
 	test("defaults to false when omitted on create", async () => {
-		const created = await store.create({ name: "Test", ...BASE_CREATE });
+		const created = await store.create(makeCreateProviderData({ name: "Test" }));
 		expect(created.modelFreeOnly).toBe(false);
 		expect(created.modelGroupByOwner).toBe(false);
 	});
 
 	test("create with both on → read back", async () => {
-		const created = await store.create({
-			name: "Test",
-			modelFreeOnly: true,
-			modelGroupByOwner: true,
-			...BASE_CREATE,
-		});
+		const created = await store.create(
+			makeCreateProviderData({
+				name: "Test",
+				modelFreeOnly: true,
+				modelGroupByOwner: true,
+			}),
+		);
 		expect(created.modelFreeOnly).toBe(true);
 		expect(created.modelGroupByOwner).toBe(true);
 
@@ -97,7 +80,7 @@ describe("ProviderStore model-list filter prefs persistence (MODEL_LIST_FILTERS)
 	});
 
 	test("update toggles persist", async () => {
-		const created = await store.create({ name: "Test", ...BASE_CREATE });
+		const created = await store.create(makeCreateProviderData({ name: "Test" }));
 
 		await store.update(created.id, { modelFreeOnly: true, modelGroupByOwner: true });
 
@@ -114,12 +97,13 @@ describe("ProviderStore model-list filter prefs persistence (MODEL_LIST_FILTERS)
 	});
 
 	test("partial update (unrelated field) preserves both prefs", async () => {
-		const created = await store.create({
-			name: "Test",
-			modelFreeOnly: true,
-			modelGroupByOwner: true,
-			...BASE_CREATE,
-		});
+		const created = await store.create(
+			makeCreateProviderData({
+				name: "Test",
+				modelFreeOnly: true,
+				modelGroupByOwner: true,
+			}),
+		);
 
 		await store.update(created.id, { temperature: 0.7 });
 

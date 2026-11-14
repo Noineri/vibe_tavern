@@ -8,9 +8,10 @@
 import { describe, test, expect, beforeEach } from "bun:test";
 import { createDb } from "../src/db-connection.js";
 import * as schema from "../src/db-schema.js";
-import { ProviderStore } from "../src/stores/provider-store.js";
+import { ProviderStore, type CreateProviderData } from "../src/stores/provider-store.js";
 import type { StoreClock, StoreIdGenerator } from "../src/persistence.js";
 import { GENERATION_MODE } from "@vibe-tavern/domain";
+import { makeCreateProviderData } from "./provider-test-builders.js";
 
 const FIXED_NOW = "2025-05-04T12:00:00.000Z";
 
@@ -45,24 +46,16 @@ function bootstrap(db: Awaited<ReturnType<typeof createDb>>) {
   }).run();
 }
 
-const BASE_CREATE = {
-  providerPreset: "lmstudio" as const,
+const LMSTUDIO_PRESET = {
+  providerPreset: "lmstudio",
   endpoint: "http://localhost:1234/v1",
-  apiKey: null as null,
+  apiKey: null,
   defaultModel: "local-model",
-  contextBudget: null as null,
-  temperature: 1, topP: 1, minP: 0, topK: 0, topA: 0,
-  typicalP: 1, tfsZ: 1, repeatLastN: 0,
-  mirostat: 0, mirostatTau: 5, mirostatEta: 0.1,
-  dryMultiplier: 0, dryBase: 1.75, dryAllowedLength: 2,
-  drySequenceBreakers: null as null,
-  xtcThreshold: 0.1, xtcProbability: 0,
-  frequencyPenalty: 0, presencePenalty: 0, repetitionPenalty: 1,
-  maxTokens: 2000,
-  stopSequences: null as null, logitBias: null as null, seed: null as null,
-  reasoningEffort: "auto" as const,
-  showReasoning: false, streamResponse: true, customSamplers: false,
-};
+} as const satisfies Partial<CreateProviderData>;
+
+function lmstudioProvider(over: Partial<CreateProviderData> = {}): CreateProviderData {
+  return makeCreateProviderData({ ...LMSTUDIO_PRESET, ...over });
+}
 
 describe("ProviderStore generationMode persistence (LS-2a)", () => {
   let db: Awaited<ReturnType<typeof createDb>>;
@@ -77,32 +70,32 @@ describe("ProviderStore generationMode persistence (LS-2a)", () => {
   });
 
   test("defaults to 'chat' when not provided (pre-existing profile behavior unchanged)", async () => {
-    const created = await store.create({ name: "Test", ...BASE_CREATE });
+    const created = await store.create(lmstudioProvider({ name: "Test" }));
     expect(created.generationMode).toBe(GENERATION_MODE.chat);
     const legacy = await store.getById("prov_legacy");
     expect(legacy!.generationMode).toBe(GENERATION_MODE.chat);
   });
 
   test("create with generationMode 'completion' → read back", async () => {
-    const created = await store.create({ name: "Test", generationMode: GENERATION_MODE.completion, ...BASE_CREATE });
+    const created = await store.create(lmstudioProvider({ name: "Test", generationMode: GENERATION_MODE.completion }));
     expect(created.generationMode).toBe(GENERATION_MODE.completion);
     const reloaded = await store.getById(created.id);
     expect(reloaded!.generationMode).toBe(GENERATION_MODE.completion);
   });
 
   test("flip to completion and back — the silent toggle (owner decision)", async () => {
-    const created = await store.create({ name: "Test", ...BASE_CREATE });
+    const created = await store.create(lmstudioProvider({ name: "Test" }));
     await store.update(created.id, { generationMode: GENERATION_MODE.completion });
     expect((await store.getById(created.id))!.generationMode).toBe(GENERATION_MODE.completion);
     // Flipping back is instant; nothing else on the row moves.
     await store.update(created.id, { generationMode: GENERATION_MODE.chat });
     const reloaded = await store.getById(created.id);
     expect(reloaded!.generationMode).toBe(GENERATION_MODE.chat);
-    expect(reloaded!.defaultModel).toBe(BASE_CREATE.defaultModel);
+    expect(reloaded!.defaultModel).toBe(LMSTUDIO_PRESET.defaultModel);
   });
 
   test("update other fields → generationMode preserved", async () => {
-    const created = await store.create({ name: "Test", generationMode: GENERATION_MODE.completion, ...BASE_CREATE });
+    const created = await store.create(lmstudioProvider({ name: "Test", generationMode: GENERATION_MODE.completion }));
     await store.update(created.id, { temperature: 0.7 });
     const reloaded = await store.getById(created.id);
     expect(reloaded!.generationMode).toBe(GENERATION_MODE.completion);
@@ -110,7 +103,7 @@ describe("ProviderStore generationMode persistence (LS-2a)", () => {
   });
 
   test("profile copy carries generationMode", async () => {
-    const created = await store.create({ name: "Test", generationMode: GENERATION_MODE.completion, ...BASE_CREATE });
+    const created = await store.create(lmstudioProvider({ name: "Test", generationMode: GENERATION_MODE.completion }));
     const copy = await store.duplicate(created.id);
     expect(copy.generationMode).toBe(GENERATION_MODE.completion);
   });

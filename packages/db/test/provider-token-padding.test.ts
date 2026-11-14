@@ -10,6 +10,7 @@ import * as schema from "../src/db-schema.js";
 import { ProviderStore } from "../src/stores/provider-store.js";
 import type { StoreClock, StoreIdGenerator } from "../src/persistence.js";
 import { effectiveContextBudget } from "@vibe-tavern/domain";
+import { makeCreateProviderData } from "./provider-test-builders.js";
 
 const FIXED_NOW = "2025-05-04T12:00:00.000Z";
 
@@ -46,25 +47,6 @@ function bootstrap(db: Awaited<ReturnType<typeof createTestDb>>) {
   }).run();
 }
 
-const BASE_CREATE = {
-  providerPreset: "openrouter" as const,
-  endpoint: "https://openrouter.ai/api/v1",
-  apiKey: "sk-test",
-  defaultModel: "model-a",
-  contextBudget: null as null,
-  temperature: 1, topP: 1, minP: 0, topK: 0, topA: 0,
-  typicalP: 1, tfsZ: 1, repeatLastN: 0,
-  mirostat: 0, mirostatTau: 5, mirostatEta: 0.1,
-  dryMultiplier: 0, dryBase: 1.75, dryAllowedLength: 2,
-  drySequenceBreakers: null as null,
-  xtcThreshold: 0.1, xtcProbability: 0,
-  frequencyPenalty: 0, presencePenalty: 0, repetitionPenalty: 1,
-  maxTokens: 2000,
-  stopSequences: null as null, logitBias: null as null, seed: null as null,
-  reasoningEffort: "auto" as const,
-  showReasoning: false, streamResponse: true, customSamplers: false,
-};
-
 describe("ProviderStore tokenPadding persistence (LS-1d)", () => {
   let db: Awaited<ReturnType<typeof createTestDb>>;
   let store: ProviderStore;
@@ -78,28 +60,28 @@ describe("ProviderStore tokenPadding persistence (LS-1d)", () => {
   });
 
   test("defaults to 0 when not provided (pre-existing profile behavior unchanged)", async () => {
-    const created = await store.create({ name: "Test", ...BASE_CREATE });
+    const created = await store.create(makeCreateProviderData({ name: "Test" }));
     expect(created.tokenPadding).toBe(0);
     const legacy = await store.getById("prov_legacy");
     expect(legacy!.tokenPadding).toBe(0);
   });
 
   test("create with tokenPadding → read back", async () => {
-    const created = await store.create({ name: "Test", tokenPadding: 256, ...BASE_CREATE });
+    const created = await store.create(makeCreateProviderData({ name: "Test", tokenPadding: 256 }));
     expect(created.tokenPadding).toBe(256);
     const reloaded = await store.getById(created.id);
     expect(reloaded!.tokenPadding).toBe(256);
   });
 
   test("update tokenPadding to a new value", async () => {
-    const created = await store.create({ name: "Test", tokenPadding: 100, ...BASE_CREATE });
+    const created = await store.create(makeCreateProviderData({ name: "Test", tokenPadding: 100 }));
     await store.update(created.id, { tokenPadding: 512 });
     const reloaded = await store.getById(created.id);
     expect(reloaded!.tokenPadding).toBe(512);
   });
 
   test("update other fields → tokenPadding preserved", async () => {
-    const created = await store.create({ name: "Test", tokenPadding: 300, ...BASE_CREATE });
+    const created = await store.create(makeCreateProviderData({ name: "Test", tokenPadding: 300 }));
     await store.update(created.id, { temperature: 0.7 });
     const reloaded = await store.getById(created.id);
     expect(reloaded!.tokenPadding).toBe(300);
@@ -107,7 +89,7 @@ describe("ProviderStore tokenPadding persistence (LS-1d)", () => {
   });
 
   test("profile copy carries tokenPadding", async () => {
-    const created = await store.create({ name: "Test", tokenPadding: 128, ...BASE_CREATE });
+    const created = await store.create(makeCreateProviderData({ name: "Test", tokenPadding: 128 }));
     const copy = await store.duplicate(created.id);
     expect(copy.tokenPadding).toBe(128);
   });
