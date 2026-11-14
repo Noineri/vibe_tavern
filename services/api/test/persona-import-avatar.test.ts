@@ -7,15 +7,18 @@ import { createStoreContainer, STORAGE_FOLDERS, type StoreContainer } from "@vib
 import { AssetService } from "../src/domain/asset/asset-service.js";
 import { PersonaAdapter } from "../src/api/adapters/persona-adapter.js";
 import type { SessionRuntime } from "../src/runtime/session/session-runtime.js";
-import type { PersonaRuntimeApi } from "../src/api/contract/runtime-api.js";
 import { minimalPng } from "./image-bytes.js";
 import { strictTestDouble } from "./strict-test-double.js";
 
 const PERSONAS = STORAGE_FOLDERS.personas;
 
-// Minimal sessionRuntime stub — the import path doesn't call into it; the
-// strict double throws a labeled miss if that ever changes.
+// Minimal sessionRuntime & providerProfileService stubs — the import path
+// doesn't call into them; any unprovided member throws a labeled miss.
 const noopSession = strictTestDouble<SessionRuntime>({}, "SessionRuntime (persona-import, uncalled seam)");
+const noopProviderProfiles = strictTestDouble<ConstructorParameters<typeof PersonaAdapter>[3]>(
+	{},
+	"PersonaAdapter providerProfileService (persona-import, uncalled seam)",
+);
 
 async function setup() {
 	const dataRoot = await mkdtemp(join(tmpdir(), "vt-persona-import-"));
@@ -26,7 +29,7 @@ async function setup() {
 		stores.content,
 		(id) => stores.characters.resolveFolderName(id),
 	);
-	const personas = new PersonaAdapter(noopSession, stores, assetService) as PersonaRuntimeApi;
+	const personas = new PersonaAdapter(noopSession, stores, assetService, noopProviderProfiles);
 	return { dataRoot, stores, assetService, personas };
 }
 

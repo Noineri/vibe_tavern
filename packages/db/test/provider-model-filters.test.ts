@@ -54,7 +54,7 @@ describe("ProviderStore model-list filter prefs persistence (MODEL_LIST_FILTERS)
 		idCounters = new Map();
 		db = await createTestDb();
 		bootstrap(db);
-		store = new ProviderStore(db, testIdGen, testClock);
+		store = new ProviderStore(db, { idGenerator: testIdGen, clock: testClock });
 	});
 
 	test("defaults to false when omitted on create", async () => {

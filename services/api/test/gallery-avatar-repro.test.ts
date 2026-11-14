@@ -6,16 +6,19 @@ import { join } from "node:path";
 import { createStoreContainer, STORAGE_FOLDERS, type StoreContainer } from "@vibe-tavern/db";
 import { AssetService } from "../src/domain/asset/asset-service.js";
 import { CharacterAdapter } from "../src/api/adapters/character-adapter.js";
-import type { CharacterRuntimeApi } from "../src/api/contract/runtime-api.js";
 import type { SessionRuntime } from "../src/runtime/session/session-runtime.js";
 import { strictTestDouble } from "./strict-test-double.js";
 
 const CHARS = STORAGE_FOLDERS.characters;
-// Minimal sessionRuntime double — the avatar-swap paths don't call into it;
-// any unprovided member throws a labeled miss.
+// Minimal sessionRuntime & providerProfileService doubles — the avatar-swap
+// paths don't call into them; any unprovided member throws a labeled miss.
 const noopSession = strictTestDouble<SessionRuntime>(
 	{},
 	"CharacterAdapter sessionRuntime (gallery avatar repro)",
+);
+const noopProviderProfiles = strictTestDouble<ConstructorParameters<typeof CharacterAdapter>[3]>(
+	{},
+	"CharacterAdapter providerProfileService (gallery avatar repro)",
 );
 
 // Distinct, recognizable image-byte signatures so we can tell which image is
@@ -36,7 +39,7 @@ async function setup() {
 	await mkdir(join(dataRoot, "assets"), { recursive: true });
 	const stores = await createStoreContainer(join(dataRoot, "test.db"), dataRoot);
 	const assetService = new AssetService(join(dataRoot, "assets"), stores.content);
-	const characters = new CharacterAdapter(noopSession, stores, assetService) as CharacterRuntimeApi;
+	const characters = new CharacterAdapter(noopSession, stores, assetService, noopProviderProfiles);
 	return { dataRoot, stores, assetService, characters };
 }
 

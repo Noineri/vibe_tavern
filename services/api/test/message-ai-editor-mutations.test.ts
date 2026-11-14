@@ -19,6 +19,7 @@ import { SkillLibraryService } from "../src/domain/coauthor/skills/skill-library
 import { SessionRuntime } from "../src/runtime/session/session-runtime.js";
 import { createRuntimeStore } from "../src/runtime/session/session-runtime-store.js";
 import { createApp } from "../src/server/app-factory.js";
+import { strictTestDouble } from "./strict-test-double.js";
 
 // These are full HTTP/runtime/SQLite boundary tests, and every case provisions
 // a fresh application. Windows CI can exceed Bun's 5-second per-test default
@@ -42,6 +43,13 @@ type VariantRequest = {
   readonly promptPresetId?: string;
   readonly finishReason?: string;
 };
+
+type RuntimeApiAdapterArgs = ConstructorParameters<typeof RuntimeApiAdapter>;
+
+/** Unexercised RuntimeApiAdapter dependencies — keeps ctor parity and fails loudly if touched. */
+function unusedRuntimeDep<T extends object>(name: string): T {
+  return strictTestDouble<T>({}, `RuntimeApiAdapter: ${name} (message-ai-editor-mutations)`);
+}
 
 async function createTestEnvironment(): Promise<TestEnvironment> {
   const root = resolve(tmpdir(), `vt-mae32-${crypto.randomUUID().slice(0, 8)}`);
@@ -86,6 +94,13 @@ async function createTestEnvironment(): Promise<TestEnvironment> {
     new ObjectiveService(stores, runtime, providerProfiles),
     new SceneTrackerService(stores, runtime, providerProfiles),
     new SkillLibraryService(resolve(root, "user-skills"), resolve(root, "builtin-skills")),
+    unusedRuntimeDep<RuntimeApiAdapterArgs[12]>("diceService"),
+    unusedRuntimeDep<RuntimeApiAdapterArgs[13]>("experienceService"),
+    unusedRuntimeDep<RuntimeApiAdapterArgs[14]>("experienceResourceService"),
+    unusedRuntimeDep<RuntimeApiAdapterArgs[15]>("experienceReplayService"),
+    unusedRuntimeDep<RuntimeApiAdapterArgs[16]>("experienceModelEffectService"),
+    unusedRuntimeDep<RuntimeApiAdapterArgs[17]>("experienceContextService"),
+    unusedRuntimeDep<RuntimeApiAdapterArgs[18]>("copilotSkillService"),
   );
   const created = await runtime.character.createFromScratch({
     name: "Mutation Probe",

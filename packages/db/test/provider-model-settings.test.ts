@@ -33,7 +33,7 @@ describe("ProviderStore per-model settings overlay", () => {
     clockTick = 0;
     idCounters = new Map();
     const db = await createDb(":memory:");
-    store = new ProviderStore(db, testIdGen, testClock);
+    store = new ProviderStore(db, { idGenerator: testIdGen, clock: testClock });
     const created = await store.create(makeCreateProviderData({ name: "Test" }));
     profileId = created.id;
   });
@@ -112,7 +112,7 @@ describe("ProviderStore per-model settings overlay", () => {
   test("malformed settingsJson degrades to empty overlay (not a throw)", async () => {
     // Write a bad row directly to simulate legacy/corrupt data.
     const db = await createDb(":memory:");
-    const corruptStore = new ProviderStore(db, testIdGen, testClock);
+    const corruptStore = new ProviderStore(db, { idGenerator: testIdGen, clock: testClock });
     const created = await corruptStore.create(makeCreateProviderData({ name: "X" }));
     await db.insert(schema.providerModelSettings).values({
       id: "pms_bad", providerProfileId: created.id, modelId: "model-a",
@@ -129,7 +129,7 @@ describe("ProviderStore per-model overlay cascade-on-profile-delete", () => {
     clockTick = 0;
     idCounters = new Map();
     const db = await createDb(":memory:");
-    const store = new ProviderStore(db, testIdGen, testClock);
+    const store = new ProviderStore(db, { idGenerator: testIdGen, clock: testClock });
     const created = await store.create(makeCreateProviderData({ name: "Doomed" }));
     await store.upsertModelSettings(created.id, "model-a", { temperature: 0.3 });
     expect(await store.getModelSettings(created.id, "model-a")).not.toBeNull();
@@ -149,7 +149,7 @@ describe("ProviderStore bindPerModel persistence", () => {
     clockTick = 0;
     idCounters = new Map();
     const db = await createDb(":memory:");
-    const store = new ProviderStore(db, testIdGen, testClock);
+    const store = new ProviderStore(db, { idGenerator: testIdGen, clock: testClock });
     const created = await store.create(makeCreateProviderData({ name: "P" }));
     expect(created.bindPerModel).toBe(false);
 

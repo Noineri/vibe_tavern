@@ -49,7 +49,7 @@ describe("ProviderStore visionModel persistence", () => {
     idCounters = new Map();
     db = await createTestDb();
     bootstrap(db);
-    store = new ProviderStore(db, testIdGen, testClock);
+    store = new ProviderStore(db, { idGenerator: testIdGen, clock: testClock });
   });
 
   test("create with visionModel → read back", async () => {

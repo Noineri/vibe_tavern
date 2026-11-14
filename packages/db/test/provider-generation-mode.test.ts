@@ -66,7 +66,7 @@ describe("ProviderStore generationMode persistence (LS-2a)", () => {
     idCounters = new Map();
     db = await createDb(":memory:");
     bootstrap(db);
-    store = new ProviderStore(db, testIdGen, testClock);
+    store = new ProviderStore(db, { idGenerator: testIdGen, clock: testClock });
   });
 
   test("defaults to 'chat' when not provided (pre-existing profile behavior unchanged)", async () => {

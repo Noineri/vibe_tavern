@@ -7,7 +7,6 @@ import { createStoreContainer, STORAGE_FOLDERS, type StoreContainer } from "@vib
 import { AssetService } from "../src/domain/asset/asset-service.js";
 import { CharacterAdapter } from "../src/api/adapters/character-adapter.js";
 import { createCharacterRoutes } from "../src/api/routes/character.js";
-import type { CharacterRuntimeApi, CharacterAssetRuntimeApi } from "../src/api/contract/runtime-api.js";
 import type { SessionRuntime } from "../src/runtime/session/session-runtime.js";
 import { strictTestDouble } from "./strict-test-double.js";
 
@@ -30,6 +29,10 @@ const noopSession = strictTestDouble<SessionRuntime>(
 	},
 	"CharacterAdapter sessionRuntime (gallery adapter)",
 );
+const noopProviderProfiles = strictTestDouble<ConstructorParameters<typeof CharacterAdapter>[3]>(
+	{},
+	"CharacterAdapter providerProfileService (gallery adapter)",
+);
 
 async function setup() {
 	const dataRoot = await mkdtemp(join(tmpdir(), "vt-gallery-adapter-"));
@@ -40,8 +43,7 @@ async function setup() {
 		stores.content,
 		(id) => stores.characters.resolveFolderName(id),
 	);
-	const characters = new CharacterAdapter(noopSession, stores, assetService) as CharacterRuntimeApi &
-		CharacterAssetRuntimeApi;
+	const characters = new CharacterAdapter(noopSession, stores, assetService, noopProviderProfiles);
 	return { dataRoot, stores, assetService, characters };
 }
 
