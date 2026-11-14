@@ -10,6 +10,7 @@ import {
 	type KokoroMirrorDeps,
 } from "../src/domain/tts/kokoro-mirror.js";
 import { createKokoroMirrorRoutes } from "../src/api/routes/kokoro-mirror.js";
+import { testFetch } from "./test-fetch-seam.js";
 
 const tmpRoot = await mkdtemp(join(tmpdir(), "kokoro-mirror-test-"));
 afterAll(async () => {
@@ -37,11 +38,11 @@ function makeService(script: (url: string) => Promise<Response>): {
 	const calls: string[] = [];
 	const deps: KokoroMirrorDeps = {
 		resolveFetch: async () => {
-			return (input: Parameters<typeof fetch>[0]) => {
+			return testFetch((input) => {
 				const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
 				calls.push(url);
 				return script(url);
-			};
+			});
 		},
 	};
 	return { service: new KokoroMirrorService(tmpRoot, deps), calls };

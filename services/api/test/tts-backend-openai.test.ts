@@ -266,7 +266,7 @@ describe("OpenAI-compatible TTS listVoices", () => {
 
   test("both /audio/voices and /voices 404 → null (manual input floor)", async () => {
     const calls: string[] = [];
-    globalThis.fetch = testFetch(mock(async (input: RequestInfo | URL) => {
+    globalThis.fetch = testFetch(mock(async (input: Parameters<typeof fetch>[0]) => {
       calls.push(String(input));
       return jsonResponse(404, { detail: "not found" });
     }));
@@ -285,7 +285,7 @@ describe("OpenAI-compatible TTS listVoices", () => {
   // /v1/audio/voices 404, /v1/voices 200 { voices: [{ name, language, ... }] }.
   test("chatterbox: /audio/voices 404 → falls back to the /voices library", async () => {
     const calls: string[] = [];
-    globalThis.fetch = testFetch(mock(async (input: RequestInfo | URL) => {
+    globalThis.fetch = testFetch(mock(async (input: Parameters<typeof fetch>[0]) => {
       const url = String(input);
       calls.push(url);
       if (url.endsWith("/audio/voices")) return jsonResponse(404, { detail: "not found" });
@@ -309,7 +309,7 @@ describe("OpenAI-compatible TTS listVoices", () => {
   });
 
   test("chatterbox: empty voice library → null (no invented voices)", async () => {
-    globalThis.fetch = testFetch(mock(async (input: RequestInfo | URL) => {
+    globalThis.fetch = testFetch(mock(async (input: Parameters<typeof fetch>[0]) => {
       const url = String(input);
       if (url.endsWith("/audio/voices")) return jsonResponse(404, { detail: "not found" });
       return jsonResponse(200, { voices: [], count: 0 });
@@ -626,7 +626,7 @@ describe("openai-compat TTS live discovery (TPE-9a): known vendor hosts + audio-
 
   test("known hosts carry NO hardcoded voice roster — /audio/voices 404 → null (manual floor)", async () => {
     const urls: string[] = [];
-    globalThis.fetch = testFetch(mock(async (input: RequestInfo | URL) => {
+    globalThis.fetch = testFetch(mock(async (input: Parameters<typeof fetch>[0]) => {
       urls.push(String(input));
       return jsonResponse(404, { detail: "nope" });
     }));
@@ -657,7 +657,7 @@ describe("openai-compat TTS live discovery (TPE-9a): known vendor hosts + audio-
       expect(models.map((m) => m.id)).toEqual(["gpt-4o", "tts-1"]);
 
       const urls: string[] = [];
-      globalThis.fetch = testFetch(mock(async (input: RequestInfo | URL) => {
+      globalThis.fetch = testFetch(mock(async (input: Parameters<typeof fetch>[0]) => {
         urls.push(String(input));
         return jsonResponse(404, { detail: "nope" });
       }));
@@ -676,7 +676,7 @@ describe("openai-compat TTS live discovery (TPE-9a): known vendor hosts + audio-
     expect(models.map((m) => m.id)).toEqual(["gpt-4o-mini-tts", "llama-3.3", "elevenlabs"]);
     // Voices: manual floor (EH documents no voices endpoint).
     const urls: string[] = [];
-    globalThis.fetch = testFetch(mock(async (input: RequestInfo | URL) => {
+    globalThis.fetch = testFetch(mock(async (input: Parameters<typeof fetch>[0]) => {
       urls.push(String(input));
       return jsonResponse(404, { detail: "nope" });
     }));
@@ -711,7 +711,7 @@ describe("openai-compat TTS live discovery (TPE-9a): known vendor hosts + audio-
 
   test("siliconflow listVoices: ONLY the live custom list — no static system roster (TPE-9a)", async () => {
     const urls: string[] = [];
-    globalThis.fetch = testFetch(mock(async (input: RequestInfo | URL) => {
+    globalThis.fetch = testFetch(mock(async (input: Parameters<typeof fetch>[0]) => {
       const url = String(input);
       urls.push(url);
       if (url.endsWith("/audio/voice/list")) {
@@ -765,7 +765,7 @@ describe("openai-compat TTS live discovery (TPE-9a): known vendor hosts + audio-
 // ── Clone capability + cloneVoice (clone field design 2026-08-31) ─────────
 describe("OpenAI-compatible TTS clone capability + cloneVoice", () => {
   test("library-route voices (chatterbox) → supportsCloning true, even when the library is empty", async () => {
-    globalThis.fetch = testFetch(mock(async (input: RequestInfo | URL) => {
+    globalThis.fetch = testFetch(mock(async (input: Parameters<typeof fetch>[0]) => {
       const url = String(input);
       if (url.endsWith("/audio/voices")) return jsonResponse(404, { detail: "nope" });
       return jsonResponse(200, { voices: [], count: 0 });
@@ -802,7 +802,7 @@ describe("OpenAI-compatible TTS clone capability + cloneVoice", () => {
 
   test("siliconflow cloneVoice: multipart upload with model + customName + text, uri → voice id", async () => {
     const calls: Array<{ url: string; method: string; body: unknown }> = [];
-    globalThis.fetch = testFetch(mock(async (input: RequestInfo | URL, init?: RequestInit) => {
+    globalThis.fetch = testFetch(mock(async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
       calls.push({ url: String(input), method: init?.method ?? "GET", body: init?.body });
       return jsonResponse(200, { uri: "speech:hero:cm02:mtt" });
     }));
@@ -870,7 +870,7 @@ describe("OpenAI-compatible TTS clone capability + cloneVoice", () => {
 
   test("siliconflow cloneVoice maps reference mime types to the documented extensions", async () => {
     const names: string[] = [];
-    globalThis.fetch = testFetch(mock(async (input: RequestInfo | URL, init?: RequestInit) => {
+    globalThis.fetch = testFetch(mock(async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
       names.push(((init?.body as FormData).get("file") as File).name);
       return jsonResponse(200, { uri: "speech:x:cm:m" });
     }));
@@ -894,7 +894,7 @@ describe("OpenAI-compatible TTS clone capability + cloneVoice", () => {
 
   test("cloneVoice posts multipart to /voices and resolves the fresh entry by name", async () => {
     const calls: Array<{ url: string; method: string; body: unknown }> = [];
-    globalThis.fetch = testFetch(mock(async (input: RequestInfo | URL, init?: RequestInit) => {
+    globalThis.fetch = testFetch(mock(async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
       const url = String(input);
       calls.push({ url, method: init?.method ?? "GET", body: init?.body });
       if (url === "http://localhost:4123/v1/voices" && init?.method === "POST") {
@@ -941,7 +941,7 @@ describe("OpenAI-compatible TTS clone capability + cloneVoice", () => {
     ];
     for (const [mimeType, expectedName] of cases) {
       let uploadForm: FormData | null = null;
-      globalThis.fetch = testFetch(mock(async (input: RequestInfo | URL, init?: RequestInit) => {
+      globalThis.fetch = testFetch(mock(async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
         const url = String(input);
         if (url === "http://localhost:4123/v1/voices" && init?.method === "POST") {
           uploadForm = init.body as FormData;
@@ -960,7 +960,7 @@ describe("OpenAI-compatible TTS clone capability + cloneVoice", () => {
   });
 
   test("cloneVoice upstream error → OpenAiCompatTtsError carrying the upstream status (route passthrough)", async () => {
-    globalThis.fetch = testFetch(mock(async (input: RequestInfo | URL, init?: RequestInit) => {
+    globalThis.fetch = testFetch(mock(async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
       const url = String(input);
       if (init?.method === "POST" && url.endsWith("/voices")) {
         return jsonResponse(400, { error: { message: "Unsupported audio format: .bin", type: "invalid_request_error" } });

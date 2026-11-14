@@ -50,6 +50,7 @@ import {
 	waitForTokenWarmIdle,
 	type ProviderTokenContext,
 } from "../src/infrastructure/ai/token-count-cache.js";
+import { testFetch } from "./test-fetch-seam.js";
 
 /** Deterministic long fixture: seed repeated, then "x"-padded to the exact length. */
 function buildExactLength(seed: string, len: number): string {
@@ -137,14 +138,14 @@ const originalFetch = globalThis.fetch;
 const EXACT = (text: string) => 1000 + text.length;
 
 function stubTokenizeFetch() {
-	globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+	globalThis.fetch = testFetch(async (url: string | URL | Request, init?: RequestInit) => {
 		const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
 		const content = typeof body.content === "string" ? body.content : "";
 		return new Response(JSON.stringify({ tokens: Array.from({ length: EXACT(content) }) }), {
 			status: 200,
 			headers: { "Content-Type": "application/json" },
 		});
-	}) as typeof fetch;
+	});
 }
 
 function ctxFor(baseUrl: string): ProviderTokenContext {

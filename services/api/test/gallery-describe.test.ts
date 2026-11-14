@@ -16,6 +16,7 @@ import type { describeAttachments, resolveVisionDescribePrompt } from "../src/in
 import type { SessionRuntime } from "../src/runtime/session/session-runtime.js";
 import { makeProviderProfileRow } from "./copilot-test-builders.js";
 import { strictTestDouble } from "./strict-test-double.js";
+import { testFetch } from "./test-fetch-seam.js";
 
 const CHARS = STORAGE_FOLDERS.characters;
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
@@ -53,8 +54,7 @@ const VISION_DEPS = {
 	resolveVisionDescribePrompt: (async () => "MOCK_VISION_PROMPT") as typeof resolveVisionDescribePrompt,
 };
 
-const sentinelProviderFetch = (async () => new Response("unused")) as ProviderFetch;
-sentinelProviderFetch.preconnect = () => {};
+const sentinelProviderFetch = testFetch(async () => new Response("unused"));
 
 beforeEach(() => {
 	lastDescribeArgs = { count: 0, ids: [], visionModel: null, prompt: null, providerFetch: undefined };

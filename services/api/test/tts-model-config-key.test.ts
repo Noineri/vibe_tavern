@@ -32,6 +32,7 @@ import { openAiCompatTtsFactory } from "../src/domain/tts/backends/openai-tts.js
 import { pollyTtsFactory } from "../src/domain/tts/backends/polly-tts.js";
 import { volcengineTtsFactory } from "../src/domain/tts/backends/volcengine-tts.js";
 import { xaiTtsFactory } from "../src/domain/tts/backends/xai-tts.js";
+import { testFetch } from "./test-fetch-seam.js";
 
 const originalFetch = globalThis.fetch;
 
@@ -67,11 +68,13 @@ const BACKENDS: ReadonlyArray<{ slug: TtsBackendSlug; factory: TtsBackendFactory
 /** Everything the backend sent upstream for one synthesis, as one string. */
 async function synthesisRequestText(factory: TtsBackendFactory, config: Record<string, unknown>): Promise<string> {
   const sent: string[] = [];
-  globalThis.fetch = (async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
-    const headers = init?.headers instanceof Headers ? Object.fromEntries(init.headers.entries()) : init?.headers;
-    sent.push(JSON.stringify({ url: String(input), headers, body: typeof init?.body === "string" ? init.body : null }));
-    return new Response("{}", { status: 200 });
-  }) as typeof fetch;
+  globalThis.fetch = testFetch(
+    async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+      const headers = init?.headers instanceof Headers ? Object.fromEntries(init.headers.entries()) : init?.headers;
+      sent.push(JSON.stringify({ url: String(input), headers, body: typeof init?.body === "string" ? init.body : null }));
+      return new Response("{}", { status: 200 });
+    },
+  );
   const backend = factory(config);
   // The reply is garbage on purpose — only the request matters, so a parse
   // failure after the send is expected.

@@ -12,6 +12,7 @@ import {
   signSigV4Request,
 } from "../src/domain/tts/backends/polly-tts.js";
 import { createTtsBackend } from "../src/domain/tts/tts-registry.js";
+import { testFetch } from "./test-fetch-seam.js";
 
 function backend(config: Record<string, unknown> = {}): PollyTtsBackend {
   return pollyTtsFactory({
@@ -426,9 +427,9 @@ describe("Polly probe", () => {
 
   test("transport failure surfaces the message", async () => {
     installFetchMock();
-    globalThis.fetch = (async () => {
+    globalThis.fetch = testFetch(async () => {
       throw new Error("dns gone");
-    }) as typeof fetch;
+    });
 
     const probe = await backend().probe();
     expect(probe.ok).toBe(false);

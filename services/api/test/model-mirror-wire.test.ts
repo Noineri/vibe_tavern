@@ -31,6 +31,7 @@ import { createKokoroMirrorRoutes } from "../src/api/routes/kokoro-mirror.js";
 import { createSttWhisperMirrorRoutes } from "../src/api/routes/stt-whisper-mirror.js";
 import { WhisperMirrorService } from "../src/domain/stt/whisper-mirror.js";
 import { KokoroMirrorService } from "../src/domain/tts/kokoro-mirror.js";
+import { testFetch } from "./test-fetch-seam.js";
 
 function jsonResponse(value: unknown): Response {
   return new Response(JSON.stringify(value), { headers: { "content-type": "application/json" } });
@@ -44,7 +45,7 @@ function jsonResponse(value: unknown): Response {
  *  LFS redirect). */
 function makeFakeUpstream(filePath: string, fileBytes: string) {
   const fileSize = fileBytes.length;
-  return (input: RequestInfo | URL): Promise<Response> => {
+  return testFetch((input) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
     const isTree = url.startsWith("https://huggingface.co/api/models/") && url.includes("/tree/main");
     if (isTree) {
@@ -59,7 +60,7 @@ function makeFakeUpstream(filePath: string, fileBytes: string) {
         controller.close();
       },
     })));
-  };
+  });
 }
 
 /** Wait until the disk cache file exists (the tee'd cache write can lag the

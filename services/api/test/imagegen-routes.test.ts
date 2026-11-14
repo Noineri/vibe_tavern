@@ -56,6 +56,7 @@ import {
   registerImageGenBackend,
 } from "../src/domain/imagegen/imagegen-registry.js";
 import { PromptAssemblyService, type PromptAssemblyResolver } from "../src/domain/prompt/prompt-assembly-service.js";
+import { testFetch } from "./test-fetch-seam.js";
 
 // THE REGISTRY IS PROCESS-GLOBAL (mock.module gotcha applies to bun:test):
 // imagegen-registry.test.ts runs `__resetImageGenRegistryForTests()` in the
@@ -106,7 +107,12 @@ async function makeApp(
   await mkdir(assetsDir, { recursive: true });
   const stores = await createStoreContainer(join(dataRoot, "test.db"), dataRoot);
   const assetService = new AssetService(assetsDir, stores.content);
-  const adapter = new ImageGenAdapter(stores, assetService, transport, assistDeps);
+  const adapter = new ImageGenAdapter(
+    stores,
+    assetService,
+    transport === undefined ? undefined : testFetch(transport),
+    assistDeps,
+  );
   const app = createImageGenRoutes(adapter);
   // The production onError mounts in app-factory; surface the same DomainError
   // mapping here so 409 (set-name collision) / 400 (validation) pin their real
@@ -3435,7 +3441,7 @@ describe("image-gen routes — generate with ADetailer (IG-CF15/PG-4 v1)", () =>
    *  delivery shape; the bytes only need the PNG signature). */
   function txt2imgTransport(captured: { url?: string; init?: RequestInit }) {
     const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
-    return async (input: RequestInfo | URL, init?: RequestInit) => {
+    return async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
       captured.url = String(input);
       captured.init = init;
       return new Response(JSON.stringify({ images: [png.toString("base64")] }), { status: 200 });

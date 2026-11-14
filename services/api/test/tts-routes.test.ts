@@ -1139,7 +1139,7 @@ describe("TTS routes — voice clone (multipart draft passthrough)", () => {
     const { app } = await makeApp();
     const calls: { method: string; url: string }[] = [];
     const originalFetch = globalThis.fetch;
-    globalThis.fetch = testFetch(mock(async (input: RequestInfo | URL, init?: RequestInit) => {
+    globalThis.fetch = testFetch(mock(async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
       const url = String(input);
       const method = init?.method ?? "GET";
       calls.push({ method, url });
@@ -1185,7 +1185,7 @@ describe("TTS routes — voice clone (multipart draft passthrough)", () => {
     registerTtsBackend(TTS_BACKEND.OpenAiCompatible, openAiCompatTtsFactory);
     const { app } = await makeApp();
     const originalFetch = globalThis.fetch;
-    globalThis.fetch = testFetch(mock(async (input: RequestInfo | URL, init?: RequestInit) => {
+    globalThis.fetch = testFetch(mock(async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
       const url = String(input);
       const method = init?.method ?? "GET";
       if (url.endsWith("/audio/voices")) {

@@ -8,6 +8,7 @@ import {
   parseVoicesList,
 } from "../src/domain/tts/backends/deepgram-tts.js";
 import { createTtsBackend } from "../src/domain/tts/tts-registry.js";
+import { testFetch } from "./test-fetch-seam.js";
 
 function backend(config: Record<string, unknown> = {}): DeepgramTtsBackend {
   return deepgramTtsFactory({ apiKey: "dg_key", ...config }) as DeepgramTtsBackend;
@@ -237,9 +238,9 @@ describe("Deepgram probe", () => {
 
   test("network errors degrade to a failed probe detail", async () => {
     installFetchMock();
-    globalThis.fetch = (async () => {
+    globalThis.fetch = testFetch(async () => {
       throw new Error("boom");
-    }) as typeof fetch;
+    });
     const result = await backend().probe();
     expect(result.ok).toBe(false);
     expect(result.detail).toContain("boom");
