@@ -29,6 +29,7 @@ import "../src/domain/imagegen/backends/aihorde.js";
 import { createImageGenBackend } from "../src/domain/imagegen/imagegen-registry.js";
 // Import-time side-effect registrations are the production wiring.
 import "../src/domain/imagegen/backends/google.js";
+import { testFetch } from "./test-fetch-seam.js";
 
 // ─── Shared helpers (the PE-1/PE-2/PE-3 files' verbatim discipline) ─────────
 
@@ -43,10 +44,10 @@ function makeTransport(respond: (url: string, init?: RequestInit) => Response): 
   calls: RecordedCall[];
 } {
   const calls: RecordedCall[] = [];
-  const transport: typeof fetch = (url, init) => {
+  const transport: typeof fetch = testFetch((url, init) => {
     calls.push({ url: String(url), init });
     return Promise.resolve(respond(String(url), init));
-  };
+  });
   return { transport, calls };
 }
 
@@ -829,7 +830,7 @@ describe("aihorde native arm (async submit→poll→status, anonymous tier)", ()
   it("PE-7a: a check fetch that never settles fails fast with HordeEndpointSilentError (inactivity, not queue length)", async () => {
     // A hung connection with real fetch semantics: the promise parks
     // forever and rejects ONLY when its signal aborts.
-    const transport: typeof fetch = (_url, init) =>
+    const transport: typeof fetch = testFetch((_url, init) =>
       new Promise<Response>((_, reject) => {
         const signal = init?.signal;
         if (signal?.aborted) {
@@ -839,7 +840,7 @@ describe("aihorde native arm (async submit→poll→status, anonymous tier)", ()
         signal?.addEventListener("abort", () =>
           reject(new DOMException("The operation was aborted.", "AbortError")),
         );
-      });
+      }));
     let caught: unknown;
     try {
       await pollHordeGeneration(transport, BASE, "req-silent", undefined, {
@@ -861,7 +862,7 @@ describe("aihorde native arm (async submit→poll→status, anonymous tier)", ()
     const checkInFlight = new Promise<void>((resolve) => {
       checkStarted = resolve;
     });
-    const transport: typeof fetch = (url, init) => {
+    const transport: typeof fetch = testFetch((url, init) => {
       const u = String(url);
       if (u.endsWith("/v2/generate/async")) {
         return Promise.resolve(jsonResponse({ id: "req-cancel" }));
@@ -886,7 +887,7 @@ describe("aihorde native arm (async submit→poll→status, anonymous tier)", ()
         return Promise.resolve(jsonResponse({ id: "req-cancel" }));
       }
       return Promise.resolve(jsonResponse({}));
-    };
+    });
     const generation = make(transport).generate({ prompt: "p", signal: controller.signal });
     await checkInFlight; // the first check is parked — the user cancels now
     controller.abort();
@@ -910,7 +911,7 @@ describe("aihorde native arm (async submit→poll→status, anonymous tier)", ()
     // the typed silent error never reached the caller. The guard converts
     // the hang into a swallowed timeout once the budget expires.
     let deleteAttempted = false;
-    const transport: typeof fetch = (url, init) => {
+    const transport: typeof fetch = testFetch((url, init) => {
       const u = String(url);
       if (u.includes("/v2/generate/status/") && init?.method === "DELETE") {
         deleteAttempted = true;
@@ -928,7 +929,7 @@ describe("aihorde native arm (async submit→poll→status, anonymous tier)", ()
         });
       }
       return Promise.resolve(jsonResponse({}));
-    };
+    });
     expect(HORDE_CANCEL_INACTIVITY_MS).toBe(10_000); // lockstep: short cleanup budget
     // inactivityMs 0 — the guard fires on the next macrotask (no real wait);
     // best-effort semantics: resolves (swallowed) instead of throwing.

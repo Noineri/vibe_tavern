@@ -50,13 +50,13 @@ interface RecordedCall {
  *  `handler`; an already-aborted signal rejects like a real transport. */
 function makeTransport(handler: (url: URL, init: RequestInit | undefined) => Response | Promise<Response>) {
   const calls: RecordedCall[] = [];
-  const transport = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+  const transport = testFetch(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     calls.push({ url: String(input), init });
     if (init?.signal?.aborted) {
       throw new DOMException("The operation was aborted.", "AbortError");
     }
     return handler(new URL(String(input)), init);
-  };
+  });
   return { transport, calls };
 }
 
@@ -1759,25 +1759,27 @@ describe("comfyui ws progress + interrupt (CG-C1)", () => {
     let historyServed = false;
     let midSecondRun: { progress?: number; state?: string } | null = null;
     let backend: ReturnType<typeof comfyImageGenFactory> | undefined;
-    const transport = async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
-      const url = new URL(typeof input === "string" ? input : input.url ?? String(input));
-      transportCalls.push(url.pathname);
-      if (url.pathname === "/object_info/CheckpointLoaderSimple") {
-        return objectInfoResponse("CheckpointLoaderSimple", "ckpt_name", HAPPY_CHECKPOINTS);
-      }
-      if (url.pathname === "/prompt") return queuedOk(PID);
-      if (url.pathname === `/history/${PID}`) {
-        if (!historyServed) {
-          historyServed = true;
+    const transport = testFetch(
+      async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+        const url = new URL(typeof input === "string" ? input : input.url ?? String(input));
+        transportCalls.push(url.pathname);
+        if (url.pathname === "/object_info/CheckpointLoaderSimple") {
+          return objectInfoResponse("CheckpointLoaderSimple", "ckpt_name", HAPPY_CHECKPOINTS);
+        }
+        if (url.pathname === "/prompt") return queuedOk(PID);
+        if (url.pathname === `/history/${PID}`) {
+          if (!historyServed) {
+            historyServed = true;
+            return historyDone(PID);
+          }
+          // Second run: parked here — read the poll mid-flight.
+          midSecondRun = await backend!.progress();
           return historyDone(PID);
         }
-        // Second run: parked here — read the poll mid-flight.
-        midSecondRun = await backend!.progress();
-        return historyDone(PID);
-      }
-      if (url.pathname === "/view") return new Response(new Uint8Array(PNG_BYTES));
-      return new Response("not found", { status: 404 });
-    };
+        if (url.pathname === "/view") return new Response(new Uint8Array(PNG_BYTES));
+        return new Response("not found", { status: 404 });
+      },
+    );
     backend = comfyImageGenFactory({ endpoint: WS_EP(9115), fetch: transport, openWebSocket: () => fake.socket });
 
     // Run one completes — the registry is left holding its terminal 100%.

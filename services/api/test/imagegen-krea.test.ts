@@ -22,6 +22,7 @@ import {
   resetKreaSpecCacheForTests,
 } from "../src/domain/imagegen/backends/krea.js";
 import { createImageGenBackend } from "../src/domain/imagegen/imagegen-registry.js";
+import { testFetch } from "./test-fetch-seam.js";
 
 const ENDPOINT = "https://api.krea.ai";
 const API_KEY = "krea-key";
@@ -131,7 +132,7 @@ function makeTransport(
   handler: (url: URL, init: RequestInit | undefined) => Response | Promise<Response>,
 ) {
   const calls: RecordedCall[] = [];
-  const transport = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+  const transport = testFetch(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const headers: Record<string, string> = {};
     const headerInit = init?.headers;
     if (headerInit !== undefined) {
@@ -152,7 +153,7 @@ function makeTransport(
       throw new DOMException("The operation was aborted.", "AbortError");
     }
     return handler(new URL(String(input)), init);
-  };
+  });
   return { transport, calls };
 }
 

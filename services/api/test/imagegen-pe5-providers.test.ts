@@ -43,6 +43,7 @@ import {
 } from "../src/domain/imagegen/backends/novita.js";
 import "../src/domain/imagegen/backends/novita.js";
 import { createImageGenBackend } from "../src/domain/imagegen/imagegen-registry.js";
+import { testFetch } from "./test-fetch-seam.js";
 
 // ─── Shared helpers (the PE-1..PE-4 files' verbatim discipline) ──────────────
 
@@ -57,10 +58,10 @@ function makeTransport(respond: (url: string, init?: RequestInit) => Response): 
   calls: RecordedCall[];
 } {
   const calls: RecordedCall[] = [];
-  const transport: typeof fetch = (url, init) => {
+  const transport: typeof fetch = testFetch((url, init) => {
     calls.push({ url: String(url), init });
     return Promise.resolve(respond(String(url), init));
-  };
+  });
   return { transport, calls };
 }
 
@@ -108,7 +109,7 @@ function scriptFlow(options?: { polls?: unknown[] }): {
   const polls = options?.polls ?? [readyPayload()];
   const recorded: RecordedCall[] = [];
   let pollIndex = 0;
-  const recording: typeof fetch = (url, init) => {
+  const recording: typeof fetch = testFetch((url, init) => {
     recorded.push({ url: String(url), init });
     const u = String(url);
     if (u === POLLING_URL) {
@@ -127,7 +128,7 @@ function scriptFlow(options?: { polls?: unknown[] }): {
     return Promise.resolve(
       Response.json({ id: "task-42", polling_url: POLLING_URL, cost: 4.2 }),
     );
-  };
+  });
   return { recording, calls: recorded };
 }
 
@@ -135,7 +136,7 @@ function scriptFlow(options?: { polls?: unknown[] }): {
 
 describe("bfl async arm (x-key, submit → polling_url → sample download)", () => {
   it("is registered under the bfl slug", () => {
-    const backend = make(() => Promise.resolve(new Response("{}")));
+    const backend = make(testFetch(() => Promise.resolve(new Response("{}"))));
     expect(typeof backend.generate).toBe("function");
   });
 
@@ -151,7 +152,7 @@ describe("bfl async arm (x-key, submit → polling_url → sample download)", ()
   });
 
   it("listModels returns the static catalog from the live OpenAPI paths (12 image models)", async () => {
-    const backend = make(() => Promise.resolve(new Response("{}")));
+    const backend = make(testFetch(() => Promise.resolve(new Response("{}"))));
     const models = await backend.listModels();
     expect(models).toHaveLength(12);
     expect(models.map((m) => m.id)).toContain("flux-2-pro");
@@ -310,7 +311,7 @@ describe("config errors", () => {
       createImageGenBackend(IMAGE_GEN_BACKENDS.Bfl, {
         endpoint: BFL_ENDPOINT,
         apiKey: "",
-        fetch: () => Promise.resolve(new Response("{}")),
+        fetch: testFetch(() => Promise.resolve(new Response("{}"))),
       }),
     ).toThrow(BflImageConfigError);
   });
@@ -320,7 +321,7 @@ describe("config errors", () => {
       createImageGenBackend(IMAGE_GEN_BACKENDS.Bfl, {
         endpoint: "",
         apiKey: "k",
-        fetch: () => Promise.resolve(new Response("{}")),
+        fetch: testFetch(() => Promise.resolve(new Response("{}"))),
       }),
     ).toThrow(BflImageConfigError);
   });
@@ -413,7 +414,7 @@ function scriptFal(options?: { statuses?: unknown[]; result?: unknown }): {
   const result = options?.result ?? falResult();
   const calls: RecordedCall[] = [];
   let statusIndex = 0;
-  const recording: typeof fetch = (url, init) => {
+  const recording: typeof fetch = testFetch((url, init) => {
     calls.push({ url: String(url), init });
     const u = String(url);
     if (u === FAL_STATUS_URL) {
@@ -432,7 +433,7 @@ function scriptFal(options?: { statuses?: unknown[]; result?: unknown }): {
     }
     if (u === FAL_CANCEL_URL) return Promise.resolve(new Response(null, { status: 204 }));
     return Promise.resolve(Response.json(falSubmit()));
-  };
+  });
   return { recording, calls };
 }
 
@@ -499,7 +500,7 @@ describe("fal queue arm (Authorization: Key, status→response→CDN download)",
 
   it("cancels on a status-poll failure too (aihorde precedent — frees the queue slot)", async () => {
     const calls: RecordedCall[] = [];
-    const recording: typeof fetch = (url, init) => {
+    const recording: typeof fetch = testFetch((url, init) => {
       calls.push({ url: String(url), init });
       const u = String(url);
       if (u === FAL_STATUS_URL) {
@@ -507,7 +508,7 @@ describe("fal queue arm (Authorization: Key, status→response→CDN download)",
       }
       if (u === FAL_CANCEL_URL) return Promise.resolve(new Response(null, { status: 204 }));
       return Promise.resolve(Response.json(falSubmit()));
-    };
+    });
     await expect(makeFal(recording).generate({ prompt: "p" })).rejects.toThrow(/status poll failed/);
     expect(calls.some((c) => c.url === FAL_CANCEL_URL && c.init?.method === "DELETE")).toBe(true);
   });
@@ -529,7 +530,7 @@ describe("fal queue arm (Authorization: Key, status→response→CDN download)",
 
   it("listModels walks the live catalog cursor pages (anonymous) and maps endpoint_id→id, display_name→label", async () => {
     const calls: RecordedCall[] = [];
-    const recording: typeof fetch = (url, init) => {
+    const recording: typeof fetch = testFetch((url, init) => {
       calls.push({ url: String(url), init });
       const u = new URL(String(url));
       const cursor = u.searchParams.get("cursor");
@@ -550,7 +551,7 @@ describe("fal queue arm (Authorization: Key, status→response→CDN download)",
           has_more: false,
         }),
       );
-    };
+    });
     const models = await makeFal(recording).listModels();
     expect(models).toEqual([
       { id: "fal-ai/flux-2-pro", label: "FLUX 2 Pro" },
@@ -567,14 +568,14 @@ describe("fal queue arm (Authorization: Key, status→response→CDN download)",
       createImageGenBackend(IMAGE_GEN_BACKENDS.Fal, {
         endpoint: "",
         apiKey: "k",
-        fetch: () => Promise.resolve(new Response("{}")),
+        fetch: testFetch(() => Promise.resolve(new Response("{}"))),
       }),
     ).toThrow(FalImageConfigError);
     expect(() =>
       createImageGenBackend(IMAGE_GEN_BACKENDS.Fal, {
         endpoint: FAL_ENDPOINT,
         apiKey: "",
-        fetch: () => Promise.resolve(new Response("{}")),
+        fetch: testFetch(() => Promise.resolve(new Response("{}"))),
       }),
     ).toThrow(FalImageConfigError);
   });
@@ -661,7 +662,7 @@ function scriptRep(options?: { polls?: unknown[]; output?: unknown }): {
   const polls = options?.polls ?? [{ id: "pred-1", status: "succeeded", output: [REP_IMAGE_URL] }];
   const calls: RecordedCall[] = [];
   let pollIndex = 0;
-  const recording: typeof fetch = (url, init) => {
+  const recording: typeof fetch = testFetch((url, init) => {
     calls.push({ url: String(url), init });
     const u = String(url);
     if (u === REP_GET_URL) {
@@ -679,7 +680,7 @@ function scriptRep(options?: { polls?: unknown[]; output?: unknown }): {
     }
     if (u === REP_CANCEL_URL) return Promise.resolve(new Response(null, { status: 201 }));
     return Promise.resolve(Response.json(repSubmit()));
-  };
+  });
   return { recording, calls };
 }
 
@@ -743,7 +744,7 @@ describe("replicate official-models arm (Bearer, {input}, auth-gated download)",
 
   it("cancels via POST urls.cancel on a poll failure and carries the vendor error field", async () => {
     const calls: RecordedCall[] = [];
-    const recording: typeof fetch = (url, init) => {
+    const recording: typeof fetch = testFetch((url, init) => {
       calls.push({ url: String(url), init });
       const u = String(url);
       if (u === REP_GET_URL) {
@@ -751,14 +752,14 @@ describe("replicate official-models arm (Bearer, {input}, auth-gated download)",
       }
       if (u === REP_CANCEL_URL) return Promise.resolve(new Response(null, { status: 201 }));
       return Promise.resolve(Response.json(repSubmit()));
-    };
+    });
     await expect(makeRep(recording).generate({ prompt: "p" })).rejects.toThrow(/failed: OOM on GPU/);
     expect(calls.some((c) => c.url === REP_CANCEL_URL && c.init?.method === "POST")).toBe(true);
   });
 
   it("listModels rides the AUTHED t2i collection (the 2026-09-18 public-list drift)", async () => {
     const calls: RecordedCall[] = [];
-    const recording: typeof fetch = (url, init) => {
+    const recording: typeof fetch = testFetch((url, init) => {
       calls.push({ url: String(url), init });
       return Promise.resolve(
         Response.json({
@@ -770,7 +771,7 @@ describe("replicate official-models arm (Bearer, {input}, auth-gated download)",
           ],
         }),
       );
-    };
+    });
     const models = await makeRep(recording).listModels();
     expect(calls[0].url).toBe(`${REP_ENDPOINT}/v1/collections/text-to-image`);
     const headers = calls[0].init?.headers as Record<string, string>;
@@ -796,14 +797,14 @@ describe("replicate official-models arm (Bearer, {input}, auth-gated download)",
       createImageGenBackend(IMAGE_GEN_BACKENDS.Replicate, {
         endpoint: "",
         apiKey: "k",
-        fetch: () => Promise.resolve(new Response("{}")),
+        fetch: testFetch(() => Promise.resolve(new Response("{}"))),
       }),
     ).toThrow(ReplicateImageConfigError);
     expect(() =>
       createImageGenBackend(IMAGE_GEN_BACKENDS.Replicate, {
         endpoint: REP_ENDPOINT,
         apiKey: "",
-        fetch: () => Promise.resolve(new Response("{}")),
+        fetch: testFetch(() => Promise.resolve(new Response("{}"))),
       }),
     ).toThrow(ReplicateImageConfigError);
   });
@@ -973,7 +974,7 @@ describe("leonardo v2 sync arm (Bearer, ephemeral+base64, blockedCount)", () => 
   });
 
   it("listModels serves the static image-only catalog (37, video/audio/tools excluded)", async () => {
-    const models = await makeLeo(() => Promise.resolve(new Response("{}"))).listModels();
+    const models = await makeLeo(testFetch(() => Promise.resolve(new Response("{}")))).listModels();
     expect(models).toHaveLength(37);
     expect(models.map((m) => m.id)).toContain("anime-xl");
     expect(models.some((m) => /kling|veo|seedance|music|dialogue|remove-bg|upscaler/.test(m.id))).toBe(false);
@@ -994,14 +995,14 @@ describe("leonardo v2 sync arm (Bearer, ephemeral+base64, blockedCount)", () => 
       createImageGenBackend(IMAGE_GEN_BACKENDS.Leonardo, {
         endpoint: "",
         apiKey: "k",
-        fetch: () => Promise.resolve(new Response("{}")),
+        fetch: testFetch(() => Promise.resolve(new Response("{}"))),
       }),
     ).toThrow(LeonardoImageConfigError);
     expect(() =>
       createImageGenBackend(IMAGE_GEN_BACKENDS.Leonardo, {
         endpoint: LEO_ENDPOINT,
         apiKey: "",
-        fetch: () => Promise.resolve(new Response("{}")),
+        fetch: testFetch(() => Promise.resolve(new Response("{}"))),
       }),
     ).toThrow(LeonardoImageConfigError);
   });
@@ -1053,7 +1054,7 @@ function scriptLuma(options?: { states?: unknown[] }): {
   const states = options?.states ?? [lumaCompleted()];
   const calls: RecordedCall[] = [];
   let stateIndex = 0;
-  const recording: typeof fetch = (url, init) => {
+  const recording: typeof fetch = testFetch((url, init) => {
     calls.push({ url: String(url), init });
     const u = String(url);
     if (u === LUMA_GET_URL) {
@@ -1070,7 +1071,7 @@ function scriptLuma(options?: { states?: unknown[] }): {
       );
     }
     return Promise.resolve(Response.json({ id: "gen-1", state: "queued", output: [], failure_reason: null, failure_code: null }));
-  };
+  });
   return { recording, calls };
 }
 
@@ -1139,14 +1140,14 @@ describe("luma agents arm (Bearer, uni-1, queued→completed→presigned)", () =
       createImageGenBackend(IMAGE_GEN_BACKENDS.Luma, {
         endpoint: "",
         apiKey: "k",
-        fetch: () => Promise.resolve(new Response("{}")),
+        fetch: testFetch(() => Promise.resolve(new Response("{}"))),
       }),
     ).toThrow(LumaImageConfigError);
     expect(() =>
       createImageGenBackend(IMAGE_GEN_BACKENDS.Luma, {
         endpoint: LUMA_ENDPOINT,
         apiKey: "",
-        fetch: () => Promise.resolve(new Response("{}")),
+        fetch: testFetch(() => Promise.resolve(new Response("{}"))),
       }),
     ).toThrow(LumaImageConfigError);
   });
@@ -1229,7 +1230,7 @@ function scriptNov(options?: { polls?: unknown[] }): {
   const polls = options?.polls ?? [novSucceed()];
   const calls: RecordedCall[] = [];
   let pollIndex = 0;
-  const recording: typeof fetch = (url, init) => {
+  const recording: typeof fetch = testFetch((url, init) => {
     calls.push({ url: String(url), init });
     const u = String(url);
     if (u === NOV_POLL_URL) {
@@ -1246,7 +1247,7 @@ function scriptNov(options?: { polls?: unknown[] }): {
       );
     }
     return Promise.resolve(Response.json({ task_id: "task-1" }));
-  };
+  });
   return { recording, calls };
 }
 
@@ -1303,7 +1304,7 @@ describe("novita thin arm (Bearer, {task_id} poll, immediate keyless download)",
   });
 
   it("static single-model catalog; pins the caps row (seed-less thin surface)", async () => {
-    const models = await makeNov(() => Promise.resolve(new Response("{}"))).listModels();
+    const models = await makeNov(testFetch(() => Promise.resolve(new Response("{}")))).listModels();
     expect(models).toEqual([{ id: "qwen-image-txt2img", label: "Qwen-Image" }]);
     const caps = IMAGE_GEN_BACKEND_CAPABILITIES[IMAGE_GEN_BACKENDS.Novita];
     expect(caps.supportsSeed).toBe(false);
@@ -1318,14 +1319,14 @@ describe("novita thin arm (Bearer, {task_id} poll, immediate keyless download)",
       createImageGenBackend(IMAGE_GEN_BACKENDS.Novita, {
         endpoint: "",
         apiKey: "k",
-        fetch: () => Promise.resolve(new Response("{}")),
+        fetch: testFetch(() => Promise.resolve(new Response("{}"))),
       }),
     ).toThrow(NovitaImageConfigError);
     expect(() =>
       createImageGenBackend(IMAGE_GEN_BACKENDS.Novita, {
         endpoint: NOV_ENDPOINT,
         apiKey: "",
-        fetch: () => Promise.resolve(new Response("{}")),
+        fetch: testFetch(() => Promise.resolve(new Response("{}"))),
       }),
     ).toThrow(NovitaImageConfigError);
   });

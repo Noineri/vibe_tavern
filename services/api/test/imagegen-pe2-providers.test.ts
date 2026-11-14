@@ -17,6 +17,7 @@ import { MINIMAX_ASPECT_RATIOS } from "../src/domain/imagegen/backends/minimax.j
 import { pollDashScopeTask } from "../src/domain/imagegen/backends/dashscope.js";
 import { mapSd3AspectRatio } from "../src/domain/imagegen/backends/nim.js";
 import { createImageGenBackend } from "../src/domain/imagegen/imagegen-registry.js";
+import { testFetch } from "./test-fetch-seam.js";
 
 // ─── Shared helpers (the PE-1 file's, verbatim discipline) ───────────────────
 
@@ -31,10 +32,10 @@ function makeTransport(respond: (url: string, init?: RequestInit) => Response): 
   calls: RecordedCall[];
 } {
   const calls: RecordedCall[] = [];
-  const transport: typeof fetch = (url, init) => {
+  const transport: typeof fetch = testFetch((url, init) => {
     calls.push({ url: String(url), init });
     return Promise.resolve(respond(String(url), init));
-  };
+  });
   return { transport, calls };
 }
 
@@ -79,13 +80,13 @@ describe("minimax (custom-JSON arm)", () => {
    *  server-side byte download. */
   function genThenBytes(genResponse: Response, bytes: Buffer = PNG_BYTES): typeof fetch {
     let answered = false;
-    return (url, init) => {
+    return testFetch((url, init) => {
       if (!answered) {
         answered = true;
         return Promise.resolve(genResponse);
       }
       return Promise.resolve(new Response(new Uint8Array(bytes), { status: 200 }));
-    };
+    });
   }
 
   describe("generate", () => {
@@ -179,13 +180,13 @@ describe("minimax (custom-JSON arm)", () => {
       const backend = make(genThenBytesWrapper());
       function genThenBytesWrapper(): typeof fetch {
         let answered = false;
-        return (url, init) => {
+        return testFetch((url, init) => {
           if (!answered) {
             answered = true;
             return transport(url, init);
           }
           return Promise.resolve(new Response(new Uint8Array(PNG_BYTES), { status: 200 }));
-        };
+        });
       }
       void calls;
       const result = await backend.generate({ prompt: "p" });
@@ -416,13 +417,13 @@ describe("dashscope (custom-JSON arm, sync + async)", () => {
         () => new Response(new Uint8Array(PNG_BYTES), { status: 200, headers: { "content-type": "image/png" } }),
       );
       let answered = false;
-      const combined: typeof fetch = (url, init) => {
+      const combined: typeof fetch = testFetch((url, init) => {
         if (!answered) {
           answered = true;
           return transport(url, init);
         }
         return download.transport(url, init);
-      };
+      });
 
       const backend = make(combined);
       const result = await backend.generate({
@@ -463,13 +464,13 @@ describe("dashscope (custom-JSON arm, sync + async)", () => {
         Response.json(choicesBody("https://oss.example/z.png")),
       );
       let answered = false;
-      const combined: typeof fetch = (url, init) => {
+      const combined: typeof fetch = testFetch((url, init) => {
         if (!answered) {
           answered = true;
           return transport(url, init);
         }
         return Promise.resolve(new Response(new Uint8Array(PNG_BYTES), { status: 200 }));
-      };
+      });
       const backend = make(combined);
       await backend.generate({
         prompt: "p",
@@ -508,7 +509,7 @@ describe("dashscope (custom-JSON arm, sync + async)", () => {
       };
       const { transport, calls } = makeTransport(() => Response.json(taskBody));
       let step = 0;
-      const scripted: typeof fetch = (url, init) => {
+      const scripted: typeof fetch = testFetch((url, init) => {
         step += 1;
         void transport; // record via the transport double below
         void calls;
@@ -522,12 +523,12 @@ describe("dashscope (custom-JSON arm, sync + async)", () => {
           return Promise.resolve(Response.json(taskBody));
         }
         return Promise.resolve(new Response(new Uint8Array(PNG_BYTES), { status: 200 }));
-      };
+      });
       const recorded: RecordedCall[] = [];
-      const recording: typeof fetch = (url, init) => {
+      const recording: typeof fetch = testFetch((url, init) => {
         recorded.push({ url: String(url), init });
         return scripted(url, init);
-      };
+      });
 
       const backend = make(recording);
       const result = await backend.generate({
@@ -567,7 +568,7 @@ describe("dashscope (custom-JSON arm, sync + async)", () => {
       };
       let i = 0;
       const waits: number[] = [];
-      const fetchDouble: typeof fetch = () => {
+      const fetchDouble: typeof fetch = testFetch(() => {
         const status = statuses[i];
         i += 1;
         return Promise.resolve(
@@ -575,7 +576,7 @@ describe("dashscope (custom-JSON arm, sync + async)", () => {
             ? Response.json(done)
             : Response.json({ output: { task_id: "t", task_status: status } }),
         );
-      };
+      });
       const root = await pollDashScopeTask({
         endpoint: DASHSCOPE_ENDPOINT,
         apiKey: "sk-key",
@@ -592,12 +593,12 @@ describe("dashscope (custom-JSON arm, sync + async)", () => {
     });
 
     it("throws on FAILED with the documented output.code/message", async () => {
-      const fetchDouble: typeof fetch = () =>
+      const fetchDouble: typeof fetch = testFetch(() =>
         Promise.resolve(
           Response.json({
             output: { task_id: "t", task_status: "FAILED", code: "DataInspectionFailed", message: "flagged" },
           }),
-        );
+        ));
       await expect(
         pollDashScopeTask({
           endpoint: DASHSCOPE_ENDPOINT,
@@ -891,13 +892,13 @@ describe("zai (openai-images family, static catalog)", () => {
       // First call answers the generation POST; the server-side download of
       // data[0].url goes through the SAME seam — script both in order.
       let generationAnswered = false;
-      const combined: typeof fetch = (url, init) => {
+      const combined: typeof fetch = testFetch((url, init) => {
         if (!generationAnswered) {
           generationAnswered = true;
           return transport(url, init);
         }
         return download.transport(url, init);
-      };
+      });
 
       const backend = make(combined);
       const result = await backend.generate({
@@ -951,13 +952,13 @@ describe("zai (openai-images family, static catalog)", () => {
       // failing JSON parse is fine for this wire-only assertion... but the
       // download path requires bytes. Use a two-phase double.
       let answered = false;
-      const twoPhase: typeof fetch = (url, init) => {
+      const twoPhase: typeof fetch = testFetch((url, init) => {
         if (!answered) {
           answered = true;
           return user.transport(url, init);
         }
         return Promise.resolve(new Response(new Uint8Array(PNG_BYTES), { status: 200 }));
-      };
+      });
       const viaUser = createImageGenBackend(IMAGE_GEN_BACKENDS.Zai, {
         endpoint: ZAI_ENDPOINT,
         apiKey: "z-key",

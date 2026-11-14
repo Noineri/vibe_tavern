@@ -20,6 +20,7 @@ import {
   createImageGenBackend,
   IMAGE_GEN_BACKEND_CAPABILITIES,
 } from "../src/domain/imagegen/imagegen-registry.js";
+import { testFetch } from "./test-fetch-seam.js";
 
 const ENDPOINT = "http://127.0.0.1:7860";
 const SD_API_ROOT = `${ENDPOINT}/sdapi/v1`;
@@ -47,13 +48,13 @@ interface RecordedCall {
 
 function makeTransport(handler: (url: URL, init: RequestInit | undefined) => Response | Promise<Response>) {
   const calls: RecordedCall[] = [];
-  const transport = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+  const transport = testFetch(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     calls.push({ url: String(input), init });
     if (init?.signal?.aborted) {
       throw new DOMException("The operation was aborted.", "AbortError");
     }
     return handler(new URL(String(input)), init);
-  };
+  });
   return { transport, calls };
 }
 
@@ -403,7 +404,7 @@ describe("a1111 adapter", () => {
           backend,
           model: title,
           deps: {
-            civitaiFetch: async () => new Response("unexpected", { status: 500 }),
+            civitaiFetch: testFetch(async () => new Response("unexpected", { status: 500 })),
             readSidecarFile: async (path) => {
               expect(path.replace(/\\/g, "/")).toBe(
                 `matrix/Models/DiffusionModels/${title.slice("unet\\".length, -".safetensors".length)}.cm-info.json`,

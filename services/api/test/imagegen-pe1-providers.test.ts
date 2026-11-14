@@ -25,6 +25,7 @@ import { SILICONFLOW_IMAGE_SIZES, ELECTRONHUB_IMAGE_SIZES } from "../src/domain/
 import { createImageGenBackend } from "../src/domain/imagegen/imagegen-registry.js";
 import { OpenAiImagesConfigError, OpenAiImagesError } from "../src/domain/imagegen/backends/openai-images.js";
 import type { ImageGenBackend } from "../src/domain/imagegen/imagegen-registry.js";
+import { testFetch } from "./test-fetch-seam.js";
 
 /** Known 8-byte PNG-magic payload (sniffable as image/png). */
 const PNG_BYTES = Buffer.from("iVBORw0KGgo=", "base64");
@@ -48,7 +49,7 @@ interface RecordedCall {
 
 function makeTransport(handler: (url: URL, init: RequestInit | undefined) => Response | Promise<Response>) {
   const calls: RecordedCall[] = [];
-  const transport = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+  const transport = testFetch(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     calls.push({ url: String(input), init });
     if (init?.signal?.aborted) {
       throw new DOMException("The operation was aborted.", "AbortError");
@@ -60,7 +61,7 @@ function makeTransport(handler: (url: URL, init: RequestInit | undefined) => Res
       return fetch(url, init);
     }
     return handler(new URL(url), init);
-  };
+  });
   return { transport, calls };
 }
 

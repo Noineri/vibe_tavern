@@ -19,6 +19,7 @@
 import { describe, expect, it } from "bun:test";
 
 import { a1111Factory } from "../src/domain/imagegen/backends/a1111.js";
+import { testFetch } from "./test-fetch-seam.js";
 
 const ENDPOINT = "http://127.0.0.1:7860";
 const SD_API_ROOT = `${ENDPOINT}/sdapi/v1`;
@@ -37,10 +38,10 @@ interface RecordedCall {
 
 function makeTransport(handler: (url: URL, init: RequestInit | undefined) => Response | Promise<Response>) {
   const calls: RecordedCall[] = [];
-  const transport = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+  const transport = testFetch(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     calls.push({ url: String(input), init });
     return handler(new URL(String(input)), init);
-  };
+  });
   return { transport, calls };
 }
 
