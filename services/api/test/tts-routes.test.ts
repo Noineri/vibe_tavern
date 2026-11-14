@@ -595,21 +595,6 @@ function capturingRegistry(seen: SeenConfig): void {
   });
 }
 
-
-// ─── F2b: key projection (strip-on-read), merge-on-write, draft stored-key
-// resolution, and the D8 docker probe ─────────────────────────────────────
-
-interface SeenConfig {
-  capture: Record<string, unknown> | null;
-}
-
-function capturingRegistry(seen: SeenConfig): void {
-  registerTtsBackend(TTS_BACKEND.OpenAiCompatible, (config) => {
-    seen.capture = { ...(config as Record<string, unknown>) };
-    return stubBackend();
-  });
-}
-
 type RouteApp = ReturnType<Awaited<ReturnType<typeof makeApp>>["app"]>;
 
 async function seedCloudProfile(app: RouteApp, overrides: Record<string, unknown> = {}): Promise<string> {

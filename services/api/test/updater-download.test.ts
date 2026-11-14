@@ -29,6 +29,7 @@ import {
 } from "../src/server/updater.js";
 
 const ARCHIVE_SUFFIX = process.platform === "win32" ? "-windows.zip" : "-linux.tar.gz";
+const IS_WINDOWS = process.platform === "win32";
 
 let root = "";
 let installDir = "";
@@ -367,8 +368,7 @@ describe("downloadAndSwap against a mock release server", () => {
 		expect(progress.length).toBeGreaterThan(0);
 	});
 
-	it("restores the exec bit on the new binary from the archive", async () => {
-		if (process.platform === "win32") return;
+	it.skipIf(IS_WINDOWS)("restores the exec bit on the new binary from the archive", async () => {
 		await seedInstall();
 		const { release } = await serveRelease("1.2.0");
 

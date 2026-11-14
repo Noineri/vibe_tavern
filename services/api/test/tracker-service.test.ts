@@ -18,6 +18,7 @@ import {
 } from "../src/domain/insights/tracker-service.js";
 import {
 	brandId,
+	computeSceneSchemaHash,
 	computeSceneSourceHash,
 	normalizeInsightsConfig,
 	type ChatBranchId,
@@ -429,7 +430,7 @@ describe("SceneTrackerService.generateScene (SCN-5)", () => {
 		expect(record.sceneState).toEqual({ mood: "calm", tension: 3 });
 		expect(record.modelId).toBe("scene-model");
 		expect(record.sourceHash).toBe(computeSceneSourceHash("The warlord sneers."));
-		expect(record.schemaHash).toBe(record.schemaHash); // recomputed from schema
+		expect(record.schemaHash).toBe(computeSceneSchemaHash(TEST_SCHEMA));
 		expect(record.configRevision).toBe(0); // default revision
 
 		// Persisted.
