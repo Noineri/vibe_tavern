@@ -62,7 +62,7 @@ export type {
 export type { ChatListSummary } from './chat-list-queries.js';
 
 export { MessageStore } from './message-store.js';
-export type { Message, MessageVariant, AddMessageInput, SceneBackfillRun } from './message-store.js';
+export type { Message, MessageVariant, MessageVariantSceneRecord, AddMessageInput, SceneBackfillRun } from './message-store.js';
 
 export { PromptTraceStore } from './prompt-trace-store.js';
 export type { PromptTrace, SaveTraceData } from './prompt-trace-store.js';

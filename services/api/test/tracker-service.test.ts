@@ -6,7 +6,7 @@
  * schema/config revision bump, explicit cancel) and assert nothing stale persists.
  */
 import { describe, it, expect } from "bun:test";
-import type { ChatStore, MessageStore, StoreContainer } from "@vibe-tavern/db";
+import type { ChatStore, MessageStore, MessageVariantSceneRecord, StoreContainer } from "@vibe-tavern/db";
 import type { PromptAssemblyContext } from "@vibe-tavern/prompt-pipeline";
 import type { GenerationResult, ProviderExecutionInput } from "../src/infrastructure/ai/provider-execution-types.js";
 import {
@@ -63,27 +63,13 @@ interface MockVariant {
 	content: string;
 	isSelected?: boolean;
 }
-/** The stored per-variant Scene record shape — structurally the store's
- *  MessageVariantSceneRecord with its OPTIONAL schema/promptFormat snapshot
- *  fields omitted (that type is not exported from the @vibe-tavern/db barrel;
- *  the strictTestDouble member check still verifies this shape against the
- *  real getSceneRecord/setSceneRecord signatures). */
-interface MockRecord {
-	variantId: string;
-	schemaHash: string;
-	configRevision: number;
-	sourceHash: string;
-	sceneState: Record<string, unknown>;
-	modelId: string | null;
-	generatedAt: string;
-}
 
 /** Mutable store fake. `trackerRaw` is the raw `.tracker` sub-object the service
  *  normalizes; mutating it mid-job simulates a config/schema/revision drift. */
 function makeStore(opts: {
 	tracker?: Record<string, unknown>;
 	variants?: Record<string, MockVariant[]>;
-	records?: Record<string, MockRecord>;
+	records?: Record<string, MessageVariantSceneRecord>;
 	messages?: Array<{ id: string; role: string }>;
 	/** Wire the current-Scene cache rebuild path (getCurrentSceneTarget + updateInsightsCurrentScene). */
 	cacheRebuild?: boolean;
@@ -94,7 +80,7 @@ function makeStore(opts: {
 	const variants: Record<string, MockVariant[]> = opts.variants ?? {
 		m2: [{ id: "var_1", content: "The warlord sneers.", isSelected: true }],
 	};
-	const records: Record<string, MockRecord> = opts.records ? structuredClone(opts.records) : {};
+	const records: Record<string, MessageVariantSceneRecord> = opts.records ? structuredClone(opts.records) : {};
 	const messages = opts.messages ?? [];
 
 	const cacheWrites: unknown[] = [];
@@ -173,7 +159,7 @@ function makeStore(opts: {
 			const v = list?.find((item) => item.id === variantId);
 			if (v) v.content = content;
 		},
-		getRecord: (variantId: string): MockRecord | null => records[variantId] ?? null,
+		getRecord: (variantId: string): MessageVariantSceneRecord | null => records[variantId] ?? null,
 	};
 }
 
@@ -465,7 +451,7 @@ describe("SceneTrackerService.generateScene (SCN-5)", () => {
 	});
 
 	it("preserves a prior record when generation fails (in-place Update overwrites only on success)", async () => {
-		const prior: MockRecord = {
+		const prior: MessageVariantSceneRecord = {
 			variantId: "var_1",
 			schemaHash: "old-hash",
 			configRevision: 0,
@@ -534,7 +520,7 @@ describe("SceneTrackerService.generateScene (SCN-5)", () => {
 	});
 
 	it("preserves a prior record when cancelled mid-job", async () => {
-		const prior: MockRecord = {
+		const prior: MessageVariantSceneRecord = {
 			variantId: "var_1", schemaHash: "h", configRevision: 0, sourceHash: "s",
 			sceneState: { mood: "calm", tension: 2 }, modelId: "m", generatedAt: "2026-01-01T00:00:00.000Z",
 		};
@@ -549,7 +535,7 @@ describe("SceneTrackerService.generateScene (SCN-5)", () => {
 	});
 
 	it("preserves a prior record when the provider execution fails", async () => {
-		const prior: MockRecord = {
+		const prior: MessageVariantSceneRecord = {
 			variantId: "var_1", schemaHash: "h", configRevision: 0, sourceHash: "s",
 			sceneState: { mood: "calm", tension: 2 }, modelId: "m", generatedAt: "2026-01-01T00:00:00.000Z",
 		};

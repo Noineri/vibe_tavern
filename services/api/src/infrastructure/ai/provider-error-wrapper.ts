@@ -33,10 +33,22 @@ import { VoiceTranscribeUnavailableError } from "./stt-gate.js";
  * Does NOT handle the abort short-circuit — callers check `input.signal?.aborted`
  * before calling this.
  */
+/** Typed overloads so the declared return is HONEST per call shape: a gate
+ *  error comes back as itself (the pass-through carve-out below), anything
+ *  else comes back as {@link ProviderExecutionError} — the type every
+ *  non-gate consumer (and the wrapper test) reads members off. */
+export function wrapProviderExecutionError(
+  error: VisionNotSupportedError | VoiceTranscribeUnavailableError,
+  providerPreset: string,
+): VisionNotSupportedError | VoiceTranscribeUnavailableError;
 export function wrapProviderExecutionError(
   error: unknown,
   providerPreset: string,
-): Error {
+): ProviderExecutionError;
+export function wrapProviderExecutionError(
+  error: unknown,
+  providerPreset: string,
+): VisionNotSupportedError | VoiceTranscribeUnavailableError | ProviderExecutionError {
   // Typed attachment-gate errors (vision / voice transcribe) already carry
   // their own route-level surfacing (422 `type` body / SSE `type` event,
   // matched by `instanceof` in routes/chat.ts and chat-adapter). Wrapping them

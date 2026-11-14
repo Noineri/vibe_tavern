@@ -14,7 +14,8 @@
  * This file is `.tsx` (the report draft first had `.ts`) because option B
  * returns JSX elements — a direct consequence of choosing dressed elements.
  *
- * Nothing consumes this hook until fix-step 2 rewires AppShell onto it.
+ * AppShell is the consumer: fix-step 2 rewired it onto this hook (the
+ * `useShellSurface(...)` dispatch in its body).
  *
  * See SURFACE_REGISTRY_REPORT.md fix-step 1.
  */

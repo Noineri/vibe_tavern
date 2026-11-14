@@ -14,6 +14,7 @@ import { describe, it, expect } from "bun:test";
 import type {
 	ChatStore,
 	MessageStore,
+	MessageVariantSceneRecord,
 	SceneBackfillRun,
 	StoreContainer,
 } from "@vibe-tavern/db";
@@ -58,20 +59,6 @@ const VALID_REPLY = '{"mood":"calm","tension":3}';
 const CHAT: ChatId = brandId<ChatId>("chat_1");
 const BRANCH = "brnch_1";
 
-/** Structurally the store's MessageVariantSceneRecord minus its OPTIONAL
- *  schema/promptFormat snapshot fields (that type is not exported from the
- *  @vibe-tavern/db barrel; the strictTestDouble member check still verifies
- *  the record shape against the real getSceneRecord/setSceneRecord). */
-interface SceneRecordShape {
-	variantId: string;
-	schemaHash: string;
-	configRevision: number;
-	sourceHash: string;
-	sceneState: Record<string, unknown>;
-	modelId: string | null;
-	generatedAt: string;
-}
-
 /** One assistant turn in the fake branch: a single selected variant + optional
  *  pre-existing record (for sparse-history / fill-missing scenarios). */
 interface FakeAssistant {
@@ -79,7 +66,7 @@ interface FakeAssistant {
 	variantId: string;
 	content: string;
 	/** null = no record; an object = an existing record (stale or current). */
-	record?: SceneRecordShape | null;
+	record?: MessageVariantSceneRecord | null;
 }
 
 interface BackfillRunRow {
@@ -104,7 +91,7 @@ interface StoreHandle {
 	/** Replace a variant's content mid-run (content drift → revalidation skip). */
 	setContent: (variantId: string, content: string) => void;
 	/** Read a variant's current record from the fake. */
-	getRecord: (variantId: string) => SceneRecordShape | null;
+	getRecord: (variantId: string) => MessageVariantSceneRecord | null;
 	/** All execute calls seen, in order (for sequential-ordering assertions). */
 	execLog: string[];
 }
@@ -118,7 +105,7 @@ function makeStore(opts: {
 	let trackerRaw: Record<string, unknown> = opts.tracker ?? { schema: TEST_SCHEMA };
 	const trackerEnabled = opts.trackerEnabled ?? true;
 	// records keyed by variantId, seeded from the assistants' `record`.
-	const records = new Map<string, SceneRecordShape>();
+	const records = new Map<string, MessageVariantSceneRecord>();
 	for (const assistant of assistants) {
 		if (assistant.record) records.set(assistant.variantId, structuredClone(assistant.record));
 	}
@@ -145,7 +132,7 @@ function makeStore(opts: {
 				: [];
 		},
 		getSceneRecord: async (variantId: string) => records.get(variantId) ?? null,
-		setSceneRecord: async (variantId: string, record: SceneRecordShape) => {
+		setSceneRecord: async (variantId: string, record: MessageVariantSceneRecord) => {
 			records.set(variantId, record);
 		},
 		clearSceneRecord: async (variantId: string) => {

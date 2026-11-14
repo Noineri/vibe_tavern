@@ -11,7 +11,7 @@
  * latest-valid/none) rather than rejecting.
  */
 import { describe, it, expect } from "bun:test";
-import type { ChatStore, MessageStore, StoreContainer } from "@vibe-tavern/db";
+import type { ChatStore, MessageStore, MessageVariantSceneRecord, StoreContainer } from "@vibe-tavern/db";
 import type { PromptAssemblyContext } from "@vibe-tavern/prompt-pipeline";
 import type { GenerationResult, ProviderExecutionInput } from "../src/infrastructure/ai/provider-execution-types.js";
 import { SceneTrackerService, type SceneTarget } from "../src/domain/insights/tracker-service.js";
@@ -56,11 +56,8 @@ interface Harness {
 function harness(opts: { trackerEnabled?: boolean; latest?: { messageId: string; variantId: string } | null } = {}): Harness {
 	let trackerEnabled = opts.trackerEnabled ?? true;
 	let latest: { messageId: string; variantId: string } | null = opts.latest === undefined ? { messageId: "m2", variantId: "var_1" } : opts.latest;
-	// Structurally the store's MessageVariantSceneRecord minus its OPTIONAL
-	// schema/promptFormat snapshot fields (that type is not exported from the
-	// @vibe-tavern/db barrel; the strictTestDouble member check still verifies
-	// the record shape against the real getSceneRecord/setSceneRecord).
-	const records: Record<string, { variantId: string; schemaHash: string; configRevision: number; sourceHash: string; sceneState: Record<string, unknown>; modelId: string | null; generatedAt: string }> = {};
+	// Records keyed by variantId — the REAL store record type from the barrel.
+	const records: Record<string, MessageVariantSceneRecord> = {};
 
 	const stores = strictTestDouble<StoreContainer>(
 		{

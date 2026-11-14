@@ -24,13 +24,11 @@
  */
 
 import { STT_BACKENDS } from "@vibe-tavern/domain";
-import type { SttProfileConfig } from "@vibe-tavern/domain";
 // BlobPart is the bun-types Blob constructor part (no DOM lib in this package).
 import type { BlobPart } from "bun";
 
 import type {
   SttBackend,
-  SttBackendFactory,
   SttModelInfo,
   SttProbeResult,
   SttTranscribeResult,
@@ -83,11 +81,10 @@ function readString(config: Record<string, unknown>, key: string): string | unde
   return typeof value === "string" && value.trim() !== "" ? value : undefined;
 }
 
-function parseConfig(config: SttProfileConfig): OpenAiCompatSttConfig {
-  // SttProfileConfig is a strict per-backend union (ST-1); the factory reads
-  // the injected apiKey off the loose bag the (ST-6+) server adapter built,
-  // so cast at this type-erased boundary — no `as any`.
-  const bag = config as Record<string, unknown>;
+function parseConfig(bag: Record<string, unknown>): OpenAiCompatSttConfig {
+  // The bag is the loose config the (ST-6+) server adapter built: the stored
+  // per-backend shape (ST-1) plus the injected `apiKey`. Read through its
+  // type-erased view — no cast, no `as any`.
   const rawEndpoint = readString(bag, "endpoint");
   if (!rawEndpoint) {
     throw new OpenAiCompatSttConfigError(
@@ -160,7 +157,7 @@ function countModelIds(parsed: unknown): number {
 
 // ─── Factory ─────────────────────────────────────────────────────────────────
 
-export const openAiCompatSttFactory: SttBackendFactory = (config) => {
+export const openAiCompatSttFactory = (config: Record<string, unknown>): SttBackend => {
   const cfg = parseConfig(config);
 
   const backend: SttBackend = {
