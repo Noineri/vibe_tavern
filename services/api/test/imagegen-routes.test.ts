@@ -55,9 +55,10 @@ import {
   __snapshotImageGenRegistryForTests,
   registerImageGenBackend,
 } from "../src/domain/imagegen/imagegen-registry.js";
-import { PromptAssemblyService, type PromptAssemblyResolver } from "../src/domain/prompt/prompt-assembly-service.js";
+import { PromptAssemblyService } from "../src/domain/prompt/prompt-assembly-service.js";
 import { testFetch } from "./test-fetch-seam.js";
 import { makeProviderProfileRow } from "./copilot-test-builders.js";
+import { makeAssemblyResolver, makeFileStoreDouble } from "./insights-test-builders.js";
 
 // THE REGISTRY IS PROCESS-GLOBAL (mock.module gotcha applies to bun:test):
 // imagegen-registry.test.ts runs `__resetImageGenRegistryForTests()` in the
@@ -2918,7 +2919,7 @@ describe("image-gen routes — mode assembly (IG-14)", () => {
     // content and NONE of the image prompt (design: "The image prompt never
     // enters the RP prompt").
     const character = await scene.stores.characters.getById(scene.charId);
-    const resolver: PromptAssemblyResolver = {
+    const resolver = makeAssemblyResolver({
       getCharacter: async () => ({
         id: character!.id,
         name: character!.name,
@@ -2929,26 +2930,8 @@ describe("image-gen routes — mode assembly (IG-14)", () => {
         mesExample: null,
         postHistoryInstructions: null,
       }),
-      getPersona: async () => null,
-      getPromptPreset: async () => null,
-      listActiveLoreEntries: async () => ({ entries: [], overflowedLorebooks: [] }),
-      listRetrievedMemories: async () => [],
-      executeScripts: async () => ({
-        character: { personality: "", scenario: "" },
-        injectedMessages: [],
-        updatedScriptState: {},
-        errors: [],
-        scriptRuns: [],
-      }),
-      getToolInstructions: () => null,
-    };
-    const fileStore = {
-      dataRoot: "/mock",
-      resolvePath: (_folder: string, relativePath: string) => `/mock/${relativePath}`,
-      readJson: async <T>() => null as T,
-      writeJson: async () => {},
-      asyncWriteJson: async () => {},
-    };
+    });
+    const fileStore = makeFileStoreDouble();
     const assemblyService = new PromptAssemblyService(scene.stores, resolver, fileStore);
     const assembled = await assemblyService.assembleForChat({
       chatId: scene.chatId as ChatId,
@@ -2976,7 +2959,7 @@ describe("image-gen routes — mode assembly (IG-14)", () => {
     const assetId = gen.attachments[0]!.assetId;
 
     const character = await scene.stores.characters.getById(scene.charId);
-    const resolver: PromptAssemblyResolver = {
+    const resolver = makeAssemblyResolver({
       getCharacter: async () => ({
         id: character!.id,
         name: character!.name,
@@ -2987,26 +2970,8 @@ describe("image-gen routes — mode assembly (IG-14)", () => {
         mesExample: null,
         postHistoryInstructions: null,
       }),
-      getPersona: async () => null,
-      getPromptPreset: async () => null,
-      listActiveLoreEntries: async () => ({ entries: [], overflowedLorebooks: [] }),
-      listRetrievedMemories: async () => [],
-      executeScripts: async () => ({
-        character: { personality: "", scenario: "" },
-        injectedMessages: [],
-        updatedScriptState: {},
-        errors: [],
-        scriptRuns: [],
-      }),
-      getToolInstructions: () => null,
-    };
-    const fileStore = {
-      dataRoot: "/mock",
-      resolvePath: (_folder: string, relativePath: string) => `/mock/${relativePath}`,
-      readJson: async <T>() => null as T,
-      writeJson: async () => {},
-      asyncWriteJson: async () => {},
-    };
+    });
+    const fileStore = makeFileStoreDouble();
     const assemblyService = new PromptAssemblyService(scene.stores, resolver, fileStore);
     const assembleSerialized = async () =>
       JSON.stringify(

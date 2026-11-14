@@ -9,10 +9,10 @@
  *   - the resolver receives the chat's characterId and effective presetId.
  */
 import { describe, it, expect } from "bun:test";
-import { PromptAssemblyService, type PromptAssemblyResolver } from "../src/domain/prompt/prompt-assembly-service.js";
+import { PromptAssemblyService } from "../src/domain/prompt/prompt-assembly-service.js";
 import type { RegexStore, StoreContainer } from "@vibe-tavern/db";
 import { type ChatId, type RegexPreset } from "@vibe-tavern/domain";
-import { makePromptAssemblyStores, makeMessageRow } from "./insights-test-builders.js";
+import { makeAssemblyPreset, makeAssemblyResolver, makeFileStoreDouble, makePromptAssemblyStores, makeMessageRow } from "./insights-test-builders.js";
 import { makePersonaRow } from "./copilot-test-builders.js";
 import { strictTestDouble } from "./strict-test-double.js";
 
@@ -54,7 +54,7 @@ function createStores(regexStore: StoreContainer["regex"]): StoreContainer {
   );
 }
 
-const mockResolver: PromptAssemblyResolver = {
+const mockResolver = makeAssemblyResolver({
   getCharacter: async () => ({
     id: "char_1",
     name: "TestBot",
@@ -66,36 +66,14 @@ const mockResolver: PromptAssemblyResolver = {
     postHistoryInstructions: null,
   }),
   getPersona: async () => ({ id: "persona_1", name: "User", description: "A regular user." }),
-  getPromptPreset: async () => ({
+  getPromptPreset: async () => makeAssemblyPreset({
     id: "preset_1",
     name: "Default",
     text: "Write {{char}}'s next reply.",
-    jailbreak: "",
-    summary: "",
-    tools: "",
-    prefill: "",
-    authorsNote: "",
-    authorsNoteDepth: 4,
   }),
-  listActiveLoreEntries: async () => ({ entries: [], overflowedLorebooks: [] }),
-  listRetrievedMemories: async () => [],
-  getToolInstructions: () => null,
-  executeScripts: async () => ({
-    personality: "",
-    scenario: "",
-    injectedMessages: [],
-    errors: [],
-    scriptRuns: [],
-  }),
-};
+});
 
-const mockFileStore = {
-  dataRoot: "/mock",
-  resolvePath: (_folder: string, relativePath: string) => `/mock/${relativePath}`,
-  readJson: async <T>() => null as T,
-  writeJson: async () => {},
-  asyncWriteJson: async () => {},
-};
+const mockFileStore = makeFileStoreDouble();
 
 describe("PromptAssemblyService — RX-13 regexPresets context seam", () => {
   it("passes the FULL active preset set into the pipeline context", async () => {

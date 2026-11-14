@@ -22,6 +22,7 @@ import type {
 	CharacterAssetRow,
 	DiceRoll,
 	ExperienceAttachmentRow,
+	FileStore,
 	LorebookRow,
 	Message,
 	MessageVariant,
@@ -40,15 +41,21 @@ import type {
 } from "@vibe-tavern/db";
 import {
 	CHAT_MODE,
+	LORE_ENTRY_POSITION,
+	LORE_ENTRY_ROLE,
+	LORE_LOGIC,
 	brandId,
 	createDefaultSceneTrackerConfig,
 	defaultObjectiveState,
 	normalizeAutoSummaryConfig,
 	normalizeInsightsConfig,
 	normalizeObjectiveState,
+	type ActiveLoreEntry,
 	type CharacterId,
 	type ChatBranchId,
 	type ChatId,
+	type LoreEntryId,
+	type LorebookId,
 	type MessageId,
 	type MessageVariantId,
 	type ObjectiveState,
@@ -700,4 +707,144 @@ export function makeObjectiveStores(fixture: ObjectiveStoresFixture = {}): Store
 		},
 		"ObjectiveService stores",
 	);
+}
+
+/**
+ * Typed `FileStore` double for prompt-assembly tests (FW-6b):
+ * `PromptAssemblyService` calls only `resolvePath` and `writeJson` for prompt
+ * traces; the other 9 file/directory members throw loudly via
+ * `strictTestDouble` if unexpectedly touched.
+ */
+export function makeFileStoreDouble(
+	over: PartialMembers<FileStore> = {},
+	label = "FileStore (prompt-assembly)",
+): FileStore {
+	return strictTestDouble<FileStore>(
+		{
+			dataRoot: "/mock",
+			resolvePath: (_folder, relativePath) => `/mock/${relativePath}`,
+			writeJson: async () => {},
+			asyncWriteJson: async () => {},
+			...over,
+		},
+		label,
+	);
+}
+
+/** Non-null return type of `PromptAssemblyResolver["getPromptPreset"]`. */
+export type AssemblyPreset = NonNullable<
+	Awaited<ReturnType<PromptAssemblyResolver["getPromptPreset"]>>
+>;
+
+/**
+ * Complete `PromptAssemblyResolver["getPromptPreset"]` fixture with inert
+ * defaults for fields unrelated to the test (advanced/role-merge/note flags),
+ * replacing legacy partial literals that omitted newer schema columns.
+ */
+export function makeAssemblyPreset(over: Partial<AssemblyPreset> = {}): AssemblyPreset {
+	return {
+		id: "preset_1",
+		name: "Default",
+		text: "",
+		jailbreak: "",
+		summary: "",
+		tools: "",
+		prefill: "",
+		authorsNote: "",
+		authorsNoteDepth: 4,
+		authorsNotePosition: "in_chat",
+		authorsNoteRole: "system",
+		nsfw: "",
+		enhanceDefinitions: "",
+		advancedMode: false,
+		mergeConsecutiveRoles: false,
+		customInjections: [],
+		promptOrder: [],
+		...over,
+	};
+}
+
+/**
+ * Complete `ActiveLoreEntry` fixture for prompt-assembly resolver doubles
+ * whose tests exercise non-empty `listActiveLoreEntries().entries` streams.
+ */
+export function makeActiveLoreEntry(over: Partial<ActiveLoreEntry> = {}): ActiveLoreEntry {
+	return {
+		id: brandId<LoreEntryId>("lore_1"),
+		lorebookId: brandId<LorebookId>("lb_1"),
+		title: "Lore",
+		content: "",
+		keys: [],
+		secondaryKeys: [],
+		logic: LORE_LOGIC.andAny,
+		position: LORE_ENTRY_POSITION.inPrompt,
+		depth: 4,
+		priority: 0,
+		stickyWindow: 0,
+		cooldownWindow: 0,
+		minChatMessages: 0,
+		constant: false,
+		probability: 100,
+		ignoreBudget: false,
+		role: LORE_ENTRY_ROLE.system,
+		groupName: "",
+		groupWeight: 100,
+		prioritizeInclusion: false,
+		useGroupScoring: null,
+		excludeRecursion: false,
+		preventRecursion: false,
+		delayUntilRecursion: false,
+		recursionLevel: 0,
+		scanDepthOverride: null,
+		caseSensitive: null,
+		matchWholeWords: null,
+		characterFilter: [],
+		characterFilterExclude: false,
+		matchSources: [],
+		enabled: true,
+		sortOrder: 0,
+		automationId: "",
+		metadata: {},
+		activationReason: { kind: "constant" },
+		matchedKeys: [],
+		matchCount: 0,
+		insertionOrder: 0,
+		...over,
+	};
+}
+
+/**
+ * Complete `PromptAssemblyResolver` double with valid wire shapes for
+ * `listActiveLoreEntries` (includes `outletEntries: {}`) and `executeScripts`
+ * (top-level string `personality`/`scenario`, no legacy `scenario: null` or
+ * `character` wrapper). Override only the methods each test exercises.
+ */
+export function makeAssemblyResolver(
+	over: Partial<PromptAssemblyResolver> = {},
+): PromptAssemblyResolver {
+	return {
+		getCharacter: async () => ({
+			id: "char_1",
+			name: "Aria",
+			description: "A fire mage.",
+			personality: "Bold.",
+		}),
+		getPersona: async () => null,
+		getPromptPreset: async () => null,
+		listActiveLoreEntries: async () => ({
+			entries: [],
+			overflowedLorebooks: [],
+			outletEntries: {},
+		}),
+		listRetrievedMemories: async () => [],
+		executeScripts: async () => ({
+			personality: "",
+			scenario: "",
+			injectedMessages: [],
+			errors: [],
+			scriptRuns: [],
+		}),
+		getToolInstructions: () => null,
+		...over,
+	};
 }

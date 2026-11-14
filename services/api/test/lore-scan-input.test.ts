@@ -4,7 +4,7 @@ import {
   PromptAssemblyService,
   type PromptAssemblyResolver,
 } from "../src/domain/prompt/prompt-assembly-service.js";
-import { makePromptAssemblyStores, makeMessageRow, makeChatSummaryRow } from "./insights-test-builders.js";
+import { makeAssemblyResolver, makeFileStoreDouble, makePromptAssemblyStores, makeMessageRow, makeChatSummaryRow } from "./insights-test-builders.js";
 
 type PromptPreset = NonNullable<Awaited<ReturnType<PromptAssemblyResolver["getPromptPreset"]>>>;
 
@@ -43,9 +43,8 @@ function makeService(messages: ScanMessage[], options: {
     },
     "PromptAssemblyService stores (lore-scan-input)",
   );
-  const resolver: PromptAssemblyResolver = {
+  const resolver = makeAssemblyResolver({
     getCharacter: async () => ({ id: "char_1", name: "Lorekeeper", description: "" }),
-    getPersona: async () => null,
     getPromptPreset: async () => options.promptPreset ?? null,
     listActiveLoreEntries: async (input) => {
       options.onScanMessages(input.scanMessages);
@@ -55,23 +54,8 @@ function makeService(messages: ScanMessage[], options: {
       // returned a two-member shape production can never produce.
       return { entries: [], overflowedLorebooks: [], outletEntries: {} };
     },
-    listRetrievedMemories: async () => [],
-    executeScripts: async () => ({
-      personality: "",
-      scenario: null,
-      injectedMessages: [],
-      errors: [],
-      scriptRuns: [],
-    }),
-    getToolInstructions: () => null,
-  };
-  const fileStore = {
-    dataRoot: "/mock",
-    resolvePath: (_folder: string, relativePath: string) => `/mock/${relativePath}`,
-    readJson: async <T>() => null as T,
-    writeJson: async () => {},
-    asyncWriteJson: async () => {},
-  };
+  });
+  const fileStore = makeFileStoreDouble();
   return new PromptAssemblyService(stores, resolver, fileStore);
 }
 

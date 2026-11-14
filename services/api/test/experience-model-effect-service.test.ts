@@ -37,10 +37,9 @@ import type {
 	StructuredActionChoiceInput,
 	StructuredActionChoiceResult,
 } from "../src/domain/interactive/experience-model-effect-structured.js";
-import type { ProviderProfileService } from "../src/domain/providers/provider-profile-service.js";
 import { nonstreamingProviderExecute } from "../src/infrastructure/ai/nonstreaming-provider-executor.js";
 import { execResult } from "./insights-test-builders.js";
-import { makeProviderProfileRow } from "./copilot-test-builders.js";
+import { makeProviderProfileRow, makeProviderProfilesFixture } from "./copilot-test-builders.js";
 
 // ─── Test experiences ────────────────────────────────────────────────────────
 
@@ -330,20 +329,23 @@ function makeServices(opts: {
 } = {}) {
 	const profile = opts.profile === undefined ? makeProfile() : opts.profile;
 	const profiles = opts.profiles ?? (profile ? [profile] : []);
-	const providerProfiles: Pick<ProviderProfileService, "resolveActiveProviderProfile" | "getProviderProfile" | "getProviderModelSettings"> = {
-		resolveActiveProviderProfile: async () => profile,
-		getProviderProfile: async (id: string) => profiles.find((candidate) => candidate.id === id) ?? null,
-		getProviderModelSettings: async (providerProfileId: string, modelId: string) => {
-			const settings = opts.modelSettings;
-			return settings?.providerProfileId === providerProfileId && settings.modelId === modelId ? settings : null;
+	const providerProfiles = makeProviderProfilesFixture(
+		{
+			resolveActiveProviderProfile: async () => profile,
+			getProviderProfile: async (id: string) => profiles.find((candidate) => candidate.id === id) ?? null,
+			getProviderModelSettings: async (providerProfileId: string, modelId: string) => {
+				const settings = opts.modelSettings;
+				return settings?.providerProfileId === providerProfileId && settings.modelId === modelId ? settings : null;
+			},
 		},
-	};
+		"ProviderProfileService (model-effect)",
+	);
 	const chatLifecycle: ExperienceChatLifecycleSeam = {
 		assembleSummaryPrompt: async () => ({ prompt: minimalPrompt(), branchId: "b" as ChatBranchId }),
 	};
 	const contextService = new ExperienceContextService({
 		stores,
-		providerProfiles: providerProfiles as ProviderProfileService,
+		providerProfiles,
 		chatLifecycle,
 		execute: async () => execResult(""),
 	});
@@ -358,7 +360,7 @@ function makeServices(opts: {
 		stores,
 		experienceService,
 		contextService,
-		providerProfiles: providerProfiles as ProviderProfileService,
+		providerProfiles,
 		execute,
 		...makeStructuredSeam(opts),
 	});
@@ -685,24 +687,27 @@ describe("ExperienceModelEffectService — prompt layering + model-view isolatio
 		const { sessionId } = await seedSession(TEXT_SOURCE);
 		const effectId = await emitModelEffect(sessionId, "say");
 		const boundProfile = makeProfile({ bindPerModel: true });
-		const providerProfiles = {
-			resolveActiveProviderProfile: async () => boundProfile,
-			getProviderProfile: async (id: string) => (id === boundProfile.id ? boundProfile : null),
-			getProviderModelSettings: async () => ({
-				id: "pms_1", providerProfileId: boundProfile.id, modelId: "test-model",
-				settings: { contextBudget: 4096, temperature: 0.3 },
-				createdAt: "2024-01-01T00:00:00Z", updatedAt: "2024-01-01T00:00:00Z",
-			}),
-		};
+		const providerProfiles = makeProviderProfilesFixture(
+			{
+				resolveActiveProviderProfile: async () => boundProfile,
+				getProviderProfile: async (id: string) => (id === boundProfile.id ? boundProfile : null),
+				getProviderModelSettings: async () => ({
+					id: "pms_1", providerProfileId: boundProfile.id, modelId: "test-model",
+					settings: { contextBudget: 4096, temperature: 0.3 },
+					createdAt: "2024-01-01T00:00:00Z", updatedAt: "2024-01-01T00:00:00Z",
+				}),
+			},
+			"ProviderProfileService (model-effect overlay)",
+		);
 		const contextService = new ExperienceContextService({
-			stores, providerProfiles: providerProfiles as ProviderProfileService,
+			stores, providerProfiles,
 			chatLifecycle: { assembleSummaryPrompt: async () => ({ prompt: minimalPrompt(), branchId: "b" as ChatBranchId }) },
 			execute: async () => execResult(""),
 		});
 		const spy: ExecuteSpy = { calls: [] };
 		const modelEffectService = new ExperienceModelEffectService({
 			stores, experienceService, contextService,
-			providerProfiles: providerProfiles as ProviderProfileService,
+			providerProfiles,
 			execute: async (input) => {
 				spy.calls.push({ profile: input.profile, model: "test-model", prompt: minimalPrompt() });
 				return execResult("hi");
@@ -1275,11 +1280,13 @@ describe("ExperienceModelEffectService — seat character identity (report item 
 		const seeded = await seedSession(SEAT_TEXT_SOURCE, participants, [...GRANTS, "rp_context"]);
 		const contextService = new ExperienceContextService({
 			stores,
-			providerProfiles: {
-				resolveActiveProviderProfile: async () => makeProfile(),
-				getProviderProfile: async () => makeProfile(),
-				getProviderModelSettings: async () => null,
-			} as ProviderProfileService,
+			providerProfiles: makeProviderProfilesFixture(
+				{
+					resolveActiveProviderProfile: async () => makeProfile(),
+					getProviderProfile: async () => makeProfile(),
+				},
+				"ProviderProfileService (model-effect seat test)",
+			),
 			chatLifecycle: { assembleSummaryPrompt: async () => ({ prompt: minimalPrompt(), branchId: "b" as ChatBranchId }) },
 			execute: async () => execResult(""),
 		});
@@ -1347,11 +1354,13 @@ describe("ExperienceModelEffectService — seat character identity (report item 
 		);
 		const contextService = new ExperienceContextService({
 			stores,
-			providerProfiles: {
-				resolveActiveProviderProfile: async () => makeProfile(),
-				getProviderProfile: async () => makeProfile(),
-				getProviderModelSettings: async () => null,
-			} as ProviderProfileService,
+			providerProfiles: makeProviderProfilesFixture(
+				{
+					resolveActiveProviderProfile: async () => makeProfile(),
+					getProviderProfile: async () => makeProfile(),
+				},
+				"ProviderProfileService (model-effect seat test)",
+			),
 			chatLifecycle: { assembleSummaryPrompt: async () => ({ prompt: minimalPrompt(), branchId: "b" as ChatBranchId }) },
 			execute: async () => execResult(""),
 		});

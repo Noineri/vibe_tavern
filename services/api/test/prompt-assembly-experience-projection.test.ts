@@ -16,10 +16,10 @@
  * No experience service or sandbox is invoked on the read path.
  */
 import { describe, it, expect } from "bun:test";
-import { PromptAssemblyService, type PromptAssemblyResolver } from "../src/domain/prompt/prompt-assembly-service.js";
+import { PromptAssemblyService } from "../src/domain/prompt/prompt-assembly-service.js";
 import type { ExperienceAttachmentRow } from "@vibe-tavern/db";
 import type { ChatId } from "@vibe-tavern/domain";
-import { makePromptAssemblyStores, makeMessageRow } from "./insights-test-builders.js";
+import { makeAssemblyResolver, makeFileStoreDouble, makePromptAssemblyStores, makeMessageRow } from "./insights-test-builders.js";
 
 /** A flat store ExperienceAttachmentRow bound to msg_1 with a well-formed report. */
 function makeStoreAttachment(overrides: Partial<ExperienceAttachmentRow> = {}): ExperienceAttachmentRow {
@@ -68,28 +68,10 @@ function makeExperienceService(options: ExperienceServiceOptions = {}) {
 		"PromptAssemblyService stores (experience-projection)",
 	);
 
-	const resolver: PromptAssemblyResolver = {
-		getCharacter: async () => ({
-			id: "char_1",
-			name: "Aria",
-			description: "A fire mage.",
-			personality: "Bold.",
-		}),
-		getPersona: async () => null,
-		getPromptPreset: async () => null,
-		listActiveLoreEntries: async () => ({ entries: [], overflowedLorebooks: [] }),
-		listRetrievedMemories: async () => [],
-		executeScripts: async () => ({ personality: "Bold.", scenario: null, injectedMessages: [], errors: [], scriptRuns: [] }),
-		getToolInstructions: () => null,
-	};
-
-	const fileStore = {
-		dataRoot: "/mock",
-		resolvePath: (_folder: string, relativePath: string) => `/mock/${relativePath}`,
-		readJson: async <T>() => null as T,
-		writeJson: async () => {},
-		asyncWriteJson: async () => {},
-	};
+	const resolver = makeAssemblyResolver({
+		executeScripts: async () => ({ personality: "Bold.", scenario: "", injectedMessages: [], errors: [], scriptRuns: [] }),
+	});
+	const fileStore = makeFileStoreDouble();
 
 	return new PromptAssemblyService(stores, resolver, fileStore);
 }

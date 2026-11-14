@@ -1,9 +1,9 @@
 import { describe, it, expect } from "bun:test";
-import { PromptAssemblyService, type PromptAssemblyResolver, resolveObjectiveTaskContext, resolveObjectiveLongTermContext } from "../src/domain/prompt/prompt-assembly-service.js";
+import { PromptAssemblyService, resolveObjectiveTaskContext, resolveObjectiveLongTermContext } from "../src/domain/prompt/prompt-assembly-service.js";
 import type { Chat, Message, StoreContainer } from "@vibe-tavern/db";
 import type { ChatId, ChatBranchId, LoreEntry, MessageId, RetrievedMemoryHit } from "@vibe-tavern/domain";
 import { normalizeInsightsConfig, normalizeObjectiveState, OBJECTIVE_MODE, OBJECTIVE_TASK_STATUS } from "@vibe-tavern/domain";
-import { makePromptAssemblyStores, makeMessageRow, makeCharacterAssetRow, type PromptAssemblyStoresFixture } from "./insights-test-builders.js";
+import { makeAssemblyPreset, makeAssemblyResolver, makeFileStoreDouble, makePromptAssemblyStores, makeMessageRow, makeCharacterAssetRow, type PromptAssemblyStoresFixture } from "./insights-test-builders.js";
 import { makePersonaRow } from "./copilot-test-builders.js";
 
 // ─── Mock helpers ──────────────────────────────────────────────────────────
@@ -57,7 +57,7 @@ function createMockStores(
   );
 }
 
-const mockResolver: PromptAssemblyResolver = {
+const mockResolver = makeAssemblyResolver({
   getCharacter: async () => ({
     id: "char_1",
     name: "TestBot",
@@ -73,47 +73,27 @@ const mockResolver: PromptAssemblyResolver = {
     name: "User",
     description: "A regular user.",
   }),
-  getPromptPreset: async () => ({
+  getPromptPreset: async () => makeAssemblyPreset({
     id: "preset_1",
     name: "Default",
     text: "Write {{char}}'s next reply.",
-    jailbreak: "",
-    summary: "",
-    tools: "",
-    prefill: "",
-    authorsNote: "",
-    authorsNoteDepth: 4,
   }),
-  listActiveLoreEntries: async () => ({ entries: [], overflowedLorebooks: [] }),
-  listRetrievedMemories: async () => [],
-  executeScripts: async () => ({
-    character: { personality: "", scenario: "" },
-    injectedMessages: [],
-    updatedScriptState: {},
-    errors: [],
-    scriptRuns: [],
-  }),
-  getToolInstructions: () => null,
-};
+});
 
-const mockFileStore = {
-  dataRoot: "/mock",
-  resolvePath: (_folder: string, relativePath: string) => `/mock/${relativePath}`,
-  readJson: async <T>() => null as T,
-  writeJson: async () => {},
-  asyncWriteJson: async () => {},
-};
+const mockFileStore = makeFileStoreDouble();
 
 describe("PromptAssemblyService — completionFormat export (LS-3b)", () => {
   it("the preset's generationFormat rides the assembled prompt DTO", async () => {
     const format = { mode: "manual" as const, inputSequence: "<|im_start|>user", outputSequence: "<|im_start|>assistant", wrap: true };
-    const withFormat: PromptAssemblyResolver = {
+    const withFormat = makeAssemblyResolver({
       ...mockResolver,
-      getPromptPreset: (async () => ({
-        ...await mockResolver.getPromptPreset("preset_1"),
+      getPromptPreset: async () => makeAssemblyPreset({
+        id: "preset_1",
+        name: "Default",
+        text: "Write {{char}}'s next reply.",
         generationFormat: format,
-      })) as PromptAssemblyResolver["getPromptPreset"],
-    };
+      }),
+    });
     const service = new PromptAssemblyService(createMockStores(), withFormat, mockFileStore);
     const result = await service.assembleForChat({ chatId: "chat_1" as ChatId, model: "test-model" });
     expect(result.prompt.completionFormat).toEqual(format);
@@ -243,20 +223,15 @@ describe("PromptAssemblyService", () => {
   });
 
   it("passes prefill through from preset", async () => {
-    const resolver: PromptAssemblyResolver = {
+    const resolver = makeAssemblyResolver({
       ...mockResolver,
-      getPromptPreset: async () => ({
+      getPromptPreset: async () => makeAssemblyPreset({
         id: "preset_1",
         name: "With Prefill",
         text: "Write a reply.",
-        jailbreak: "",
-        summary: "",
-        tools: "",
         prefill: "Sure, I will respond as TestBot:",
-        authorsNote: "",
-        authorsNoteDepth: 4,
       }),
-    };
+    });
     const stores = createMockStores();
     const service = new PromptAssemblyService(stores, resolver, mockFileStore);
     const result = await service.assembleForChat({
@@ -332,7 +307,7 @@ function makeFilterService(
     "PromptAssemblyService stores (gallery filter)",
   );
 
-  const resolver: PromptAssemblyResolver = {
+  const resolver = makeAssemblyResolver({
     getCharacter: async () => ({
       id: "char_1",
       name: "Aria",
@@ -340,13 +315,8 @@ function makeFilterService(
       personality: "Bold.",
       includeGalleryInPrompt,
     }),
-    getPersona: async () => null,
-    getPromptPreset: async () => null,
-    listActiveLoreEntries: async () => ({ entries: [], overflowedLorebooks: [] }),
-    listRetrievedMemories: async () => [],
-    executeScripts: async () => ({ personality: "Bold.", scenario: null, injectedMessages: [], errors: [], scriptRuns: [] }),
-    getToolInstructions: () => null,
-  };
+    executeScripts: async () => ({ personality: "Bold.", scenario: "", injectedMessages: [], errors: [], scriptRuns: [] }),
+  });
 
   return new PromptAssemblyService(stores, resolver, mockFileStore);
 }

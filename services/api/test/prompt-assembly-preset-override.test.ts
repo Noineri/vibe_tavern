@@ -1,7 +1,7 @@
 import { describe, it, expect } from "bun:test";
 import { PromptAssemblyService, type PromptAssemblyResolver } from "../src/domain/prompt/prompt-assembly-service.js";
 import type { ChatId } from "@vibe-tavern/domain";
-import { makePromptAssemblyStores } from "./insights-test-builders.js";
+import { makeAssemblyPreset, makeAssemblyResolver, makeFileStoreDouble, makePromptAssemblyStores } from "./insights-test-builders.js";
 
 /**
  * Characterization test for the per-request PRESET OVERRIDE path (Wave Q1b).
@@ -22,7 +22,7 @@ const OVERRIDE_PRESET_TEXT = "OVERRIDE_PRESET_TEXT {{char}}";
 
 function makeResolver(): { resolver: PromptAssemblyResolver; calls: string[] } {
   const calls: string[] = [];
-  const resolver: PromptAssemblyResolver = {
+  const resolver = makeAssemblyResolver({
     getCharacter: async () => ({
       id: "char_1",
       name: "TestBot",
@@ -38,55 +38,26 @@ function makeResolver(): { resolver: PromptAssemblyResolver; calls: string[] } {
     getPromptPreset: async (presetId: string) => {
       calls.push(presetId);
       if (presetId === "preset_override") {
-        return {
+        return makeAssemblyPreset({
           id: "preset_override",
           name: "Override",
           text: OVERRIDE_PRESET_TEXT,
-          jailbreak: "",
-          summary: "",
-          tools: "",
-          prefill: "",
-          authorsNote: "",
-          authorsNoteDepth: 4,
-          authorsNotePosition: "in_chat",
-          authorsNoteRole: "system",
-          nsfw: "",
-          enhanceDefinitions: "",
-          advancedMode: false,
-          customInjections: [],
-          promptOrder: [],
-        };
+        });
       }
-      return {
+      return makeAssemblyPreset({
         id: "preset_chat",
         name: "ChatDefault",
         text: CHAT_PRESET_TEXT,
-        jailbreak: "",
-        summary: "",
-        tools: "",
-        prefill: "",
-        authorsNote: "",
-        authorsNoteDepth: 4,
-        authorsNotePosition: "in_chat",
-        authorsNoteRole: "system",
-        nsfw: "",
-        enhanceDefinitions: "",
-        advancedMode: false,
-        customInjections: [],
-        promptOrder: [],
-      };
+      });
     },
-    listActiveLoreEntries: async () => ({ entries: [], overflowedLorebooks: [] }),
-    listRetrievedMemories: async () => [],
-    getToolInstructions: () => null,
-    executeScripts: async (input: { characterRecord: { personality: string | null; scenario: string | null } }) => ({
+    executeScripts: async (input) => ({
       personality: input.characterRecord.personality ?? "",
       scenario: input.characterRecord.scenario ?? "",
       injectedMessages: [],
       errors: [],
       scriptRuns: [],
     }),
-  };
+  });
   return { resolver, calls };
 }
 
@@ -97,13 +68,7 @@ const mockStores = makePromptAssemblyStores(
   "PromptAssemblyService stores (preset-override)",
 );
 
-const mockFileStore = {
-  dataRoot: "/mock",
-  resolvePath: (_f: string, r: string) => `/mock/${r}`,
-  readJson: async <T>() => null as T,
-  writeJson: async () => {},
-  asyncWriteJson: async () => {},
-};
+const mockFileStore = makeFileStoreDouble();
 
 function payloadText(result: { prompt: { finalPayload: unknown } }): string {
   const messages = (result.prompt.finalPayload as { messages?: Array<{ content: string }> }).messages ?? [];

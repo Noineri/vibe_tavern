@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import type { StoreContainer } from "@vibe-tavern/db";
 import { setTokenCountFn } from "@vibe-tavern/prompt-pipeline";
 import { brandId, normalizeInsightsConfig, normalizeObjectiveState, type AssemblePromptResponse, type ChatBranchId, type ChatId } from "@vibe-tavern/domain";
-import { PromptAssemblyService, type PromptAssemblyResolver } from "../src/domain/prompt/prompt-assembly-service.js";
+import { PromptAssemblyService } from "../src/domain/prompt/prompt-assembly-service.js";
 import { ChatLifecycleRuntime, type ChatLifecycleRuntimeDeps } from "../src/runtime/session/session-runtime-chat-lifecycle.js";
 import { SessionRuntime } from "../src/runtime/session/session-runtime.js";
 import type { nonstreamingProviderExecute } from "../src/infrastructure/ai/nonstreaming-provider-executor.js";
@@ -16,9 +16,13 @@ import { tmpdir } from "node:os";
 import type { Attachment } from "@vibe-tavern/domain";
 import { strictTestDouble } from "./strict-test-double.js";
 import {
+  makeActiveLoreEntry,
+  makeAssemblyPreset,
+  makeAssemblyResolver,
   makeChatBranchRow,
   makeChatRow,
   makeChatSummaryRow,
+  makeFileStoreDouble,
   makeMessageRow,
 } from "./insights-test-builders.js";
 import { makePersonaRow, makeProviderProfileRow, makeProviderProfilesFixture } from "./copilot-test-builders.js";
@@ -441,19 +445,34 @@ describe("PromptAssemblyService summary preparation", () => {
       },
       "PromptAssemblyService stores (summary preparation)",
     );
-    const resolver: PromptAssemblyResolver = {
+    const resolver = makeAssemblyResolver({
       getCharacter: async () => ({ id: "char_1", name: "Nora", description: "character words that are excluded from the summary output", personality: null, scenario: null }),
       getPersona: async () => ({ id: "persona_1", name: "Alex", description: "persona words that are excluded from the summary output" }),
-      getPromptPreset: async () => ({ id: "preset_1", name: "P", text: "preset words that are excluded from the summary output", summary: "Summarize this history.", jailbreak: "jailbreak words that are excluded from the summary output", tools: "", prefill: "", authorsNote: "", authorsNoteDepth: 0 }),
-      listActiveLoreEntries: async () => ({ entries: [{ id: "lore_1", title: "Lore", content: "lore words that are excluded from the summary output", priority: 1 }], overflowedLorebooks: [] }),
-      listRetrievedMemories: async () => [],
+      getPromptPreset: async () => makeAssemblyPreset({
+        id: "preset_1",
+        name: "P",
+        text: "preset words that are excluded from the summary output",
+        summary: "Summarize this history.",
+        jailbreak: "jailbreak words that are excluded from the summary output",
+        authorsNoteDepth: 0,
+      }),
+      listActiveLoreEntries: async () => ({
+        entries: [
+          makeActiveLoreEntry({
+            title: "Lore",
+            content: "lore words that are excluded from the summary output",
+            priority: 1,
+          }),
+        ],
+        overflowedLorebooks: [],
+        outletEntries: {},
+      }),
       executeScripts: async () => {
         scriptCalled = true;
         return { personality: "", scenario: "", injectedMessages: [], errors: [], scriptRuns: [] };
       },
-      getToolInstructions: () => null,
-    };
-    const fileStore = { dataRoot: "/mock", resolvePath: () => "/mock", readJson: async <T>() => null as T, writeJson: async () => {}, asyncWriteJson: async () => {} };
+    });
+    const fileStore = makeFileStoreDouble({ resolvePath: () => "/mock" });
     setTokenCountFn((text) => text.trim() ? text.trim().split(/\s+/).length : 0);
     try {
       const service = new PromptAssemblyService(stores, resolver, fileStore);

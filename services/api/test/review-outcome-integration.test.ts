@@ -28,7 +28,6 @@ import { ExperienceCopilotRunAdapter } from "../src/api/adapters/experience-copi
 import type { RuntimeApi } from "../src/api/contract/runtime-api.js";
 import { LiveChatOrchestrator } from "../src/domain/chat/live-chat-orchestrator.js";
 import { streamExperienceCopilot, type ExperienceCopilotStreamDeps } from "../src/domain/interactive/copilot/experience-copilot-stream.js";
-import type { ProviderProfileService } from "../src/domain/providers/provider-profile-service.js";
 import type { ProviderOrchestrator } from "../src/domain/providers/provider-orchestrator.js";
 import type { ChatSummaryService } from "../src/domain/chat/chat-summary-service.js";
 import type { AssetService } from "../src/domain/asset/asset-service.js";
@@ -38,7 +37,7 @@ import { createRuntimeStore } from "../src/runtime/session/session-runtime-store
 import { createApp } from "../src/server/app-factory.js";
 import { guardModelDiscovery } from "./model-discovery-guard.js";
 import { strictTestDouble } from "./strict-test-double.js";
-import { makeExperienceCopilotStore, makeProviderProfileRow } from "./copilot-test-builders.js";
+import { makeExperienceCopilotStore, makeProviderProfileRow, makeProviderProfilesFixture } from "./copilot-test-builders.js";
 import { makeStreamTextDouble } from "./provider-boundary-test-builders.js";
 
 guardModelDiscovery("ro6.example");
@@ -192,11 +191,13 @@ async function makeCoauthorEnvironment() {
       },
     },
   );
-  const providerProfiles = {
-    resolveActiveProviderProfile: async () => null,
-    getProviderModelSettings: async () => null,
-    getProviderProfile: async (id: string) => stores.providers.getById(id),
-  } as ProviderProfileService;
+  const providerProfiles = makeProviderProfilesFixture(
+    {
+      resolveActiveProviderProfile: async () => null,
+      getProviderProfile: async (id: string) => stores.providers.getById(id),
+    },
+    "ProviderProfileService (review-outcome)",
+  );
   const chat = new ChatAdapter(
     stores,
     runtime,
