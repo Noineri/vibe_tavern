@@ -15,6 +15,7 @@ import { createSttRoutes } from "../src/api/routes/stt.js";
 import { makeRuntimeApi } from "./routes-test-builders.js";
 import { createApp } from "../src/server/app-factory.js";
 import { SttAdapter, __setSttDiscoveryFetchForTests } from "../src/api/adapters/stt-adapter.js";
+import { testFetch } from "./test-fetch-seam.js";
 
 const fixedClock = { now: () => "2026-09-03T00:00:00.000Z" };
 
@@ -32,6 +33,22 @@ const OPENAI_COMPAT_CONFIG = {
 type FetchArgs = Parameters<typeof fetch>;
 
 const originalFetch = globalThis.fetch;
+
+/**
+ * THE one fetch-double install for this file (testFetch adoption wave):
+ * builds the double through the typed seam (carries the real fetch's
+ * `preconnect`) and installs it. Returns the restore for completeness; the
+ * file's own rhythm — beforeEach re-seed + afterEach restore — stays
+ * the active restore path.
+ */
+function installFetch(
+  impl: (input: FetchArgs[0], init?: FetchArgs[1]) => Response | Promise<Response>,
+): () => void {
+  globalThis.fetch = testFetch(impl);
+  return () => {
+    globalThis.fetch = originalFetch;
+  };
+}
 
 async function makeApp() {
   const db = await createDb(":memory:");
@@ -345,11 +362,11 @@ describe("STT routes — transcription", () => {
 
     let capturedUrl = "";
     let capturedInit: RequestInit | undefined;
-    globalThis.fetch = mock(async (input: FetchArgs[0], init?: FetchArgs[1]) => {
+    installFetch(mock(async (input: FetchArgs[0], init?: FetchArgs[1]) => {
       capturedUrl = String(input);
       capturedInit = init;
       return new Response(JSON.stringify({ text: "hello world", language: "en" }), { status: 200 });
-    });
+    }));
 
     const res = await app.request("/api/stt/transcribe", multipartTranscribe(profile.id, { language: "ru" }));
     expect(res.status).toBe(200);
@@ -433,7 +450,7 @@ describe("STT routes — transcription", () => {
     });
     const profile = (await profileRes.json()) as { id: string };
 
-    globalThis.fetch = mock(async () => new Response("boom", { status: 500 }));
+    installFetch(mock(async () => new Response("boom", { status: 500 })));
     const res = await app.request("/api/stt/transcribe", multipartTranscribe(profile.id));
     expect(res.status).toBe(502);
   });
@@ -461,11 +478,11 @@ describe("STT routes — auto-key resolution", () => {
     });
     const profile = (await profileRes.json()) as { id: string };
 
-    globalThis.fetch = mock(async (_input, init) => {
+    installFetch(mock(async (_input, init) => {
       const auth = (init?.headers as Record<string, string> | undefined)?.["Authorization"];
       expect(auth).toBe("Bearer sk-own");
       return new Response(JSON.stringify({ text: "hi" }), { status: 200 });
-    });
+    }));
     const res = await app.request("/api/stt/transcribe", multipartTranscribe(profile.id));
     expect(res.status).toBe(200);
   });
@@ -492,11 +509,11 @@ describe("STT routes — auto-key resolution", () => {
     };
     expect(fetched.autoKeyProviderName).toBe("Local Whisper");
 
-    globalThis.fetch = mock(async (_input, init) => {
+    installFetch(mock(async (_input, init) => {
       const auth = (init?.headers as Record<string, string> | undefined)?.["Authorization"];
       expect(auth).toBe("Bearer sk-provider");
       return new Response(JSON.stringify({ text: "hi" }), { status: 200 });
-    });
+    }));
     const res = await app.request("/api/stt/transcribe", multipartTranscribe(profile.id));
     expect(res.status).toBe(200);
   });
@@ -525,11 +542,11 @@ describe("STT routes — auto-key resolution", () => {
     });
     const profile = (await profileRes.json()) as { id: string };
 
-    globalThis.fetch = mock(async (_input, init) => {
+    installFetch(mock(async (_input, init) => {
       const auth = (init?.headers as Record<string, string> | undefined)?.["Authorization"];
       expect(auth).toBe("Bearer sk-tts");
       return new Response(JSON.stringify({ text: "hi" }), { status: 200 });
-    });
+    }));
     const res = await app.request("/api/stt/transcribe", multipartTranscribe(profile.id));
     expect(res.status).toBe(200);
     expect(ttsProfile.id).toBeTruthy();
@@ -544,11 +561,11 @@ describe("STT routes — auto-key resolution", () => {
     });
     const profile = (await profileRes.json()) as { id: string };
 
-    globalThis.fetch = mock(async (_input, init) => {
+    installFetch(mock(async (_input, init) => {
       const headers = (init?.headers ?? {}) as Record<string, string>;
       expect(headers["Authorization"] ?? headers["authorization"]).toBeUndefined();
       return new Response(JSON.stringify({ text: "hi" }), { status: 200 });
-    });
+    }));
     const res = await app.request("/api/stt/transcribe", multipartTranscribe(profile.id));
     expect(res.status).toBe(200);
   });
@@ -581,12 +598,12 @@ describe("STT routes — Gemini backend (ST-7)", () => {
     const profile = (await profileRes.json()) as { id: string; autoKeyProviderName: string | null };
     expect(profile.autoKeyProviderName).toBe("Google LLM");
 
-    globalThis.fetch = mock(async (_input, init) => {
+    installFetch(mock(async (_input, init) => {
       const headers = (init?.headers ?? {}) as Record<string, string>;
       expect(headers["x-goog-api-key"]).toBe("g-llm-key");
       expect(headers.Authorization).toBeUndefined();
       return interactionsJsonReply("hello from gemini");
-    });
+    }));
     const res = await app.request("/api/stt/transcribe", multipartTranscribe(profile.id));
     expect(res.status).toBe(200);
     const body = (await res.json()) as { text: string; annotation?: string };
@@ -616,11 +633,11 @@ describe("STT routes — Gemini backend (ST-7)", () => {
     const profile = (await profileRes.json()) as { id: string; autoKeyProviderName: string | null };
     expect(profile.autoKeyProviderName).toBe("Gemini TTS");
 
-    globalThis.fetch = mock(async (_input, init) => {
+    installFetch(mock(async (_input, init) => {
       const headers = (init?.headers ?? {}) as Record<string, string>;
       expect(headers["x-goog-api-key"]).toBe("g-tts-key");
       return interactionsJsonReply("hi");
-    });
+    }));
     const res = await app.request("/api/stt/transcribe", multipartTranscribe(profile.id));
     expect(res.status).toBe(200);
   });
@@ -681,9 +698,9 @@ describe("STT routes — Gemini backend (ST-7)", () => {
       }),
     });
     const wireProfile = (await wireRes.json()) as { id: string };
-    globalThis.fetch = mock(async () =>
+    installFetch(mock(async () =>
       interactionsJsonReply(JSON.stringify({ transcript: "words", tone: "calm" })),
-    );
+    ));
     const res = await app.request("/api/stt/transcribe", multipartTranscribe(wireProfile.id));
     expect(res.status).toBe(200);
     const body = (await res.json()) as { text: string; annotation?: string };
@@ -707,9 +724,9 @@ describe("STT routes — Gemini backend (ST-7)", () => {
       isDefault: false,
     });
 
-    globalThis.fetch = mock(async () =>
+    installFetch(mock(async () =>
       interactionsJsonReply(JSON.stringify({ transcript: "слова", tone: "дрожит" })),
-    );
+    ));
     const result = await adapter.transcribeSttAudio(created.id, {
       buffer: Buffer.from([1, 2, 3]),
       mimeType: "audio/webm",
@@ -725,7 +742,7 @@ describe("STT routes — draft model discovery (P8)", () => {
 
     let capturedUrl = "";
     let capturedInit: RequestInit | undefined;
-    globalThis.fetch = mock(async (input: FetchArgs[0], init?: FetchArgs[1]) => {
+    installFetch(mock(async (input: FetchArgs[0], init?: FetchArgs[1]) => {
       capturedUrl = String(input);
       capturedInit = init;
       return new Response(
@@ -737,7 +754,7 @@ describe("STT routes — draft model discovery (P8)", () => {
         }),
         { status: 200 },
       );
-    });
+    }));
 
     const res = await app.request("/api/stt/draft/models", {
       method: "POST",
@@ -778,10 +795,10 @@ describe("STT routes — draft model discovery (P8)", () => {
     const { app } = await makeApp();
 
     let capturedUrl = "";
-    globalThis.fetch = mock(async (input: FetchArgs[0]) => {
+    installFetch(mock(async (input: FetchArgs[0]) => {
       capturedUrl = String(input);
       return new Response(JSON.stringify({ voices: [{ voice_id: "a" }] }), { status: 200 });
-    });
+    }));
 
     const res = await app.request("/api/stt/draft/models", {
       method: "POST",
@@ -798,13 +815,13 @@ describe("STT routes — draft model discovery (P8)", () => {
     // A garbage key must fail the Test-connection button (no false green):
     // the probe's 401 rides SttProbeFailedError through the route ladder.
     const { app } = await makeApp();
-    globalThis.fetch = mock(
+    installFetch(mock(
       async () =>
         new Response(
           JSON.stringify({ detail: { status: "invalid_api_key", message: "bad key" } }),
           { status: 401 },
         ),
-    );
+    ));
 
     const res = await app.request("/api/stt/draft/models", {
       method: "POST",
@@ -833,10 +850,10 @@ describe("STT routes — draft model discovery (P8)", () => {
     const profile = (await profileRes.json()) as { id: string };
 
     let auth: string | undefined;
-    globalThis.fetch = mock(async (_input: FetchArgs[0], init?: FetchArgs[1]) => {
+    installFetch(mock(async (_input: FetchArgs[0], init?: FetchArgs[1]) => {
       auth = (init?.headers as Record<string, string> | undefined)?.["Authorization"];
       return new Response(JSON.stringify({ data: [{ id: "whisper-1" }] }), { status: 200 });
-    });
+    }));
 
     // Draft config carries NO key; profileId + matching endpoint reuses the
     // stored one (the TTS draft-endpoint semantics).
@@ -855,7 +872,7 @@ describe("STT routes — draft model discovery (P8)", () => {
     // Gemini: catalogue fetch filtered to chat/audio families, key in the
     // x-goog-api-key header (the STT picker rides the SAME catalogue).
     let geminiKey: string | undefined;
-    globalThis.fetch = mock(async (input: FetchArgs[0], init?: FetchArgs[1]) => {
+    installFetch(mock(async (input: FetchArgs[0], init?: FetchArgs[1]) => {
       geminiKey = (init?.headers as Record<string, string> | undefined)?.["x-goog-api-key"];
       expect(String(input)).toContain("generativelanguage.googleapis.com");
       return new Response(
@@ -868,7 +885,7 @@ describe("STT routes — draft model discovery (P8)", () => {
         }),
         { status: 200 },
       );
-    });
+    }));
     const geminiRes = await app.request("/api/stt/draft/models", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -885,7 +902,7 @@ describe("STT routes — draft model discovery (P8)", () => {
 
   test("upstream HTTP failure maps to 502 (4xx upstream → 400)", async () => {
     const { app } = await makeApp();
-    globalThis.fetch = mock(async () => new Response("boom", { status: 503 }));
+    installFetch(mock(async () => new Response("boom", { status: 503 })));
     const res = await app.request("/api/stt/draft/models", {
       method: "POST",
       headers: { "Content-Type": "application/json" },

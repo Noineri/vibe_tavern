@@ -19,6 +19,7 @@ import {
   extractListenTranscript,
 } from "../src/domain/stt/backends/deepgram-stt.js";
 import type { SttBackend } from "../src/domain/stt/stt-backend.js";
+import { testFetch } from "./test-fetch-seam.js";
 
 const LISTEN_URL = "https://api.deepgram.com/v1/listen";
 const MODELS_URL = "https://api.deepgram.com/v1/models";
@@ -45,13 +46,13 @@ interface CapturedRequest {
 
 function captureFetch(handler: () => Response): { captured: () => CapturedRequest | null } {
   let captured: CapturedRequest | null = null;
-  globalThis.fetch = mock(async (input: FetchArgs[0], init?: FetchArgs[1]) => {
+  globalThis.fetch = testFetch(mock(async (input: FetchArgs[0], init?: FetchArgs[1]) => {
     captured = {
       url: String(input),
       init: init ?? {},
     };
     return handler();
-  });
+  }));
   return { captured: () => captured };
 }
 
@@ -154,9 +155,9 @@ describe("deepgram-stt: errors", () => {
   });
 
   test("HTTP failure with a non-JSON body → status + raw excerpt", async () => {
-    globalThis.fetch = mock(async () =>
+    globalThis.fetch = testFetch(mock(async () =>
       new Response("upstream exploded", { status: 502, headers: { "Content-Type": "text/plain" } }),
-    );
+    ));
     const backend = makeBackend({ apiKey: "k" });
     await expect(backend.transcribe(AUDIO_BYTES, { mime: "audio/wav" })).rejects.toMatchObject({
       name: "DeepgramSttError",
@@ -166,9 +167,9 @@ describe("deepgram-stt: errors", () => {
   });
 
   test("transport failure → DeepgramSttError (network error wrapper)", async () => {
-    globalThis.fetch = mock(async () => {
+    globalThis.fetch = testFetch(mock(async () => {
       throw new Error("ECONNREFUSED");
-    });
+    }));
     const backend = makeBackend({ apiKey: "k" });
     await expect(backend.transcribe(AUDIO_BYTES, { mime: "audio/wav" })).rejects.toMatchObject({
       name: "DeepgramSttError",

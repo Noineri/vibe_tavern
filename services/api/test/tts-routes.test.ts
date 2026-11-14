@@ -18,6 +18,7 @@ import {
   registerTtsBackend,
 } from "../src/domain/tts/tts-registry.js";
 import type { TtsBackend } from "../src/domain/tts/tts-backend.js";
+import { testFetch } from "./test-fetch-seam.js";
 
 // Shared-process rule: this file resets the registry per test and leaves it
 // EMPTY at file end; without the afterAll restore below, every later test file
@@ -1138,7 +1139,7 @@ describe("TTS routes — voice clone (multipart draft passthrough)", () => {
     const { app } = await makeApp();
     const calls: { method: string; url: string }[] = [];
     const originalFetch = globalThis.fetch;
-    globalThis.fetch = mock(async (input: RequestInfo | URL, init?: RequestInit) => {
+    globalThis.fetch = testFetch(mock(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       const method = init?.method ?? "GET";
       calls.push({ method, url });
@@ -1156,7 +1157,7 @@ describe("TTS routes — voice clone (multipart draft passthrough)", () => {
         }),
         { status: 200 },
       );
-    });
+    }));
     try {
       const res = await app.request("/api/tts/clone", { method: "POST", body: cloneForm() });
 
@@ -1184,7 +1185,7 @@ describe("TTS routes — voice clone (multipart draft passthrough)", () => {
     registerTtsBackend(TTS_BACKEND.OpenAiCompatible, openAiCompatTtsFactory);
     const { app } = await makeApp();
     const originalFetch = globalThis.fetch;
-    globalThis.fetch = mock(async (input: RequestInfo | URL, init?: RequestInit) => {
+    globalThis.fetch = testFetch(mock(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       const method = init?.method ?? "GET";
       if (url.endsWith("/audio/voices")) {
@@ -1197,7 +1198,7 @@ describe("TTS routes — voice clone (multipart draft passthrough)", () => {
         );
       }
       return new Response(JSON.stringify({ voices: [], count: 0 }), { status: 200 });
-    });
+    }));
     try {
       const res = await app.request("/api/tts/clone", { method: "POST", body: cloneForm() });
 

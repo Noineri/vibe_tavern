@@ -19,6 +19,7 @@ import {
   geminiSttFactory,
 } from "../src/domain/stt/backends/gemini-stt.js";
 import type { SttBackend } from "../src/domain/stt/stt-backend.js";
+import { testFetch } from "./test-fetch-seam.js";
 
 const INTERACTIONS_URL =
   "https://generativelanguage.googleapis.com/v1beta/interactions";
@@ -47,7 +48,7 @@ interface CapturedRequest {
 
 function captureFetch(handler: () => Response): { captured: () => CapturedRequest | null } {
   let captured: CapturedRequest | null = null;
-  globalThis.fetch = mock(async (input: FetchArgs[0], init?: FetchArgs[1]) => {
+  globalThis.fetch = testFetch(mock(async (input: FetchArgs[0], init?: FetchArgs[1]) => {
     const text = typeof init?.body === "string" ? init.body : "";
     captured = {
       url: String(input),
@@ -55,7 +56,7 @@ function captureFetch(handler: () => Response): { captured: () => CapturedReques
       body: text !== "" ? (JSON.parse(text) as Record<string, unknown>) : {},
     };
     return handler();
-  });
+  }));
   return { captured: () => captured };
 }
 
@@ -193,9 +194,9 @@ describe("gemini-stt: errors", () => {
   });
 
   test("transport failure → GeminiSttError (network error wrapper)", async () => {
-    globalThis.fetch = mock(async () => {
+    globalThis.fetch = testFetch(mock(async () => {
       throw new Error("ECONNREFUSED");
-    });
+    }));
     const backend = makeBackend({ apiKey: "k" });
     await expect(backend.transcribe(AUDIO_BYTES, { mime: "audio/webm" })).rejects.toMatchObject({
       name: "GeminiSttError",

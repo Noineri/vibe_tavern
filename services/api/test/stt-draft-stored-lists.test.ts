@@ -33,6 +33,7 @@ import {
   __snapshotSttRegistryForTests,
   registerSttBackend,
 } from "../src/domain/stt/stt-registry.js";
+import { testFetch } from "./test-fetch-seam.js";
 
 const fixedClock = { now: () => "2026-10-16T00:00:00.000Z" };
 
@@ -69,11 +70,11 @@ afterAll(() => {
 /** Installs a fetch fake that counts every upstream call and answers via `handler`. */
 function installCountingTransport(handler: (url: URL) => Response) {
   const counter = { calls: 0, urls: [] as string[] };
-  globalThis.fetch = mock(async (input: FetchArgs[0]) => {
+  globalThis.fetch = testFetch(mock(async (input: FetchArgs[0]) => {
     counter.calls += 1;
     counter.urls.push(String(input));
     return handler(new URL(String(input)));
-  });
+  }));
   return counter;
 }
 

@@ -21,6 +21,7 @@ import {
   nvidiaSttFactory,
 } from "../src/domain/stt/backends/nvidia-stt.js";
 import type { SttBackend } from "../src/domain/stt/stt-backend.js";
+import { testFetch } from "./test-fetch-seam.js";
 
 const CHAT_COMPLETIONS_URL = "https://integrate.api.nvidia.com/v1/chat/completions";
 const MODELS_URL = "https://integrate.api.nvidia.com/v1/models";
@@ -48,7 +49,7 @@ interface CapturedRequest {
 
 function captureFetch(handler: () => Response): { captured: () => CapturedRequest | null } {
   let captured: CapturedRequest | null = null;
-  globalThis.fetch = mock(async (input: FetchArgs[0], init?: FetchArgs[1]) => {
+  globalThis.fetch = testFetch(mock(async (input: FetchArgs[0], init?: FetchArgs[1]) => {
     const text = typeof init?.body === "string" ? init.body : "";
     captured = {
       url: String(input),
@@ -56,7 +57,7 @@ function captureFetch(handler: () => Response): { captured: () => CapturedReques
       body: text !== "" ? (JSON.parse(text) as Record<string, unknown>) : {},
     };
     return handler();
-  });
+  }));
   return { captured: () => captured };
 }
 
@@ -161,9 +162,9 @@ describe("nvidia-stt: errors", () => {
   });
 
   test("transport failure → NvidiaSttError (network error wrapper)", async () => {
-    globalThis.fetch = mock(async () => {
+    globalThis.fetch = testFetch(mock(async () => {
       throw new Error("ECONNREFUSED");
-    });
+    }));
     const backend = makeBackend({ apiKey: "k" });
     await expect(backend.transcribe(AUDIO_BYTES, { mime: "audio/wav" })).rejects.toMatchObject({
       name: "NvidiaSttError",
