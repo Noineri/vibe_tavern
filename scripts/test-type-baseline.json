@@ -788,7 +788,6 @@
   "services/api/test/update-shutdown.test.ts:TS2769:No overload matches this call.",
   "services/api/test/user-theme-routes.test.ts:TS18046:'body' is of type 'unknown'.",
   "services/api/test/user-theme-routes.test.ts:TS18046:'saved' is of type 'unknown'.",
-  "services/api/test/vendor-registry.test.ts:TS2322:Type 'string[]' is not assignable to type 'string'.",
   "services/api/test/volatile-macro-freezing.test.ts:TS2322:Type '{ id: string; role: string; content: string; }[]' is not assignable to type 'RecentMessage[]'.",
   "services/api/test/volatile-macro-freezing.test.ts:TS2741:Property 'mode' is missing in type '{ content: string; }' but required in type 'SendMessageRequest'."
 ]

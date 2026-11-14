@@ -62,12 +62,14 @@ export interface OpenAiModelRecord {
 		prompt?: number;
 		completion?: number;
 	};
-	// ElectronHub
+	// ElectronHub capability flags + DeepInfra capability tags
 	metadata?: {
 		vision?: boolean;
 		reasoning?: boolean;
 		function_call?: boolean;
 		web_search?: boolean;
+		/** DeepInfra: capability tags on the current wire (live probe 2026-11-14): "vision", "reasoning", "chat", … */
+		tags?: string[];
 	};
 	// OpenRouter
 	architecture?: {
@@ -76,7 +78,7 @@ export interface OpenAiModelRecord {
 		instruct_type?: string | null;
 	};
 	supported_parameters?: string[];
-	// NanoGPT, Together, Chutes, DeepInfra
+	// NanoGPT, Together, Chutes (DeepInfra stopped sending this — live probe 2026-11-14)
 	capabilities?: {
 		vision?: boolean;
 		reasoning?: boolean;
@@ -87,8 +89,6 @@ export interface OpenAiModelRecord {
 		structured_outputs?: boolean;
 		web_search?: boolean;
 	};
-	// DeepInfra
-	modality?: string;
 	// Fireworks
 	supports_vision?: boolean;
 	supports_tools?: boolean;
@@ -146,7 +146,7 @@ function includesWhenPresent(values: string[] | undefined, value: string): boole
  */
 export function inferCapabilities(record: OpenAiModelRecord): ProviderModelCapabilities | undefined {
 	const capabilities: ProviderModelCapabilities = {
-		vision: firstDefined(record.metadata?.vision, record.architecture?.modality?.includes("image"), record.capabilities?.vision, record.supports_vision, record.input_modalities?.includes("image"), record.modality?.includes("image")),
+		vision: firstDefined(record.metadata?.vision, record.architecture?.modality?.includes("image"), record.capabilities?.vision, record.supports_vision, record.input_modalities?.includes("image")),
 		reasoning: firstDefined(record.metadata?.reasoning, record.capabilities?.reasoning, record.supports_reasoning, includesWhenPresent(record.supported_parameters, "reasoning")),
 		tools: firstDefined(record.metadata?.function_call, record.capabilities?.tools, record.capabilities?.tool_calling, record.capabilities?.tool_use, record.capabilities?.function_calling, record.supports_tools, includesWhenPresent(record.supported_parameters, "tools"), includesWhenPresent(record.supported_parameters, "tool_use"), includesWhenPresent(record.supported_parameters, "tool_calling"), includesWhenPresent(record.supported_parameters, "function_calling")),
 		webSearch: firstDefined(record.metadata?.web_search, record.capabilities?.web_search),
@@ -257,10 +257,13 @@ const deepinfraVendor: VendorAdapter = {
 	match: /deepinfra\.com/,
 	buildModelsUrl: (baseUrl) => `${baseUrl}/models?filter=with_meta`,
 	extractCapabilities: (record) => mergeCapabilities(
-		(record.capabilities || record.modality) ? {
-			vision: record.capabilities?.vision ?? record.modality?.includes("image"),
-			reasoning: record.capabilities?.reasoning,
-			tools: record.capabilities?.tool_calling,
+		// DeepInfra's current wire (live probe 2026-11-14) signals capabilities ONLY through
+		// metadata.tags ("vision", "reasoning", "chat", "embed", …); the vendor sends neither
+		// the old top-level `modality` field nor a `capabilities` object. Today's wire has no
+		// tool-signal at all, so `tools` stays unset rather than guessed.
+		record.metadata?.tags ? {
+			vision: record.metadata.tags.includes("vision"),
+			reasoning: record.metadata.tags.includes("reasoning"),
 		} : undefined,
 		inferCapabilities(record),
 	),
