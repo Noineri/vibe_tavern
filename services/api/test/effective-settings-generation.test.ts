@@ -1,6 +1,7 @@
 import { describe, it, expect } from "bun:test";
 import { resolveEffectiveSettings, type StoredProviderProfileRecord, type ModelSettingsOverlay } from "@vibe-tavern/domain";
 import { buildSamplerConfig } from "../src/infrastructure/ai/sampler-mapper.js";
+import { makeProviderProfileRow } from "./copilot-test-builders.js";
 
 /**
  * Generation-boundary integration test for per-model binding.
@@ -17,7 +18,7 @@ import { buildSamplerConfig } from "../src/infrastructure/ai/sampler-mapper.js";
  */
 
 function makeBase(over: Partial<StoredProviderProfileRecord> = {}): StoredProviderProfileRecord {
-  return {
+  return makeProviderProfileRow({
     id: "prov_1", name: "base", providerPreset: "openaiCompat",
     endpoint: "http://localhost", apiKey: "sk-test",
     defaultModel: "gpt-4o",
@@ -31,7 +32,7 @@ function makeBase(over: Partial<StoredProviderProfileRecord> = {}): StoredProvid
     customSamplers: true, isActive: true, visionModel: null,
     createdAt: "0", updatedAt: "0",
     ...over,
-  };
+  });
 }
 
 describe("generation-boundary: overlay reaches buildSamplerConfig", () => {

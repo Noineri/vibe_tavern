@@ -58,6 +58,7 @@ import type {
 } from "@vibe-tavern/db";
 import { assembleExperienceCopilotPrompt } from "../src/domain/interactive/copilot/experience-copilot-prompt.js";
 import { withStandInAssets } from "./fixtures/copilot-prompt-stand-in-assets.js";
+import { makeProviderProfileRow } from "./copilot-test-builders.js";
 import type { AgentHistoryMessage as ExperienceCopilotHistoryMessage } from "../src/domain/agent/agent-prompt.js";
 import { resolveBuiltinCopilotProfile } from "../src/domain/interactive/copilot/experience-copilot-module.js";
 import {
@@ -249,11 +250,10 @@ function createFakeStore(
 }
 
 function makeProfile(): ProviderProfile {
-  return {
+  return makeProviderProfileRow({
     id: "prov_as1",
     name: "AS-1 Test",
     providerPreset: "openai",
-    coauthorTransport: "chatCompletions",
     endpoint: "http://test",
     apiKey: "key",
     defaultModel: "test-model",
@@ -277,14 +277,12 @@ function makeProfile(): ProviderProfile {
     dryMultiplier: 0,
     dryBase: 1.75,
     dryAllowedLength: 2,
-    drySequenceBreakers: null,
     xtcThreshold: 0.1,
     xtcProbability: 0,
     frequencyPenalty: 0,
     presencePenalty: 0,
     repetitionPenalty: 1,
     stopSequences: [],
-    logitBias: null,
     seed: null,
     reasoningEffort: "auto",
     showReasoning: false,
@@ -296,7 +294,7 @@ function makeProfile(): ProviderProfile {
     visionModel: null,
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
-  } as ProviderProfile;
+  });
 }
 
 function makeThread(scriptId: string | null = "script_as1_1"): ExperienceCopilotThread {

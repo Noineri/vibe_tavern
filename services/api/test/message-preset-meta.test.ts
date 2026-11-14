@@ -3,7 +3,8 @@ import { mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { EventBus } from "@vibe-tavern/domain";
-import type { ChatId, StoredProviderProfileRecord } from "@vibe-tavern/domain";
+import type { ChatId } from "@vibe-tavern/domain";
+import { makeProviderProfileRow } from "./copilot-test-builders.js";
 import { LiveChatOrchestrator } from "../src/domain/chat/live-chat-orchestrator.js";
 import type { ChatModeStrategy } from "../src/domain/chat/chat-mode-strategy.js";
 import { nonstreamingProviderExecute } from "../src/infrastructure/ai/nonstreaming-provider-executor.js";
@@ -48,11 +49,10 @@ async function createTestRuntime() {
 	};
 }
 
-const resendProfile = {
+const resendProfile = makeProviderProfileRow({
 	id: "resend-profile",
 	name: "Resend profile",
 	providerPreset: "openai",
-	coauthorTransport: "chatCompletions",
 	generationMode: "chat",
 	endpoint: "https://provider.example/v1",
 	apiKey: "key",
@@ -73,7 +73,7 @@ const resendProfile = {
 	customSamplers: false,
 	proxyMode: "inherit",
 	proxyId: null,
-} as StoredProviderProfileRecord;
+});
 
 function makeResendOrchestrator(
 	runtime: SessionRuntime,

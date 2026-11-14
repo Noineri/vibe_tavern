@@ -22,6 +22,7 @@ import type { ChatModeAssembleResult, ChatModeStrategy } from "../src/domain/cha
 import type { StoredProviderProfileRecord } from "@vibe-tavern/domain";
 import { makeChatBranchRow, makeSessionSnapshot } from "./insights-test-builders.js";
 import { strictTestDouble } from "./strict-test-double.js";
+import { makeProviderProfileRow } from "./copilot-test-builders.js";
 import {
   resetProviderFetchFactory,
   setProviderFetchFactory,
@@ -359,7 +360,7 @@ function makeOrchestrator(
 const TEST_PROFILE = { id: "test-profile", maxTokens: 4096 } as StoredProviderProfileRecord;
 
 function realExecutorProfile(): StoredProviderProfileRecord {
-  return {
+  return makeProviderProfileRow({
     id: "provider-proxy-test",
     name: "Proxy test",
     providerPreset: "openai",
@@ -406,7 +407,7 @@ function realExecutorProfile(): StoredProviderProfileRecord {
     visionModel: null,
     createdAt: "",
     updatedAt: "",
-  };
+  });
 }
 
 const realExecutorPrompt = {

@@ -2,7 +2,8 @@ import { afterAll, describe, expect, it } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { EventBus, type ChatId, type MessageId, type StoredProviderProfileRecord } from "@vibe-tavern/domain";
+import { EventBus, type ChatId, type MessageId } from "@vibe-tavern/domain";
+import { makeProviderProfileRow } from "./copilot-test-builders.js";
 import { LiveChatOrchestrator } from "../src/domain/chat/live-chat-orchestrator.js";
 import type { ChatModeStrategy } from "../src/domain/chat/chat-mode-strategy.js";
 import { nonstreamingProviderExecute } from "../src/infrastructure/ai/nonstreaming-provider-executor.js";
@@ -118,11 +119,10 @@ async function createTestRuntime() {
   };
 }
 
-const regenProfile = {
+const regenProfile = makeProviderProfileRow({
   id: "dmt13-profile",
   name: "DMT-13 profile",
   providerPreset: "openai",
-  coauthorTransport: "chatCompletions",
   generationMode: "chat",
   endpoint: "https://provider.example/v1",
   apiKey: "key",
@@ -143,7 +143,7 @@ const regenProfile = {
   customSamplers: false,
   proxyMode: "inherit",
   proxyId: null,
-} as StoredProviderProfileRecord;
+});
 
 function makeRegenOrchestrator(
   runtime: SessionRuntime,

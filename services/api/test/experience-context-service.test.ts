@@ -32,6 +32,7 @@ import type { ProviderProfileService } from "../src/domain/providers/provider-pr
 import { nonstreamingProviderExecute } from "../src/infrastructure/ai/nonstreaming-provider-executor.js";
 import { DomainError } from "../src/shared/errors.js";
 import { execResult } from "./insights-test-builders.js";
+import { makeProviderProfileRow } from "./copilot-test-builders.js";
 
 // ─── A no-capability counter game (only needs a startable session) ───────────
 const COUNTER_SOURCE = `
@@ -105,7 +106,7 @@ async function seedSession(opts: { contextMode?: ExperienceContextMode; messages
 // ─── Mock seams ──────────────────────────────────────────────────────────────
 
 function makeProfile(overrides: Partial<StoredProviderProfileRecord> = {}): StoredProviderProfileRecord {
-	return {
+	return makeProviderProfileRow({
 		id: "pp1",
 		name: "Test",
 		providerPreset: "ollama",
@@ -153,7 +154,7 @@ function makeProfile(overrides: Partial<StoredProviderProfileRecord> = {}): Stor
 		createdAt: "2024-01-01T00:00:00Z",
 		updatedAt: "2024-01-01T00:00:00Z",
 		...overrides,
-	};
+	});
 }
 
 function minimalPrompt(): AssemblePromptResponse {

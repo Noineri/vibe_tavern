@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { LanguageModel } from "ai";
 import { z } from "zod";
-import { createStoreContainer, type StoreContainer, type Chat, type ProviderProfile } from "@vibe-tavern/db";
+import { createStoreContainer, type StoreContainer, type Chat } from "@vibe-tavern/db";
+import { makeProviderProfileRow } from "./copilot-test-builders.js";
 import { CHAT_MODE } from "@vibe-tavern/domain";
 import { Hono } from "hono";
 import { ExperienceCopilotAdapter } from "../src/api/adapters/experience-copilot-adapter.js";
@@ -425,11 +426,10 @@ describe("the stream resolves a chat-owned thread's profile through the chat cha
    *  loop reads the proxy policy (`proxyMode`/`proxyId`) through
    *  resolveProviderFetchForProfile. */
   function providerProfileStub() {
-    return {
+    return makeProviderProfileRow({
       id: "prov_sc0f_hop",
       name: "Hop probe",
       providerPreset: "openai",
-      coauthorTransport: "chatCompletions",
       endpoint: "http://test",
       apiKey: "key",
       defaultModel: "hop-model",
@@ -453,14 +453,12 @@ describe("the stream resolves a chat-owned thread's profile through the chat cha
       dryMultiplier: 0,
       dryBase: 1.75,
       dryAllowedLength: 2,
-      drySequenceBreakers: null,
       xtcThreshold: 0.1,
       xtcProbability: 0,
       frequencyPenalty: 0,
       presencePenalty: 0,
       repetitionPenalty: 1,
       stopSequences: [],
-      logitBias: null,
       seed: null,
       reasoningEffort: "auto",
       showReasoning: false,
@@ -472,7 +470,7 @@ describe("the stream resolves a chat-owned thread's profile through the chat cha
       visionModel: null,
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-01T00:00:00.000Z",
-    } as ProviderProfile;
+    });
   }
 
   /** One turn over the REAL thread row + REAL resolver chain, with a fake

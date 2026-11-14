@@ -38,7 +38,7 @@ import { createRuntimeStore } from "../src/runtime/session/session-runtime-store
 import { createApp } from "../src/server/app-factory.js";
 import { guardModelDiscovery } from "./model-discovery-guard.js";
 import { strictTestDouble } from "./strict-test-double.js";
-import { makeExperienceCopilotStore } from "./copilot-test-builders.js";
+import { makeExperienceCopilotStore, makeProviderProfileRow } from "./copilot-test-builders.js";
 import { makeStreamTextDouble } from "./provider-boundary-test-builders.js";
 
 guardModelDiscovery("ro6.example");
@@ -268,14 +268,14 @@ const STALE_VISUAL = "<main>SAVED STALE VISUAL</main>";
 const THREAD_ID = "thread-ro6";
 
 function copilotProfile(): ProviderProfile {
-  return {
-    id: "provider-ro6", name: "RO-6 copilot", providerPreset: "openai", coauthorTransport: "chatCompletions", endpoint: "http://ro6", apiKey: "key", defaultModel: "ro6",
+  return makeProviderProfileRow({
+    id: "provider-ro6", name: "RO-6 copilot", providerPreset: "openai", endpoint: "http://ro6", apiKey: "key", defaultModel: "ro6",
     contextBudget: null, pinContextBudget: false, bindPerModel: false, modelFreeOnly: false, modelGroupByOwner: false, maxTokens: 2000, temperature: 0.3, topP: 1, topK: 0, minP: 0, topA: 0,
-    typicalP: 1, tfsZ: 1, repeatLastN: 0, mirostat: 0, mirostatTau: 5, mirostatEta: 0.1, dryMultiplier: 0, dryBase: 1.75, dryAllowedLength: 2, drySequenceBreakers: null,
-    xtcThreshold: 0.1, xtcProbability: 0, frequencyPenalty: 0, presencePenalty: 0, repetitionPenalty: 1, stopSequences: [], logitBias: null, seed: null, reasoningEffort: "auto",
+    typicalP: 1, tfsZ: 1, repeatLastN: 0, mirostat: 0, mirostatTau: 5, mirostatEta: 0.1, dryMultiplier: 0, dryBase: 1.75, dryAllowedLength: 2,
+    xtcThreshold: 0.1, xtcProbability: 0, frequencyPenalty: 0, presencePenalty: 0, repetitionPenalty: 1, stopSequences: [], seed: null, reasoningEffort: "auto",
     showReasoning: false, streamResponse: true, customSamplers: false, proxyMode: "inherit", proxyId: null, isActive: true, visionModel: null,
     createdAt: "2025-01-01T00:00:00.000Z", updatedAt: "2025-01-01T00:00:00.000Z",
-  } as ProviderProfile;
+  });
 }
 
 /** Thread store holding the turn's rows; an answer request finds its awaiting ask_user marker. */

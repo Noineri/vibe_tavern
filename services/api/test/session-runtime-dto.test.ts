@@ -9,6 +9,7 @@ import {
 import { countTokensDefault } from "../src/infrastructure/ai/tokenizer-service.js";
 import type { LoreEntry } from "@vibe-tavern/domain";
 import type { StoredProviderProfileRecord, DiceRollSnapshot } from "@vibe-tavern/domain";
+import { makeProviderProfileRow } from "./copilot-test-builders.js";
 
 // ─── mapMessageDto ───────────────────────────────────────────────────────
 
@@ -325,7 +326,7 @@ describe("entryMatchesRecentText", () => {
 // ─── toClientProviderProfile ─────────────────────────────────────────────
 
 describe("toClientProviderProfile", () => {
-  const fullProfile = {
+  const fullProfile = makeProviderProfileRow({
     id: "prov_1",
     name: "Test Provider",
     providerPreset: "openai_compat",
@@ -351,7 +352,7 @@ describe("toClientProviderProfile", () => {
     isActive: true,
     createdAt: "2025-01-01T00:00:00Z",
     updatedAt: "2025-01-01T00:00:00Z",
-  } as StoredProviderProfileRecord;
+  });
 
   it("strips API key and exposes hasStoredApiKey flag", () => {
     const client = toClientProviderProfile(fullProfile);

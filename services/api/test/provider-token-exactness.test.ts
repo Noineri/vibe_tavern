@@ -26,6 +26,7 @@ import { countTokens } from "../src/infrastructure/ai/tokenizer-service.js";
 import { waitForTokenWarmIdle, resetTokenCountCache } from "../src/infrastructure/ai/token-count-cache.js";
 import { afterAll } from "bun:test";
 import { testFetch } from "./test-fetch-seam.js";
+import { makeProviderProfileRow } from "./copilot-test-builders.js";
 
 const originalFetch = globalThis.fetch;
 /** Marker exactness: the stubbed llama-server counts 1000 + text.length tokens. */
@@ -47,7 +48,7 @@ afterEach(() => {
 });
 
 function makeProfile(over: Partial<StoredProviderProfileRecord> = {}): StoredProviderProfileRecord {
-	return {
+	return makeProviderProfileRow({
 		id: "prof_ls1", name: "LS1 Local", providerPreset: "llamacpp",
 		coauthorTransport: "chat_completions",
 		endpoint: "http://127.0.0.1:9801", apiKey: null,
@@ -66,7 +67,7 @@ function makeProfile(over: Partial<StoredProviderProfileRecord> = {}): StoredPro
 		isActive: true, visionModel: null,
 		createdAt: "2026-01-01", updatedAt: "2026-01-01",
 		...over,
-	};
+	});
 }
 
 async function createTestRuntime(profile: StoredProviderProfileRecord | null): Promise<{

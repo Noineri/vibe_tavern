@@ -25,6 +25,7 @@ import type {
   ExperienceCopilotStreamEvent,
 } from "../src/domain/interactive/copilot/experience-copilot-stream.js";
 import { strictTestDouble } from "./strict-test-double.js";
+import { makeProviderProfileRow } from "./copilot-test-builders.js";
 import {
   makeStreamTextDouble,
   type FakeStreamTextTurn,
@@ -154,11 +155,10 @@ function makeFakeStreamTextResult(opts: FakeStreamOptions): FakeStreamTextTurn {
 // ─── Fake deps ───────────────────────────────────────────────────────────────
 
 function makeProfile(id = "prov_1"): ProviderProfile {
-  return {
+  return makeProviderProfileRow({
     id,
     name: "Test",
     providerPreset: "openai",
-    coauthorTransport: "chatCompletions",
     endpoint: "http://test",
     apiKey: "key",
     defaultModel: "test-model",
@@ -182,14 +182,12 @@ function makeProfile(id = "prov_1"): ProviderProfile {
     dryMultiplier: 0,
     dryBase: 1.75,
     dryAllowedLength: 2,
-    drySequenceBreakers: null,
     xtcThreshold: 0.1,
     xtcProbability: 0,
     frequencyPenalty: 0,
     presencePenalty: 0,
     repetitionPenalty: 1,
     stopSequences: [],
-    logitBias: null,
     seed: null,
     reasoningEffort: "auto",
     showReasoning: false,
@@ -201,7 +199,7 @@ function makeProfile(id = "prov_1"): ProviderProfile {
     visionModel: null,
     createdAt: "2025-01-01T00:00:00.000Z",
     updatedAt: "2025-01-01T00:00:00.000Z",
-  } as ProviderProfile;
+  });
 }
 
 function makeDeps(

@@ -44,6 +44,7 @@ import { createDb, type AppDb } from "@vibe-tavern/db";
 import { Hono } from "hono";
 import type { EventBus } from "@vibe-tavern/domain";
 import { strictTestDouble } from "./strict-test-double.js";
+import { makeProviderProfileRow } from "./copilot-test-builders.js";
 import type { StreamDeps } from "../src/domain/ai-assistant/ai-assistant-stream.js";
 import { generateRegexAssist } from "../src/domain/ai-assistant/regex-assist-service.js";
 import { createAiAssistantFeature } from "../src/domain/ai-assistant/ai-assistant-feature.js";
@@ -54,7 +55,7 @@ type StreamDepsSeam = StreamDeps & { streamTextImpl?: import("../src/domain/ai-a
 
 async function makeDeps(streamTextImpl: NonNullable<StreamDepsSeam["streamTextImpl"]>): Promise<StreamDepsSeam> {
   const db: AppDb = await createDb(":memory:");
-  const profile = { id: "profile_1", providerPreset: "openai", endpoint: "", apiKey: "key", defaultModel: "model_1", contextBudget: null, maxTokens: 2000 };
+  const profile = makeProviderProfileRow({ id: "profile_1", providerPreset: "openai", endpoint: "", apiKey: "key", defaultModel: "model_1", contextBudget: null, maxTokens: 2000 });
   return {
     db,
     // The streamTextImpl seam short-circuits the executor, so the model the
@@ -63,12 +64,20 @@ async function makeDeps(streamTextImpl: NonNullable<StreamDepsSeam["streamTextIm
     resolveModel: () => ({}) as LanguageModel,
     getProviderProfile: async () => profile,
     getEffectiveProviderProfile: async () => profile,
+    // No character context is seeded in this fixture: the request carries no
+    // character/persona/lorebook ids, so resolveContext never calls these
+    // (empty ids short-circuit in context-resolver.ts) — null is the honest
+    // "not found". The impersonation builder mirrors the editor seam's
+    // not-configured throw below.
+    getCharacterById: async () => null,
+    getPersonaById: async () => null,
+    getLoreEntryById: async () => null,
     getPresetPromptData: async () => ({ aiAssistantPrompts: null, scriptAiSystemPrompt: null }),
-    getChatMessages: async () => [],
     getMessageEditorChat: async () => null,
     getMessageEditorMessages: async () => [],
     getMessageEditorVariantsByBranch: async () => new Map(),
     buildMessageEditorPipelineContext: async () => { throw new Error("message editor context is not configured"); },
+    buildChatImpersonationPipelineContext: async () => { throw new Error("impersonation context is not configured"); },
     streamTextImpl,
   };
 }

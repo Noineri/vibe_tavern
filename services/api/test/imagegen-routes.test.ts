@@ -57,6 +57,7 @@ import {
 } from "../src/domain/imagegen/imagegen-registry.js";
 import { PromptAssemblyService, type PromptAssemblyResolver } from "../src/domain/prompt/prompt-assembly-service.js";
 import { testFetch } from "./test-fetch-seam.js";
+import { makeProviderProfileRow } from "./copilot-test-builders.js";
 
 // THE REGISTRY IS PROCESS-GLOBAL (mock.module gotcha applies to bun:test):
 // imagegen-registry.test.ts runs `__resetImageGenRegistryForTests()` in the
@@ -4423,7 +4424,7 @@ describe("image-gen routes — run phases (MR-11 honest chip timeline)", () => {
   /** Full StoredProviderProfileRecord — the module-scope twin of the IG-15
    *  fixture (that one is describe-local; this block needs its own). */
   function makePhaseLlmProfile(): StoredProviderProfileRecord {
-    return {
+    return makeProviderProfileRow({
       id: "llm1",
       name: "Writer LLM",
       providerPreset: "openaiCompat",
@@ -4482,7 +4483,7 @@ describe("image-gen routes — run phases (MR-11 honest chip timeline)", () => {
       generationFormat: null,
       createdAt: "0",
       updatedAt: "0",
-    };
+    });
   }
   /** A gated transport: `dispatch` serves a call immediately; everything
    *  else parks until the test releases it by path. `waitFor` parks the

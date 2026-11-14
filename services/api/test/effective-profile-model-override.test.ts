@@ -17,6 +17,7 @@ import type { AssetService } from "../src/domain/asset/asset-service.js";
 import { ChatAdapter } from "../src/api/adapters/chat-adapter.js";
 import { makeChatRow } from "./insights-test-builders.js";
 import { strictTestDouble } from "./strict-test-double.js";
+import { makeProviderProfileRow } from "./copilot-test-builders.js";
 
 /**
  * Characterization test for the per-request MODEL OVERRIDE path (Wave Q1a).
@@ -36,7 +37,7 @@ import { strictTestDouble } from "./strict-test-double.js";
  */
 
 function makeBase(over: Partial<StoredProviderProfileRecord> = {}): StoredProviderProfileRecord {
-  return {
+  return makeProviderProfileRow({
     id: "prof_1", name: "base", providerPreset: "openaiCompat",
     coauthorTransport: "chat_completions",
     endpoint: "http://localhost", apiKey: "sk-test",
@@ -51,7 +52,7 @@ function makeBase(over: Partial<StoredProviderProfileRecord> = {}): StoredProvid
     customSamplers: true, isActive: true, visionModel: null,
     createdAt: "0", updatedAt: "0",
     ...over,
-  };
+  });
 }
 
 /** Tracks which modelId the adapter requested an overlay for, per model. */

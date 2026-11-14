@@ -40,6 +40,7 @@ import type {
 import type { ProviderProfileService } from "../src/domain/providers/provider-profile-service.js";
 import { nonstreamingProviderExecute } from "../src/infrastructure/ai/nonstreaming-provider-executor.js";
 import { execResult } from "./insights-test-builders.js";
+import { makeProviderProfileRow } from "./copilot-test-builders.js";
 
 // ─── Test experiences ────────────────────────────────────────────────────────
 
@@ -294,7 +295,7 @@ async function emitModelEffect(sessionId: string, actionType: string): Promise<s
 // ─── Mock seams ──────────────────────────────────────────────────────────────
 
 function makeProfile(overrides: Partial<StoredProviderProfileRecord> = {}): StoredProviderProfileRecord {
-	return {
+	return makeProviderProfileRow({
 		id: "pp1", name: "Test", providerPreset: "ollama", coauthorTransport: "chat_completions",
 		endpoint: "http://x", apiKey: null, defaultModel: "test-model", contextBudget: 8000,
 		pinContextBudget: false, bindPerModel: false, modelFreeOnly: false, modelGroupByOwner: false,
@@ -306,7 +307,7 @@ function makeProfile(overrides: Partial<StoredProviderProfileRecord> = {}): Stor
 		customSamplers: false, proxyMode: "inherit", proxyId: null, isActive: true, visionModel: null,
 		createdAt: "2024-01-01T00:00:00Z", updatedAt: "2024-01-01T00:00:00Z",
 		...overrides,
-	};
+	});
 }
 
 function minimalPrompt(): AssemblePromptResponse {

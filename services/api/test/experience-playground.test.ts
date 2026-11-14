@@ -47,6 +47,7 @@ import { ExperienceChatterService } from "../src/domain/interactive/experience-c
 import type { ProviderProfileService } from "../src/domain/providers/provider-profile-service.js";
 import { strictTestDouble } from "./strict-test-double.js";
 import { execResult } from "./insights-test-builders.js";
+import { makeProviderProfileRow } from "./copilot-test-builders.js";
 import type { HttpErrorBody } from "./routes-test-builders.js";
 import type { ExperiencePlaygroundData } from "../src/domain/interactive/experience-playground.js";
 import type { ExperienceDefinition } from "../src/domain/interactive/experience-kernel.js";
@@ -1269,7 +1270,7 @@ const chatterModelSeat = {
 };
 
 function makeChatterProfile(): StoredProviderProfileRecord {
-  return {
+  return makeProviderProfileRow({
     id: "pp_chatter", name: "Chatter Test", providerPreset: "ollama", endpoint: "http://x", apiKey: null,
     defaultModel: "m_chatter", contextBudget: 8000, pinContextBudget: false, bindPerModel: false,
     modelFreeOnly: false, modelGroupByOwner: false, maxTokens: 4096, temperature: 1, topP: 1, topK: 0,
@@ -1277,9 +1278,9 @@ function makeChatterProfile(): StoredProviderProfileRecord {
     dryMultiplier: 0, dryBase: 0, dryAllowedLength: 0, drySequenceBreakers: [], xtcThreshold: 0,
     xtcProbability: 0, frequencyPenalty: 0, presencePenalty: 0, repetitionPenalty: 1, stopSequences: [],
     logitBias: [], seed: null, reasoningEffort: "medium", showReasoning: false, streamResponse: true,
-    customSamplers: false, proxyMode: "off", proxyId: null, isActive: true, visionModel: null,
+    customSamplers: false, proxyId: null, isActive: true, visionModel: null,
     createdAt: "2024-01-01T00:00:00Z", updatedAt: "2024-01-01T00:00:00Z",
-  } as StoredProviderProfileRecord;
+  });
 }
 
 /** Build a REAL ExperienceChatterService with a mock provider-profile service +

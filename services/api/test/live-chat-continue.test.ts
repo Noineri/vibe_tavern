@@ -44,16 +44,16 @@ import type { ProviderExecutionInput, ProviderStreamResult } from "../src/infras
 import type { StoredProviderProfileRecord } from "@vibe-tavern/domain";
 import { makeSessionSnapshot } from "./insights-test-builders.js";
 import { strictTestDouble } from "./strict-test-double.js";
+import { makeProviderProfileRow } from "./copilot-test-builders.js";
 
 const CHAT = "chat_1";
 const MESSAGE = "msg_1";
 
 function makeProfile(providerPreset: string): StoredProviderProfileRecord {
-  return {
+  return makeProviderProfileRow({
     id: "profile_1",
     name: "profile",
     providerPreset,
-    coauthorTransport: "chatCompletions",
     generationMode: "chat",
     endpoint: "http://localhost:8080",
     apiKey: null,
@@ -74,7 +74,7 @@ function makeProfile(providerPreset: string): StoredProviderProfileRecord {
     customSamplers: false,
     proxyMode: "inherit",
     proxyId: null,
-  } as StoredProviderProfileRecord;
+  });
 }
 
 interface RuntimeCalls {

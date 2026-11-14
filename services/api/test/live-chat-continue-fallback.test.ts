@@ -43,6 +43,7 @@ import { ChatRuntime } from "../src/runtime/session/session-runtime-chat.js";
 import type { ChatRuntimeDeps } from "../src/runtime/session/session-runtime-chat.js";
 import { makeChatRow, makeVariantRow } from "./insights-test-builders.js";
 import { strictTestDouble } from "./strict-test-double.js";
+import { makeProviderProfileRow } from "./copilot-test-builders.js";
 import { CONTINUATION_USER_INSTRUCTION } from "../src/infrastructure/ai/provider-executor-utils.js";
 import { mergeContinuation } from "../src/infrastructure/ai/merge-continuation.js";
 import { nonstreamingProviderExecute } from "../src/infrastructure/ai/nonstreaming-provider-executor.js";
@@ -166,11 +167,10 @@ function sseCompletion(deltas: string[]): () => Response {
 function makeProfile(): StoredProviderProfileRecord {
   // "multiai" is not a known preset → normalizes to openai_compat (the
   // aggregator protocol; prefill-capable — the gate under test).
-  return {
+  return makeProviderProfileRow({
     id: "profile_1",
     name: "profile",
     providerPreset: "multiai",
-    coauthorTransport: "chatCompletions",
     generationMode: "chat",
     endpoint: "http://127.0.0.1:9/v1",
     apiKey: "test-key",
@@ -191,7 +191,7 @@ function makeProfile(): StoredProviderProfileRecord {
     customSamplers: false,
     proxyMode: "direct",
     proxyId: null,
-  } as StoredProviderProfileRecord;
+  });
 }
 
 interface ContinueCalls {
