@@ -31,8 +31,11 @@ describe("normalizeStoryDeck", () => {
   });
 
   test("accepts every suit of the fixed set", () => {
+    const expectedSuits = ["threat", "encounter", "discovery", "mystery", "change"] as const;
+    expect(Object.values(STORY_CARD_SUIT)).toEqual([...expectedSuits]);
+
     const deck = normalizeStoryDeck({
-      cards: Object.values(STORY_CARD_SUIT).map((suit, i) => ({
+      cards: expectedSuits.map((suit, i) => ({
         id: `card_${i}`,
         suit,
         title: `Card ${i}`,
@@ -40,7 +43,7 @@ describe("normalizeStoryDeck", () => {
       })),
     });
 
-    expect(deck?.cards.map((card) => card.suit)).toEqual(Object.values(STORY_CARD_SUIT));
+    expect(deck?.cards.map((card) => card.suit)).toEqual([...expectedSuits]);
   });
 
   test("drops cards without an id or with a blank id", () => {

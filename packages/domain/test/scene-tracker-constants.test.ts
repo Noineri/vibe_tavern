@@ -192,12 +192,24 @@ describe("computeSceneSchemaHash (label invariance)", () => {
 
   it("changes when the actual structure (key/type/bounds) changes", () => {
     const before = computeSceneSchemaHash(base);
-    const after = computeSceneSchemaHash({
+    const changedKey = computeSceneSchemaHash({
+      vibe: { $type: "string" },
+      hp: { $type: "number", min: 0, max: 100 },
+      npc: { $type: "object", properties: { trust: { $type: "number", min: 0, max: 10 } } },
+    });
+    const changedType = computeSceneSchemaHash({
+      mood: { $type: "string" },
+      hp: { $type: "boolean" },
+      npc: { $type: "object", properties: { trust: { $type: "number", min: 0, max: 10 } } },
+    });
+    const changedBounds = computeSceneSchemaHash({
       mood: { $type: "string" },
       hp: { $type: "number", min: 0, max: 100, label: "HP" }, // label-only → same
       npc: { $type: "object", properties: { trust: { $type: "number", min: 0, max: 5 } } }, // bounds changed
     });
-    expect(after).not.toBe(before);
+    expect(changedKey).not.toBe(before);
+    expect(changedType).not.toBe(before);
+    expect(changedBounds).not.toBe(before);
   });
 });
 
@@ -324,7 +336,7 @@ describe("findInvalidXmlKeys", () => {
     expect(findInvalidXmlKeys(dsl)).toEqual(["party.bad key"]);
   });
 
-  it("returns nothing for JSON-irrelevant schemas (any key is JSON-valid)", () => {
+  it("flags JSON-valid keys when called directly because the helper is XML-only (callers gate on promptFormat)", () => {
     // The check is XML-only; this just confirms the helper is pure and does not
     // depend on any promptFormat — the caller gates on format.
     const dsl: SceneTrackerDsl = { "totally fine for json": { $type: "string" } };

@@ -306,6 +306,7 @@ describe("toPromptFormatterInput", () => {
     expect(projected.attempts.length).toBe(1);
     expect(projected.attempts[0].attemptId).toBe("att_1");
     expect(projected.attempts[0].faces).toEqual([3, 5, 6]);
+    expect(projected.attempts[0].modifier).toBe(2);
     expect(projected.attempts[0].total).toBe(16);
   });
 });

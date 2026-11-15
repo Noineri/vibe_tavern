@@ -102,8 +102,11 @@ describe("compareStoryTime", () => {
   });
 
   test("is antisymmetric and reflexive", () => {
-    expect(compareStoryTime(at(2, STORY_DAY_PART.evening), at(2, STORY_DAY_PART.day))).toBeGreaterThan(0);
-    expect(compareStoryTime(at(2, STORY_DAY_PART.evening), at(2, STORY_DAY_PART.evening))).toBe(0);
+    const day = at(2, STORY_DAY_PART.day);
+    const evening = at(2, STORY_DAY_PART.evening);
+    expect(compareStoryTime(evening, day)).toBeGreaterThan(0);
+    expect(compareStoryTime(day, evening)).toBeLessThan(0);
+    expect(compareStoryTime(evening, evening)).toBe(0);
   });
 
   test("orders days before parts (night of day 1 < morning of day 2)", () => {

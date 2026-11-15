@@ -37,13 +37,15 @@ describe("importJsonSchema", () => {
   });
 
   it("accepts a full payload with optional chatId and skipExisting populated", () => {
-    const result = importJsonSchema.safeParse({
+    const payload = {
       fileName: "f.json",
       jsonText: "{}",
       chatId: "c1",
       skipExisting: true,
-    });
+    };
+    const result = importJsonSchema.safeParse(payload);
     expect(result.success).toBe(true);
+    if (result.success) expect(result.data).toEqual(payload);
   });
 
   it("rejects an empty payload (fileName required)", () => {
@@ -56,8 +58,13 @@ describe("importJsonSchema", () => {
   // Zod refine would break importJsonBatchSchema's .omit(). Pin that the schema
   // deliberately accepts a fileName-only payload (backend rejects it at runtime).
   it("accepts a monolith-only payload (vtmd path, no jsonText)", () => {
-    const result = importJsonSchema.safeParse({ fileName: "f.md", monolithText: "---\nname: X\n---\n" });
+    const payload = { fileName: "f.md", monolithText: "---\nname: X\n---\n" };
+    const result = importJsonSchema.safeParse(payload);
     expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data).toEqual(payload);
+      expect(result.data.jsonText).toBeUndefined();
+    }
   });
 
   it("accepts a fileName-only payload (one-of rule deferred to backend)", () => {

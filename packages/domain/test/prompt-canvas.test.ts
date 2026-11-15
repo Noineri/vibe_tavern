@@ -113,10 +113,17 @@ test("I6 — order is dense ascending 0,1,2,… within each zone", () => {
       entry({ identifier: "c", zone: "after_chat", order: 10, kind: "custom" }),
     ],
   );
-  const before = promptOrder.filter((e) => e.zone === "before_chat").map((e) => e.order);
-  const after = promptOrder.filter((e) => e.zone === "after_chat").map((e) => e.order);
-  expect(before).toEqual([0]);
-  expect(after).toEqual([0, 1]); // dense, stable (c=10 < b=50 → c=0, b=1)
+  const before = promptOrder
+    .filter((e) => e.zone === "before_chat")
+    .map((e) => ({ identifier: e.identifier, order: e.order }));
+  const after = promptOrder
+    .filter((e) => e.zone === "after_chat")
+    .map((e) => ({ identifier: e.identifier, order: e.order }));
+  expect(before).toEqual([{ identifier: "a", order: 0 }]);
+  expect(after).toEqual([
+    { identifier: "c", order: 0 },
+    { identifier: "b", order: 1 },
+  ]); // dense, stable (c=10 < b=50 → c=0, b=1)
 });
 
 test("D1 — in_chat depth floored at 1; after_chat pinned to 0; before_chat null", () => {

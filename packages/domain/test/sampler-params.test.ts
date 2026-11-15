@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { SAMPLER_FIELDS, resolveSamplerCapabilities, resolveSamplerSet, type SamplerFieldId } from "../src/sampler-params.js";
+import { SAMPLER_FIELDS, SAMPLER_SETS, resolveSamplerCapabilities, resolveSamplerSet, type SamplerFieldId, type SamplerSetId } from "../src/sampler-params.js";
 import { PROVIDER_TYPE } from "../src/platform-constants.js";
 
 describe("sampler params", () => {
@@ -81,15 +81,16 @@ describe("sampler params", () => {
   });
 
   it("resolves extended_cloud for Fireworks/Together/SiliconFlow/Moonshot", () => {
-    expect(resolveSamplerSet("fireworks", PROVIDER_TYPE.openaiCompat)).toBe("extended_cloud");
-    expect(resolveSamplerSet("togetherai", PROVIDER_TYPE.openaiCompat)).toBe("extended_cloud");
+    for (const preset of ["fireworks", "togetherai", "siliconflow", "moonshot"]) {
+      expect(resolveSamplerSet(preset, PROVIDER_TYPE.openaiCompat)).toBe("extended_cloud");
 
-    const caps = resolveSamplerCapabilities("fireworks", PROVIDER_TYPE.openaiCompat);
-    expect(caps.topK).toBe(true);
-    expect(caps.repetitionPenalty).toBe(true);
-    expect(caps.logitBias).toBe(true);
-    expect(caps.reasoningEffort).toBe(true);
-    expect(caps.seed).toBe(true);
+      const caps = resolveSamplerCapabilities(preset, PROVIDER_TYPE.openaiCompat);
+      expect(caps.topK).toBe(true);
+      expect(caps.repetitionPenalty).toBe(true);
+      expect(caps.logitBias).toBe(true);
+      expect(caps.reasoningEffort).toBe(true);
+      expect(caps.seed).toBe(true);
+    }
   });
 
   it("resolves topk_limited for Perplexity/ElectronHub", () => {
@@ -239,6 +240,29 @@ describe("sampler params", () => {
   });
 
   it("keeps bannedStrings (antislop) exclusive to koboldcpp_native (B3)", () => {
+    const nonKoboldSets: SamplerSetId[] = [
+      "aggregator",
+      "nanogpt",
+      "openai_local",
+      "llamacpp_native",
+      "minimal_reasoning",
+      "openai_chat",
+      "openai_no_seed",
+      "extended_cloud",
+      "topk_limited",
+      "anthropic",
+      "pollinations",
+      "groq",
+      "novelai_oa",
+      "novelai_native",
+      "openai_compat_minimal",
+    ];
+    expect(Object.keys(SAMPLER_SETS).sort()).toEqual(["koboldcpp_native", ...nonKoboldSets].sort());
+    expect(SAMPLER_SETS.koboldcpp_native.bannedStrings).toBe(true);
+    for (const setId of nonKoboldSets) {
+      expect(SAMPLER_SETS[setId].bannedStrings, setId).toBe(false);
+    }
+
     expect(resolveSamplerCapabilities("koboldcpp", PROVIDER_TYPE.koboldCpp).bannedStrings).toBe(true);
     // llama-server surface and the shared openai_local set have no upstream equivalent
     expect(resolveSamplerCapabilities(null, PROVIDER_TYPE.llamaCpp).bannedStrings).toBe(false);

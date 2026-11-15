@@ -234,48 +234,90 @@ describe("script safety — positive fixtures per rule family", () => {
     });
   }
 
-  it("every finding carries a 1-based line (and column when node-backed)", () => {
-    const findings = analyzeScriptSource("var a = 1;\nvar f = ({}).constructor.constructor;", SCRIPT_KIND.prompt);
-    const chain = findingOf(findings, "escape-constructor-chain");
-    expect(chain?.line).toBe(2);
-    expect(chain?.col).toBe(9);
-    expect(chain?.severity).toBe("critical");
+  it("every finding carries a 1-based line (and column when node-backed, omitted when index-backed)", () => {
+    const chainFindings = analyzeScriptSource("var a = 1;\nvar f = ({}).constructor.constructor;", SCRIPT_KIND.prompt);
+    expect(findingOf(chainFindings, "escape-constructor-chain")).toMatchObject({
+      severity: "critical",
+      line: 2,
+      col: 9,
+    });
+
+    const evalFindings = analyzeScriptSource("var a = 1;\n  eval('1');", SCRIPT_KIND.prompt);
+    expect(findingOf(evalFindings, "unsafe-eval")).toMatchObject({
+      severity: "critical",
+      line: 2,
+      col: 3,
+    });
+
+    const globalFindings = analyzeScriptSource("var a = 1;\n  var g = globalThis;", SCRIPT_KIND.prompt);
+    expect(findingOf(globalFindings, "out-of-surface-global")).toMatchObject({
+      severity: "warning",
+      line: 2,
+      col: 11,
+    });
+
+    const sigFindings = analyzeScriptSource("var a = 1;\n  var _0x1a2b = 1;", SCRIPT_KIND.prompt);
+    expect(findingOf(sigFindings, "obfuscation-known-signature")).toMatchObject({
+      severity: "critical",
+      line: 2,
+      col: 7,
+    });
+
+    const bidiFindings = analyzeScriptSource("var a = 1;\nvar s = '\u202e';", SCRIPT_KIND.prompt);
+    const bidiHit = findingOf(bidiFindings, "masking-bidi-characters");
+    expect(bidiHit).toEqual({
+      ruleId: "masking-bidi-characters",
+      severity: "warning",
+      line: 2,
+    });
+
+    const invisibleFindings = analyzeScriptSource("var a = 1;\nvar s = '\u200b';", SCRIPT_KIND.prompt);
+    const invisibleHit = findingOf(invisibleFindings, "masking-invisible-characters");
+    expect(invisibleHit).toEqual({
+      ruleId: "masking-invisible-characters",
+      severity: "warning",
+      line: 2,
+    });
   });
 
   it("severity per family: escape primitives and obfuscation are critical", () => {
-    const criticals = [
-      "var f = ({}).constructor.constructor;",
-      "o.__proto__ = x;",
-      "Object.setPrototypeOf(a, b);",
-      'Object.defineProperty(Array.prototype, "x", { value: 1 });',
-      "var s = obj[Symbol.species];",
-      'Symbol.for("k");',
-      "function f() { return arguments.callee; }",
-      "Object.getOwnPropertySymbols(host);",
-      "Reflect.ownKeys(host);",
-      "new Proxy({}, h);",
-      'eval("1");',
-      'Function("return this");',
-      "var _0x1a2b = 1;",
+    const criticals: ReadonlyArray<[string, keyof typeof SCRIPT_SAFETY_RULES]> = [
+      ["var f = ({}).constructor.constructor;", "escape-constructor-chain"],
+      ["o.__proto__ = x;", "escape-proto-access"],
+      ["Object.setPrototypeOf(a, b);", "escape-proto-access"],
+      ['Object.defineProperty(Array.prototype, "x", { value: 1 });', "escape-prototype-pollution"],
+      ["var s = obj[Symbol.species];", "escape-symbol-hook"],
+      ['Symbol.for("k");', "escape-symbol-hook"],
+      ["function f() { return arguments.callee; }", "escape-caller-callee"],
+      ["Object.getOwnPropertySymbols(host);", "escape-reflection-api"],
+      ["Reflect.ownKeys(host);", "escape-reflection-api"],
+      ["new Proxy({}, h);", "escape-proxy"],
+      ['eval("1");', "unsafe-eval"],
+      ['Function("return this");', "unsafe-function-constructor"],
+      ["var _0x1a2b = 1;", "obfuscation-known-signature"],
     ];
-    for (const code of criticals) {
-      const findings = analyzeScriptSource(code, SCRIPT_KIND.prompt).filter(
-        (finding) => finding.severity !== "critical",
-      );
-      expect(findings, `${code}: non-critical findings ${JSON.stringify(findings)}`).toEqual([]);
+    for (const [code, ruleId] of criticals) {
+      const findings = analyzeScriptSource(code, SCRIPT_KIND.prompt);
+      expect(findings.length, `${code}: expected at least one finding`).toBeGreaterThan(0);
+      const hit = findingOf(findings, ruleId);
+      expect(hit, `${code}: expected ${ruleId}`).toBeDefined();
+      expect(hit?.severity, `${code}: ${ruleId} severity`).toBe("critical");
+      const nonCritical = findings.filter((finding) => finding.severity !== "critical");
+      expect(nonCritical, `${code}: non-critical findings ${JSON.stringify(nonCritical)}`).toEqual([]);
     }
   });
 
   it("severity per family: masking indicators are info/warning, surface violations warning", () => {
-    const checks: ReadonlyArray<[string, string]> = [
-      ['var p = "\\x41\\x42\\x43\\x44";', "masking-encoded-literal"],
-      ['var b = "aGVsbG8gd29ybGQgZnJvbSB2aWI=";', "masking-encoded-literal"],
-      ["var g = globalThis;", "out-of-surface-global"],
-      ["var out = __rollOutput;", "engine-internal-global"],
+    const checks: ReadonlyArray<[string, keyof typeof SCRIPT_SAFETY_RULES, "info" | "warning"]> = [
+      ['var p = "\\x41\\x42\\x43\\x44";', "masking-encoded-literal", "info"],
+      ['var b = "aGVsbG8gd29ybGQgZnJvbSB2aWI=";', "masking-encoded-literal", "info"],
+      ["var g = globalThis;", "out-of-surface-global", "warning"],
+      ["var out = __rollOutput;", "engine-internal-global", "warning"],
     ];
-    for (const [code, ruleId] of checks) {
+    for (const [code, ruleId, expectedSeverity] of checks) {
       const hit = findingOf(analyzeScriptSource(code, SCRIPT_KIND.prompt), ruleId);
-      expect(hit?.severity, `${ruleId} must not be critical (it is an indicator, not a proven escape)`).not.toBe("critical");
+      expect(hit, `${code}: expected ${ruleId}`).toBeDefined();
+      expect(hit?.severity, `${ruleId} must match ${expectedSeverity}`).toBe(expectedSeverity);
     }
   });
 });
@@ -349,16 +391,28 @@ describe("script safety — rule table and surface constants", () => {
   });
 
   it("the severity mapping follows the report: escape/obfuscation critical, masking warning/info", () => {
-    expect(SCRIPT_SAFETY_RULES["escape-constructor-chain"]).toBe("critical");
-    expect(SCRIPT_SAFETY_RULES["escape-proto-access"]).toBe("critical");
-    expect(SCRIPT_SAFETY_RULES["escape-symbol-hook"]).toBe("critical");
-    expect(SCRIPT_SAFETY_RULES["escape-reflection-api"]).toBe("critical");
-    expect(SCRIPT_SAFETY_RULES["unsafe-eval"]).toBe("critical");
-    expect(SCRIPT_SAFETY_RULES["obfuscation-known-signature"]).toBe("critical");
-    expect(SCRIPT_SAFETY_RULES["masking-encoded-literal"]).toBe("info");
-    expect(SCRIPT_SAFETY_RULES["masking-suspicious-literal"]).toBe("warning");
-    expect(SCRIPT_SAFETY_RULES["out-of-surface-global"]).toBe("warning");
-    expect(SCRIPT_SAFETY_RULES["engine-internal-global"]).toBe("warning");
+    expect(SCRIPT_SAFETY_RULES).toEqual({
+      "escape-constructor-chain": "critical",
+      "escape-constructor-access": "warning",
+      "escape-proto-access": "critical",
+      "escape-prototype-pollution": "critical",
+      "escape-symbol-hook": "critical",
+      "escape-caller-callee": "critical",
+      "escape-caller-property": "warning",
+      "escape-reflection-api": "critical",
+      "escape-proxy": "critical",
+      "unsafe-eval": "critical",
+      "unsafe-function-constructor": "critical",
+      "unsafe-dynamic-import": "critical",
+      "out-of-surface-global": "warning",
+      "engine-internal-global": "warning",
+      "masking-encoded-literal": "info",
+      "masking-suspicious-literal": "warning",
+      "masking-invisible-characters": "warning",
+      "masking-bidi-characters": "warning",
+      "obfuscation-short-identifiers": "warning",
+      "obfuscation-known-signature": "critical",
+    });
   });
 
   it("ALLOWED_SCRIPT_GLOBALS transcribes the registry §1–§3 surface", () => {
@@ -369,9 +423,7 @@ describe("script safety — rule table and surface constants", () => {
     ];
     for (const kind of [SCRIPT_KIND.prompt, SCRIPT_KIND.dice, SCRIPT_KIND.interactive] as const) {
       const surface = ALLOWED_SCRIPT_GLOBALS[kind];
-      for (const name of [...standardGlobals, "context"]) {
-        expect(surface.globals, `${kind}: ${name} must be allowed`).toContain(name);
-      }
+      expect([...surface.globals].sort()).toEqual([...standardGlobals, "context"].sort());
     }
     expect([...ALLOWED_SCRIPT_GLOBALS[SCRIPT_KIND.prompt].contextChannels].sort()).toEqual(
       ["chat", "character", "lore", "state", "shared", "persona", "random", "randomInt", "pick", "weightedPick"].sort(),

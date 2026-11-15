@@ -82,9 +82,12 @@ describe("resolveEffectiveSettings", () => {
     expect(effective.logitBias).toEqual([{ tokenId: 1, bias: 2 }]); // inherited
   });
 
-  test("identity fields are NEVER overridden (overlay cannot rename/rebind profile)", () => {
+  test("identity fields keep base values under the ModelSettingsOverlay type invariant", () => {
     const base = makeBase({ name: "base", endpoint: "https://a", defaultModel: "gpt-4o" });
-    // ModelSettingsOverlay doesn't even allow these keys, but assert the result keeps base identity.
+    // Untrusted wire inputs are stripped at the api-contracts boundary
+    // (modelSettingsOverlaySchema, tested in provider-schema.test.ts);
+    // resolveEffectiveSettings itself assumes a valid ModelSettingsOverlay
+    // that omits identity keys (id/name/endpoint/defaultModel).
     const overlay: ModelSettingsOverlay = { temperature: 0.5 };
     const effective = resolveEffectiveSettings(base, overlay);
     expect(effective.name).toBe("base");

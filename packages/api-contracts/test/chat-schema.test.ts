@@ -106,7 +106,7 @@ describe("cloneChatSchema", () => {
   // z.object defaults to non-strict (strip), so unknown keys are accepted and
   // dropped — not a rejection. Pin this so a switch to `.strict()` is caught.
   it("accepts unknown keys (non-strict; they are stripped, not rejected)", () => {
-    expect(cloneChatSchema.safeParse({ unexpected: 1 }).success).toBe(true);
+    expect(cloneChatSchema.parse({ unexpected: 1 })).toEqual({});
   });
 });
 
@@ -211,18 +211,19 @@ describe("attachmentSchema", () => {
 
   // STT_PLAN ST-6 — audio-only optional fields: purpose + durationMs.
   it("accepts an audio attachment with purpose and durationMs", () => {
-    const parsed = attachmentSchema.safeParse({
+    const payload = {
       ...validAttachment(),
-      type: "audio",
-      purpose: "voice",
+      type: "audio" as const,
+      purpose: "voice" as const,
       durationMs: 4200,
-    });
-    expect(parsed.success).toBe(true);
+    };
+    expect(attachmentSchema.parse(payload)).toEqual(payload);
   });
 
   it("accepts every purpose enum member (voice|music|ambient)", () => {
     for (const purpose of ["voice", "music", "ambient"] as const) {
-      expect(attachmentSchema.safeParse({ ...validAttachment(), type: "audio", purpose }).success).toBe(true);
+      const payload = { ...validAttachment(), type: "audio" as const, purpose };
+      expect(attachmentSchema.parse(payload)).toEqual(payload);
     }
   });
 
@@ -298,7 +299,8 @@ describe("sendMessageSchema", () => {
   });
 
   it("accepts a message with content and one valid attachment", () => {
-    expect(sendMessageSchema.safeParse({ content: "hi", attachments: [validAttachment()] }).success).toBe(true);
+    const payload = { content: "hi", attachments: [validAttachment()] };
+    expect(sendMessageSchema.parse(payload)).toEqual(payload);
   });
 
   it("rejects a message missing content", () => {
@@ -340,12 +342,10 @@ describe("sendMessageSchema", () => {
   });
 
   it("accepts a dice-enabled send with both diceMode and pendingRevision", () => {
-    expect(
-      sendMessageSchema.safeParse({ content: "hi", diceMode: "normal", pendingRevision: 3 }).success,
-    ).toBe(true);
-    expect(
-      sendMessageSchema.safeParse({ content: "hi", diceMode: "immersive", pendingRevision: 0 }).success,
-    ).toBe(true);
+    const normalPayload = { content: "hi", diceMode: "normal" as const, pendingRevision: 3 };
+    const immersivePayload = { content: "hi", diceMode: "immersive" as const, pendingRevision: 0 };
+    expect(sendMessageSchema.parse(normalPayload)).toEqual(normalPayload);
+    expect(sendMessageSchema.parse(immersivePayload)).toEqual(immersivePayload);
   });
 
   // Both-or-neither: a half-spec is rejected (no ambiguous commit intent).
@@ -373,14 +373,13 @@ describe("sendMessageSchema", () => {
   });
 
   it("accepts an experience-enabled send with all three fields", () => {
-    expect(
-      sendMessageSchema.safeParse({
-        content: "hi",
-        experienceAttachmentId: "xa_1",
-        experienceQueueRevision: 1,
-        experienceSessionRevision: 2,
-      }).success,
-    ).toBe(true);
+    const payload = {
+      content: "hi",
+      experienceAttachmentId: "xa_1",
+      experienceQueueRevision: 1,
+      experienceSessionRevision: 2,
+    };
+    expect(sendMessageSchema.parse(payload)).toEqual(payload);
   });
 
   // All-or-none: a partial spec is rejected (no ambiguous bind).
@@ -407,16 +406,15 @@ describe("sendMessageSchema", () => {
 
   // Dice + experience may coexist (combined atomic bind).
   it("accepts a combined Dice + experience send", () => {
-    expect(
-      sendMessageSchema.safeParse({
-        content: "hi",
-        diceMode: "normal",
-        pendingRevision: 1,
-        experienceAttachmentId: "xa_1",
-        experienceQueueRevision: 1,
-        experienceSessionRevision: 2,
-      }).success,
-    ).toBe(true);
+    const payload = {
+      content: "hi",
+      diceMode: "normal" as const,
+      pendingRevision: 1,
+      experienceAttachmentId: "xa_1",
+      experienceQueueRevision: 1,
+      experienceSessionRevision: 2,
+    };
+    expect(sendMessageSchema.parse(payload)).toEqual(payload);
   });
 });
 
@@ -430,11 +428,11 @@ describe("editMessageSchema", () => {
   // content is `.optional().default("")` — omitted content is NOT a rejection;
   // the default fills in. Pin this so a `.default` removal is caught.
   it("accepts an empty object (content optional, default kicks in)", () => {
-    expect(editMessageSchema.safeParse({}).success).toBe(true);
+    expect(editMessageSchema.parse({})).toEqual({ content: "" });
   });
 
   it("accepts explicitly-undefined content (default kicks in)", () => {
-    expect(editMessageSchema.safeParse({ content: undefined }).success).toBe(true);
+    expect(editMessageSchema.parse({ content: undefined })).toEqual({ content: "" });
   });
 
   it("rejects non-string content", () => {
@@ -516,7 +514,7 @@ describe("updateDynamicPromptSchema", () => {
   });
 
   it("accepts unknown keys (non-strict — stripped, not rejected)", () => {
-    expect(updateDynamicPromptSchema.safeParse({ content: "ok", extra: 1 }).success).toBe(true);
+    expect(updateDynamicPromptSchema.parse({ content: "ok", extra: 1 })).toEqual({ content: "ok" });
   });
 });
 
@@ -593,7 +591,8 @@ describe("reorderSkillsSchema", () => {
 describe("attachmentSchema tokenCount (CA-1a)", () => {
   it("accepts a text file carrying a non-negative integer tokenCount (0 boundary included)", () => {
     for (const tokenCount of [0, 1, 480_000]) {
-      expect(attachmentSchema.safeParse({ ...validAttachment(), type: "file", tokenCount }).success).toBe(true);
+      const payload = { ...validAttachment(), type: "file" as const, tokenCount };
+      expect(attachmentSchema.parse(payload)).toEqual(payload);
     }
   });
 

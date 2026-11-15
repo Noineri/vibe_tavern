@@ -44,7 +44,7 @@ const position: AgentFeedOrderPosition = {
 const message = (id: string, createdAt = "2026-11-04T10:00:00.000Z") => ({
   id,
   threadId: "t1",
-  role: "assistant",
+  role: "assistant" as const,
   content: "body",
   toolCallsJson: null,
   toolCallId: null,
@@ -70,20 +70,20 @@ const boundary = {
   digest: {
     totalInThread: 1,
     unloadedOlderCount: 1,
-    lastAnchor: "unloaded",
+    lastAnchor: "unloaded" as const,
   },
 };
 
 const feedResponse = {
   threadId: "t1",
   historyEpoch: 3,
-  head: { record: "message", seq: 20, createdAt: "2026-11-04T11:00:00.000Z", id: "m20" },
+  head: { record: "message" as const, seq: 20, createdAt: "2026-11-04T11:00:00.000Z", id: "m20" },
   range: {
-    oldest: { record: "message", seq: 10, createdAt: "2026-11-04T09:00:00.000Z", id: "m10" },
-    newest: { record: "message", seq: 20, createdAt: "2026-11-04T11:00:00.000Z", id: "m20" },
+    oldest: { record: "message" as const, seq: 10, createdAt: "2026-11-04T09:00:00.000Z", id: "m10" },
+    newest: { record: "message" as const, seq: 20, createdAt: "2026-11-04T11:00:00.000Z", id: "m20" },
   },
   messages: [message("m12"), message("m20", "2026-11-04T11:00:00.000Z")],
-  events: [{ ...summary, kind: "rp_sync", fromPosition: 0, toPosition: 9, messageCount: 9 }],
+  events: [{ ...summary, kind: "rp_sync" as const, fromPosition: 0, toPosition: 9, messageCount: 9 }],
   hasOlder: true,
   hasNewer: false,
   cursors: { before: "cursor-older", after: null },
@@ -331,10 +331,9 @@ describe("agentFeedBoundarySchema", () => {
 // ─── feed response ────────────────────────────────────────────────────────────
 
 describe("agentFeedResponseSchema", () => {
-  test("parses a coherent full page and keeps its fixture invariants", () => {
+  test("parses a full feed response shape verbatim (cross-field cursor invariants live in loadAgentFeedPage)", () => {
     const parsed = agentFeedResponseSchema.parse(feedResponse);
-    // Documented invariants (the schema describes; the fixture pins):
-    // cursors.before non-null IFF hasOlder; cursors.after non-null IFF hasNewer.
+    expect(parsed).toEqual(feedResponse);
     expect(parsed.hasOlder).toBe(true);
     expect(parsed.cursors.before).not.toBeNull();
     expect(parsed.hasNewer).toBe(false);
@@ -436,7 +435,7 @@ describe("agentEventDetailCursorPayloadSchema", () => {
     expect(agentEventDetailCursorPayloadSchema.parse(detailCursor)).toEqual(detailCursor);
   });
 
-  test("rejects a wrong version, a foreign event and a negative offset", () => {
+  test("rejects a wrong version, a missing eventId and a negative offset (foreign ownership is checked at the route cursor boundary)", () => {
     expect(() => agentEventDetailCursorPayloadSchema.parse({ ...detailCursor, v: 2 })).toThrow();
     const { eventId, ...withoutEvent } = detailCursor;
     expect(eventId).toBe("e7");
@@ -473,37 +472,41 @@ describe("agentEventDetailResponseSchema", () => {
     expect(rest.nextCursor).toBeNull();
   });
 
-  test("parses the four small kinds as atomic single pages", () => {
-    expect(agentEventDetailResponseSchema.parse({
+  test("parses the four small event detail kinds with null nextCursor (single-page emission is enforced by the server route)", () => {
+    const variantsAttached = {
       ...base,
-      kind: "variants_attached",
+      kind: "variants_attached" as const,
       position: 4,
       offset: 0,
       variants: [{ text: "v", selected: true, number: 2, model: null, preset: null }],
       nextCursor: null,
-    })).toBeDefined();
-    expect(agentEventDetailResponseSchema.parse({
+    };
+    const selectionChanged = {
       ...base,
-      kind: "selection_changed",
+      kind: "selection_changed" as const,
       position: 4,
       messageId: "m4",
       previous: { variantId: "v1", text: "old", model: null, preset: null },
       current: { variantId: "v2", text: "new", model: null, preset: null },
       nextCursor: null,
-    })).toBeDefined();
-    expect(agentEventDetailResponseSchema.parse({
+    };
+    const branchForked = {
       ...base,
-      kind: "branch_forked",
+      kind: "branch_forked" as const,
       at: 4,
       nextCursor: null,
-    })).toBeDefined();
-    expect(agentEventDetailResponseSchema.parse({
+    };
+    const profileChanged = {
       ...base,
-      kind: "profile_changed",
+      kind: "profile_changed" as const,
       from: { id: "p1", name: "Default" },
       to: { id: "p2", name: "Sharp" },
       nextCursor: null,
-    })).toBeDefined();
+    };
+    expect(agentEventDetailResponseSchema.parse(variantsAttached)).toEqual(variantsAttached);
+    expect(agentEventDetailResponseSchema.parse(selectionChanged)).toEqual(selectionChanged);
+    expect(agentEventDetailResponseSchema.parse(branchForked)).toEqual(branchForked);
+    expect(agentEventDetailResponseSchema.parse(profileChanged)).toEqual(profileChanged);
   });
 
   test("variant items share the frozen payload shape — missing selected is rejected", () => {

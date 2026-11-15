@@ -26,8 +26,39 @@ describe("agent review v2 envelope", () => {
   });
 
   test("accepts a null round, empty resolved state, and dangling-only state", () => {
-    expect(agentReviewEnvelopeSchema.parse({ _v: 2, activities: [], round: null })).toEqual({ _v: 2, activities: [], round: null });
-    const danglingOnly = { ...envelope(), activities: [] };
+    const nullRound = { _v: 2 as const, activities: [], round: null };
+    expect(agentReviewEnvelopeSchema.parse(nullRound)).toEqual(nullRound);
+
+    const emptyResolved: AgentReviewEnvelope = {
+      _v: 2,
+      activities: [],
+      round: {
+        snapshots: [],
+        nextSnapshotId: 1,
+        acceptedRules: [],
+        acceptedVisual: [],
+        dismissedRules: [],
+        dismissedVisual: [],
+        rulesKey: null,
+        visualKey: null,
+        dangling: null,
+      },
+    };
+    expect(agentReviewEnvelopeSchema.parse(emptyResolved)).toEqual(emptyResolved);
+
+    const danglingOnly: AgentReviewEnvelope = {
+      _v: 2,
+      activities: [],
+      round: {
+        ...emptyResolved.round!,
+        dangling: {
+          rules: "Pending rules",
+          visual: "Pending visual",
+          baseRules: "Original rules",
+          baseVisual: "<main>Old</main>",
+        },
+      },
+    };
     expect(agentReviewEnvelopeSchema.parse(danglingOnly)).toEqual(danglingOnly);
   });
 

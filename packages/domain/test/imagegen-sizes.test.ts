@@ -13,14 +13,19 @@ describe("imagegen sizes vocabulary", () => {
   test("bounds and default are sane and the default sits inside the bounds", () => {
     expect(IMAGE_SIZE_MIN_PX).toBeLessThan(IMAGE_SIZE_MAX_PX);
     expect(IMAGE_SIZE_DEFAULT.width).toBeGreaterThanOrEqual(IMAGE_SIZE_MIN_PX);
+    expect(IMAGE_SIZE_DEFAULT.width).toBeLessThanOrEqual(IMAGE_SIZE_MAX_PX);
+    expect(IMAGE_SIZE_DEFAULT.height).toBeGreaterThanOrEqual(IMAGE_SIZE_MIN_PX);
     expect(IMAGE_SIZE_DEFAULT.height).toBeLessThanOrEqual(IMAGE_SIZE_MAX_PX);
   });
 
   test("every preset is a valid SD-family size: in bounds, multiple of 16, orientation honest", () => {
+    expect(IMAGE_SIZE_PRESETS.length).toBeGreaterThan(0);
     for (const preset of IMAGE_SIZE_PRESETS) {
       expect(preset.width % 16).toBe(0);
       expect(preset.height % 16).toBe(0);
       expect(preset.width).toBeGreaterThanOrEqual(IMAGE_SIZE_MIN_PX);
+      expect(preset.width).toBeLessThanOrEqual(IMAGE_SIZE_MAX_PX);
+      expect(preset.height).toBeGreaterThanOrEqual(IMAGE_SIZE_MIN_PX);
       expect(preset.height).toBeLessThanOrEqual(IMAGE_SIZE_MAX_PX);
       expect(preset.ratio).toMatch(/^\d+:\d+$/);
       if (preset.orientation === "square") {
