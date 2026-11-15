@@ -38,7 +38,7 @@
  * COVERAGE — the hole cannot silently reopen: every `*.test.ts(x)` under
  * packages/, services/, apps/ and scripts/ must match the `include` of one
  * of the configs below (the six test configs, plus the main configs that
- * already cover their test files: packages/api-contracts — src and test,
+ * already cover their test files: packages/api-contracts — test,
  * apps/web — src-collocated tests, scripts — top-level `*.ts`). The includes
  * are read live from those tsconfig files (JSONC comments stripped), so the
  * tsconfigs stay the single source of truth; an unregistered test file is a
