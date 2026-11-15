@@ -272,12 +272,11 @@ describe("script templates — random.js (Random Event)", () => {
       const r = run(code);
       if (r.character.scenario) fired = r.character.scenario;
     }
-    // If none fired in 500 runs (astronomically unlikely at 5%), skip rather
-    // than flake — but assert structure when we did catch one.
-    if (fired) {
-      expect(fired).toContain("[EVENT]");
-      expect(knownEvents.some((e) => fired.includes(e))).toBe(true);
-    }
+    // Assert that at least one run fired (0.95^500 ≈ 7.3e-12 miss chance) so
+    // a broken never-fire regression fails loudly instead of passing vacuously.
+    expect(fired.length).toBeGreaterThan(0);
+    expect(fired).toContain("[EVENT]");
+    expect(knownEvents.some((e) => fired.includes(e))).toBe(true);
   });
 });
 

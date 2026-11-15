@@ -158,6 +158,7 @@ describe("testScript — dice dispatch", () => {
       characterName: "Dragon",
     });
 
+    expect(result.kind).toBe("dice");
     if (result.kind !== "dice") return;
     expect(result.sampleRolls).toHaveLength(2);
 
@@ -183,6 +184,8 @@ describe("testScript — dice dispatch", () => {
     const r1 = await testScript(storesWith(script), { scriptId: "s1", characterName: "C" });
     const r2 = await testScript(storesWith(script), { scriptId: "s1", characterName: "C" });
 
+    expect(r1.kind).toBe("dice");
+    expect(r2.kind).toBe("dice");
     if (r1.kind !== "dice" || r2.kind !== "dice") return;
     expect(r1.sampleRolls).toEqual(r2.sampleRolls);
   });
@@ -195,6 +198,7 @@ describe("testScript — dice dispatch", () => {
     });
     const result = await testScript(storesWith(script), { scriptId: "s1" });
 
+    expect(result.kind).toBe("dice");
     if (result.kind !== "dice") return;
     expect(result.discoveryError).toBe("discovery boom");
     expect(result.checks).toHaveLength(0);
@@ -211,6 +215,7 @@ context.dice.register({
     const script = makeScript({ id: "s1", scriptKind: "dice", code });
     const result = await testScript(storesWith(script), { scriptId: "s1" });
 
+    expect(result.kind).toBe("dice");
     if (result.kind !== "dice") return;
     expect(result.sampleRolls).toHaveLength(1);
     expect(result.sampleRolls[0].result.ok).toBe(false);
@@ -300,6 +305,7 @@ describe("testScript — interactive dispatch", () => {
     });
     const result = await testScript(storesWith(script), { scriptId: "s1" });
 
+    expect(result.kind).toBe("interactive");
     if (result.kind !== "interactive") return;
     expect(result.definition).toBeNull();
     expect(result.discoveryError).toBeTruthy();
@@ -313,6 +319,7 @@ describe("testScript — interactive dispatch", () => {
     });
     const result = await testScript(storesWith(script), { scriptId: "s1" });
 
+    expect(result.kind).toBe("interactive");
     if (result.kind !== "interactive") return;
     expect(result.definition).toBeNull();
     expect(result.discoveryError).toBeTruthy();
@@ -371,7 +378,9 @@ describe("testScript — interactive dispatch", () => {
     });
     const result = await testScript(storesWith(script), { scriptId: "s1" });
 
+    expect(result.kind).toBe("interactive");
     if (result.kind !== "interactive") return;
+    expect(result.definition).not.toBeNull();
     if (!result.definition) return;
     expect(result.definition.setup).toBeUndefined();
   });
@@ -384,6 +393,7 @@ describe("testScript — interactive dispatch", () => {
     });
     const result = await testScript(storesWith(script), { scriptId: "s1" });
 
+    expect(result.kind).toBe("interactive");
     if (result.kind !== "interactive") return;
     expect(result.definition).toBeNull();
     expect(result.discoveryError).toBeTruthy();

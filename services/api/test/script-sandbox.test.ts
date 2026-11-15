@@ -192,10 +192,9 @@ describe("executeScripts — context.lore", () => {
     const r = run(`context.lore.activeEntries[0].title = "hacked"; context.character.personality += context.lore.activeEntries[0].title;`, {
       activeLoreEntries: [{ title: "Original", content: "", keys: [] }],
     });
-    // Frozen: assignment is a no-op (or throws, caught as an error).
-    if (r.errors.length === 0) {
-      expect(r.character.personality).toBe("Original");
-    }
+    // Frozen in non-strict VM mode: assignment fails silently with no errors.
+    expect(r.errors).toEqual([]);
+    expect(r.character.personality).toBe("Original");
   });
 
   test("activeEntries is empty when no lore activated", () => {
