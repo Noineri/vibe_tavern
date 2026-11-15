@@ -1,6 +1,7 @@
 import { describe, expect, it, beforeEach, afterEach, mock } from "bun:test";
 import React from "react";
 import { useDomEnv } from "../../test/dom-env.js";
+import { flush } from "../../test/flush.js";
 
 useDomEnv();
 
@@ -40,12 +41,6 @@ const putLinks = mock(recordPut);
 const refreshVoiceMap = mock(async (): Promise<void> => {});
 
 const deps: TtsLinksDeps = { getLinks, putLinks, refreshVoiceMap };
-
-async function flush(): Promise<void> {
-  await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 10));
-  });
-}
 
 beforeEach(() => {
   getLinksResponse = [];
