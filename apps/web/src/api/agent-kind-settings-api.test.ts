@@ -40,7 +40,15 @@ function respondWith(status: number, body: unknown): void {
 }
 
 function settingsWire(kind: string): Record<string, unknown> {
-	return { agentKind: kind, providerProfileId: "p1", modelName: "m1", defaultProfileId: null, updatedAt: "" };
+	return {
+		agentKind: kind,
+		providerProfileId: "p1",
+		modelName: "m1",
+		defaultProfileId: null,
+		updatedAt: "2026-01-01T00:00:00Z",
+		servesChatModes: [],
+		autoCompactDefault: true,
+	};
 }
 
 beforeEach(() => {

@@ -77,12 +77,19 @@ describe("installSoundAlertsGesturePrimer", () => {
     dispose();
   });
 
-  test("keydown primes too, and the disposer removes the listeners", () => {
-    const dispose = installSoundAlertsGesturePrimer();
-    dispose();
-
+  test("keydown primes too, and the disposer removes the listeners", async () => {
+    const disposedPrimer = installSoundAlertsGesturePrimer();
+    disposedPrimer();
     window.dispatchEvent(new window.Event("keydown"));
+    await Promise.resolve();
     expect(FakeAudioContext.constructed).toBe(0);
+
+    const activePrimer = installSoundAlertsGesturePrimer();
+    window.dispatchEvent(new window.Event("keydown"));
+    await Promise.resolve();
+    expect(FakeAudioContext.constructed).toBe(1);
+    expect(FakeAudioContext.resumed).toBe(1);
+    activePrimer();
   });
 });
 

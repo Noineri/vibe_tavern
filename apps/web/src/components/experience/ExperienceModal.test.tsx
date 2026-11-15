@@ -16,7 +16,7 @@
  * i18n keys are mocked at the boundary (return the key verbatim) so the chrome
  * text is stable and the test does not depend on the locale bundle.
  */
-import { describe, it, expect, beforeAll, mock, afterEach } from "bun:test";
+import { describe, it, expect, beforeEach, mock, afterEach } from "bun:test";
 
 import { useDomEnv } from "../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
@@ -53,21 +53,28 @@ import type {
   ExperienceModelSeatRequest,
   ExperienceRoundCommitClaim,
 } from "./ExperienceFrame.js";
-let capturedOnAction: ((action: { requestId: string }) => void) | null = null;
+import type { ExperienceActionDto } from "@vibe-tavern/api-contracts";
+let capturedOnAction: ((action: ExperienceActionDto) => unknown) | null = null;
+let capturedOnFinish: ((revision: number) => void) | null = null;
 let capturedOnModelRequest: ((req: ExperienceModelSeatRequest) => void) | null = null;
 let capturedOnRoundCommit: ((claim: ExperienceRoundCommitClaim) => void) | null = null;
 let capturedRealtime: { readonly config: ExperienceLoopConfig } | undefined;
+const sendStateSpy = mock((_view: unknown, _viewer?: unknown) => {});
+const sendResultSpy = mock((_requestId: string, _revision: number, _status: string) => {});
+const sendErrorSpy = mock((_code: string, _message: string, _detail?: unknown) => {});
 const sendModelResultSpy = mock((_seatId: string, _result: unknown, _requestId?: string) => {});
 mock.module("./ExperienceFrame.js", () => ({
   ...realFrame,
   ExperienceFrame: (props: {
-    onAction: (a: { requestId: string }) => void;
+    onAction: (a: ExperienceActionDto) => void;
+    onFinish?: (revision: number) => void;
     onModelRequest?: (req: ExperienceModelSeatRequest) => void;
     onRoundCommit?: (claim: ExperienceRoundCommitClaim) => void;
     realtime?: { readonly config: ExperienceLoopConfig };
     ref?: React.Ref<unknown>;
   }) => {
     capturedOnAction = props.onAction;
+    capturedOnFinish = props.onFinish ?? null;
     capturedOnModelRequest = props.onModelRequest ?? null;
     capturedOnRoundCommit = props.onRoundCommit ?? null;
     capturedRealtime = props.realtime;
@@ -76,9 +83,9 @@ mock.module("./ExperienceFrame.js", () => ({
     const ref = props.ref;
     if (ref !== null && typeof ref === "object" && "current" in ref) {
       (ref as { current: unknown }).current = {
-        sendState: () => {},
-        sendResult: () => {},
-        sendError: () => {},
+        sendState: sendStateSpy,
+        sendResult: sendResultSpy,
+        sendError: sendErrorSpy,
         sendPending: () => {},
         sendLifecycle: () => {},
         sendModelResult: sendModelResultSpy,
@@ -92,7 +99,14 @@ mock.module("./ExperienceFrame.js", () => ({
 
 const { ExperienceModal } = await import("./ExperienceModal.js");
 import type { ExperienceActionOutcome } from "./ExperienceModal.js";
-import type { ExperienceActionDto } from "@vibe-tavern/api-contracts";
+
+beforeEach(() => {
+  capturedOnAction = null;
+  capturedOnFinish = null;
+  sendStateSpy.mockClear();
+  sendResultSpy.mockClear();
+  sendErrorSpy.mockClear();
+});
 
 const VISUAL = "<div id=\"g\">play</div>";
 
@@ -216,6 +230,20 @@ describe("ExperienceModal — finish confirmation lives in the chrome", () => {
     fireEvent.click(getByTestId("experience-finish"));
     expect(queryByTestId("experience-finish-quiet")).toBeNull();
   });
+
+  it("a frame-driven finish request routes through the chrome confirmation without auto-finishing", () => {
+    const { getByTestId, queryByTestId, onFinishExperience } = renderModal();
+    expect(capturedOnFinish).not.toBeNull();
+    expect(queryByTestId("experience-finish-confirm")).toBeNull();
+    act(() => {
+      capturedOnFinish!(3);
+    });
+    expect(getByTestId("experience-finish-confirm")).toBeTruthy();
+    expect(onFinishExperience).not.toHaveBeenCalled();
+    // Confirming finishes once; frame alone cannot trigger onFinishExperience.
+    fireEvent.click(getByTestId("experience-finish-confirm-btn"));
+    expect(onFinishExperience).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("ExperienceModal — in-session settings entry (lobby Б4)", () => {
@@ -316,21 +344,18 @@ describe("ExperienceModal — session preservation on close", () => {
 });
 
 describe("ExperienceModal — async action-outcome contract (seam #3)", () => {
-  it("accepts an async onAction returning the outcome contract and renders", async () => {
+  it("acks resolved ok outcomes through frame.sendResult and frame.sendState", async () => {
     installUrlSpy();
-    // Typed by the REAL prop contract (`onAction: (action: ExperienceActionDto)
-    // => Promise<ExperienceActionOutcome>`) so the mock is directly assignable
-    // — the old cast targeted a `{ requestId }` param shape the component never
-    // declares, hiding the bare-Mock erasure twice over.
+    const resolvedView = { state: { turn: 2 }, actions: [], revision: 7, status: "active" as const };
     const actionHandler = mock((_action: ExperienceActionDto) =>
       Promise.resolve<ExperienceActionOutcome>({
         ok: true,
         revision: 7,
         status: "active",
-        view: { state: { turn: 2 }, actions: [], revision: 7, status: "active" },
+        view: resolvedView,
       }),
     );
-    const { } = render(
+    render(
       <ExperienceModal
         open
         onClose={() => {}}
@@ -342,21 +367,66 @@ describe("ExperienceModal — async action-outcome contract (seam #3)", () => {
         onAction={actionHandler}
       />,
     );
-    // The modal mounts with the async contract + authoritative view; the
-    // mocked frame is present.
     expect(document.querySelector("[data-testid='mock-frame']")).not.toBeNull();
+    expect(capturedOnAction).not.toBeNull();
+
+    const submittedAction: ExperienceActionDto = {
+      type: "play_card",
+      requestId: "vis-rid-7",
+      expectedRevision: 5,
+    };
+    await act(async () => {
+      await capturedOnAction!(submittedAction);
+    });
+
+    expect(actionHandler).toHaveBeenCalledTimes(1);
+    expect(actionHandler.mock.calls[0]![0]).toBe(submittedAction);
+    expect(sendResultSpy).toHaveBeenCalledTimes(1);
+    expect(sendResultSpy).toHaveBeenCalledWith("vis-rid-7", 7, "active");
+    expect(sendStateSpy).toHaveBeenCalledTimes(1);
+    expect(sendStateSpy).toHaveBeenCalledWith(resolvedView);
+    expect(sendErrorSpy).not.toHaveBeenCalled();
   });
 
-  it("a failure outcome is a valid bridge error shape (fail-closed)", () => {
+  it("routes a non-ok failure outcome to frame.sendError with code, message, and visual requestId (fail-closed)", async () => {
+    installUrlSpy();
     const failOutcome: ExperienceActionOutcome = {
       ok: false,
       code: "stale_revision",
       message: "Action was built on an outdated state.",
       revision: 9,
     };
-    expect(failOutcome.ok).toBe(false);
-    expect(failOutcome.code).toBe("stale_revision");
-    expect(typeof failOutcome.message).toBe("string");
+    const actionHandler = mock((_action: ExperienceActionDto) => Promise.resolve(failOutcome));
+    render(
+      <ExperienceModal
+        open
+        onClose={() => {}}
+        title="Hearts"
+        visualSource={VISUAL}
+        sessionId="sess_1"
+        initialRevision={5}
+        view={{ state: {}, actions: [], revision: 5, status: "active" }}
+        onAction={actionHandler}
+      />,
+    );
+    expect(capturedOnAction).not.toBeNull();
+
+    await act(async () => {
+      await capturedOnAction!({
+        type: "play_card",
+        requestId: "vis-rid-99",
+        expectedRevision: 5,
+      });
+    });
+
+    expect(sendErrorSpy).toHaveBeenCalledTimes(1);
+    expect(sendErrorSpy).toHaveBeenCalledWith(
+      "stale_revision",
+      "Action was built on an outdated state.",
+      { requestId: "vis-rid-99", revision: 9 },
+    );
+    expect(sendResultSpy).not.toHaveBeenCalled();
+    expect(sendStateSpy).not.toHaveBeenCalled();
   });
 });
 
@@ -442,16 +512,23 @@ describe("ExperienceModal — fail-closed rejection handling (seam #3 defect #4)
     expect(capturedOnAction).not.toBeNull();
     // Invoke it — the rejection must be caught, not propagated as an
     // unhandled rejection. The modal reports through onError and always
-    // acks the frame (sendError via frameRef). Since the mocked frame does
-    // not wire a ref, sendError is a no-op — but the catch path is proven by
-    // onError firing and no thrown rejection.
+    // acks the frame via sendError to clear the bridge lock.
     await act(async () => {
-      await capturedOnAction!({ requestId: "visual-rid-42" });
+      await capturedOnAction!({
+        type: "play_card",
+        requestId: "visual-rid-42",
+        expectedRevision: 5,
+      });
     });
     expect(onError).toHaveBeenCalledTimes(1);
     // The error message reported is safe (the exception's message, not raw
     // text leaked to the visual).
     expect(typeof onError.mock.calls[0]![0]).toBe("string");
+    expect(sendErrorSpy).toHaveBeenCalledTimes(1);
+    expect(sendErrorSpy).toHaveBeenCalledWith("invalid_action", "experience_action_invalid", {
+      requestId: "visual-rid-42",
+    });
+    expect(sendResultSpy).not.toHaveBeenCalled();
   });
 });
 

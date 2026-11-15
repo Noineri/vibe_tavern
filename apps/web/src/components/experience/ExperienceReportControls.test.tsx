@@ -418,25 +418,33 @@ describe("ExperienceReportControls — action contract", () => {
 
   it("clears the error after a successful action", async () => {
     const att = makeAttachment();
-    let first = true;
-    const succeed = mock(() => {
-      // First call succeeds; reject the second to leave an error, then we
-      // re-render and succeed again to prove the error clears.
-      return Promise.resolve();
-    });
-    const { getByTestId, rerender } = renderControls({
+    const failOnce = mock(() => Promise.reject(new Error("transient outage")));
+    const succeed = mock(() => Promise.resolve());
+    const { getByTestId, queryByTestId, rerender } = renderControls({
       queuedAttachment: att,
       reportStatus: makeReportStatus({ pendingPublicEventCount: 1 }),
-      onQueue: succeed,
+      onQueue: failOnce,
     });
-    // No error initially.
-    expect(getByTestId("experience-report-controls").querySelector("[data-testid='experience-report-error']")).toBeNull();
+    // First attempt rejects -> error banner is rendered.
     await act(async () => {
       fireEvent.click(getByTestId("experience-report-action"));
     });
-    // After success, still no error.
-    expect(getByTestId("experience-report-controls").querySelector("[data-testid='experience-report-error']")).toBeNull();
-    void first;
-    void rerender;
+    expect(getByTestId("experience-report-error").textContent).toContain("experience_report_action_error");
+
+    // Re-render with a resolving handler and click again -> error clears.
+    rerender(
+      <ExperienceReportControls
+        queuedAttachment={att}
+        reportStatus={makeReportStatus({ pendingPublicEventCount: 1 })}
+        onQueue={succeed}
+        onClear={async () => {}}
+      />,
+    );
+    await act(async () => {
+      fireEvent.click(getByTestId("experience-report-action"));
+    });
+    expect(queryByTestId("experience-report-error")).toBeNull();
+    expect(failOnce).toHaveBeenCalledTimes(1);
+    expect(succeed).toHaveBeenCalledTimes(1);
   });
 });

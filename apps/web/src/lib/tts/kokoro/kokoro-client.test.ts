@@ -12,14 +12,21 @@ import type { KokoroWorkerRequest, KokoroWorkerResponse } from "./kokoro-protoco
 // ─── Fake worker ─────────────────────────────────────────────────────────────
 
 /** Scriptable fake: records posted requests, lets tests emit responses. */
-function makeFakeWorker(): { worker: WorkerLike; requests: KokoroWorkerRequest[]; emit: (r: KokoroWorkerResponse) => void } {
+function makeFakeWorker(): {
+  worker: WorkerLike;
+  requests: KokoroWorkerRequest[];
+  emit: (r: KokoroWorkerResponse) => void;
+  getTerminateCalls: () => number;
+} {
   const requests: KokoroWorkerRequest[] = [];
   let handler: ((event: MessageEvent<KokoroWorkerResponse>) => void) | null = null;
+  let terminateCalls = 0;
   const worker: WorkerLike = {
     postMessage(request) {
       requests.push(request);
     },
     terminate() {
+      terminateCalls += 1;
       handler = null;
     },
     set onmessage(h) {
@@ -32,14 +39,19 @@ function makeFakeWorker(): { worker: WorkerLike; requests: KokoroWorkerRequest[]
   const emit = (response: KokoroWorkerResponse) => {
     handler?.(new MessageEvent("message", { data: response }));
   };
-  return { worker, requests, emit };
+  return { worker, requests, emit, getTerminateCalls: () => terminateCalls };
 }
 
-function makeClient(): { client: KokoroTtsClient; requests: KokoroWorkerRequest[]; emit: (r: KokoroWorkerResponse) => void } {
+function makeClient(): {
+  client: KokoroTtsClient;
+  requests: KokoroWorkerRequest[];
+  emit: (r: KokoroWorkerResponse) => void;
+  getTerminateCalls: () => number;
+} {
   const fake = makeFakeWorker();
   const factory: WorkerFactory = () => fake.worker;
   const client = new KokoroTtsClient(factory);
-  return { client, requests: fake.requests, emit: fake.emit };
+  return { client, requests: fake.requests, emit: fake.emit, getTerminateCalls: fake.getTerminateCalls };
 }
 
 // ─── float32ToWavBytes ────────────────────────────────────────────────────────
@@ -303,7 +315,7 @@ describe("KokoroTtsClient", () => {
   });
 
   test("dispose rejects pending generates and terminates", async () => {
-    const { client, emit } = makeClient();
+    const { client, emit, getTerminateCalls } = makeClient();
     const loadPromise = client.load();
     emit({ type: "loaded" });
     await loadPromise;
@@ -313,8 +325,10 @@ describe("KokoroTtsClient", () => {
       () => undefined,
       () => undefined,
     );
+    expect(getTerminateCalls()).toBe(0);
     client.dispose();
     await observed;
+    expect(getTerminateCalls()).toBe(1);
     await expect(outputPromise).rejects.toBeInstanceOf(KokoroGenerateError);
   });
 });

@@ -9,7 +9,7 @@ import {
 } from "./sound-alerts-subscriber.js";
 import { DEFAULT_SOUND_ALERTS, useSoundAlertsStore } from "../stores/sound-alerts-store.js";
 import { useGenerationQueueStore } from "../stores/generation-queue-store.js";
-import { initI18n } from "../i18n/i18n.js";
+import { i18next, initI18n } from "../i18n/i18n.js";
 import { getT } from "../i18n/locale-helpers.js";
 
 // dom-env: installSoundAlerts now also owns the app-level gesture primer
@@ -19,6 +19,10 @@ import { getT } from "../i18n/locale-helpers.js";
 // assertions compare against t() itself — pinning the event → key mapping
 // without hardcoding the copy.
 useDomEnv();
+
+const initialLanguage = i18next.language;
+const originalSoundAlertsState = useSoundAlertsStore.getState();
+const originalQueueState = useGenerationQueueStore.getState();
 
 const played: string[] = [];
 const notified: Array<{ title: string; body: string }> = [];
@@ -41,7 +45,7 @@ function seedRunningJob(chatId: string): string {
   return id;
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   played.length = 0;
   notified.length = 0;
   background = true;
@@ -49,10 +53,14 @@ beforeEach(() => {
   useGenerationQueueStore.setState({ jobsByChat: {}, batchesByChat: {}, recordsByChat: {} });
   setSoundAlertsEffectsForTests(fakeEffects);
   initI18n("en");
+  await i18next.changeLanguage("en");
 });
 
-afterAll(() => {
+afterAll(async () => {
   setSoundAlertsEffectsForTests(null);
+  useSoundAlertsStore.setState(originalSoundAlertsState, true);
+  useGenerationQueueStore.setState(originalQueueState, true);
+  if (i18next.isInitialized) await i18next.changeLanguage(initialLanguage || "en");
 });
 
 describe("sound-alerts gating", () => {

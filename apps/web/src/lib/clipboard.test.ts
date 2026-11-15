@@ -1,19 +1,17 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
-import { GlobalRegistrator } from "@happy-dom/global-registrator";
-
-GlobalRegistrator.register();
-const { useDomEnv } = await import("../../test/dom-env.js");
-GlobalRegistrator.unregister();
+import { useDomEnv } from "../../test/dom-env.js";
 
 useDomEnv();
 
 let copyText: typeof import("./clipboard.js").copyText;
+let originalWindow: PropertyDescriptor | undefined;
 let originalNavigator: PropertyDescriptor | undefined;
 let originalIsSecureContext: PropertyDescriptor | undefined;
 let originalExecCommand: PropertyDescriptor | undefined;
 
 beforeAll(async () => {
   ({ copyText } = await import("./clipboard.js"));
+  originalWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
   originalNavigator = Object.getOwnPropertyDescriptor(globalThis, "navigator");
   originalIsSecureContext = Object.getOwnPropertyDescriptor(globalThis, "isSecureContext");
   originalExecCommand = Object.getOwnPropertyDescriptor(document, "execCommand");
@@ -42,6 +40,7 @@ describe("copyText", () => {
   });
 
   afterEach(() => {
+    restoreProperty(globalThis, "window", originalWindow);
     restoreProperty(globalThis, "navigator", originalNavigator);
     restoreProperty(globalThis, "isSecureContext", originalIsSecureContext);
     restoreProperty(document, "execCommand", originalExecCommand);
@@ -98,7 +97,15 @@ describe("copyText", () => {
   });
 
   test("server-side (no window) → error: unsupported", async () => {
-    const result = await copyText("n/a");
-    expect(result).toEqual({ ok: false, error: "unsupported" });
+    const execCommand = mock(() => true);
+    Object.defineProperty(document, "execCommand", { value: execCommand, configurable: true, writable: true });
+    Object.defineProperty(globalThis, "window", { value: undefined, configurable: true, writable: true });
+    try {
+      const result = await copyText("n/a");
+      expect(result).toEqual({ ok: false, error: "unsupported" });
+      expect(execCommand).not.toHaveBeenCalled();
+    } finally {
+      restoreProperty(globalThis, "window", originalWindow);
+    }
   });
 });

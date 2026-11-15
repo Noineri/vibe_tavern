@@ -65,4 +65,17 @@ describe("validateVisualSource", () => {
   it("empty script bodies are tolerated", () => {
     expect(validateVisualSource("<script></script>")).toEqual({ ok: true });
   });
+
+  it("never executes script bodies during static validation", () => {
+    const probeKey = "__vtVisualValidatorSideEffectProbe";
+    const globals = globalThis as Record<string, unknown>;
+    globals[probeKey] = 0;
+    try {
+      const src = `<script>globalThis[${JSON.stringify(probeKey)}] = 1; throw new Error("must not run");</script>`;
+      expect(validateVisualSource(src)).toEqual({ ok: true });
+      expect(globals[probeKey]).toBe(0);
+    } finally {
+      Reflect.deleteProperty(globals, probeKey);
+    }
+  });
 });

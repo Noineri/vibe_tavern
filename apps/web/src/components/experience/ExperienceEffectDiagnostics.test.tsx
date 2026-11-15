@@ -19,7 +19,7 @@
  * Runner: bun:test + happy-dom (useDomEnv). i18n returns keys verbatim. RTL
  * cleanup() runs after every test.
  */
-import { describe, it, expect, mock, beforeEach, afterEach } from "bun:test";
+import { describe, it, expect, mock, beforeEach } from "bun:test";
 import type { Mock } from "bun:test";
 import { useDomEnv } from "../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
@@ -61,10 +61,8 @@ beforeEach(() => {
   onRetry = mock((_effectId: string): Promise<void> => retryImpl(_effectId));
   retryImpl = async () => {};
 });
-
-afterEach(() => {
-  // Drain pending microtasks so an in-flight retry never leaks across tests.
-});
+// In-flight retries are awaited inside each test's act(); dom-env handles
+// RTL unmount cleanup and drains passive effects at teardown.
 
 describe("ExperienceEffectDiagnostics — row filtering", () => {
   it("renders nothing when there are no retryable rows", () => {

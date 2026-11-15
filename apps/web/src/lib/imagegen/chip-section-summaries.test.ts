@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "bun:test";
+import { afterAll, beforeEach, describe, expect, it } from "bun:test";
 
 // Real i18next with the committed locale files — the summaries' plural calls
 // must resolve through the ACTUAL ru/en plural rules (the i18n.test.ts
@@ -13,6 +13,11 @@ import {
   lorasSummary,
   samplersSummary,
 } from "./chip-section-summaries.js";
+
+const initialLanguage = i18next.language;
+afterAll(async () => {
+  if (i18next.isInitialized) await i18next.changeLanguage(initialLanguage || "en");
+});
 
 const KREA_OPTIONS = [
   { value: "raw", labelKey: "image_gen_krea_creativity_raw" },

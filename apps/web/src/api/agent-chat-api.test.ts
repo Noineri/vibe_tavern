@@ -19,12 +19,11 @@ useDomEnv();
 
 let chatApi: typeof import("./agent-chat-api.js");
 let getAgentHost: typeof import("../lib/agent-host-registry.js").getAgentHost;
-let scriptOwnerId: typeof import("../lib/agent-host-registry.js").scriptOwnerId;
 type AgentHostTransport = import("../lib/agent-host-registry.js").AgentHostTransport;
 
 beforeAll(async () => {
 	chatApi = await import("./agent-chat-api.js");
-	({ getAgentHost, scriptOwnerId } = await import("../lib/agent-host-registry.js"));
+	({ getAgentHost } = await import("../lib/agent-host-registry.js"));
 	// Self-registers the `experience` host (module init side effect — the same
 	// import the production wrapper performs exactly once per process).
 	await import("../components/build/editors/copilot/experience-agent-host.js");
@@ -81,7 +80,18 @@ function chatBase(): string {
 }
 
 function threadWire(id: string): Record<string, unknown> {
-	return { id, title: `Session ${id}`, archivedAt: null };
+	return {
+		id,
+		scriptId: null,
+		draftSessionId: null,
+		title: `Session ${id}`,
+		archivedAt: null,
+		createdAt: "2026-01-01T00:00:00Z",
+		updatedAt: "2026-01-01T00:00:00Z",
+		metrics: null,
+		contextLinks: [],
+		todo: [],
+	};
 }
 
 /** The script-owner transport under test — the registered host's own. */
@@ -151,21 +161,22 @@ describe("agent host transport — a script owner calls the script routes", () =
 	it("getActiveThread maps { kind: \"script\", scriptId } to the script active route", async () => {
 		respondWith(200, threadWire("thread-script-1"));
 		const thread = await experienceTransport().getActiveThread(scriptOwner);
-		expect(capturedUrl).toContain(`/api/experience-copilot/script/${scriptOwnerId(scriptOwner)}/active`);
+		expect(capturedUrl).toContain("/api/experience-copilot/script/script-1/active");
 		expect(thread).not.toBeNull();
 	});
 
 	it("listSessions maps the script owner to the script sessions route", async () => {
 		respondWith(200, [threadWire("thread-script-1")]);
 		const sessions = await experienceTransport().listSessions(scriptOwner);
-		expect(capturedUrl).toContain(`/api/experience-copilot/script/${scriptOwnerId(scriptOwner)}/sessions`);
+		expect(capturedUrl).toContain("/api/experience-copilot/script/script-1/sessions");
 		expect(sessions).toHaveLength(1);
 	});
 
 	it("startSession maps the script owner to the script session route", async () => {
 		respondWith(200, threadWire("thread-script-2"));
 		const thread = await experienceTransport().startSession(scriptOwner);
-		expect(capturedUrl).toContain(`/api/experience-copilot/script/${scriptOwnerId(scriptOwner)}/session`);
+		expect(capturedUrl).toContain("/api/experience-copilot/script/script-1/session");
+		expect(capturedUrl.endsWith("/api/experience-copilot/script/script-1/session")).toBe(true);
 		expect(capturedInit?.method).toBe("POST");
 		expect(thread).not.toBeNull();
 	});

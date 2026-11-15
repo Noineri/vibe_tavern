@@ -19,6 +19,7 @@
 import { describe, it, expect, mock, beforeEach, afterEach } from "bun:test";
 
 import { useDomEnv } from "../../../test/dom-env.js";
+import type { ExperienceQueuedAttachmentView } from "../../api/types.js";
 import type { DetachWindow, DetachedExperienceDescriptor } from "./ExperienceDetachedWindow.js";
 import type { ExperienceLoopConfig } from "../../lib/experience-loop-host.js";
 
@@ -45,20 +46,22 @@ afterEach(() => {
 // until that session exists).
 const realStore = await import("../../stores/experience-store.js");
 let storeSessionValue: unknown = null;
+let storeQueuedAttachment: unknown = null;
+let storeReportStatus: unknown = null;
 const storeMocks = {
   rehydrate: mock(async () => {}),
   setScope: mock(),
   submitAction: mock(),
   runEffect: mock(),
-  queueReport: mock(async () => null),
+  queueReport: mock(async (): Promise<ExperienceQueuedAttachmentView | null> => null),
   endSession: mock(async () => null),
 };
 mock.module("../../stores/experience-store.js", () => ({
   ...realStore,
   useExperienceSession: () => storeSessionValue,
   useExperienceEffects: () => [],
-  useExperienceQueuedAttachment: () => null,
-  useExperienceReportStatus: () => null,
+  useExperienceQueuedAttachment: () => storeQueuedAttachment,
+  useExperienceReportStatus: () => storeReportStatus,
   useExperienceStore: {
     getState: () => ({
       setScope: storeMocks.setScope,
@@ -240,10 +243,16 @@ describe("isDetachedExperienceWindow", () => {
   });
 });
 
+function resetStoreState(): void {
+  storeSessionValue = null;
+  storeQueuedAttachment = null;
+  storeReportStatus = null;
+  for (const m of Object.values(storeMocks)) m.mockClear();
+}
+
 describe("ExperienceDetachedHost — trusted wrapper", () => {
   beforeEach(() => {
-    storeSessionValue = null;
-    for (const m of Object.values(storeMocks)) m.mockClear();
+    resetStoreState();
   });
 
   it("renders trusted chrome + the sandboxed frame from an explicit descriptor", () => {
@@ -319,8 +328,7 @@ describe("ExperienceDetachedHost — trusted wrapper", () => {
 // ─── IR-73C: trusted Finish + report controls in the detached surface ──────
 describe("ExperienceDetachedHost — trusted Finish + report controls (IR-73C)", () => {
   beforeEach(() => {
-    storeSessionValue = null;
-    for (const m of Object.values(storeMocks)) m.mockClear();
+    resetStoreState();
   });
 
   it("Finish is disabled before the store session hydrates (descriptor alone is not authority)", () => {
@@ -393,15 +401,32 @@ describe("ExperienceDetachedHost — trusted Finish + report controls (IR-73C)",
 
   it("report controls call store.queueReport on a click (no silent growth)", async () => {
     installUrlSpy();
-    storeMocks.queueReport.mockResolvedValue(null);
+    storeReportStatus = { reportFrontier: 0, pendingPublicEventCount: 2 };
+    storeMocks.queueReport.mockResolvedValue({
+      id: "att_1",
+      chatId: "chat_1",
+      branchId: "branch_1",
+      sessionId: "sess_1",
+      sessionRevision: 1,
+      queueRevision: 1,
+      kind: "report",
+      publicReport: { title: "Hearts", events: [] },
+      rulesSourceHash: "hash_r",
+      visualSourceHash: "hash_v",
+      createdAt: "2026-01-01T00:00:00Z",
+      updatedAt: "2026-01-01T00:00:00Z",
+    });
     const { getByTestId } = render(
       <ExperienceDetachedHost descriptor={DESCRIPTOR} />,
     );
-    // The report controls are present in the trusted footer. The action
-    // button is disabled by default (no pending events / no attachment from
-    // the null store reads) so no queue call happens automatically.
+    // At rest (before clicking), queueReport has not been invoked.
     expect(storeMocks.queueReport).not.toHaveBeenCalled();
-    void getByTestId;
+    const btn = getByTestId("experience-report-action") as HTMLButtonElement;
+    expect(btn.disabled).toBe(false);
+    await act(async () => {
+      fireEvent.click(btn);
+    });
+    expect(storeMocks.queueReport).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -427,8 +452,7 @@ function resetRealtimeCaptures(): void {
 
 describe("ExperienceDetachedHost — realtime round plumb (RM-6)", () => {
   beforeEach(() => {
-    storeSessionValue = null;
-    for (const m of Object.values(storeMocks)) m.mockClear();
+    resetStoreState();
     resetRealtimeCaptures();
   });
 

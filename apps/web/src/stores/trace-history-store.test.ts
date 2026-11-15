@@ -63,9 +63,16 @@ describe("trace-history cache — fetch + dedup", () => {
 
   test("fetch transitions idle → loading → success and stores branch-scoped traces", async () => {
     const tA = makeTrace("t1", "brA");
-    mockFetch = async (_chatId, opts) => (opts?.branchId === "brA" ? [tA] : []);
+    let resolveFetch!: (traces: Array<typeof tA>) => void;
+    mockFetch = () => new Promise<Array<typeof tA>>((resolve) => { resolveFetch = resolve; });
 
-    await useTraceHistoryStore.getState().fetch("chat-1", "brA");
+    expect(entry("brA")).toBeUndefined();
+    const promise = useTraceHistoryStore.getState().fetch("chat-1", "brA");
+    expect(entry("brA")?.status).toBe("loading");
+    expect(entry("brA")?.traces).toEqual([]);
+
+    resolveFetch([tA]);
+    await promise;
     expect(entry("brA")?.status).toBe("success");
     expect(entry("brA")?.traces).toEqual([tA]);
   });

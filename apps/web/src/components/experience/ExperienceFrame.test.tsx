@@ -21,6 +21,7 @@ import { useDomEnv } from "../../../test/dom-env.js";
 import {
   ExperienceFrame,
   EXPERIENCE_FRAME_CSP,
+  EXPERIENCE_FRAME_REALTIME_CSP,
   buildExperienceFrameDocument,
   type ExperienceFrameHandle,
 } from "./ExperienceFrame.js";
@@ -116,10 +117,21 @@ describe("buildExperienceFrameDocument", () => {
     expect(doc.indexOf(VIBE_EXPERIENCE_SDK_SOURCE)).toBeLessThan(doc.indexOf(VISUAL));
   });
 
-  it("runs under allow-scripts only (no allow-same-origin in the CSP)", () => {
-    // The sandbox attribute is on the <iframe>, not the doc; here we only assert
-    // the doc itself does not relax isolation. The attribute is asserted below.
-    expect(EXPERIENCE_FRAME_CSP).not.toContain("allow-same-origin");
+  it("pins the document CSP directives (no unsafe-eval in turn mode, network and frames closed)", () => {
+    // The `allow-scripts` / absent `allow-same-origin` sandbox attribute lives
+    // on the <iframe> element and is pinned by the mounted component test below.
+    // Here we pin the document meta-CSP directives themselves.
+    expect(EXPERIENCE_FRAME_CSP).toContain("script-src 'unsafe-inline'");
+    expect(EXPERIENCE_FRAME_CSP).not.toContain("'unsafe-eval'");
+    expect(EXPERIENCE_FRAME_CSP).toContain("style-src 'unsafe-inline'");
+    expect(EXPERIENCE_FRAME_CSP).toContain("img-src data: blob:");
+    expect(EXPERIENCE_FRAME_CSP).toContain("font-src data:");
+    expect(EXPERIENCE_FRAME_CSP).toContain("frame-src 'none'");
+    expect(EXPERIENCE_FRAME_CSP).toContain("media-src 'none'");
+    // Realtime CSP unlocks unsafe-eval for rules while keeping network/frames closed.
+    expect(EXPERIENCE_FRAME_REALTIME_CSP).toContain("script-src 'unsafe-inline' 'unsafe-eval'");
+    expect(EXPERIENCE_FRAME_REALTIME_CSP).toContain("connect-src 'none'");
+    expect(EXPERIENCE_FRAME_REALTIME_CSP).toContain("frame-src 'none'");
   });
 
   it("bakes the host scrollbar color into the thumb token (theme-aware)", () => {
@@ -418,7 +430,6 @@ describe("ExperienceFrame — session-scoped bridge lifetime (IR-73B seam #4)", 
 
 import {
   buildRealtimeExperienceFrameDocument,
-  EXPERIENCE_FRAME_REALTIME_CSP,
 } from "./ExperienceFrame.js";
 import type { ExperienceLoopConfig } from "../../lib/experience-loop-host.js";
 

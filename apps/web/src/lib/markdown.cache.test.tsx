@@ -34,6 +34,7 @@ installReactMarkdownSeam();
 let Markdown: typeof import("./markdown.js").Markdown;
 let configureMarkdownResultCacheForTests: typeof import("./markdown-result-cache.js").configureMarkdownResultCacheForTests;
 let resetMarkdownResultCacheForTests: typeof import("./markdown-result-cache.js").resetMarkdownResultCacheForTests;
+let resetKatexStylesheetForTests: typeof import("./markdown-math.js").resetKatexStylesheetForTests;
 
 beforeAll(async () => {
   ({ Markdown } = await import("./markdown.js"));
@@ -41,6 +42,7 @@ beforeAll(async () => {
     configureMarkdownResultCacheForTests,
     resetMarkdownResultCacheForTests,
   } = await import("./markdown-result-cache.js"));
+  ({ resetKatexStylesheetForTests } = await import("./markdown-math.js"));
 });
 
 beforeEach(() => {
@@ -53,6 +55,7 @@ afterAll(() => {
   // module-global; a co-loaded sibling must not inherit test bounds), and
   // remove this file's injected KaTeX stylesheet link.
   resetMarkdownResultCacheForTests();
+  resetKatexStylesheetForTests();
 });
 
 /**

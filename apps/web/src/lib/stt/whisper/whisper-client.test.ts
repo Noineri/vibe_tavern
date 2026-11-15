@@ -287,17 +287,28 @@ describe("WhisperSttClient.transcribeBlob", () => {
     const load = client.load("onnx-community/whisper-base");
     await finishLoad(worker);
     await load;
-    worker.auto((request) => {
-      if (request.type === "transcribe") {
-        worker.respond({
-          type: "error",
-          id: request.id,
-          name: "WhisperTranscribeError",
-          message: "pipeline blew up",
-        });
-      }
+
+    const first = client.transcribeBlob(new Blob(["a"]));
+    const second = client.transcribeBlob(new Blob(["b"]));
+    await Bun.sleep(0);
+    const transcribeReqs = worker.sent.filter(
+      (m): m is Extract<WhisperWorkerRequest, { type: "transcribe" }> => m.type === "transcribe",
+    );
+    expect(transcribeReqs).toHaveLength(2);
+    const [firstReq, secondReq] = transcribeReqs;
+
+    // Answer out of order: reject secondReq by its correlation id first, then resolve firstReq.
+    worker.respond({
+      type: "error",
+      id: secondReq!.id,
+      name: "WhisperTranscribeError",
+      message: "pipeline blew up",
     });
-    await expect(client.transcribeBlob(new Blob(["x"]))).rejects.toThrow("pipeline blew up");
+    worker.respond({ type: "transcribed", id: firstReq!.id, text: "first ok" });
+
+    await expect(second).rejects.toBeInstanceOf(WhisperTranscribeError);
+    await expect(second).rejects.toThrow("pipeline blew up");
+    await expect(first).resolves.toBe("first ok");
   });
 });
 

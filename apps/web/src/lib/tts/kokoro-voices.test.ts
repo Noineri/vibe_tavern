@@ -97,8 +97,8 @@ describe("kokoroVoiceLabel (human-readable voice picker labels)", () => {
 
   test("skips the grade segment when the manifest has no grade", () => {
     const ungraded = KOKORO_VOICES.find((v) => v.grade === null);
-    if (ungraded === undefined) return; // manifest currently grades every voice
-    const label = kokoroVoiceLabel(ungraded, t);
+    expect(ungraded).toBeDefined();
+    const label = kokoroVoiceLabel(ungraded!, t);
     expect(label.endsWith("·")).toBe(false);
     expect(label.split(" · ")).toHaveLength(3);
   });

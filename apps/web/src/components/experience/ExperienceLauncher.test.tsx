@@ -288,11 +288,15 @@ mock.module("./ExperienceModal.js", () => ({
   },
 }));
 
-// Mock openExperienceDetachedWindow.
+// Mock openExperienceDetachedWindow while capturing the constructed descriptor.
 let detachResult: Window | null = null;
+let capturedDetachDescriptor: unknown = null;
 mock.module("./ExperienceDetachedWindow.js", () => ({
   ...realDetached,
-  openExperienceDetachedWindow: mock(() => detachResult),
+  openExperienceDetachedWindow: mock((descriptor: unknown) => {
+    capturedDetachDescriptor = descriptor;
+    return detachResult;
+  }),
 }));
 
 // ─── experience-api client mock (RM-10 realtime probe) ─────────────────────
@@ -368,6 +372,7 @@ beforeEach(() => {
   snapshotBranch = { id: BRANCH_ID };
   mobileOverride = false;
   detachResult = null;
+  capturedDetachDescriptor = null;
   modalProps = {};
   setupOnReady = null;
   roundConfigCalls.length = 0;
@@ -919,9 +924,29 @@ describe("ExperienceLauncher — detach", () => {
 
   it("successful detach closes modal and marks detached", () => {
     detachResult = {} as Window;
-    setScopeState(SCOPE_KEY, { config: makeConfig(), session: makeSession(), modalOpen: true });
+    const pinnedView = { revision: 7, status: "active", state: { turn: 3 }, actions: [] };
+    setScopeState(SCOPE_KEY, {
+      config: makeConfig(),
+      session: makeSession({
+        sessionId: "sess_detach",
+        visualSource: "<div id='pinned'>hero</div>",
+        revision: 7,
+        view: pinnedView,
+        manifest: { name: "Hearts" },
+      }),
+      modalOpen: true,
+    });
     render(<ExperienceLauncher />);
     fireEvent.click(document.querySelector("[data-testid='modal-detach']")!);
+    expect(capturedDetachDescriptor).toEqual({
+      chatId: CHAT_ID,
+      branchId: BRANCH_ID,
+      sessionId: "sess_detach",
+      title: "Hearts",
+      visualSource: "<div id='pinned'>hero</div>",
+      initialRevision: 7,
+      initialView: pinnedView,
+    });
     expect(storeMocks.closeModal).toHaveBeenCalledTimes(1);
     expect(storeMocks.setDetached).toHaveBeenCalledWith(true);
   });
@@ -933,20 +958,30 @@ describe("ExperienceLauncher — branch switch", () => {
     setScopeState(SCOPE_KEY, { config: makeConfig(), session: makeSession({ sessionId: "sess_A" }) });
     const BRANCH2 = JSON.stringify([CHAT_ID, "branch_2"]);
     setScopeState(BRANCH2, { config: makeConfig(), session: makeSession({ sessionId: "sess_B" }) });
-    const { getByTestId, rerender } = render(<ExperienceLauncher />);
+    const { getByTestId, queryByTestId, rerender } = render(<ExperienceLauncher />);
     // Open the modal on branch 1.
     fireEvent.click(getByTestId("experience-launcher-pill"));
     await act(async () => {
       fireEvent.click(getByTestId("experience-launcher-primary"));
     });
     expect(storeMocks.openModal).toHaveBeenCalledTimes(1);
-    // Switch to branch 2 — local surfaces reset.
+    expect(getByTestId("modal-session-id").textContent).toBe("sess_A");
+    // Switch to branch 2 — local surfaces reset and branch 2's closed modal
+    // no longer shows branch 1's session.
     snapshotBranch = { id: "branch_2" };
     act(() => {
       rerender(<ExperienceLauncher />);
     });
     // setScope called for the new branch.
     expect(storeMocks.setScope).toHaveBeenCalledWith(CHAT_ID, "branch_2");
+    expect(queryByTestId("experience-modal")).toBeNull();
+    // Opening branch 2 renders branch 2's own session (`sess_B`), not `sess_A`.
+    fireEvent.click(getByTestId("experience-launcher-pill"));
+    await act(async () => {
+      fireEvent.click(getByTestId("experience-launcher-primary"));
+    });
+    expect(getByTestId("modal-session-id").textContent).toBe("sess_B");
+    expect(modalProps.sessionId).toBe("sess_B");
   });
 });
 

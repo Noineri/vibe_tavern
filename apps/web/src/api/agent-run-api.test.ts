@@ -53,10 +53,21 @@ test("only the explicit stop operation POSTs /stop", async () => {
 });
 
 test("409 active-run refusal retains its typed code at the shared stream boundary", async () => {
+  response = () => Response.json({ error: "Already running", code: "AGENT_RUN_ACTIVE" }, { status: 409 });
+  let failure: unknown;
+  try { await streamExperienceCopilot("thread", { content: "Send", providerProfileId: "provider" }, { onStatus: () => {}, onChunk: () => {} }); }
+  catch (error) { failure = error; }
+  expect(failure).toBeInstanceOf(ProviderStreamError);
+  expect((failure as ProviderStreamError).code).toBe("AGENT_RUN_ACTIVE");
+  expect((failure as ProviderStreamError).message).toBe("Already running");
+});
+
+test("nested 409 error envelope (defensive arm for object-wrapped codes) retains code and message", async () => {
   response = () => Response.json({ error: { code: "AGENT_RUN_ACTIVE", message: "Already running" } }, { status: 409 });
   let failure: unknown;
   try { await streamExperienceCopilot("thread", { content: "Send", providerProfileId: "provider" }, { onStatus: () => {}, onChunk: () => {} }); }
   catch (error) { failure = error; }
   expect(failure).toBeInstanceOf(ProviderStreamError);
   expect((failure as ProviderStreamError).code).toBe("AGENT_RUN_ACTIVE");
+  expect((failure as ProviderStreamError).message).toBe("Already running");
 });

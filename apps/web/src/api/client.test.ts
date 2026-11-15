@@ -112,6 +112,18 @@ describe("apiFetch — the API seam", () => {
     expect(localStorage.getItem("vibe_mobile_token")).toBeNull();
   });
 
+  test("401 from a foreign-origin or non-/api URL leaves the token and session untouched", async () => {
+    globalThis.fetch = realFetch;
+    calls = installFetchMock(401);
+    saveMobileToken("tok_keep");
+    const foreignRes = await apiFetch("https://cdn.example.com/api/whatever");
+    const assetRes = await apiFetch("/assets/logo.svg");
+    expect(foreignRes.status).toBe(401);
+    expect(assetRes.status).toBe(401);
+    expect(useSessionStore.getState().revoked).toBe(false);
+    expect(localStorage.getItem("vibe_mobile_token")).toBe("tok_keep");
+  });
+
   test("200 keeps the token and the session intact", async () => {
     saveMobileToken("tok_ok");
     await apiFetch("/api/bootstrap");

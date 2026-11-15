@@ -48,7 +48,34 @@ describe("generateTtsSpeech", () => {
 		const result = await ttsApi.generateTtsSpeech({ profileId: "p1", text: "hi" }, { signal: controller.signal });
 
 		expect(capturedInit?.signal).toBe(controller.signal);
+		expect(capturedInit?.signal?.aborted).toBe(false);
 		expect(result.mime).toBe("audio/mpeg");
+
+		const abortErr = new DOMException("Aborted", "AbortError");
+		globalThis.fetch = mockFetch(
+			(_input, init) =>
+				new Promise<Response>((_resolve, reject) => {
+					capturedInit = init;
+					const sig = init?.signal;
+					if (!sig) {
+						reject(new Error("Expected AbortSignal to be threaded to fetch"));
+						return;
+					}
+					if (sig.aborted) {
+						reject(sig.reason);
+						return;
+					}
+					sig.addEventListener("abort", () => reject(sig.reason), { once: true });
+				}),
+		);
+
+		const pending = ttsApi.generateTtsSpeech({ profileId: "p1", text: "hi" }, { signal: controller.signal });
+		expect(capturedInit?.signal).toBe(controller.signal);
+		expect(capturedInit?.signal?.aborted).toBe(false);
+
+		controller.abort(abortErr);
+		expect(capturedInit?.signal?.aborted).toBe(true);
+		await expect(pending).rejects.toThrow("Aborted");
 	});
 
 	it("omits the signal when no options are passed", async () => {

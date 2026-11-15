@@ -63,6 +63,8 @@ test("Stop keeps observing until EOF instead of treating the immediate ack or ab
     expect(await stopChatGeneration("chat")).toEqual({ stopped: true });
     writer.enqueue(encoder.encode(frame(1, "abort", { partialLength: 4 })));
     await observedAbort;
+    // Yield a macrotask so an erroneous abort-finalizing implementation settles before we sample `settled`.
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
     expect(settled).toBe(false);
     writer.close();
     closed = true;

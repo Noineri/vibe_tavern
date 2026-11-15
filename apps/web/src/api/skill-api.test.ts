@@ -9,11 +9,7 @@
 import { afterEach, beforeAll, describe, expect, it, jest, spyOn } from "bun:test";
 import type { SkillCatalog } from "@vibe-tavern/api-contracts";
 import { testFetch } from "@vibe-tavern/test-fetch";
-import { GlobalRegistrator } from "@happy-dom/global-registrator";
-
-GlobalRegistrator.register();
-const { useDomEnv } = await import("../../test/dom-env.js");
-GlobalRegistrator.unregister();
+import { useDomEnv } from "../../test/dom-env.js";
 
 useDomEnv();
 
@@ -116,8 +112,10 @@ describe("importCoauthorSkills — folder upload preserves relative paths (CTX-S
 
 	it("POSTs to the import endpoint", async () => {
 		let capturedUrl: string | undefined;
-		globalThis.fetch = mockFetch(async (input) => {
+		let capturedInit: RequestInit | undefined;
+		globalThis.fetch = mockFetch(async (input, init) => {
 			capturedUrl = input.toString();
+			capturedInit = init;
 			return new Response(JSON.stringify({ importedSkillIds: [], importedTopLevelDirs: [] }), {
 				status: 201,
 				headers: { "Content-Type": "application/json" },
@@ -125,6 +123,7 @@ describe("importCoauthorSkills — folder upload preserves relative paths (CTX-S
 		});
 
 		await importCoauthorSkills([folderFile("x/SKILL.md")]);
+		expect(capturedInit?.method).toBe("POST");
 		expect(capturedUrl).toContain("/api/coauthor/skills/import");
 	});
 });

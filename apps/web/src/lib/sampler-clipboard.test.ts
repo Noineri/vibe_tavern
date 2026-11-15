@@ -143,11 +143,8 @@ describe("sampler clipboard round-trip", () => {
     expect(target.bannedStrings).toEqual([" finger", " purr"]);
   });
 
-  test("malformed JSON is rejected before reaching the schema", () => {
-    const bad = "{not valid json";
-    expect(() => JSON.parse(bad)).toThrow(SyntaxError);
-  });
-
+  // Callers parse clipboard/imported JSON via JSON.parse before calling
+  // samplerPresetPayloadSchema.safeParse; schema-level shape rejections follow.
   test("wrong-shape JSON (array instead of object) is rejected by the schema", () => {
     const parsed = samplerPresetPayloadSchema.safeParse([1, 2, 3]);
     expect(parsed.success).toBe(false);

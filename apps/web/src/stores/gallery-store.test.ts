@@ -126,8 +126,14 @@ test("remove applies optimistically and persists on success", async () => {
   const b = makeAsset("a2");
   listCharacterAssets.mockImplementation(() => Promise.resolve([a, b]));
   await useGalleryStore.getState().reload("cid");
+  let resolveDelete!: () => void;
+  deleteCharacterAsset.mockImplementation(() => new Promise<void>((res) => { resolveDelete = res; }));
 
-  await useGalleryStore.getState().remove("cid", "a1");
+  const promise = useGalleryStore.getState().remove("cid", "a1");
+  expect(useGalleryStore.getState().byCharacter["cid"]).toEqual([b]);
+
+  resolveDelete();
+  await promise;
 
   expect(useGalleryStore.getState().byCharacter["cid"]).toEqual([b]);
   expect(deleteCharacterAsset).toHaveBeenCalledWith("cid", "a1");
@@ -140,9 +146,14 @@ test("remove ROLLS BACK and toasts when deleteCharacterAsset fails", async () =>
   const b = makeAsset("a2");
   listCharacterAssets.mockImplementation(() => Promise.resolve([a, b]));
   await useGalleryStore.getState().reload("cid");
-  deleteCharacterAsset.mockImplementation(() => Promise.reject(new Error("boom")));
+  let rejectDelete!: (err: Error) => void;
+  deleteCharacterAsset.mockImplementation(() => new Promise<void>((_res, rej) => { rejectDelete = rej; }));
 
-  await useGalleryStore.getState().remove("cid", "a1");
+  const promise = useGalleryStore.getState().remove("cid", "a1");
+  expect(useGalleryStore.getState().byCharacter["cid"]).toEqual([b]);
+
+  rejectDelete(new Error("boom"));
+  await promise;
 
   expect(useGalleryStore.getState().byCharacter["cid"]).toEqual([a, b]); // restored
   expect(toastError).toHaveBeenCalledWith("boom");
@@ -152,9 +163,14 @@ test("updateCaption applies optimistically and rolls back on failure", async () 
   const a = makeAsset("a1", "old");
   listCharacterAssets.mockImplementation(() => Promise.resolve([a]));
   await useGalleryStore.getState().reload("cid");
-  updateCharacterAsset.mockImplementation(() => Promise.reject(new Error("nope")));
+  let rejectUpdate!: (err: Error) => void;
+  updateCharacterAsset.mockImplementation(() => new Promise((_, rej) => { rejectUpdate = rej; }));
 
-  await useGalleryStore.getState().updateCaption("cid", "a1", "new");
+  const promise = useGalleryStore.getState().updateCaption("cid", "a1", "new");
+  expect(useGalleryStore.getState().byCharacter["cid"]).toEqual([{ ...a, caption: "new" }]);
+
+  rejectUpdate(new Error("nope"));
+  await promise;
 
   expect(useGalleryStore.getState().byCharacter["cid"]).toEqual([a]); // "old" restored
   expect(toastError).toHaveBeenCalledWith("nope");
@@ -165,9 +181,14 @@ test("reorder applies optimistically and rolls back on failure", async () => {
   const b = makeAsset("b2");
   listCharacterAssets.mockImplementation(() => Promise.resolve([a, b]));
   await useGalleryStore.getState().reload("cid");
-  reorderCharacterAssets.mockImplementation(() => Promise.reject(new Error("network")));
+  let rejectReorder!: (err: Error) => void;
+  reorderCharacterAssets.mockImplementation(() => new Promise<void>((_res, rej) => { rejectReorder = rej; }));
 
-  await useGalleryStore.getState().reorder("cid", ["b2", "a1"]);
+  const promise = useGalleryStore.getState().reorder("cid", ["b2", "a1"]);
+  expect(useGalleryStore.getState().byCharacter["cid"]).toEqual([b, a]);
+
+  rejectReorder(new Error("network"));
+  await promise;
 
   // Rolled back to original order.
   expect(useGalleryStore.getState().byCharacter["cid"]).toEqual([a, b]);
