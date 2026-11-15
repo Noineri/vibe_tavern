@@ -35,6 +35,12 @@ import { STORAGE_FOLDERS } from "@vibe-tavern/db";
 import { scanSillyTavernDirectory } from "../src/shared/st-directory-scanner.js";
 import { minimalPng } from "./image-bytes.js";
 
+// Restore the neutral token estimator after all describes so downstream files
+// in the shared api test process do not inherit char-length counting.
+afterAll(() => {
+	setTokenCountFn(() => 0);
+});
+
 // Bun.Glob returns platform-native separators in scan results (\ on win32,
 // / elsewhere) — g() builds expectations in the platform's shape.
 function g(path: string): string {

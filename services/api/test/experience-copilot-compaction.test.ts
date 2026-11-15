@@ -13,7 +13,7 @@
  * and permanent under bun:test; see AGENTS.md gotcha).
  */
 
-import { describe, expect, it, beforeEach } from "bun:test";
+import { describe, expect, it, beforeEach, afterAll } from "bun:test";
 import { setTokenCountFn } from "@vibe-tavern/prompt-pipeline";
 import { createDb, ServicePromptProfileStore, UiSettingsStore } from "@vibe-tavern/db";
 import type {
@@ -212,6 +212,10 @@ function systemMessageOf(call: { prompt: AssemblePromptResponse }): string {
 
 beforeEach(() => {
   setTokenCountFn((text: string) => text.length);
+});
+
+afterAll(() => {
+  setTokenCountFn(() => 0);
 });
 
 // ─── Tests ───────────────────────────────────────────────────────────────────

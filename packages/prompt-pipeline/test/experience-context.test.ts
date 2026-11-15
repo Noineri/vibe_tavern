@@ -8,7 +8,7 @@
  * invariant (only already-projected PUBLIC material in — never hidden state) is
  * expressed by the input type: there is no field for hidden state to enter.
  */
-import { beforeEach, describe, expect, it } from "bun:test";
+import { afterAll, beforeEach, describe, expect, it } from "bun:test";
 import { setTokenCountFn } from "../src/compaction.js";
 import {
 	buildExperienceContext,
@@ -20,6 +20,10 @@ import {
 beforeEach(() => {
 	// Char-length tokenizer → deterministic, easily-reasoned token counts.
 	setTokenCountFn((text) => text.length);
+});
+
+afterAll(() => {
+	setTokenCountFn(() => 0);
 });
 
 function msg(id: string, role: ExperienceContextMessage["role"], content: string): ExperienceContextMessage {

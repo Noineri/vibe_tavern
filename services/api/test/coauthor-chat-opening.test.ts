@@ -66,7 +66,10 @@ async function assistantContents(env: Env, chatId: ChatId): Promise<string[]> {
 describe("Co-Author chat opening (CS-29)", () => {
 	let env: Env;
 	beforeAll(() => setTokenCountFn((text: string) => text.length));
-	afterAll(async () => { if (env) await env.cleanup(); });
+	afterAll(async () => {
+		setTokenCountFn(() => 0);
+		if (env) await env.cleanup();
+	});
 
 	it("a co-author chat seeds the default module's openingMessage with {{char}} literal (not the RP greeting)", async () => {
 		env = await createTestRuntime();

@@ -56,7 +56,10 @@ async function createTestRuntime(): Promise<{
 describe("Co-Author chat API (CA-4)", () => {
 	let env: Awaited<ReturnType<typeof createTestRuntime>>;
 	beforeAll(() => setTokenCountFn((text: string) => text.length));
-	afterAll(async () => { if (env) await env.cleanup(); });
+	afterAll(async () => {
+		setTokenCountFn(() => 0);
+		if (env) await env.cleanup();
+	});
 
 	it("createChatForCharacter persists mode; listCoauthorChats scopes by character+mode", async () => {
 		env = await createTestRuntime();

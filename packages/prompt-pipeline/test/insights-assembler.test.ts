@@ -16,7 +16,7 @@
  *
  * Pure pipeline test: no DB, no LLM, no I/O.
  */
-import { beforeEach, describe, expect, it } from "bun:test";
+import { afterAll, beforeEach, describe, expect, it } from "bun:test";
 import { getInsightsAssembler, INSIGHTS_ASSEMBLERS } from "../src/insights/insights-assemblers.ts";
 import { setTokenCountFn } from "../src/compaction.ts";
 import type { PromptAssemblyContext, InsightsKind } from "../src/types.ts";
@@ -27,6 +27,10 @@ function messagesOf(result: ReturnType<ReturnType<typeof getInsightsAssembler>["
 
 beforeEach(() => {
   setTokenCountFn((text) => text.length);
+});
+
+afterAll(() => {
+  setTokenCountFn(() => 0);
 });
 
 function makeContext(overrides: Partial<PromptAssemblyContext> = {}): PromptAssemblyContext {

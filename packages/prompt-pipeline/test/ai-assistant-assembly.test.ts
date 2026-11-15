@@ -168,59 +168,65 @@ describe("message AI assistant assembly", () => {
   for (const mode of MESSAGE_AI_ASSISTANT_MODES) {
     it(`retains the full RP pipeline and a final editor instruction when mode is ${mode}`, () => {
       setTokenCountFn((text) => text.length);
+      try {
+        const result = assembleMessageMode(mode, 10_000);
+        const layerIds = result.layers.map((layer) => layer.id);
+        for (const layerId of [
+          "prompt_preset_system",
+          "prompt_preset_jailbreak",
+          "prompt_preset_authors_note",
+          "character_base",
+          "character_scenario",
+          "character_personality",
+          "persona",
+          "lore_lore_1",
+          "summary_summary_1",
+          "retrieval_retrieval_1",
+          "mes_example",
+          "recent_history",
+          "objective_task",
+          "scene_state",
+          "script_injection_0",
+          "ai_assistant_instruction",
+        ]) {
+          expect(layerIds).toContain(layerId);
+        }
 
-      const result = assembleMessageMode(mode, 10_000);
-      const layerIds = result.layers.map((layer) => layer.id);
-      for (const layerId of [
-        "prompt_preset_system",
-        "prompt_preset_jailbreak",
-        "prompt_preset_authors_note",
-        "character_base",
-        "character_scenario",
-        "character_personality",
-        "persona",
-        "lore_lore_1",
-        "summary_summary_1",
-        "retrieval_retrieval_1",
-        "mes_example",
-        "recent_history",
-        "objective_task",
-        "scene_state",
-        "script_injection_0",
-        "ai_assistant_instruction",
-      ]) {
-        expect(layerIds).toContain(layerId);
+        const presetLayer = result.layers.find((layer) => layer.id === "prompt_preset_system");
+        expect(presetLayer?.text).toBe("PRESET_FOR_Aria");
+
+        const editorLayer = result.layers.find((layer) => layer.id === "ai_assistant_instruction");
+        expect(editorLayer?.tokenCount).toBeGreaterThan(0);
+        expect(result.totalTokenEstimate).toBe(result.layers.reduce((total, layer) => total + layer.tokenCount, 0));
+
+        const finalMessage = result.finalPayload.messages.at(-1);
+        expect(finalMessage?.role).toBe("user");
+        expect(finalMessage?.layerId).toBe("ai_assistant_instruction");
+        expect(finalMessage?.content).toContain("EDITOR_SYSTEM_FOR_Aria");
+        expect(finalMessage?.content).toContain("EXISTING_MESSAGE_TOKEN");
+        expect(finalMessage?.content).toContain("EDITOR_TASK_FOR_Aria");
+        expect(result.prefill).toBeNull();
+      } finally {
+        setTokenCountFn(() => 0);
       }
-
-      const presetLayer = result.layers.find((layer) => layer.id === "prompt_preset_system");
-      expect(presetLayer?.text).toBe("PRESET_FOR_Aria");
-
-      const editorLayer = result.layers.find((layer) => layer.id === "ai_assistant_instruction");
-      expect(editorLayer?.tokenCount).toBeGreaterThan(0);
-      expect(result.totalTokenEstimate).toBe(result.layers.reduce((total, layer) => total + layer.tokenCount, 0));
-
-      const finalMessage = result.finalPayload.messages.at(-1);
-      expect(finalMessage?.role).toBe("user");
-      expect(finalMessage?.layerId).toBe("ai_assistant_instruction");
-      expect(finalMessage?.content).toContain("EDITOR_SYSTEM_FOR_Aria");
-      expect(finalMessage?.content).toContain("EXISTING_MESSAGE_TOKEN");
-      expect(finalMessage?.content).toContain("EDITOR_TASK_FOR_Aria");
-      expect(result.prefill).toBeNull();
     });
 
     it(`accounts for the editor instruction before compacting history when mode is ${mode}`, () => {
       setTokenCountFn((text) => text.length);
+      try {
+        const result = assembleMessageMode(mode, 900);
+        const editorLayer = result.layers.find((layer) => layer.id === "ai_assistant_instruction");
+        const finalMessage = result.finalPayload.messages.at(-1);
 
-      const result = assembleMessageMode(mode, 900);
-      const editorLayer = result.layers.find((layer) => layer.id === "ai_assistant_instruction");
-      const finalMessage = result.finalPayload.messages.at(-1);
-
-      expect(result.compactionSummary).not.toBeNull();
-      expect(editorLayer?.tokenCount).toBeGreaterThan(0);
-      expect(result.totalTokenEstimate).toBe(result.layers.reduce((total, layer) => total + layer.tokenCount, 0));
-      expect(finalMessage?.layerId).toBe("ai_assistant_instruction");
-      expect(finalMessage?.content).toContain("EDITOR_TASK_FOR_Aria");
-      expect(result.prefill).toBeNull();
+        expect(result.compactionSummary).not.toBeNull();
+        expect(editorLayer?.tokenCount).toBeGreaterThan(0);
+        expect(result.totalTokenEstimate).toBe(result.layers.reduce((total, layer) => total + layer.tokenCount, 0));
+        expect(finalMessage?.layerId).toBe("ai_assistant_instruction");
+        expect(finalMessage?.content).toContain("EDITOR_TASK_FOR_Aria");
+        expect(result.prefill).toBeNull();
+      } finally {
+        setTokenCountFn(() => 0);
+      }
     });
   }
 });

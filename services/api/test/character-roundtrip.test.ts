@@ -31,7 +31,7 @@
  * `SessionRuntime` against a temp SQLite DB, not a narrower serializer
  * substitute.
  */
-import { describe, it, expect, beforeAll } from "bun:test";
+import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
 import { resolve } from "node:path";
 import { tmpdir } from "node:os";
@@ -100,6 +100,7 @@ const V3_CARD = {
 
 describe("VTF-11 — JSON card round-trip (lossless via original.json)", () => {
 	beforeAll(() => setTokenCountFn((text: string) => text.length));
+	afterAll(() => setTokenCountFn(() => 0));
 
 	it("preserves unknown fields across import → edit → export → fresh re-import → export, with known edits winning", async () => {
 		const envA = await createTestRuntime("json-a");
@@ -207,6 +208,7 @@ const VTF_CONTENT: VtfCharacterContent = {
 
 describe("VTF-11 — VTF monolith round-trip (extensions + character_book survive)", () => {
 	beforeAll(() => setTokenCountFn((text: string) => text.length));
+	afterAll(() => setTokenCountFn(() => 0));
 
 	it("preserves extension unknowns + promoted character_book across import → edit → export → fresh re-import → export", async () => {
 		const envA = await createTestRuntime("vtf-a");

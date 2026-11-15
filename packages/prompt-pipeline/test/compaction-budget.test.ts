@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "bun:test";
+import { afterAll, beforeEach, describe, expect, it } from "bun:test";
 import { assemblePrompt } from "../src/assemble.ts";
 import { findSafeCompactionBoundary, planHistoryCompaction, setTokenCountFn } from "../src/compaction.ts";
 import type { Attachment } from "@vibe-tavern/domain";
@@ -33,6 +33,10 @@ function historyLayer(result: ReturnType<typeof assemblePrompt>) {
 
 beforeEach(() => {
   setTokenCountFn((text) => text.length);
+});
+
+afterAll(() => {
+  setTokenCountFn(() => 0);
 });
 
 describe("history compaction budget", () => {

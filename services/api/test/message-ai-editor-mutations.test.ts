@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, beforeEach, describe, expect, setDefaultTimeout, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
@@ -149,6 +149,7 @@ describe("Message AI editor guarded mutations (MAE-32)", () => {
   let env: TestEnvironment;
 
   beforeAll(() => setTokenCountFn((text: string) => text.length));
+  afterAll(() => setTokenCountFn(() => 0));
   beforeEach(async () => {
     env = await createTestEnvironment();
   });

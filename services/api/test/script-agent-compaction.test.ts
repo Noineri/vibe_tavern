@@ -314,6 +314,7 @@ const providerServer = Bun.serve({
 });
 
 afterAll(async () => {
+  setTokenCountFn(() => 0);
   await providerServer.stop(true);
 });
 

@@ -667,22 +667,26 @@ describe("assembleCoauthorPrompt", () => {
   test("compacts when response reserve makes an otherwise fitting prompt exceed context", async () => {
     const { setTokenCountFn } = await import("@vibe-tavern/prompt-pipeline");
     setTokenCountFn((text: string) => text.length);
-    const loaders = makeLoaders({
-      messages: [
-        makeMessageRow({ id: "msg_1", role: "user", content: "Old user message." }),
-        makeMessageRow({ id: "msg_2", role: "assistant", content: "Old assistant message." }),
-        makeMessageRow({ id: "msg_3", role: "user", content: "Recent user message." }),
-        makeMessageRow({ id: "msg_4", role: "assistant", content: "Recent assistant message." }),
-      ],
-    });
-    const unbounded = await assembleCoauthorPrompt(makeInput(loaders));
-    const result = await assembleCoauthorPrompt(makeInput(loaders, {
-      contextBudget: unbounded.prompt.tokenAccounting.total + 5,
-      responseReserve: 10,
-    }));
+    try {
+      const loaders = makeLoaders({
+        messages: [
+          makeMessageRow({ id: "msg_1", role: "user", content: "Old user message." }),
+          makeMessageRow({ id: "msg_2", role: "assistant", content: "Old assistant message." }),
+          makeMessageRow({ id: "msg_3", role: "user", content: "Recent user message." }),
+          makeMessageRow({ id: "msg_4", role: "assistant", content: "Recent assistant message." }),
+        ],
+      });
+      const unbounded = await assembleCoauthorPrompt(makeInput(loaders));
+      const result = await assembleCoauthorPrompt(makeInput(loaders, {
+        contextBudget: unbounded.prompt.tokenAccounting.total + 5,
+        responseReserve: 10,
+      }));
 
-    expect(result.promptTraceDraft.compactionSummary).toBeDefined();
-    expect(result.prompt.tokenAccounting.recentHistory).toBeLessThan(4);
+      expect(result.promptTraceDraft.compactionSummary).toBeDefined();
+      expect(result.prompt.tokenAccounting.recentHistory).toBeLessThan(4);
+    } finally {
+      setTokenCountFn(() => 0);
+    }
   });
 
   describe("CED-3: edit/write tool routing per module", () => {
@@ -748,34 +752,37 @@ describe("assembleCoauthorPrompt", () => {
     // Inject a fake token counter for this test so estimateTokens doesn't return 0
     const { setTokenCountFn } = await import("@vibe-tavern/prompt-pipeline");
     setTokenCountFn((text: string) => text.length);
+    try {
+      const loaders = makeLoaders({
+        messages: [
+          makeMessageRow({ id: "msg_0", role: "user", content: "very old message ".repeat(2000) }),
+          makeMessageRow({ id: "msg_1", role: "user", content: "rewrite it" }),
+          makeMessageRow({
+            id: "msg_2",
+            role: "assistant",
+            content: "calling tool",
+            toolCalls: [{ id: "call_1", name: "edit_personality", args: { content: "Bold." } }],
+          }),
+          makeMessageRow({ id: "msg_3", role: "tool", toolCallId: "call_1", content: "Success" }),
+        ],
+      });
+      // System prompt size + recent messages ~ some characters.
+      // Budget 15000 allows system + msg_1,2,3 but drops msg_0 (which is ~34000 chars)
+      const result = await assembleCoauthorPrompt(makeInput(loaders, { contextBudget: 15000 }));
+      const messages = (result.prompt.finalPayload as { messages: Array<{ role: string; content: unknown }> }).messages;
 
-    const loaders = makeLoaders({
-      messages: [
-        makeMessageRow({ id: "msg_0", role: "user", content: "very old message ".repeat(2000) }),
-        makeMessageRow({ id: "msg_1", role: "user", content: "rewrite it" }),
-        makeMessageRow({
-          id: "msg_2",
-          role: "assistant",
-          content: "calling tool",
-          toolCalls: [{ id: "call_1", name: "edit_personality", args: { content: "Bold." } }],
-        }),
-        makeMessageRow({ id: "msg_3", role: "tool", toolCallId: "call_1", content: "Success" }),
-      ],
-    });
-    // System prompt size + recent messages ~ some characters. 
-    // Budget 15000 allows system + msg_1,2,3 but drops msg_0 (which is ~34000 chars)
-    const result = await assembleCoauthorPrompt(makeInput(loaders, { contextBudget: 15000 }));
-    const messages = (result.prompt.finalPayload as { messages: Array<{ role: string; content: unknown }> }).messages;
-    
-    // We expect system + msg_1 + msg_2 + msg_3
-    expect(messages.length).toBe(4);
-    expect(messages[1].content).toBe("rewrite it");
-    expect(messages[2].role).toBe("assistant");
-    expect(messages[3].role).toBe("tool");
+      // We expect system + msg_1 + msg_2 + msg_3
+      expect(messages.length).toBe(4);
+      expect(messages[1].content).toBe("rewrite it");
+      expect(messages[2].role).toBe("assistant");
+      expect(messages[3].role).toBe("tool");
 
-    expect(result.prompt.tokenAccounting?.recentHistory).toBe(3);
-    expect(result.promptTraceDraft.compactionSummary).toBeDefined();
-    expect(result.promptTraceDraft.compactionSummary).toContain("Kept 3 of 4 recent messages");
+      expect(result.prompt.tokenAccounting?.recentHistory).toBe(3);
+      expect(result.promptTraceDraft.compactionSummary).toBeDefined();
+      expect(result.promptTraceDraft.compactionSummary).toContain("Kept 3 of 4 recent messages");
+    } finally {
+      setTokenCountFn(() => 0);
+    }
   });
 });
 

@@ -66,7 +66,10 @@ type Env = Awaited<ReturnType<typeof createTestRuntime>>;
 describe("seedImportedOpening { withTrace } (MASS_IMPORT Wave 3)", () => {
 	let env: Env;
 	beforeAll(() => setTokenCountFn((text: string) => text.length));
-	afterAll(async () => { if (env) await env.cleanup(); });
+	afterAll(async () => {
+		setTokenCountFn(() => 0);
+		if (env) await env.cleanup();
+	});
 
 	it("withTrace: false seeds the greeting but calls NO assemblePrompt and saves NO trace", async () => {
 		env = await createTestRuntime();

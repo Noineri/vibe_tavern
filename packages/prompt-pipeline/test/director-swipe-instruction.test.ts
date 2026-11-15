@@ -10,7 +10,7 @@
  * contains no trace of it (request-local lifetime), while the summary entry
  * point can never inherit it either. Pure pipeline test: no DB, no LLM.
  */
-import { beforeEach, describe, expect, it } from "bun:test";
+import { afterAll, beforeEach, describe, expect, it } from "bun:test";
 import { assemblePrompt, assembleSummaryPrompt } from "../src/assemble.ts";
 import { setSeparatorSideFn, setTokenCountFn } from "../src/compaction.ts";
 
@@ -47,6 +47,11 @@ beforeEach(() => {
   // Deterministic, tokenizer-free accounting (length = tokens) and a neutral
   // separator-side answer so compaction arithmetic is exact in this file.
   setTokenCountFn((text) => text.length);
+  setSeparatorSideFn(null);
+});
+
+afterAll(() => {
+  setTokenCountFn(() => 0);
   setSeparatorSideFn(null);
 });
 

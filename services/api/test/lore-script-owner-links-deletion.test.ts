@@ -49,7 +49,10 @@ describe("owner delete → lorebook/script link rows (LORE_SCRIPT_OWNERS_AS_LINK
 		env = await createEnv();
 	});
 
-	afterAll(async () => { if (env) await env.cleanup(); });
+	afterAll(async () => {
+		setTokenCountFn(() => 0);
+		if (env) await env.cleanup();
+	});
 
 	it("character deletion removes its lorebook/script link rows; books and scripts survive with their other links", async () => {
 		const doomed = await env.stores.characters.create({ name: "Doomed" });

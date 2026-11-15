@@ -12,7 +12,7 @@
  * the authoritative final trim drops additional history once framing/private view
  * are added.
  */
-import { beforeEach, describe, expect, it } from "bun:test";
+import { afterAll, beforeEach, describe, expect, it } from "bun:test";
 import { setTokenCountFn } from "../src/compaction.js";
 import { buildExperienceContext, type ExperienceContextMessage } from "../src/experience-context.js";
 import { buildExperienceModelPrompt } from "../src/experience-model-prompt.js";
@@ -20,6 +20,10 @@ import type { AssemblePromptResponse } from "@vibe-tavern/domain";
 
 beforeEach(() => {
 	setTokenCountFn((text) => text.length);
+});
+
+afterAll(() => {
+	setTokenCountFn(() => 0);
 });
 
 function msg(id: string, role: ExperienceContextMessage["role"], content: string): ExperienceContextMessage {
