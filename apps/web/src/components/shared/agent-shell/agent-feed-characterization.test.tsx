@@ -1,4 +1,4 @@
-import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import type { ReactNode } from "react";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import { installAgentMessageMarkdownSeam } from "../../../../test/agent-message-markdown-seam.js";
@@ -10,15 +10,12 @@ import { agentThreadKey } from "../../../lib/agent-host-registry.js";
 
 useDomEnv();
 
-// AFP-1 (AGENT_FEED_PERFORMANCE_PLAN, Wave 1 step 1): characterization of the
-// PRE-PORT flat feed. The pins below define the preservation contract the
-// virtualization port (AFP-2..AFP-6) must keep byte-stable: event-separator
-// anchoring, the composite row/card/separator document order, the
-// regenerate cut covering anchored separators, the pre-port bottom-pinning
-// semantics, and DOM identity across a settle-refetch-shaped rerender.
-// The flat-mount baseline at the bottom documents the DEFECT itself and is
-// superseded deliberately by AFP-6's agent-feed-virtualization.test.tsx —
-// never "fixed" early, never kept after the port lands.
+// AFP-1..AFP-6 (AGENT_FEED_PERFORMANCE_PLAN): characterization of the shared
+// agent feed surface — event-separator anchoring, composite row/card/separator
+// document order, regenerate cuts covering anchored separators, bottom-pinning
+// + no-yank semantics, DOM identity across settle-refetch rerenders, and (at
+// the bottom AFP-6 block) the bounded virtualized tail mount over a 160-row
+// thread instead of mounting every historical row flat.
 //
 // CO-LOAD CONTRACT (i18n-context-seam family): provider-less pins echo raw
 // keys — the identity spec, same registration as AgentMessageList.test.tsx
@@ -55,9 +52,20 @@ beforeAll(async () => {
   ({ AgentMessageList } = await import("./AgentMessageList.js"));
 });
 
+const originalResizeObserver = globalThis.ResizeObserver;
+
 beforeEach(() => {
+  globalThis.ResizeObserver = originalResizeObserver;
   useAgentTurnStore.setState({ turnsByThread: {}, feedByThread: {} });
   useAgentLiveStreamStore.setState({ liveByThread: {} });
+});
+
+afterEach(() => {
+  globalThis.ResizeObserver = originalResizeObserver;
+});
+
+afterAll(() => {
+  globalThis.ResizeObserver = originalResizeObserver;
 });
 
 function message(over: Partial<ExperienceCopilotMessageWire>): ExperienceCopilotMessageWire {
@@ -363,6 +371,14 @@ describe("AgentMessageList characterization — bottom pin (AFP-1)", () => {
   }
 
   it("content growth follows while pinned; a scrolled-up reader is never yanked down", async () => {
+    const observers = new Map<ResizeObserver, { callback: ResizeObserverCallback; targets: Set<Element> }>();
+    globalThis.ResizeObserver = class implements ResizeObserver {
+      constructor(callback: ResizeObserverCallback) { observers.set(this, { callback, targets: new Set() }); }
+      observe(target: Element) { observers.get(this)!.targets.add(target); }
+      unobserve(target: Element) { observers.get(this)!.targets.delete(target); }
+      disconnect() { observers.delete(this); }
+    };
+
     const view = render(
       <AgentMessageList
         kind="experience" threadId="thread-1"
@@ -373,12 +389,24 @@ describe("AgentMessageList characterization — bottom pin (AFP-1)", () => {
     const area = list.querySelector("[data-scroll-area]")! as HTMLElement;
     expect(area.getAttribute("data-scroll-area")).toBe("thin");
     const viewport = area.querySelector<HTMLElement>("[data-scroll-viewport]")!;
-    // Fake a tall feed (happy-dom has no layout) — the same geometry trick
-    // as the CNR-8h pin.
+    const tail = view.container.querySelector("[data-message-stable-tail]")!;
+    // Fake a tall growing feed (happy-dom has no layout): dynamic scrollHeight
+    // getter lets each rerender + ResizeObserver tick move the real bottom.
+    let currentScrollHeight = 1000;
     Object.defineProperties(viewport, {
-      clientHeight: { value: 100 }, scrollHeight: { value: 1000 },
-      clientWidth: { value: 200 }, scrollWidth: { value: 200 },
+      clientHeight: { configurable: true, value: 100 },
+      scrollHeight: { configurable: true, get: () => currentScrollHeight },
+      clientWidth: { configurable: true, value: 200 },
+      scrollWidth: { configurable: true, value: 200 },
     });
+
+    const fireTailGrowth = async () => {
+      await act(async () => {
+        const tailObservers = [...observers].filter(([, entry]) => entry.targets.has(tail));
+        expect(tailObservers.length).toBeGreaterThan(0);
+        for (const [observer, entry] of tailObservers) entry.callback([], observer);
+      });
+    };
 
     // Reader at the bottom (mount pins by default; the scroll handler
     // confirms the pin from the real geometry).
@@ -390,14 +418,16 @@ describe("AgentMessageList characterization — bottom pin (AFP-1)", () => {
     // shared core writes that exact offset; happy-dom's old 1000 was overscroll.
     expect(viewport.scrollTop).toBe(900);
 
-    // Growth while pinned → the view follows to the new bottom.
+    // Growth while pinned → the view follows to the new bottom (1400 - 100).
+    currentScrollHeight = 1400;
     view.rerender(
       <AgentMessageList
         kind="experience" threadId="thread-1"
         messages={withRows(6)} pendingUserContent=""
       />,
     );
-    expect(viewport.scrollTop).toBe(900);
+    await fireTailGrowth();
+    expect(viewport.scrollTop).toBe(1300);
 
     // Reader scrolls up → unpinned; the jump affordance appears.
     await act(async () => {
@@ -410,19 +440,21 @@ describe("AgentMessageList characterization — bottom pin (AFP-1)", () => {
     expect(jumpButton).not.toBeNull();
 
     // Further growth while away → NO yank (the reader keeps their place).
+    currentScrollHeight = 1800;
     view.rerender(
       <AgentMessageList
         kind="experience" threadId="thread-1"
         messages={withRows(8)} pendingUserContent=""
       />,
     );
+    await fireTailGrowth();
     expect(viewport.scrollTop).toBe(0);
 
-    // The jump re-pins and returns to the bottom (the CNR-8h contract).
+    // The jump re-pins and returns to the current bottom (1800 - 100).
     await act(async () => {
       fireEvent.click(jumpButton!);
     });
-    expect(viewport.scrollTop).toBe(900);
+    expect(viewport.scrollTop).toBe(1700);
   });
 });
 

@@ -614,7 +614,7 @@ describe("StoryCardDialog — phone (§7)", () => {
 // ── The deck-grid wiring (through StoryDeckView) ─────────────────────────────
 
 describe("StoryDeckView → StoryCardDialog wiring (DK-7)", () => {
-  it("a card face opens the dialog; «Вытянуть случайную» opens it face-down; the tile opens the editor; the empty state's link opens the editor", async () => {
+  it("a card face opens the dialog; the draw-random control opens it face-down; the tile opens the editor", async () => {
     decksByBranch.set("dkd-b16", DECK);
     const view = render(<StoryDeckView chatId="dkd-chat-16" branchId="dkd-b16" locked={false} />);
     await waitFor(() => expect(view.getAllByTestId("story-card")).toHaveLength(3));

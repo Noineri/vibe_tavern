@@ -228,6 +228,8 @@ const fetchRouter = mock(async (input: RequestInfo | URL, init?: RequestInit): P
 		planUrls.push(path);
 		return jsonResponse({ plan: dr7Plan });
 	}
+	if (/\/deck$/.test(path) && method === "GET") return jsonResponse({ deck: { cards: [] } });
+	if (path.endsWith("/api/agent-runs") && method === "GET") return jsonResponse([]);
 	// DR-7: the sidechat host's chat-kind routes — the active thread (canned
 	// wire), the sessions list, the messages/events reads, the profiles list
 	// (the chip's load feeds BOTH parked-choice instances), and the (chat,
@@ -410,7 +412,7 @@ describe("AgentShell sidechat empty state (DR-7)", () => {
 		return render(withIsolatedI18n(<AgentShell kind="sidechat-ooc" owner={ownerFor(branchId)} isMobile={mobile} />));
 	}
 
-	it("the director effective: ITS four starters + title/subtitle, no hand-off row", async () => {
+	it("the director effective: ITS five starters + title/subtitle, no hand-off row", async () => {
 		dr7ChatProfileId = "builtin-director";
 		dr7Plan = EMPTY_PLAN;
 		const { getByTestId, getByText, getAllByText, queryByTestId } = renderSidechat("director");
@@ -418,7 +420,11 @@ describe("AgentShell sidechat empty state (DR-7)", () => {
 		// (chat, kind) read + profile list land (before that the fallback
 		// renders — the composer alone is not a settle signal).
 		await waitFor(() => expect(getByTestId("agent-starter-0").textContent).toBe("agent_starter_director_plan"));
+		expect(getByTestId("agent-starter-1").textContent).toBe("agent_starter_director_character_card");
+		expect(getByTestId("agent-starter-2").textContent).toBe("agent_starter_director_scene_tracker");
 		expect(getByTestId("agent-starter-3").textContent).toBe("agent_starter_director_recap");
+		expect(getByTestId("agent-starter-4").textContent).toBe("agent_starter_director_deck");
+		expect(queryByTestId("agent-starter-5")).toBeNull();
 		// The director's localized name shows in BOTH surfaces that render it
 		// here: the empty state's title AND the header chip's label (DR-7's
 		// one-derivation name — key echo under the isolated i18n).
@@ -432,12 +438,16 @@ describe("AgentShell sidechat empty state (DR-7)", () => {
 	it("the first built-in: its four starters + the hand-off row; the click writes the chat row AND prefills the composer (never sent)", async () => {
 		dr7ChatProfileId = null;
 		dr7Plan = EMPTY_PLAN;
-		const { getByTestId } = renderSidechat("handoff");
+		const { getByTestId, queryByTestId } = renderSidechat("handoff");
 		await waitFor(() => expect(getByTestId("copilot-chat-input")).toBeDefined());
 
 		// The independent initial feed read must commit before the empty state.
 		// «Вне роли»'s own state is byte-identical plus the accent row.
 		await waitFor(() => expect(getByTestId("agent-starter-0").textContent).toBe("agent_starter_sidechat_recap"));
+		expect(getByTestId("agent-starter-1").textContent).toBe("agent_starter_sidechat_feelings");
+		expect(getByTestId("agent-starter-2").textContent).toBe("agent_starter_sidechat_twists");
+		expect(getByTestId("agent-starter-3").textContent).toBe("agent_starter_sidechat_pacing");
+		expect(queryByTestId("agent-starter-4")).toBeNull();
 		const row = getByTestId("agent-handoff-row");
 		expect(row.textContent).toBe("sidechat_director_row");
 
@@ -468,6 +478,10 @@ describe("AgentShell sidechat empty state (DR-7)", () => {
 		await waitFor(() => expect(getByTestId("agent-starter-0").textContent).toBe("agent_starter_sidechat_recap"));
 		expect(queryByTestId("agent-handoff-row")).toBeNull();
 		expect(getByTestId("agent-starter-0").textContent).toBe("agent_starter_sidechat_recap");
+		expect(getByTestId("agent-starter-1").textContent).toBe("agent_starter_sidechat_feelings");
+		expect(getByTestId("agent-starter-2").textContent).toBe("agent_starter_sidechat_twists");
+		expect(getByTestId("agent-starter-3").textContent).toBe("agent_starter_sidechat_pacing");
+		expect(queryByTestId("agent-starter-4")).toBeNull();
 	});
 
 	it("a user profile keeps the host's starters and shows the hand-off row (owner ruling 2026-11-01)", async () => {

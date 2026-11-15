@@ -258,13 +258,17 @@ describe("CoauthorLoreReview — parent-dependency (CTX-L3)", () => {
 		});
 		// The e1 entry card carries opacity-50 when its parent is deselected.
 		expect(container.textContent).toContain("Eldoria");
-		// Smoke-test the dimming class is applied somewhere on the entry card:
-		// find the entry card div (contains "Eldoria") and check opacity-50.
 		const entryCard = Array.from(container.querySelectorAll("div")).find((d) =>
-			d.textContent?.includes("Eldoria") && d.textContent?.includes("always-on") === false,
+			d.classList.contains("opacity-50")
+			&& d.textContent?.includes("Eldoria")
+			&& d.textContent?.includes("always-on") === false,
 		);
-		// The entry card itself or an ancestor carries opacity-50; assert it exists.
-		expect(entryCard).toBeTruthy();
+		expect(entryCard).toBeDefined();
+		// Contrast: the entry whose parent lb2 IS selected does not carry opacity-50.
+		const selectedEntryDimmed = Array.from(container.querySelectorAll("div")).find((d) =>
+			d.classList.contains("opacity-50") && d.textContent?.includes("Vex's Fear"),
+		);
+		expect(selectedEntryDimmed).toBeUndefined();
 	});
 });
 

@@ -53,6 +53,7 @@ let requestCount = 0;
 // AP-10: every `POST .../turns/delete` the router answers, in order (the
 // controller's delete path is observed at the HTTP boundary like the stream).
 let deleteCalls: Array<{ threadId: string; body: Record<string, unknown> }> = [];
+let requestLog: Array<"delete" | "stream"> = [];
 // AP-10: holding the delete response open keeps the delete in-flight so the
 // mid-run flags are observable, not raced (the stream side's holdStreamOpen).
 let holdDeleteOpen = false;
@@ -72,6 +73,7 @@ const fetchRouter = mock(async (input: RequestInfo | URL, init?: RequestInit): P
   const deleteMatch = url.pathname.match(/\/api\/experience-copilot\/([^/]+)\/turns\/delete$/);
   if ((init?.method ?? "GET").toUpperCase() === "POST" && deleteMatch) {
     requestCount++;
+    requestLog.push("delete");
     const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
     deleteCalls.push({ threadId: deleteMatch[1] ?? "", body });
     if (nextHttpError) {
@@ -101,6 +103,7 @@ const fetchRouter = mock(async (input: RequestInfo | URL, init?: RequestInit): P
     return new Response(JSON.stringify({ error: { message: `Unhandled fetch: ${url.pathname}` } }), { status: 404 });
   }
   requestCount++;
+  requestLog.push("stream");
   const threadId = url.pathname.match(/\/api\/experience-copilot\/([^/]+)\/stream$/)?.[1] ?? "";
   const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
   if (nextHttpError) {
@@ -266,6 +269,7 @@ beforeEach(() => {
   globalThis.fetch = routerFetch;
   requestCount = 0;
   deleteCalls = [];
+  requestLog = [];
   holdDeleteOpen = false;
   releaseDelete = null;
   holdStreamOpen = false;
@@ -1956,7 +1960,8 @@ describe("useExperienceCopilotController — handleEditLast (AP-10)", () => {
     });
 
     // Edit-last resolves the last USER row (u2 — not the trailing assistant
-    // row) and deletes it WITH its user row.
+    // row) and deletes it WITH its user row, BEFORE posting the new stream.
+    expect(requestLog).toEqual(["delete", "stream"]);
     expect(deleteCalls).toEqual([{ threadId: THREAD, body: { messageId: "u2", includeUserMessage: true, keepAttachmentFiles: true } }]);
     // ...then sends the trimmed content as a fresh turn.
     expect(streamExperienceCopilot).toHaveBeenCalledTimes(1);

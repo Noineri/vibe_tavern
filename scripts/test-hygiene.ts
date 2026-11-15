@@ -385,7 +385,10 @@ export const BUDGETS = {
 	// to deliver under fakes) — flushDiag/waitForSample and every wall-clock
 	// wait are gone. The site is budgeted NO MORE:
 	//   experience-sdk-diag.test.ts — REWRITTEN (was :93, 810ms).
-	longSleeps: 7,
+	// (2026-11-15, FW-13c / TQ7a-F03): TtsLocalServerPanel.test.tsx:118/:310
+	// (350 ×2) rewritten deterministically to waitFor on DOM mount/unmount —
+	// drops live sites 7→5; ratchet budget lowered 7→5.
+	longSleeps: 5,
 } as const;
 
 const EXCLUDED_DIRS = new Set([".git", "node_modules", "out", "data", "dist", ".cache"]);

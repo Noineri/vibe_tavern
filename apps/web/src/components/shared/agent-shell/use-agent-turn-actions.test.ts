@@ -14,7 +14,7 @@
  *   the same gate — the RP row hides its actions while generating);
  * - digest-covered (at/before the digest anchor): delete hidden, copy kept.
  */
-import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
 import type { ExperienceCopilotMessageWire } from "@vibe-tavern/api-contracts";
 import type { AgentMessageAction } from "../../../lib/agent-host-registry.js";
 import { useDomEnv } from "../../../../test/dom-env.js";
@@ -23,6 +23,7 @@ import { strictTestDouble } from "../../../../test/strict-test-double.js";
 useDomEnv();
 
 const { act, renderHook } = await import("@testing-library/react");
+const { toast } = await import("sonner");
 const {
   buildAgentTurnRow,
   useAgentTurnActions,
@@ -653,21 +654,27 @@ describe("useAgentTurnActions — edit an assistant message (AP-31)", () => {
     expect(settled).toEqual([true]);
   });
 
-  it("failure: returns false and does NOT settle (no refetch — nothing changed server-side)", async () => {
+  it("failure: returns false, surfaces the error toast, and does NOT settle (no refetch — nothing changed server-side)", async () => {
     editFailsWith = "row is folded into the digest";
-    const { editCopilotMessage } = await import("../../../api/experience-copilot-api.js");
-    const { result } = renderHook(() =>
-      useAgentTurnActions({ ...hookArgs(), transport: stubTransport(neverCalled, editCopilotMessage) }),
-    );
+    const toastError = spyOn(toast, "error").mockImplementation(() => "");
+    try {
+      const { editCopilotMessage } = await import("../../../api/experience-copilot-api.js");
+      const { result } = renderHook(() =>
+        useAgentTurnActions({ ...hookArgs(), transport: stubTransport(neverCalled, editCopilotMessage) }),
+      );
 
-    let ok: boolean | undefined;
-    await act(async () => {
-      ok = await result.current.handleEditAssistant("a2", "edited text");
-    });
+      let ok: boolean | undefined;
+      await act(async () => {
+        ok = await result.current.handleEditAssistant("a2", "edited text");
+      });
 
-    expect(ok).toBe(false);
-    expect(editCalls).toHaveLength(1);
-    expect(settled).toEqual([]);
+      expect(ok).toBe(false);
+      expect(editCalls).toHaveLength(1);
+      expect(toastError).toHaveBeenCalledWith("row is folded into the digest");
+      expect(settled).toEqual([]);
+    } finally {
+      toastError.mockRestore();
+    }
   });
 
   it("blank content is a silent guard: no transport call, false, no settle", async () => {

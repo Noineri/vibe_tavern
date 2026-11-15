@@ -13,7 +13,7 @@
  *  - on desktop, or when a proposal is already pending on mount, no
  *    auto-switch happens (no jarring jump on chat open).
  */
-import { describe, it, expect } from "bun:test";
+import { describe, it, expect, jest } from "bun:test";
 
 import { useDomEnv } from "../../../test/dom-env.js";
 import { useCoauthorMobileTab } from "./CoauthorMode.js";
@@ -85,5 +85,26 @@ describe("useCoauthorMobileTab", () => {
 		rerender({ m: true, p: true });
 		expect(result.current.mobileTab).toBe("doc");
 		expect(result.current.docPulse).toBe(true);
+	});
+
+	it("clears the docPulse highlight after the 2200ms animation window", () => {
+		jest.useFakeTimers();
+		try {
+			const { result, rerender } = renderHook(({ m, p }) => useCoauthorMobileTab(m, p), {
+				initialProps: { m: true, p: false },
+			});
+			rerender({ m: true, p: true });
+			expect(result.current.docPulse).toBe(true);
+			act(() => {
+				jest.advanceTimersByTime(2199);
+			});
+			expect(result.current.docPulse).toBe(true);
+			act(() => {
+				jest.advanceTimersByTime(1);
+			});
+			expect(result.current.docPulse).toBe(false);
+		} finally {
+			jest.useRealTimers();
+		}
 	});
 });

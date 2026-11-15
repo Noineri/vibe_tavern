@@ -11,7 +11,7 @@ import type { TtsProfileRecord } from "../../../../api/tts-api.js";
 import type { TtsProfileForm } from "../../../../hooks/use-tts-profiles.js";
 import type { DiscoveredServer, ProbeOutcome } from "@vibe-tavern/domain";
 
-const { render, act, cleanup, fireEvent, within } = await import("@testing-library/react");
+const { render, act, cleanup, fireEvent, within, waitFor } = await import("@testing-library/react");
 
 // Track setForm calls (the patch shape is the hook's real setForm contract)
 let lastFormPatch: Partial<TtsProfileForm> | null = null;
@@ -115,8 +115,8 @@ const { TtsLocalServerPanel } = await import("./TtsLocalServerPanel.js");
 async function openHelp(view: { getByTestId: (id: string) => ReturnType<ReturnType<typeof render>["getByTestId"]> }) {
   await act(async () => {
     fireEvent.click(view.getByTestId("tts-setup-help-toggle"));
-    await new Promise((r) => setTimeout(r, 350));
   });
+  await waitFor(() => expect(view.getByTestId("tts-help-step-choose")).toBeTruthy());
 }
 
 beforeEach(() => {
@@ -307,9 +307,8 @@ describe("TtsLocalServerPanel", () => {
     expect(view.getByTestId("tts-help-step-choose")).toBeTruthy();
     await act(async () => {
       fireEvent.click(view.getByTestId("tts-setup-help-toggle"));
-      await new Promise((r) => setTimeout(r, 350));
     });
-    expect(view.queryByTestId("tts-help-step-choose")).toBeNull();
+    await waitFor(() => expect(view.queryByTestId("tts-help-step-choose")).toBeNull());
     cleanup();
   });
 
@@ -362,7 +361,7 @@ describe("TtsLocalServerPanel", () => {
     });
     expect(queryByTestId("tts-discover-none")).not.toBeNull();
     const diag = getByTestId("tts-discover-diag");
-    expect(diag.textContent?.length).toBeGreaterThan(0);
+    expect(diag.textContent).toBe("tts_discover_diag_timeout");
   });
 
   // ── Manual done-marks (owner flow 2026-09-06): tick a command you RAN. ──

@@ -219,8 +219,17 @@ describe("CoauthorProviderModal", () => {
 
   it("persists the selected connection's complete set before binding it", async () => {
     setBinding(null);
+    const callOrder: string[] = [];
     const row = makeRow("p1", "tool-model", { temperature: 0.42, maxTokens: 1234, contextBudget: 5000, pinContextBudget: true });
     loadCoauthorConnectionSettingsAction.mockImplementation(async () => row);
+    upsertCoauthorConnectionSettingsAction.mockImplementationOnce(async (_profileId: string, _body: unknown) => {
+      callOrder.push("upsert");
+      return {};
+    });
+    patchUiSettingsAction.mockImplementationOnce(async () => {
+      callOrder.push("patch");
+      return wireUiSettings();
+    });
     useProviderDataStore.setState({ profiles: [makeProfile("p1", "Alpha")] });
     const view = renderModal();
     fireEvent.pointerDown(within(view.baseElement).getByText("openai").closest(".cursor-pointer")!);
@@ -231,6 +240,7 @@ describe("CoauthorProviderModal", () => {
       settings: expect.objectContaining({ temperature: 0.42, maxTokens: 1234, contextBudget: 5000, pinContextBudget: true }),
     }));
     expect(patchUiSettingsAction).toHaveBeenCalledWith({ coauthorProviderId: "p1" });
+    expect(callOrder).toEqual(["upsert", "patch"]);
   });
 
   it("keeps the Responses transport behavior unchanged", async () => {

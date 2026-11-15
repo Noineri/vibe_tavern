@@ -288,7 +288,7 @@ describe("SttProfileEditor — edit mode (level-1 connection card)", () => {
     await waitFor(() => expect(view.getByTestId("stt-test-failure")).toBeTruthy());
   });
 
-  it("SPE-8 gating: the preset dropdown renders for cloud + native, never for custom/local/browser", async () => {
+  it("SPE-8/SPE-9 gating: the preset dropdown renders for cloud and local named rows, omitted for custom and browser", async () => {
     // Cloud (endpoint-matched openai row) → offered.
     const cloud = makeStt({ headerMode: "edit" });
     const cloudView = render(React.createElement(SttProfileEditor, { stt: cloud }));
@@ -331,6 +331,16 @@ describe("SttProfileEditor — edit mode (level-1 connection card)", () => {
     });
     expect(localView.getByTestId("stt-field-endpoint")).toBeTruthy();
     expect(localView.getByTestId("stt-local-server-panel")).toBeTruthy();
+    cleanup();
+    // Browser (whisper-browser) -> no preset dropdown, no endpoint field.
+    const browser = makeStt({
+      headerMode: "edit",
+      form: makeForm({ backend: "whisper-browser", config: { model: "base" } }),
+    });
+    const browserView = render(React.createElement(SttProfileEditor, { stt: browser }));
+    await waitFor(() => expect(browserView.getByTestId("stt-backend-select").textContent).toContain("stt_segment_whisper"));
+    expect(browserView.queryByTestId("stt-quickstart-select")).toBeNull();
+    expect(browserView.queryByTestId("stt-field-endpoint")).toBeNull();
     cleanup();
   });
 
@@ -508,6 +518,7 @@ describe('SttProfileEditor — native backends (SPE-4..6, SPE-7 picker)', () => 
       expect(body).toContain('Cloud');
       expect(body).toContain('Native');
       expect(body).toContain('stt_segment_local');
+      expect(body).toContain('custom');
       expect(body).not.toContain('stt_segment_nvidia');
     });
     // The native preset dropdown shows the backing row selected; open it
@@ -623,6 +634,15 @@ describe('SttProfileEditor — native backends (SPE-4..6, SPE-7 picker)', () => 
     expect(view.getByTestId('stt-field-language')).toBeTruthy();
     // Base card labels the fixed-endpoint native by name.
     expect(view.getByTestId('stt-base-card-status').textContent).toContain('ElevenLabs');
+    // Open the picker to pin that the static Scribe roster actually populates the options.
+    await act(async () => {
+      view.getByTestId('stt-field-model').click();
+    });
+    await waitFor(() => {
+      const items = Array.from(document.body.querySelectorAll('[cmdk-item]')).map((n) => n.textContent ?? '');
+      expect(items.some((text) => text.includes('scribe_v2'))).toBe(true);
+      expect(items.some((text) => text.includes('scribe-1'))).toBe(true);
+    });
   });
 
   it('nvidia view: static roster, language hidden (adapter ignores it — EN-only)', async () => {

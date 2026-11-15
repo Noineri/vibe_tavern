@@ -36,13 +36,14 @@
  * i18n/context.tsx), so label assertions read as the mapped i18n key, never
  * the raw snake_case.
  */
-import { afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
 import type { ComponentProps } from "react";
 import type { DragEndEvent } from "@dnd-kit/core";
 import { useDomEnv } from "../../../test/dom-env.js";
 
 useDomEnv();
 const { act, fireEvent, render, waitFor } = await import("@testing-library/react");
+const { toast } = await import("sonner");
 import { useModalStore } from "../../stores/modal-store.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useCoauthorSkillStore } from "../../stores/coauthor-skill-store.js";
@@ -333,8 +334,14 @@ describe("CoauthorModuleModal (CS-25 manager)", () => {
 		await waitFor(() => expect(getByTestId("module-name-input")).toBeTruthy());
 		expect(getByTestId("module-save-btn")).toBeTruthy();
 		// Saving a blank draft triggers client-side validation — no RPC call.
-		fireEvent.click(getByTestId("module-save-btn"));
-		await waitFor(() => expect(createCoauthorModuleAction).not.toHaveBeenCalled());
+		const toastError = spyOn(toast, "error");
+		try {
+			fireEvent.click(getByTestId("module-save-btn"));
+			await waitFor(() => expect(createCoauthorModuleAction).not.toHaveBeenCalled());
+			expect(toastError).toHaveBeenCalledWith("coauthor.module.name_required");
+		} finally {
+			toastError.mockRestore();
+		}
 	});
 
 	it("delete asks for confirmation, then calls deleteCoauthorModuleAction", async () => {
@@ -548,8 +555,14 @@ describe("CoauthorModuleModal — built-in Duplicate (CTX-M3)", () => {
 		fireEvent.click(getByText("coauthor.module.duplicate"));
 		const nameInput = await waitFor(() => getByTestId("module-name-input") as HTMLInputElement);
 		fireEvent.change(nameInput, { target: { value: "" } });
-		fireEvent.click(getByTestId("module-save-btn"));
-		await waitFor(() => expect(createCoauthorModuleAction).not.toHaveBeenCalled());
+		const toastError = spyOn(toast, "error");
+		try {
+			fireEvent.click(getByTestId("module-save-btn"));
+			await waitFor(() => expect(createCoauthorModuleAction).not.toHaveBeenCalled());
+			expect(toastError).toHaveBeenCalledWith("coauthor.module.name_required");
+		} finally {
+			toastError.mockRestore();
+		}
 	});
 });
 

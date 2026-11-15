@@ -486,12 +486,14 @@ describe("ExperienceCopilotMessageList — director swipe permission (DMT-32)", 
   });
 
   it("the optimistic override flips the swipe card, and its rollback returns the awaiting card with the send-failed line and the kept draft", () => {
+    const answers: [string, unknown][] = [];
+    const onAnswer = (id: string, a: unknown) => answers.push([id, a]);
     const view = render(
       <AgentMessageList
         kind="experience" threadId="thread-1"
         messages={[message({ id: "u1", role: "user", content: "make it spicier" }), swipeCarrier("a1"), swipeToolRow(SWIPE_MARKER)]}
         pendingUserContent=""
-        onAnswer={() => {}}
+        onAnswer={onAnswer}
       />,
     );
     fireEvent.change(view.getByTestId("copilot-permission-swipe-instruction"), {
@@ -499,6 +501,7 @@ describe("ExperienceCopilotMessageList — director swipe permission (DMT-32)", 
     });
     // The user decides (the controller would now start the flight).
     fireEvent.click(view.getByTestId("copilot-permission-swipe-allow"));
+    expect(answers).toEqual([["tc-swipe", { decision: "allow", instruction: "my kept edit" }]]);
     // The optimistic flight arrives through the anchor's override: the card
     // flips to the granted receipt.
     view.rerender(
@@ -507,7 +510,7 @@ describe("ExperienceCopilotMessageList — director swipe permission (DMT-32)", 
         messages={[message({ id: "u1", role: "user", content: "make it spicier" }), swipeCarrier("a1"), swipeToolRow(SWIPE_MARKER)]}
         pendingUserContent=""
         pendingPermissionAnswer={{ toolCallId: "tc-swipe", decision: "allow" }}
-        onAnswer={() => {}}
+        onAnswer={onAnswer}
       />,
     );
     expect(view.getByTestId("copilot-permission-card").getAttribute("data-state")).toBe("allowed");
@@ -517,7 +520,7 @@ describe("ExperienceCopilotMessageList — director swipe permission (DMT-32)", 
         kind="experience" threadId="thread-1"
         messages={[message({ id: "u1", role: "user", content: "make it spicier" }), swipeCarrier("a1"), swipeToolRow(SWIPE_MARKER)]}
         pendingUserContent=""
-        onAnswer={() => {}}
+        onAnswer={onAnswer}
       />,
     );
     const card = view.getByTestId("copilot-permission-card");
@@ -531,6 +534,10 @@ describe("ExperienceCopilotMessageList — director swipe permission (DMT-32)", 
     // The card is actionable again: the retry re-sends the kept edit.
     fireEvent.click(view.getByTestId("copilot-permission-swipe-allow"));
     expect(view.getByTestId("copilot-permission-card").getAttribute("data-state")).toBe("awaiting");
+    expect(answers).toEqual([
+      ["tc-swipe", { decision: "allow", instruction: "my kept edit" }],
+      ["tc-swipe", { decision: "allow", instruction: "my kept edit" }],
+    ]);
   });
 
   it("deleting the request prunes its transient draft", () => {

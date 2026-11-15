@@ -6,7 +6,7 @@
  * is covered too: dismissing is a deferral, not consent to be asked again on
  * the next reply.
  */
-import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import { wireUiSettings } from "../../../test/wire-fixtures.js";
 import { useDomEnv } from "../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
@@ -88,6 +88,14 @@ function openModal(settings: Partial<UiSettingsRecord> = {}) {
 }
 
 describe("StarPromptModal", () => {
+  let originalWindowOpen: typeof window.open;
+  beforeAll(() => {
+    originalWindowOpen = window.open;
+  });
+  afterAll(() => {
+    window.open = originalWindowOpen;
+  });
+
   beforeEach(() => {
     mockState.patches.length = 0;
     mockState.opened.length = 0;

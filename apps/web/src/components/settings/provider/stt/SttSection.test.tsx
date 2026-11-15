@@ -105,6 +105,7 @@ describe("SttSection", () => {
       ),
     );
     await waitFor(() => expect(view.getByTestId("stt-section")).toBeTruthy());
+    expect(view.getByText("stt_section_title")).toBeTruthy();
     expect(view.getByText("Dictation")).toBeTruthy();
     // Behavior change (was: the editing row carried an accent hand-rolled
     // dot; now: the primitive owns the dot and selection owns the accent —
@@ -180,7 +181,7 @@ describe("SttSection", () => {
     await waitFor(() => expect(view.getByTestId("stt-load-error")).toBeTruthy());
   });
 
-  it("whisper-browser rows carry the browser badge", async () => {
+  it("whisper-browser rows carry no browser badge (removed as an anti-pattern)", async () => {
     const stt = makeStt({
       profiles: [makeRecord({ id: "p1", backend: "whisper-browser" })],
     });

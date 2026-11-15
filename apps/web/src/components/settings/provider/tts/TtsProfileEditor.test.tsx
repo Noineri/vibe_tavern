@@ -164,7 +164,7 @@ function asForm(form: Partial<TtsProfileForm> & Pick<TtsProfileForm, "id" | "nam
 }
 
 describe("TtsProfileEditor", () => {
-  it("typing a name calls setForm and marks dirty", async () => {
+  it("typing a name calls setForm with the new value", async () => {
     const setForm = mock(() => {});
     const tts = makeTts({ form: asForm({ id: "p1", name: "Alpha", backend: TTS_BACKEND.Kokoro, config: {}, apiKey: "", providerRef: null, voiceId: "" }), setForm, dirty: false });
     const view = renderEditor(React.createElement(TtsProfileEditor, { tts }));
@@ -910,18 +910,16 @@ describe("TtsProfileEditor — F6 sliders + voice placeholders", () => {
     // by clicking the Bella option if present, otherwise verify the dropdown opened correctly
     const bodyText = document.body.textContent ?? "";
     expect(bodyText).toContain("Bella");
-    // Find and click Bella option
+    // Find and click Bella option (fail explicitly if missing — never skip silently)
     const allElements = Array.from(document.body.querySelectorAll("*"));
     const bellaEl = allElements.find((el) => el.textContent === "Bella · Female · American · B" || el.textContent?.trim() === "Bella · Female · American · B");
-    // Fallback: find any element containing Bella
     const target = bellaEl ?? allElements.find((el) => el.textContent?.includes("Bella") && el.children.length === 0);
-    if (target) {
-      fireEvent.click(target as HTMLElement);
-      await waitFor(() => expect(setForm).toHaveBeenCalled(), { timeout: 1000 });
-      const patch = (setForm.mock.calls[setForm.mock.calls.length - 1] as unknown[])[0] as { narratorVoiceId: string };
-      expect(typeof patch.narratorVoiceId).toBe("string");
-      expect(patch.narratorVoiceId.length).toBeGreaterThan(0);
-    }
+    if (!target) throw new Error("Expected Bella narrator voice option in opened dropdown");
+    fireEvent.click(target as HTMLElement);
+    await waitFor(() => expect(setForm).toHaveBeenCalled(), { timeout: 1000 });
+    const patch = (setForm.mock.calls[setForm.mock.calls.length - 1] as unknown[])[0] as { narratorVoiceId: string };
+    expect(typeof patch.narratorVoiceId).toBe("string");
+    expect(patch.narratorVoiceId.length).toBeGreaterThan(0);
     cleanup();
     await act(async () => {});
   });
@@ -1525,10 +1523,10 @@ describe("TtsProfileEditor — TE2-10 view mode (LLM headerMode mechanism)", () 
   it("bindings stay visible below the collapsed card", async () => {
     const tts = collapsedTts({});
     const view = renderEditor(React.createElement(TtsProfileEditor, { tts }));
-    // Bindings are rendered by TtsBindingFields when form.id !== null — should still be there when collapsed
-    // The bindings card renders with at least the bind section visible for default profiles or fallback
-    // For kokoro non-default, mute section hidden but bind section hidden as well? We at least check the voice tuning card is there
+    // Bindings are rendered by TtsBindingFields when form.id !== null — bind section stays visible even on non-default profiles while mute hides.
     expect(view.getByTestId("tts-voice-card")).toBeTruthy();
+    expect(view.getByTestId("tts-bind-section")).toBeTruthy();
+    expect(view.queryByTestId("tts-mute-section")).toBeNull();
     cleanup();
   });
 });

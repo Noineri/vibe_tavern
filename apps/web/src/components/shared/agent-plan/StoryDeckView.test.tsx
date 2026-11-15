@@ -140,7 +140,7 @@ afterAll(() => {
 // ── The deck grid ────────────────────────────────────────────────────────────
 
 describe("StoryDeckView (DK-6)", () => {
-  it("renders the header + a face per card with suits, titles and the 3-line clamp; the add tile and the draw render disabled with a title", async () => {
+  it("renders the header + a face per card with suits, titles and the 3-line clamp; DK-7 draw and add actions are live without placeholder titles", async () => {
     decksByBranch.set("dkv-b1", DECK);
     const view = render(<StoryDeckView chatId="dkv-chat-1" branchId="dkv-b1" locked={false} />);
     await waitFor(() => expect(view.getAllByTestId("story-card")).toHaveLength(5));

@@ -3,7 +3,7 @@
  * (`use-coauthor-input-area.ts`), extracted alongside the viewport fork
  * (3cb7f060) so the two formerly-UI-coupled assertions of
  * CoauthorInputArea.test.tsx — "selecting a module calls the action" and
- * "only tool-capable favorites are offered" — are pinned at the layer that
+ * "offers every Co-Author favorite and marks only explicit unsupported models" — are pinned at the layer that
  * actually owns them. The Select/BottomSheet is plumbing; the contracts live
  * in `useModuleSwitch.handleSelect` and the hook's decorated Co-Author favorites.
  *
@@ -33,7 +33,6 @@ const MODULES: CoauthorModule[] = [
 ];
 
 const realChatActions = await import("../../stores/api-actions/chat-actions.js");
-const realProviderProfiles = await import("../../hooks/use-provider-profiles.js");
 const realBootstrapActions = await import("../../stores/api-actions/bootstrap-actions.js");
 const realProviderActions = await import("../../stores/api-actions/provider-actions.js");
 const listCoauthorModulesAction = mock(() => Promise.resolve(MODULES));
@@ -53,33 +52,11 @@ mock.module("../../stores/api-actions/chat-actions.js", () => ({
 // t echoes keys (the hook builds labels off it) — the shared co-load seam keeps it order-independent.
 installI18nContextSeam();
 
-// The favorites/tool-filter path goes through two hooks the data hook composes.
-// Stub them to deterministic inputs so the test pins the COMPOSITION (favorite
-// ∩ tool-capable), not the hooks' own internals (covered in
-// useToolCapableModels.test.ts).
-mock.module("../../hooks/use-provider-profiles.js", () => {
-	return {
-		...realProviderProfiles,
-		useProviderProfiles: () => ({
-			activeProviderProfile: { id: "p1", name: "OpenAI Pro", defaultModel: "gpt-4o", contextBudget: 128000, maxTokens: 4096 },
-			providerProfiles: [],
-			favoriteModelsByProfile: {
-				p1: [
-					{ modelId: "gpt-4o", label: "GPT-4o", contextLength: 128000 },
-					{ modelId: "gpt-3.5", label: "GPT-3.5 (no tools)", contextLength: 16000 },
-				],
-			},
-        handleSelectFavoriteProviderModel: mock(async (_profileId: string, _modelId: string) => {}),
-		}),
-	};
-});
-
 // useToolCapableModels is NOT mocked — mocking it leaks process-globally and
 // clobbers useToolCapableModels.test.ts (AGENTS.md mock.module gotcha). Instead
 // we seed the provider-data-store cache (see beforeEach in the favorites
 // describe block) with capabilities.tools flags, driving the REAL hook through
-// its cache path. This pins the COMPOSITION (favorites ∩ tool-capable) the
-// coauthor box actually ships.
+// its cache path. This pins all Co-Author favorites + tool support marks.
 
 // Mock patchUiSettingsAction so quickSwitchModel doesn't hit the network.
 mock.module("../../stores/api-actions/bootstrap-actions.js", () => {
@@ -169,9 +146,16 @@ describe("useCoauthorInputArea — tool-filtered favorites", () => {
 				},
 			},
 		});
-		// Seed the provider-data-store: profile p1 with tool-capable cache + favorites.
+		// Seed the provider-data-store: distinct active RP profile (p-rp) alongside bound Co-Author profile p1.
 		useProviderDataStore.setState({
 			profiles: [
+				wireProviderProfile({
+					id: "p-rp",
+					isActive: true,
+					defaultModel: "rp-other-model",
+					contextBudget: 32000,
+					maxTokens: 2048,
+				}),
 				wireProviderProfile({
 					id: "p1",
 					isActive: false,

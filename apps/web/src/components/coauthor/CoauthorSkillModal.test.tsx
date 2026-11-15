@@ -189,7 +189,7 @@ describe("CoauthorSkillModal — delete reference guard (CTX-S7 self-check #2)",
 			{ id: "cmod_a", name: "My Card Module", skillIds: ["janitor-modern-botmaking", "general-writing"] },
 			{ id: "cmod_b", name: "Dialogue Only", skillIds: ["dialogue-generation"] },
 		]);
-		const { getByText, queryByTestId } = render(<CoauthorSkillModal />);
+		const { getByText, queryByTestId, queryByText } = render(<CoauthorSkillModal />);
 		await waitFor(() => expect(getByText("Modern Botmaking")).toBeDefined());
 
 		// Select the user skill that is referenced, then the footer delete.
@@ -202,6 +202,7 @@ describe("CoauthorSkillModal — delete reference guard (CTX-S7 self-check #2)",
 		await waitFor(() => expect(queryByTestId("confirm-modal")).not.toBeNull());
 		expect(getByText("My Card Module")).toBeDefined();
 		// The non-referencing module is NOT listed.
+		expect(queryByText("Dialogue Only")).toBeNull();
 		expect(queryByTestId("confirm-title")?.textContent).toBe("coauthor.skill.delete_confirm_title");
 	});
 
@@ -223,7 +224,7 @@ describe("CoauthorSkillModal — delete reference guard (CTX-S7 self-check #2)",
 
 	it("an unreferenced user skill deletes via a plain confirm (no module list)", async () => {
 		listModulesMock.mockResolvedValue([{ id: "cmod_b", name: "Other", skillIds: ["dialogue-generation"] }]);
-		const { getByText, getByTestId, queryByTestId } = render(<CoauthorSkillModal />);
+		const { getByText, getByTestId, queryByTestId, queryByText } = render(<CoauthorSkillModal />);
 		await waitFor(() => expect(getByText("Modern Botmaking")).toBeDefined());
 		fireEvent.pointerDown(getByText("Modern Botmaking"));
 		await waitFor(() => expect(getByText("coauthor.skill.delete")).toBeDefined());
@@ -231,7 +232,7 @@ describe("CoauthorSkillModal — delete reference guard (CTX-S7 self-check #2)",
 		await waitFor(() => expect(queryByTestId("confirm-modal")).not.toBeNull());
 		// Plain body (no referencing module name rendered).
 		expect(getByTestId("confirm-body").textContent).toBe("coauthor.skill.delete_confirm_body");
-		expect(queryByTestId("Other")).toBeNull();
+		expect(queryByText("Other")).toBeNull();
 	});
 });
 

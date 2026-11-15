@@ -140,6 +140,7 @@ describe("ProviderSamplerPanel advanced disclosure", () => {
     const { getByText, queryByText } = render(
       <ProviderSamplerPanel values={form()} onChange={mock()} />,
     );
+    expect(getByText("token_padding")).toBeTruthy();
     expect(queryByText("sampler_top_p")).toBeNull();
 
     fireEvent.click(getByText("samplers_advanced"));
@@ -148,6 +149,12 @@ describe("ProviderSamplerPanel advanced disclosure", () => {
   });
 
   it("hides token padding only when explicitly requested", () => {
+    const { getByText, unmount } = render(
+      <ProviderSamplerPanel values={form()} onChange={mock()} />,
+    );
+    expect(getByText("token_padding")).toBeTruthy();
+    unmount();
+
     const { queryByText } = render(
       <ProviderSamplerPanel values={form()} onChange={mock()} showTokenPadding={false} />,
     );
@@ -180,18 +187,55 @@ describe("ProviderSamplerPanel advanced disclosure", () => {
     const view = render(<ProviderSamplerPanel values={form()} onChange={mock()} />);
     fireEvent.click(view.getByText("samplers_advanced"));
 
-    // The label + range + number box twin is gone: no <label> carries a sampler name any more.
-    expect([...view.container.querySelectorAll("label")].some((el) => el.textContent?.includes("sampler_top_k"))).toBe(false);
-    const topK = view.getByLabelText("sampler_top_k") as HTMLInputElement;
-    const shell = topK.closest("[data-slider-field-shell]");
-    if (!shell) throw new Error("Sampler row is not a slider field");
-    expect(shell.querySelector("[data-slider-field-label]")?.textContent).toBe("sampler_top_k?");
-    expect(shell.querySelector("[data-slider-field-help]")?.textContent).toBe("?");
-    expect(shell.querySelector("[data-slider-field-value]")?.textContent).toBe("0");
+    const expectedRows: ReadonlyArray<{ label: string; hasHelp: boolean }> = [
+      { label: "sampler_temperature", hasHelp: true },
+      { label: "sampler_top_p", hasHelp: true },
+      { label: "sampler_freq_penalty", hasHelp: true },
+      { label: "sampler_top_k", hasHelp: true },
+      { label: "sampler_pres_penalty", hasHelp: true },
+      { label: "sampler_top_a", hasHelp: true },
+      { label: "sampler_rep_penalty", hasHelp: true },
+      { label: "sampler_min_p", hasHelp: true },
+      { label: "sampler_typical_p", hasHelp: true },
+      { label: "sampler_tfs_z", hasHelp: true },
+      { label: "sampler_unified_linear", hasHelp: true },
+      { label: "sampler_unified_quad", hasHelp: true },
+      { label: "sampler_unified_conf", hasHelp: true },
+      { label: "sampler_repetition_penalty_slope", hasHelp: false },
+      { label: "sampler_adaptive_target", hasHelp: true },
+      { label: "sampler_adaptive_decay", hasHelp: true },
+      { label: "sampler_dynatemp_range", hasHelp: true },
+      { label: "sampler_dynatemp_exponent", hasHelp: true },
+      { label: "sampler_top_n_sigma", hasHelp: true },
+      { label: "sampler_smoothing_factor", hasHelp: true },
+      { label: "sampler_repeat_last_n", hasHelp: true },
+      { label: "sampler_mirostat", hasHelp: true },
+      { label: "sampler_mirostat_tau", hasHelp: true },
+      { label: "sampler_mirostat_eta", hasHelp: true },
+      { label: "sampler_dry_multiplier", hasHelp: true },
+      { label: "sampler_dry_base", hasHelp: true },
+      { label: "sampler_dry_allowed_length", hasHelp: true },
+      { label: "sampler_dry_penalty_last_n", hasHelp: true },
+      { label: "sampler_xtc_threshold", hasHelp: true },
+      { label: "sampler_xtc_probability", hasHelp: true },
+    ];
+    const bareLabels = [...view.container.querySelectorAll("label")];
+    for (const { label, hasHelp } of expectedRows) {
+      // The label + range + number box twin is gone: no <label> carries a slider sampler name any more.
+      expect(bareLabels.some((el) => el.textContent?.includes(label))).toBe(false);
+      const input = view.getByLabelText(label) as HTMLInputElement;
+      expect(input.type).toBe("range");
+      const shell = input.closest("[data-slider-field-shell]");
+      if (!shell) throw new Error(`Sampler row ${label} is not a slider field`);
+      expect(shell.querySelector("[data-slider-field-value]")).not.toBeNull();
+      expect(shell.querySelector("[data-slider-field-label]")?.textContent).toBe(hasHelp ? `${label}?` : label);
+      if (hasHelp) {
+        expect(shell.querySelector("[data-slider-field-help]")?.textContent).toBe("?");
+      }
+    }
+    expect(view.getByLabelText("sampler_top_k").closest("[data-slider-field-shell]")?.querySelector("[data-slider-field-value]")?.textContent).toBe("0");
     // Temperature sits outside the grid. Behavior change: its label (and accessible name) lost the " (value)" suffix, the field shows the value once.
-    const temperature = view.getByLabelText("sampler_temperature") as HTMLInputElement;
-    expect(temperature.type).toBe("range");
-    expect(temperature.closest("[data-slider-field-shell]")?.querySelector("[data-slider-field-value]")?.textContent).toBe("0.70");
+    expect(view.getByLabelText("sampler_temperature").closest("[data-slider-field-shell]")?.querySelector("[data-slider-field-value]")?.textContent).toBe("0.70");
     view.unmount();
   });
 

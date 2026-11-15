@@ -324,6 +324,7 @@ describe("ExperienceCopilotInputArea", () => {
     // Favorites section renders above the all-models section, with the stored
     // label and an UNSTAR (filled) star trailing on the row.
     expect(getByTestId("dropdown-group-copilot-model-favorites")).toBeDefined();
+    expect(getByTestId("dropdown-group-label-copilot-model-favorites").textContent).toBe("copilot_model_favorites_section");
     expect(getByTestId("dropdown-option-m9").textContent).toContain("Favored Nine");
     expect(getByTestId("copilot-model-star-m9")).toBeDefined();
     // All-models section still carries every live model with an UNFILLED star.
@@ -336,6 +337,7 @@ describe("ExperienceCopilotInputArea", () => {
 
     expect(queryByTestId("dropdown-group-copilot-model-favorites")).toBeNull();
     expect(getByTestId("dropdown-group-copilot-model-all")).toBeDefined();
+    expect(queryByTestId("dropdown-group-label-copilot-model-all")).toBeNull();
   });
 
   it("model picker: narrow fixed trigger width, popup decoupled via contentWidth", () => {

@@ -111,7 +111,7 @@ describe("AgentPlanEditorModal", () => {
 
   it("keeps the modal open and shows the server 422 message for two active tasks", async () => {
     rejectPut = true;
-    const { getByTestId, getByText, getAllByText } = renderModal("two-active-plan");
+    const { getByTestId, getByText, getAllByText, onClose } = renderModal("two-active-plan");
     await waitFor(() => expect(getByTestId("agent-plan-status-1")).toBeDefined());
 
     fireEvent.click(getByTestId("agent-plan-status-1"));
@@ -122,6 +122,7 @@ describe("AgentPlanEditorModal", () => {
     expect((putBody as { plan: AgentPlan }).plan.tasks.filter((task) => task.status === "active")).toHaveLength(2);
     await waitFor(() => expect(getByText("At most one task can be active.")).toBeDefined());
     expect(getByTestId("agent-plan-save")).toBeDefined();
+    expect(onClose).not.toHaveBeenCalled();
   });
 });
 

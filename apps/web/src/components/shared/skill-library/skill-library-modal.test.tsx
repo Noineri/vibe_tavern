@@ -801,11 +801,14 @@ describe("skill-library-modal — drag reorder (ML-9)", () => {
 		view.unmount();
 	});
 
-	it("tapping a row selects it and opens the detail (drag starts from the handle only)", async () => {
+	it("tapping a row selects it and opens the detail without reordering", async () => {
 		const view = await openAndFlushRows();
-		fireEvent.pointerDown(view.getByTestId("test-row-my-style"));
+		const row = view.getByTestId("test-row-my-style");
+		expect(within(row).getByLabelText("drag").getAttribute("role")).toBe("button");
+		fireEvent.pointerDown(row);
 		await waitFor(() => expect(readContentMock).toHaveBeenCalledWith("my-style"));
 		expect(within(view.getByTestId("md-detail")).getByText("OWN")).toBeDefined();
+		expect(reorderMock).not.toHaveBeenCalled();
 		view.unmount();
 	});
 });

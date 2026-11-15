@@ -376,6 +376,7 @@ describe("useAgentTurnActions — local-outcome wiring", () => {
     // An invalidation, not a neighborhood re-read: loadAround stays quiet.
     expect(loadAround).not.toHaveBeenCalled();
     expect(onTurnSettled).toHaveBeenCalledWith(true);
+    expect(applyLocalOutcome.mock.invocationCallOrder[0]).toBeLessThan(onTurnSettled.mock.invocationCallOrder[0]!);
   });
 
   it("an assistant-row edit marks the row, re-reads its neighborhood, THEN settles", async () => {
@@ -388,6 +389,8 @@ describe("useAgentTurnActions — local-outcome wiring", () => {
     expect(applyLocalOutcome).toHaveBeenCalledWith({ editedMessageIds: ["m2"] });
     expect(loadAround).toHaveBeenCalledWith("m2");
     expect(onTurnSettled).toHaveBeenCalledWith(true);
+    expect(applyLocalOutcome.mock.invocationCallOrder[0]).toBeLessThan(loadAround.mock.invocationCallOrder[0]!);
+    expect(loadAround.mock.invocationCallOrder[0]).toBeLessThan(onTurnSettled.mock.invocationCallOrder[0]!);
   });
 
   it("a legacy host (no feedOutcome seam) settles exactly as before — no outcome calls", async () => {

@@ -54,6 +54,9 @@ const fetchRouter = mock(async (input: RequestInfo | URL, init?: RequestInit): P
     putBody = JSON.parse(String(init?.body ?? "{}"));
     return jsonResponse({ plan: (putBody as { plan: AgentPlan }).plan });
   }
+  if (/\/deck$/.test(path) && method === "GET") {
+    return jsonResponse({ deck: { cards: [] } });
+  }
   if (/\/api\/scripts\/[^/]+\/agent-plan$/.test(path) && method === "GET") {
     lastPath = path;
     return jsonResponse({ plan: PLAN });

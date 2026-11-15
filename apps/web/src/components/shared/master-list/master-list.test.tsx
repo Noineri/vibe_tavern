@@ -180,6 +180,18 @@ describe("master-list primitive", () => {
     const calmRow = view.getByTestId("tone-row-b");
     expect(calmRow.querySelector(".bg-danger")).toBeNull();
     expect(calmRow.querySelector(".bg-success")).toBeNull();
+
+    expect(dndHandlers).toBeTruthy();
+    const startEvent: DragStartEvent = {
+      activatorEvent: new Event("pointerdown"),
+      active: { id: "a", data: { current: undefined }, rect: { current: { initial: null, translated: null } } },
+    };
+    act(() => {
+      dndHandlers!.onDragStart!(startEvent);
+    });
+    const overlayRow = view.getAllByText("Alpha").at(-1)?.closest("div") ?? null;
+    expect(overlayRow?.querySelector(".bg-danger")).toBeTruthy();
+    expect(overlayRow?.querySelector(".bg-success")).toBeNull();
   });
 
   it("starts drag from the handle only; tapping the row selects", () => {
