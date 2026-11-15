@@ -14,6 +14,7 @@ import {
   INTERACTIVE_SCHEMA_MAX_CHATTER_TEXT,
   INTERACTIVE_SCHEMA_MAX_DEPTH,
   INTERACTIVE_SCHEMA_MAX_ID,
+  INTERACTIVE_SCHEMA_MAX_PAYLOAD_BYTES,
   INTERACTIVE_SCHEMA_MAX_SETUP_FIELDS,
   INTERACTIVE_SCHEMA_MAX_PARTICIPANTS,
   INTERACTIVE_SCHEMA_MAX_SETUP_OPTIONS,
@@ -408,19 +409,24 @@ describe("experienceParticipantSchema (IR-70E model-seat assignment)", () => {
     );
   });
 
-  it("allows two model seats with the SAME characterId (duplicates legal)", () => {
+  it("allows two model seats with the SAME characterId in one roster (duplicates legal)", () => {
     // User decision: the same character on two seats with different models.
-    const first = experienceParticipantSchema.safeParse({ ...validModel(), characterId: "char_1" });
-    const second = experienceParticipantSchema.safeParse({
+    const first = { ...validModel(), characterId: "char_1" };
+    const second = {
       id: "ai2",
       label: "AI 2",
-      controller: "model",
+      controller: "model" as const,
       providerProfileId: "pp_2",
       modelId: "m_2",
       characterId: "char_1",
-    });
-    expect(first.success).toBe(true);
-    expect(second.success).toBe(true);
+    };
+    const roster = expectData(
+      experienceStartRequestSchema.safeParse({
+        branchId: "br_1",
+        participants: [first, second],
+      }),
+    ) as { participants: unknown[] };
+    expect(roster.participants).toEqual([first, second]);
   });
 
   it("rejects a blank providerProfileId on a model seat", () => {
@@ -597,15 +603,28 @@ describe("experienceStartRequestSchema", () => {
     ).toBe(true);
   });
 
-  it("is config-driven: scriptId/visualId/grants/contextMode are NOT accepted fields", () => {
+  it("is config-driven: strips scriptId/visualId/grants/contextMode (non-strict schema)", () => {
     // The start request carries only branch/settings/roster; the setup is
-    // resolved server-side from the chat config. Extra unknown fields are
-    // ignored by Zod, but the canonical fields are branchId + settings +
-    // participants (asserted by the minimal-start default above).
+    // resolved server-side from the chat config. Extra config fields are
+    // stripped by Zod rather than retained in parsed output.
     const data = expectData(
-      experienceStartRequestSchema.safeParse({ ...validStart(), scriptId: "sc_1" }),
+      experienceStartRequestSchema.safeParse({
+        ...validStart(),
+        scriptId: "sc_1",
+        visualId: "vis_1",
+        grants: ["audio"],
+        contextMode: "full",
+      }),
     ) as Record<string, unknown>;
-    expect(data.participants).toEqual([]);
+    expect(data).toEqual({
+      branchId: "br_1",
+      settings: {},
+      participants: [],
+    });
+    expect("scriptId" in data).toBe(false);
+    expect("visualId" in data).toBe(false);
+    expect("grants" in data).toBe(false);
+    expect("contextMode" in data).toBe(false);
   });
 
   it("rejects a missing branchId", () => {
@@ -1062,8 +1081,10 @@ describe("experienceRoundLogEventSchema (RM-7 ordered round-log vocabulary)", ()
 
   it("input/script_move action REQUIRES requestId + expectedRevision (loop always logs them)", () => {
     const { requestId: _r, ...noReqId } = validAction;
-    expectReject(experienceRoundLogEventSchema.safeParse({ kind: "input", action: noReqId }));
     const { expectedRevision: _e, ...noRev } = validAction;
+    expectReject(experienceRoundLogEventSchema.safeParse({ kind: "input", action: noReqId }));
+    expectReject(experienceRoundLogEventSchema.safeParse({ kind: "input", action: noRev }));
+    expectReject(experienceRoundLogEventSchema.safeParse({ kind: "script_move", participantId: "ai", action: noReqId }));
     expectReject(experienceRoundLogEventSchema.safeParse({ kind: "script_move", participantId: "ai", action: noRev }));
   });
 
@@ -1155,12 +1176,20 @@ describe("experienceRoundModelRequestSchema / response (RM-7)", () => {
     expectReject(experienceRoundModelRequestSchema.safeParse(noPrompt));
   });
 
-  it("rejects an oversized/unsafe prompt", () => {
+  it("rejects an oversized or unsafe prompt", () => {
     expectReject(experienceRoundModelRequestSchema.safeParse({ ...validRequest, prompt: { fn: () => 1 } }));
+    expectReject(
+      experienceRoundModelRequestSchema.safeParse({
+        ...validRequest,
+        prompt: { text: "x".repeat(INTERACTIVE_SCHEMA_MAX_PAYLOAD_BYTES) },
+      }),
+    );
   });
 
   it("round-trips a valid response", () => {
-    expectData(experienceRoundModelResponseSchema.safeParse({ seatId: "ai", result: { actionId: "move" } }));
-    expectData(experienceRoundModelResponseSchema.safeParse({ seatId: "ai", requestId: "rq-7", result: "hi" }));
+    const minimal = { seatId: "ai", result: { actionId: "move" } };
+    expect(expectData(experienceRoundModelResponseSchema.safeParse(minimal))).toEqual(minimal);
+    const withRequestId = { seatId: "ai", requestId: "rq-7", result: "hi" };
+    expect(expectData(experienceRoundModelResponseSchema.safeParse(withRequestId))).toEqual(withRequestId);
   });
 });

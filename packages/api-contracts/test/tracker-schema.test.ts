@@ -369,9 +369,16 @@ describe("clock marker DSL (semantic story clock marks)", () => {
     const dsl: SceneTrackerDsl = {
       a: { $type: "string", clock: "part" },
       b: { $type: "string", clock: "part" },
+      c: { $type: "string", clock: "part" },
       story_day: { $type: "number", clock: "day" },
     };
-    expect(sceneTrackerDslSchema.safeParse(dsl).success).toBe(false);
+    const result = sceneTrackerDslSchema.safeParse(dsl);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const msg = JSON.stringify(result.error.issues);
+      expect(msg).toContain("part");
+      expect(msg).toContain("at most once");
+    }
   });
 
   it("round-trips a marked schema through the config schema and the PATCH schema (marker survives save-path validation)", () => {
@@ -528,12 +535,21 @@ describe("sceneTrackerEditPathSchema + resolveSceneDslPath", () => {
 
   it("resolves a nested path and reports stale/non-object/empty paths", () => {
     const dsl: SceneTrackerDsl = { box: { $type: "object", properties: { x: { $type: "string" } } } };
-    expect(resolveSceneDslPath(dsl, ["box", "x"]).success).toBe(true);
-    expect(resolveSceneDslPath(dsl, ["box"]).success).toBe(true);
-    expect(resolveSceneDslPath(dsl, []).success).toBe(false);
-    expect(resolveSceneDslPath(dsl, ["box", "missing"]).success).toBe(false);
-    expect(resolveSceneDslPath(dsl, ["box", "x", "deep"]).success).toBe(false);
-    expect(resolveSceneDslPath(dsl, ["__proto__"]).success).toBe(false);
+    expect(resolveSceneDslPath(dsl, ["box", "x"])).toEqual({ success: true, node: { $type: "string" } });
+    expect(resolveSceneDslPath(dsl, ["box"])).toEqual({ success: true, node: dsl.box });
+    expect(resolveSceneDslPath(dsl, [])).toEqual({ success: false, error: "Edit path is empty." });
+    expect(resolveSceneDslPath(dsl, ["box", "missing"])).toEqual({
+      success: false,
+      error: 'Path segment "missing" does not exist (at depth 2).',
+    });
+    expect(resolveSceneDslPath(dsl, ["box", "x", "deep"])).toEqual({
+      success: false,
+      error: 'Path segment "x" is not an object (at depth 2).',
+    });
+    expect(resolveSceneDslPath(dsl, ["__proto__"])).toEqual({
+      success: false,
+      error: 'Reserved path segment "__proto__" is not allowed (at depth 1).',
+    });
   });
 });
 
@@ -544,7 +560,7 @@ describe("sceneTrackerEditPathSchema + resolveSceneDslPath", () => {
 describe("sceneTrackerConfigSchema", () => {
   it("fills fixed defaults and a consistent schemaHash from an empty input", () => {
     const parsed = sceneTrackerConfigSchema.parse({});
-    expect(parsed).toMatchObject({
+    expect(parsed).toEqual({
       schema: {},
       autoMode: "assistant",
       contextWindow: 6,
@@ -555,11 +571,12 @@ describe("sceneTrackerConfigSchema", () => {
       useChatModel: true,
       generatePrompt: "",
       injectPrompt: "",
+      rulesPrompt: "",
       providerProfileId: null,
       model: null,
       revision: 0,
+      schemaHash: EMPTY_SCENE_SCHEMA_HASH,
     });
-    expect(parsed.schemaHash).toBe(EMPTY_SCENE_SCHEMA_HASH);
   });
 
   it("matches createDefaultSceneTrackerConfig()", () => {

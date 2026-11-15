@@ -278,6 +278,15 @@ describe("experienceCopilotStreamRequestSchema — answer mode (TAG-5)", () => {
     expect(() =>
       experienceCopilotStreamRequestSchema.parse({ ...base, answer: { text: "x" } }),
     ).toThrow();
+    expect(() =>
+      experienceCopilotStreamRequestSchema.parse({ ...base, answer: { toolCallId: "", text: "x" } }),
+    ).toThrow();
+    expect(() =>
+      experienceCopilotStreamRequestSchema.parse({
+        ...base,
+        answer: { toolCallId: "", decision: "allow" },
+      }),
+    ).toThrow();
   });
 
   // ── SC-23e: the permission decision family joins the answer union ──
@@ -302,6 +311,12 @@ describe("experienceCopilotStreamRequestSchema — answer mode (TAG-5)", () => {
       experienceCopilotStreamRequestSchema.parse({
         ...base,
         answer: { toolCallId: "tc_perm_1", decision: "allow", text: "why not" },
+      }),
+    ).toThrow();
+    expect(() =>
+      experienceCopilotStreamRequestSchema.parse({
+        ...base,
+        answer: { toolCallId: "tc_perm_1", decision: "allow", skipped: true },
       }),
     ).toThrow();
     expect(() =>
@@ -469,6 +484,8 @@ describe("experienceCopilotThreadSchema (ER-7)", () => {
         createdAt: "2026-01-01T00:00:00.000Z",
         updatedAt: "2026-01-01T00:00:00.000Z",
         metrics: null,
+        contextLinks: [],
+        todo: [],
       }),
     ).toThrow();
   });
@@ -484,6 +501,8 @@ describe("experienceCopilotThreadSchema (ER-7)", () => {
         createdAt: "2026-01-01T00:00:00.000Z",
         updatedAt: "2026-01-01T00:00:00.000Z",
         metrics: null,
+        contextLinks: [],
+        todo: [],
       }),
     ).toThrow();
   });
@@ -521,7 +540,20 @@ describe("experienceCopilotContextMetricsSchema (CM-1)", () => {
   });
 
   test("rejects a fractional token count (all plain ints)", () => {
-    expect(() => experienceCopilotContextMetricsSchema.parse({ ...valid, totalTokens: 1.5 })).toThrow();
+    const intFields = [
+      "systemTokens",
+      "digestTokens",
+      "historyTokens",
+      "attachedTokens",
+      "totalTokens",
+      "budgetTokens",
+      "reserveTokens",
+    ] as const;
+    for (const field of intFields) {
+      expect(() =>
+        experienceCopilotContextMetricsSchema.parse({ ...valid, [field]: 1.5 }),
+      ).toThrow();
+    }
   });
 });
 
@@ -541,8 +573,8 @@ describe("experienceCopilotMessageSchema (ER-7)", () => {
     expect(experienceCopilotMessageSchema.parse(payload)).toEqual(payload);
   });
 
-  test("accepts a valid tool-call message (tool fields present)", () => {
-    const payload = {
+  test("accepts valid tool-call and tool-result messages (tool fields populated)", () => {
+    const toolCallPayload = {
       id: "msg_002",
       threadId: "thread_001",
       role: "assistant",
@@ -553,7 +585,20 @@ describe("experienceCopilotMessageSchema (ER-7)", () => {
       reasoningDurationMs: null,
       createdAt: "2026-01-01T00:00:01.000Z",
     };
-    expect(experienceCopilotMessageSchema.parse(payload)).toEqual(payload);
+    expect(experienceCopilotMessageSchema.parse(toolCallPayload)).toEqual(toolCallPayload);
+
+    const toolResultPayload = {
+      id: "msg_002r",
+      threadId: "thread_001",
+      role: "tool",
+      content: '{"ok":true}',
+      toolCallsJson: null,
+      toolCallId: "call_1",
+      reasoning: null,
+      reasoningDurationMs: null,
+      createdAt: "2026-01-01T00:00:02.000Z",
+    };
+    expect(experienceCopilotMessageSchema.parse(toolResultPayload)).toEqual(toolResultPayload);
   });
 
   // AP-28: the reasoning pair round-trips on the wire — values on the row
@@ -627,13 +672,17 @@ describe("experienceCopilotBoundVisualSchema (ER-7)", () => {
 // ─── CP-1: copilot toolset + profile schemas ────────────────────────────────
 
 describe("copilotToolSetSchema (CP-1)", () => {
-  test("accepts all 5 toggleable tools", () => {
+  test("accepts all 9 toggleable tools", () => {
     const payload = {
       write_buffer: true,
       edit_buffer: true,
       run_test: false,
       run_simulate: true,
       suggest_visual_binding: false,
+      plan: true,
+      read_plan: false,
+      todo: true,
+      ask_user: false,
     };
     expect(copilotToolSetSchema.parse(payload)).toEqual(payload);
   });

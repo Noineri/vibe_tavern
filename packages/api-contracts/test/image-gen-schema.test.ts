@@ -23,15 +23,31 @@ describe("image-gen workflow family schemas", () => {
     ).toBe(true);
   });
 
-  test("accepts cfgRescale 0..1 and rejects values outside that range", () => {
-    expect(imageGenSamplerSetPayloadSchema.safeParse({ cfgRescale: 0.6 }).success).toBe(true);
-    expect(
-      generateImageGenSchema.safeParse({
+  test("accepts cfgRescale 0..1 boundaries and rejects out-of-range values on both boundaries", () => {
+    for (const cfgRescale of [0, 0.6, 1]) {
+      const sampler = imageGenSamplerSetPayloadSchema.safeParse({ cfgRescale });
+      expect(sampler.success).toBe(true);
+      if (sampler.success) expect(sampler.data.cfgRescale).toBe(cfgRescale);
+
+      const gen = generateImageGenSchema.safeParse({
         profileId: "profile-1",
         mode: "portrait",
-        overrides: { cfgRescale: 1.01 },
-      }).success,
-    ).toBe(false);
+        overrides: { cfgRescale },
+      });
+      expect(gen.success).toBe(true);
+      if (gen.success) expect(gen.data.overrides?.cfgRescale).toBe(cfgRescale);
+    }
+
+    for (const cfgRescale of [-0.01, 1.01]) {
+      expect(imageGenSamplerSetPayloadSchema.safeParse({ cfgRescale }).success).toBe(false);
+      expect(
+        generateImageGenSchema.safeParse({
+          profileId: "profile-1",
+          mode: "portrait",
+          overrides: { cfgRescale },
+        }).success,
+      ).toBe(false);
+    }
   });
 
   test("rejects unknown workflow ids at both wire boundaries", () => {

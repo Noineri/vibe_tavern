@@ -95,11 +95,34 @@ describe("createLorebookSchema", () => {
     expectReject(createLorebookSchema.safeParse({ name: "L" }));
   });
 
-  it("accepts characterId/personaId/chatId when provided and when omitted (optional)", () => {
+  it("strips deprecated characterId/personaId while retaining links and optional chatId", () => {
     const base = validCreateLorebook();
-    expect(createLorebookSchema.safeParse({ ...base, characterId: "c1" }).success).toBe(true);
-    expect(createLorebookSchema.safeParse({ ...base, personaId: "p1", chatId: "ch1" }).success).toBe(true);
-    // Omitted is fine (covered by the minimal-payload test above).
+    const withDeprecated = expectSuccessData(
+      createLorebookSchema.safeParse({ ...base, characterId: "c1", personaId: "p1" }),
+    ) as Record<string, unknown>;
+    expect("characterId" in withDeprecated).toBe(false);
+    expect("personaId" in withDeprecated).toBe(false);
+    expect(withDeprecated.links).toEqual([]);
+
+    const withLinksAndChat = expectSuccessData(
+      createLorebookSchema.safeParse({
+        ...base,
+        links: [
+          { targetType: "character", targetId: "c1" },
+          { targetType: "persona", targetId: "p1" },
+        ],
+        chatId: "ch1",
+      }),
+    ) as Record<string, unknown>;
+    expect(withLinksAndChat.links).toEqual([
+      { targetType: "character", targetId: "c1" },
+      { targetType: "persona", targetId: "p1" },
+    ]);
+    expect(withLinksAndChat.chatId).toBe("ch1");
+
+    const omitted = expectSuccessData(createLorebookSchema.safeParse(base)) as Record<string, unknown>;
+    expect("chatId" in omitted).toBe(false);
+    expect(omitted.links).toEqual([]);
   });
 
   // Defaults actually materialize on the parsed output — pin them.
@@ -118,22 +141,26 @@ describe("createLorebookSchema", () => {
     const payload = {
       ...validCreateLorebook(),
       description: "d",
-      scanDepth: 10,
+      links: [{ targetType: "character" as const, targetId: "char-1" }],
+      chatId: "chat-1",
+      scanDepth: 25,
       tokenBudget: 500,
+      tokenBudgetPercent: 40,
+      tokenBudgetCap: 1500,
       recursiveScanning: true,
       useGroupScoring: true,
+      caseSensitive: true,
+      matchWholeWords: true,
       maxRecursionSteps: 9,
-      includeNames: true,
+      includeNames: false,
       minActivations: 2,
       minActivationsDepthMax: 3,
       overflowAlert: true,
-      characterStrategy: 1,
+      characterStrategy: 2,
       enabled: false,
     };
-    const data = expectSuccessData(createLorebookSchema.safeParse(payload)) as Record<string, unknown>;
-    expect(data.scanDepth).toBe(10);
-    expect(data.enabled).toBe(false);
-    expect(data.useGroupScoring).toBe(true);
+    const data = expectSuccessData(createLorebookSchema.safeParse(payload));
+    expect(data).toEqual(payload);
   });
 
   it("rejects a non-number scanDepth and a non-boolean enabled", () => {
@@ -157,10 +184,31 @@ describe("createLoreEntrySchema", () => {
 
 describe("lorebookExportResultSchema", () => {
   it("carries the download JSON separately from typed export warnings", () => {
-    expect(lorebookExportResultSchema.safeParse({
+    const payload = {
       data: { entries: {} },
-      warnings: [{ kind: "chat_off_entry", entryTitle: "Description only" }],
-    }).success).toBe(true);
+      warnings: [{ kind: "chat_off_entry" as const, entryTitle: "Description only" }],
+    };
+    const parsed = expectSuccessData(lorebookExportResultSchema.safeParse(payload));
+    expect(parsed).toEqual(payload);
+
+    expectReject(
+      lorebookExportResultSchema.safeParse({
+        data: { entries: {} },
+        warnings: [{ kind: "unknown_kind", entryTitle: "Description only" }],
+      }),
+    );
+    expectReject(
+      lorebookExportResultSchema.safeParse({
+        data: { entries: {} },
+        warnings: [{ kind: "chat_off_entry" }],
+      }),
+    );
+    expectReject(
+      lorebookExportResultSchema.safeParse({
+        data: { entries: {} },
+        warnings: "not-an-array",
+      }),
+    );
   });
 });
 
@@ -397,13 +445,39 @@ describe("importLorebookSchema", () => {
   });
 
   it("accepts optional linking fields (characterId/personaId/chatId/fallbackName)", () => {
-    expect(
+    const charResult = expectSuccessData(
       importLorebookSchema.safeParse({
         data: {},
         characterId: "c1",
         fallbackName: "Imported",
-      }).success,
-    ).toBe(true);
+      }),
+    );
+    expect(charResult).toEqual({
+      format: "st",
+      data: {},
+      mode: "new",
+      scopeType: "entity",
+      characterId: "c1",
+      fallbackName: "Imported",
+    });
+
+    const personaAndChatResult = expectSuccessData(
+      importLorebookSchema.safeParse({
+        data: { entries: {} },
+        personaId: "p1",
+        chatId: "ch1",
+        fallbackName: "Persona Imported",
+      }),
+    );
+    expect(personaAndChatResult).toEqual({
+      format: "st",
+      data: { entries: {} },
+      mode: "new",
+      scopeType: "entity",
+      personaId: "p1",
+      chatId: "ch1",
+      fallbackName: "Persona Imported",
+    });
   });
 });
 

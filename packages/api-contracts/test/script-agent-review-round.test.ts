@@ -1,5 +1,18 @@
 import { expect, test } from "bun:test";
-import { agentReviewEnvelopeSchema, aggregateScriptAgentCodeProposal, buildAgentReviewEnvelope, buildScriptAgentReviewEnvelope, captureScriptAgentReviewProposal, createEmptyAgentReviewRound, finalizeReviewActivities, isFinalizedReviewActivity, type AgentToolActivity } from "../src/index.js";
+import {
+  agentReviewEnvelopeSchema,
+  aggregateExperienceCopilotProposal,
+  aggregateScriptAgentCodeProposal,
+  buildAgentReviewEnvelope,
+  buildScriptAgentReviewEnvelope,
+  captureScriptAgentReviewProposal,
+  createEmptyAgentReviewRound,
+  finalizeReviewActivities,
+  isFinalizedCodeReviewActivity,
+  isFinalizedReviewActivity,
+  isPersistableAgentReviewActivity,
+  type AgentToolActivity,
+} from "../src/index.js";
 
 function activity(id: string, proposed: string): AgentToolActivity {
   return { toolCallId: id, toolName: "write_buffer", status: "done", target: "code", proposed, args: { target: "code", content: proposed }, summary: "Code updated" };
@@ -21,11 +34,21 @@ test("empty code is an actual deletion proposal, not absence", () => {
   expect(agentReviewEnvelopeSchema.parse(result)).toEqual(result);
 });
 
-test("code support does not widen mini-app finalization, aggregation or producer writes", () => {
+test("code support does not widen mini-app finalization or producer writes", () => {
   const code = activity("code", "New code");
   expect(isFinalizedReviewActivity(code)).toBe(false);
+  expect(isFinalizedCodeReviewActivity(code)).toBe(true);
+  expect(isPersistableAgentReviewActivity(code)).toBe(true);
   expect(finalizeReviewActivities([code])).toEqual([]);
   expect(buildAgentReviewEnvelope(null, [code], { rules: "Rules", visual: "Visual" })).toBeNull();
+});
+
+test("experience aggregation recognizes non-empty code summaries without populating proposedRules or proposedVisual, and skips empty code", () => {
+  const proposal = aggregateExperienceCopilotProposal([activity("code", "New code")]);
+  expect(proposal).toEqual({ hasProposal: true, summaries: ["Code updated"] });
+  expect("proposedRules" in proposal).toBe(false);
+  expect("proposedVisual" in proposal).toBe(false);
+  expect(aggregateExperienceCopilotProposal([activity("delete", "")])).toEqual({ hasProposal: false, summaries: [] });
 });
 
 test("same-key follow-up retains hunk progress, changed key resets it without mutating the predecessor", () => {

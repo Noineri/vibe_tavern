@@ -72,9 +72,11 @@ describe("Objective request schemas", () => {
     }).success).toBe(false);
   });
 
-  it("accepts a complete unique task order and rejects empty or duplicate ids", () => {
+  it("accepts a complete unique task order and rejects empty array, blank ids, or duplicate ids", () => {
     expect(reorderObjectiveTasksSchema.parse({ taskIds: ["t2", "t1"] })).toEqual({ taskIds: ["t2", "t1"] });
     expect(reorderObjectiveTasksSchema.safeParse({ taskIds: [] }).success).toBe(false);
+    expect(reorderObjectiveTasksSchema.safeParse({ taskIds: ["t1", ""] }).success).toBe(false);
+    expect(reorderObjectiveTasksSchema.safeParse({ taskIds: ["t1", "   "] }).success).toBe(false);
     expect(reorderObjectiveTasksSchema.safeParse({ taskIds: ["t1", "t1"] }).success).toBe(false);
   });
 });
@@ -104,46 +106,49 @@ describe("Dice config (B9)", () => {
     expect(insightsConfigSchema.safeParse({ diceMode: "" }).success).toBe(false);
   });
 
-  it("partial PATCH preserves ALL unrelated Objective/Scene/Dice fields", () => {
-    // A PATCH that only touches diceEnabled must not reset objective/tracker/diceMode.
+  it("partial PATCH carries only sent diceEnabled without injecting defaults for unrelated Objective/Scene/Dice fields", () => {
+    // A PATCH schema wrapper keeps unmentioned fields absent rather than
+    // injecting defaults; the adapter/store merge preserves stored values.
     const parsed = updateInsightsConfigSchema.parse({
       insightsConfig: { diceEnabled: true },
     });
-    expect(parsed.insightsConfig?.diceEnabled).toBe(true);
-    // diceMode and other fields are absent (not reset to default).
-    expect(parsed.insightsConfig?.diceMode).toBeUndefined();
-    expect(parsed.insightsConfig?.objectiveEnabled).toBeUndefined();
-    expect(parsed.insightsConfig?.trackerEnabled).toBeUndefined();
+    expect(parsed).toEqual({ insightsConfig: { diceEnabled: true } });
+    expect(Object.keys(parsed.insightsConfig ?? {})).toEqual(["diceEnabled"]);
   });
 
-  it("PATCH diceMode alone preserves diceEnabled and other fields", () => {
+  it("PATCH diceMode alone leaves diceEnabled and other unrelated fields omitted", () => {
     const parsed = updateInsightsConfigSchema.parse({
       insightsConfig: { diceMode: "immersive" },
     });
-    expect(parsed.insightsConfig?.diceMode).toBe("immersive");
-    expect(parsed.insightsConfig?.diceEnabled).toBeUndefined();
-    expect(parsed.insightsConfig?.objectiveEnabled).toBeUndefined();
+    expect(parsed).toEqual({ insightsConfig: { diceMode: "immersive" } });
+    expect(Object.keys(parsed.insightsConfig ?? {})).toEqual(["diceMode"]);
   });
 
-  it("empty PATCH preserves everything", () => {
+  it("empty PATCH parses to an empty object without injecting insightsConfig", () => {
     const parsed = updateInsightsConfigSchema.parse({});
-    expect(parsed.insightsConfig).toBeUndefined();
+    expect(parsed).toEqual({});
+    expect("insightsConfig" in parsed).toBe(false);
   });
 
-  it("round-trip: write dice config then read it back", () => {
-    // Simulate what the adapter does: parse stored config, merge dice fields.
+  it("schema-and-spread example: normalized stored config merged with partial PATCH retains omitted fields", () => {
+    // Contract-layer example of combining parsed stored config with a parsed partial PATCH.
     const stored = { objectiveEnabled: true, trackerEnabled: false, diceEnabled: false, diceMode: "normal" as const };
     const normalized = insightsConfigSchema.parse(stored);
-    expect(normalized.diceEnabled).toBe(false);
-    expect(normalized.diceMode).toBe("normal");
+    expect(normalized).toEqual({
+      objectiveEnabled: true,
+      trackerEnabled: false,
+      diceEnabled: false,
+      diceMode: "normal",
+      diceScriptIds: null,
+      diceActorBindings: null,
+    });
 
     // Apply a partial patch (toggle dice on).
     const patch = updateInsightsConfigSchema.parse({ insightsConfig: { diceEnabled: true } });
-    const merged = { ...normalized, ...(patch.insightsConfig ?? {}) };
+    expect(patch).toEqual({ insightsConfig: { diceEnabled: true } });
+    const merged = insightsConfigSchema.parse({ ...normalized, ...(patch.insightsConfig ?? {}) });
     expect(merged.diceEnabled).toBe(true);
-    // diceMode preserved from stored.
     expect(merged.diceMode).toBe("normal");
-    // Objective/Scene preserved.
     expect(merged.objectiveEnabled).toBe(true);
     expect(merged.trackerEnabled).toBe(false);
   });

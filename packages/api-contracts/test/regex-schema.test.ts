@@ -74,12 +74,12 @@ describe("createRegexPresetSchema", () => {
         ...validCreateRegexPreset(),
         minDepth: null,
         maxDepth: 3,
-        placement: [1, 2, 5, 6],
+        placement: [1, 2, 3, 5, 6],
       }),
     );
     expect(data.minDepth).toBeNull();
     expect(data.maxDepth).toBe(3);
-    expect(data.placement).toEqual([1, 2, 5, 6]);
+    expect(data.placement).toEqual([1, 2, 3, 5, 6]);
   });
 
   it("rejects an empty name and an empty findRegex", () => {
@@ -243,6 +243,7 @@ describe("updateRegexPresetSchema", () => {
   });
 
   it("rejects non-integer depth bounds", () => {
+    expectReject(updateRegexPresetSchema.safeParse({ minDepth: 1.5 }));
     expectReject(updateRegexPresetSchema.safeParse({ maxDepth: 1.5 }));
   });
 });

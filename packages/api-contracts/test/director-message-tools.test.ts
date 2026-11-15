@@ -65,11 +65,13 @@ describe("proposeMessageEditInputSchema", () => {
     expect(proposeMessageEditInputSchema.parse(input)).toEqual(input);
   });
 
-  test("omitting the variant means the currently selected swipe", () => {
-    expect(proposeMessageEditInputSchema.parse({ position: 0, instruction: "fix pose" })).toEqual({
+  test("allows omitting variant (downstream resolver maps omission to the active swipe)", () => {
+    const parsed = proposeMessageEditInputSchema.parse({ position: 0, instruction: "fix pose" });
+    expect(parsed).toEqual({
       position: 0,
       instruction: "fix pose",
     });
+    expect("variant" in parsed).toBe(false);
   });
 
   test("rejects missing instruction, bad positions and bad variant numbers", () => {
@@ -169,11 +171,17 @@ describe("directorMessageEditProposalSchema", () => {
     expect(() => directorMessageEditProposalSchema.parse({ ...valid, instruction: "" })).toThrow();
   });
 
-  test("rejects a source identity missing its immutable ids", () => {
+  test("rejects a source identity missing either immutable id independently", () => {
     expect(() =>
       directorMessageEditProposalSchema.parse({
         ...valid,
-        source: { position: 4, variantNumber: 2 },
+        source: { variantId: "v1", position: 4, variantNumber: 2 },
+      }),
+    ).toThrow();
+    expect(() =>
+      directorMessageEditProposalSchema.parse({
+        ...valid,
+        source: { messageId: "m1", position: 4, variantNumber: 2 },
       }),
     ).toThrow();
   });
@@ -316,6 +324,29 @@ describe("experienceCopilotStreamPermissionAnswerSchema — editable Allow (DMT-
   });
 
   test("the instruction bound mirrors the ask family's text bound", () => {
+    expect(
+      experienceCopilotStreamPermissionAnswerSchema.parse({
+        toolCallId: "tc_swipe_1",
+        decision: "allow",
+        instruction: "x",
+      }),
+    ).toEqual({
+      toolCallId: "tc_swipe_1",
+      decision: "allow",
+      instruction: "x",
+    });
+    const maxInstruction = "x".repeat(50_000);
+    expect(
+      experienceCopilotStreamPermissionAnswerSchema.parse({
+        toolCallId: "tc_swipe_1",
+        decision: "allow",
+        instruction: maxInstruction,
+      }),
+    ).toEqual({
+      toolCallId: "tc_swipe_1",
+      decision: "allow",
+      instruction: maxInstruction,
+    });
     expect(() =>
       experienceCopilotStreamPermissionAnswerSchema.parse({
         toolCallId: "tc_swipe_1",
@@ -405,7 +436,7 @@ describe("experienceCopilotStreamAnswerSchema — union discrimination preserved
     ).toEqual({ toolCallId: "tc_perm_1", decision: "deny" });
   });
 
-  test("the ask/permission/regenerate exclusivity is preserved", () => {
+  test("the content/ask/permission/regenerate exclusivity is preserved", () => {
     expect(() =>
       experienceCopilotStreamRequestSchema.parse({
         ...base,
@@ -417,6 +448,27 @@ describe("experienceCopilotStreamAnswerSchema — union discrimination preserved
       experienceCopilotStreamRequestSchema.parse({
         ...base,
         answer: { toolCallId: "tc_1", text: "x" },
+        regenerate: true,
+      }),
+    ).toThrow();
+    expect(() =>
+      experienceCopilotStreamRequestSchema.parse({
+        ...base,
+        content: "hi",
+        regenerate: true,
+      }),
+    ).toThrow();
+    expect(() =>
+      experienceCopilotStreamRequestSchema.parse({
+        ...base,
+        content: "hi",
+        answer: { toolCallId: "tc_swipe_1", decision: "allow", instruction: "x" },
+      }),
+    ).toThrow();
+    expect(() =>
+      experienceCopilotStreamRequestSchema.parse({
+        ...base,
+        answer: { toolCallId: "tc_swipe_1", decision: "allow", instruction: "x" },
         regenerate: true,
       }),
     ).toThrow();
