@@ -90,7 +90,7 @@ function startTicker() {
 // ─── Beat lifecycle ──────────────────────────────────────────────────────────
 
 describe("executeTimerTurnExperiencePlayground — real kernel", () => {
-  test("start reports pendingTimers=1 before any beat fires", () => {
+  test("start reports pendingTimers=0 before any beat fires (the timer arms on the first reduce)", () => {
     const started = startTicker();
     expect(started.ok).toBe(true);
     if (!started.ok) return;

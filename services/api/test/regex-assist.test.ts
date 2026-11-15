@@ -170,26 +170,52 @@ describe("generateRegexAssist — full path (real resolver + injected executor)"
 describe("POST /api/ai/regex-assist route (feature mount)", () => {
   it("passes the request through and serializes the response", async () => {
     const seen: Array<Record<string, unknown>> = [];
+    const draft = { name: "N", findRegex: "/x/g", replaceString: "", trimStrings: [], applyTarget: "persist" as const, depthMode: "all" as const, explanation: "e" };
     const runtime: AiAssistantRuntimeApi = {
       streamAiAssistant: async function* (): AsyncGenerator<AiAssistantStreamChunk> {},
       countAiAssistantTokens: async () => ({ tokens: 0, model: "m", layerCount: 0, messageCount: 0, activatedLoreCount: 0 }),
       regexAssist: async (body: Record<string, unknown>) => {
         seen.push(body);
-        return { draft: { name: "N", findRegex: "/x/g", replaceString: "", trimStrings: [], applyTarget: "persist", depthMode: "all", explanation: "e" } };
+        return { draft };
       },
     };
     const feature = createAiAssistantFeature(runtime);
-    // The feature module's activate({router}) registers routes on a real Hono
-    // sub-router (FeatureDeps.router); a bare `new Hono()` carries the exact
-    // registration surface the server hands features, so the registered paths
-    // are read straight off it — no router double, no cast (response-compression
-    // precedent).
     const app = new Hono();
     feature.activate({
       events: strictTestDouble<EventBus>({}, "EventBus (regex-assist route registration)"),
       router: app,
     });
-    const registered = app.routes.map((route) => route.path);
-    expect(registered).toContain("/api/ai/regex-assist");
+    expect(app.routes.map((route) => route.path)).toContain("/api/ai/regex-assist");
+
+    // Validation gate rejects incomplete requests at zValidator before hitting runtime.
+    const invalidRes = await app.request("/api/ai/regex-assist", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ providerProfileId: "p1" }),
+    });
+    expect(invalidRes.status).toBe(400);
+    expect(seen).toHaveLength(0);
+
+    // Valid body goes through regexAssistRequestSchema (defaulting archetype to "custom")
+    // to runtime.regexAssist and serializes the returned draft with status 200.
+    const res = await app.request("/api/ai/regex-assist", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        providerProfileId: "p1",
+        task: "strip zero-width spaces",
+        sampleText: "a\u200Bb",
+      }),
+    });
+    expect(res.status).toBe(200);
+    expect(seen).toEqual([
+      {
+        providerProfileId: "p1",
+        task: "strip zero-width spaces",
+        archetype: "custom",
+        sampleText: "a\u200Bb",
+      },
+    ]);
+    expect(await res.json()).toEqual({ draft });
   });
 });

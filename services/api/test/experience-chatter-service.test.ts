@@ -207,10 +207,17 @@ describe("ExperienceChatterService — resolveChatterFlavor", () => {
 		expect(spy.calls.length).toBe(0);
 	});
 
-	test("no active profile (legacy seat, no provider) degrades to failed", () => {
+	test("no active profile (legacy seat, no provider) degrades to failed", async () => {
 		const { service, spy } = makeService({ profile: null });
 		const legacySeat = [{ id: "ai1", label: "ai1", controller: "model" } as ExperienceParticipant];
-		service.resolveChatterFlavor("s1", VIEWER, 1, MARKER, legacySeat);
+		const first = service.resolveChatterFlavor("s1", VIEWER, 1, MARKER, legacySeat);
+		expect(first).toEqual({ status: "pending", seatId: "ai1", fallback: "…" });
+		await settle();
 		expect(spy.calls.length).toBe(0);
+		expect(service.resolveChatterFlavor("s1", VIEWER, 1, MARKER, legacySeat)).toEqual({
+			status: "failed",
+			seatId: "ai1",
+			fallback: "…",
+		});
 	});
 });

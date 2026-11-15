@@ -98,12 +98,14 @@ async function createTestRuntime(profile: StoredProviderProfileRecord | null): P
 	};
 }
 
-function stubTokenizeEndpoint(): void {
+function stubTokenizeEndpoint(): { calls: string[] } {
+	const calls: string[] = [];
 	globalThis.fetch = testFetch(async (url: string | URL | Request, init?: RequestInit) => {
 		const urlText = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
 		if (!urlText.endsWith("/tokenize")) {
 			return new Response(JSON.stringify({ error: "unexpected fetch in test" }), { status: 404 });
 		}
+		calls.push(urlText);
 		const body = JSON.parse(String(init?.body ?? "{}")) as { content?: string };
 		const content = typeof body.content === "string" ? body.content : "";
 		return new Response(JSON.stringify({ tokens: Array.from({ length: EXACT(content) }) }), {
@@ -111,11 +113,12 @@ function stubTokenizeEndpoint(): void {
 			headers: { "Content-Type": "application/json" },
 		});
 	});
+	return { calls };
 }
 
 describe("Provider-exact token counts reach trace layers after warm (LS-1e)", () => {
 	it("first preview assembles on the ladder; after the warm settles the layer counts are exact", async () => {
-		stubTokenizeEndpoint();
+		const stub = stubTokenizeEndpoint();
 		const ctx = await createTestRuntime(makeProfile());
 		try {
 			const { runtime, chatId } = ctx;
@@ -136,6 +139,7 @@ describe("Provider-exact token counts reach trace layers after warm (LS-1e)", ()
 
 			// Warm pass settles (bounded background queue — assembly never awaited it).
 			await waitForTokenWarmIdle();
+			expect(stub.calls.length).toBeGreaterThan(0);
 
 			// Turn 2: same stable texts → exact counts from the cache.
 			const second = await runtime.getContextPreview(chatId, branchId);
@@ -151,20 +155,26 @@ describe("Provider-exact token counts reach trace layers after warm (LS-1e)", ()
 	});
 
 	it("profile with no model or a cloud protocol stays on the pure ladder (no fetch)", async () => {
-		stubTokenizeEndpoint();
-		const ctx = await createTestRuntime(makeProfile({ providerPreset: "openai_compat", defaultModel: "gpt-4o" }));
-		try {
-			const { runtime, chatId } = ctx;
-			const snap = await runtime.getSnapshot(chatId);
-			const branchId = snap.activeBranch!.id as ChatBranchId;
-			const preview = await runtime.getContextPreview(chatId, branchId);
-			expect(preview).not.toBeNull();
-			// openai_compat exposes no tokenize capability — the orchestrator scope
-			// is null, the ladder runs, and no /tokenize request is ever made.
-			await waitForTokenWarmIdle();
-			expect(preview!.layers.length).toBeGreaterThan(0);
-		} finally {
-			await ctx.cleanup();
+		const stub = stubTokenizeEndpoint();
+		for (const profileOverrides of [
+			{ providerPreset: "openai_compat", defaultModel: "gpt-4o" },
+			{ providerPreset: "llamacpp", defaultModel: "" },
+		] as const) {
+			const ctx = await createTestRuntime(makeProfile(profileOverrides));
+			try {
+				const { runtime, chatId } = ctx;
+				const snap = await runtime.getSnapshot(chatId);
+				const branchId = snap.activeBranch!.id as ChatBranchId;
+				const preview = await runtime.getContextPreview(chatId, branchId);
+				expect(preview).not.toBeNull();
+				// Neither cloud protocols nor empty-model profiles resolve a warm
+				// token context — the ladder runs and /tokenize is never fetched.
+				await waitForTokenWarmIdle();
+				expect(preview!.layers.length).toBeGreaterThan(0);
+				expect(stub.calls).toHaveLength(0);
+			} finally {
+				await ctx.cleanup();
+			}
 		}
 	});
 });

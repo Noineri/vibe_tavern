@@ -880,18 +880,16 @@ describe("no-write invariant — zero persistence/binding/DB involvement", () =>
       "./experience-payload-schema.js",
       "@vibe-tavern/domain",
     ]);
-    // Collect every `from "..."` target that appears on an `import` line ONLY
-    // (the module's doc comment legitimately names the banned modules in prose
-    // to explain what it does NOT import — scanning the whole source would
-    // false-positive on that prose; a pattern merely QUOTED in prose still
-    // matches the same naive regex a real call would).
+    // Collect every module specifier across static multi-line `import` blocks
+    // and bare side-effect imports — ignoring doc comments that merely mention
+    // forbidden module names in prose without `import ... from "..."` syntax.
     const importTargets: string[] = [];
-    for (const line of source.match(/^import .+$/gm) ?? []) {
-      for (const m of line.matchAll(/from\s+"([^"]+)"/g)) {
-        importTargets.push(m[1]!);
-      }
+    for (const m of source.matchAll(/^\s*import\b(?:[\s\S]*?\bfrom\s+)?"([^"]+)"/gm)) {
+      importTargets.push(m[1]!);
     }
-    expect(importTargets.length).toBeGreaterThan(0);
+    expect(importTargets.length).toBeGreaterThanOrEqual(7);
+    expect(importTargets).toContain("./experience-shared.js");
+    expect(importTargets).toContain("./experience-tester.js");
     for (const target of importTargets) {
       expect(allowedImports.has(target)).toBe(true);
     }

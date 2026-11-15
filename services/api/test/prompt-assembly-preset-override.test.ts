@@ -34,7 +34,7 @@ function makeResolver(): { resolver: PromptAssemblyResolver; calls: string[] } {
       postHistoryInstructions: null,
     }),
     getPersona: async () => ({ id: "persona_1", name: "User", description: "A user." }),
-    // Discriminate by id so the test can tell which preset was selected.
+    // Discriminate by id so unknown preset ids hit the real null branch.
     getPromptPreset: async (presetId: string) => {
       calls.push(presetId);
       if (presetId === "preset_override") {
@@ -44,11 +44,14 @@ function makeResolver(): { resolver: PromptAssemblyResolver; calls: string[] } {
           text: OVERRIDE_PRESET_TEXT,
         });
       }
-      return makeAssemblyPreset({
-        id: "preset_chat",
-        name: "ChatDefault",
-        text: CHAT_PRESET_TEXT,
-      });
+      if (presetId === "preset_chat") {
+        return makeAssemblyPreset({
+          id: "preset_chat",
+          name: "ChatDefault",
+          text: CHAT_PRESET_TEXT,
+        });
+      }
+      return null;
     },
     executeScripts: async (input) => ({
       personality: input.characterRecord.personality ?? "",
@@ -115,13 +118,15 @@ describe("Q1b: assembleForChat preset override", () => {
     expect(calls).toEqual(["preset_override", "preset_chat"]); // override, then back to chat's
   });
 
-  it("preset override with a non-existent id → getPromptPreset returns null-ish, handled gracefully", async () => {
-    // If the override id is unknown, the resolver returns a default (chat) shape
-    // here — the assembly must not throw. Documents the no-throw contract.
-    const { resolver } = makeResolver();
+  it("preset override with a non-existent id → getPromptPreset returns null, handled gracefully", async () => {
+    // Missing preset row: resolver returns null, assembly still succeeds
+    // and leaves promptTraceDraft.presetName null.
+    const { resolver, calls } = makeResolver();
     const service = new PromptAssemblyService(mockStores, resolver, mockFileStore);
 
     const result = await service.assembleForChat({ chatId: "chat_1" as ChatId, model: "m", presetId: "unknown_preset" as ChatId });
+    expect(calls).toEqual(["unknown_preset"]);
     expect(result.prompt).toBeDefined();
+    expect(result.promptTraceDraft.presetName).toBeNull();
   });
 });

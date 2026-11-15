@@ -1795,6 +1795,8 @@ describe("comfyui ws progress + interrupt (CG-C1)", () => {
   it("cross-prompt events, binary preview frames, and malformed text frames are all ignored", async () => {
     const PID = "ws-pid-3";
     const fake = makeFakeWs();
+    let backend: ReturnType<typeof comfyImageGenFactory> | undefined;
+    const midRuns: Array<Awaited<ReturnType<NonNullable<ReturnType<typeof comfyImageGenFactory>["progress"]>>>> = [];
     let polls = 0;
     const { transport } = makeTransport(async (url) => {
       if (url.pathname === "/object_info/CheckpointLoaderSimple") {
@@ -1811,6 +1813,8 @@ describe("comfyui ws progress + interrupt (CG-C1)", () => {
           // A malformed text frame.
           fake.pushRaw("{not json");
           fake.pushText({ type: "progress", data: { value: 4, max: 8, prompt_id: PID, node: "3" } });
+          if (!backend?.progress) throw new Error("Expected ComfyUI backend.progress()");
+          midRuns.push(await backend.progress());
           return Response.json({});
         }
         return historyDone(PID);
@@ -1818,15 +1822,16 @@ describe("comfyui ws progress + interrupt (CG-C1)", () => {
       if (url.pathname === "/view") return new Response(new Uint8Array(PNG_BYTES));
       return new Response("not found", { status: 404 });
     });
-    const backend = comfyImageGenFactory({
+    backend = comfyImageGenFactory({
       endpoint: WS_EP(9103),
       fetch: transport,
       openWebSocket: () => fake.socket,
     });
 
     await backend.generate({ prompt: "a tavern", model: "graycolor_v18.safetensors" });
-    // Only OUR 4/8 event landed (0.5); the noise never threw and never
-    // wrote a snapshot.
+    // Only OUR 4/8 event landed (0.5) mid-run; the noise never threw and never
+    // overwrote our snapshot.
+    expect(midRuns).toEqual([{ progress: 0.5, state: "step 4/8" }]);
     expect(await backend.progress()).toEqual({ progress: 1 });
   });
 

@@ -132,11 +132,13 @@ type RecordedCalls = {
 	getExperienceRoundConfig: { sessionId: string }[];
 	runExperienceRoundModel: { body: Parameters<ExperienceRuntimeApi["runExperienceRoundModel"]>[0]; signal?: AbortSignal }[];
 };
-function stubRuntime(throws?: { kind: DomainErrorKind; message: string }): { runtime: ExperienceRuntimeApi; calls: RecordedCalls } {
+function stubRuntime(throws?: { kind: DomainErrorKind; message: string } | Error): { runtime: ExperienceRuntimeApi; calls: RecordedCalls } {
 	const calls: RecordedCalls = Object.create(null);
 	const rec = <K extends keyof RecordedCalls>(name: K) => (calls[name] ??= []);
 	const maybeThrow = () => {
-		if (throws) throw new DomainError({ kind: throws.kind, message: throws.message });
+		if (!throws) return;
+		if (throws instanceof Error) throw throws;
+		throw new DomainError({ kind: throws.kind, message: throws.message });
 	};
 	const base: PartialMembers<ExperienceRuntimeApi> = {
 		getExperienceConfig: async (chatId: string) => { rec("getExperienceConfig").push({ chatId }); maybeThrow(); return { id: "cfg", chatId, enabled: false, scriptId: null, scriptName: null, visualId: null, contextSourceCharacterId: null, contextSourceChatId: null, contextSourcePersonaId: null, capabilityGrants: [], contextMode: "none", launcherVisible: false, createdAt: "", updatedAt: "" }; },
@@ -340,6 +342,16 @@ describe("Experience routes — HTTP layer (stub)", () => {
 			body: JSON.stringify({ type: "inc", requestId: "r1", expectedRevision: 0 }),
 		});
 		expect(r422.status).toBe(422);
+
+		const internal = mount(stubRuntime(new Error("boom")).runtime);
+		const r500 = await internal.request("/api/experience/sessions/s_1/actions", {
+			method: "POST", headers: { "content-type": "application/json" },
+			body: JSON.stringify({ type: "inc", requestId: "r1", expectedRevision: 0 }),
+		});
+		expect(r500.status).toBe(500);
+		const internalBody = await jsonBody<HttpErrorBody>(r500);
+		expect(internalBody.error.kind).toBe("Internal");
+		expect(internalBody.error.message).toBe("boom");
 	});
 
 	test("session discovery: a missing branchId query is 400 (strict query)", async () => {

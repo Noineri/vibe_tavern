@@ -47,6 +47,16 @@ import { testFetch } from "./test-fetch-seam.js";
 
 // ─── Shared helpers (the PE-1..PE-4 files' verbatim discipline) ──────────────
 
+/** Exact 1s -> 2s -> 4s -> 5s-cap poll backoff schedule across 55 pending waits
+ *  (30x1s = 30s, 15x2s = 60s elapsed, 8x4s = 92s elapsed, 2x5s = 102s elapsed). */
+const EXPECTED_BACKOFF_WAITS = [
+  ...Array.from({ length: 30 }, () => 1_000),
+  ...Array.from({ length: 15 }, () => 2_000),
+  ...Array.from({ length: 8 }, () => 4_000),
+  5_000,
+  5_000,
+];
+
 interface RecordedCall {
   url: string;
   init?: RequestInit;
@@ -255,7 +265,7 @@ describe("pollBflTask (exported seam)", () => {
     const polls = [
       { status: "Pending" },
       { status: "Reasoning" },
-      { status: "Generating" },
+      ...Array.from({ length: 53 }, () => ({ status: "Generating" })),
       readyPayload(),
     ];
     const waits: number[] = [];
@@ -270,8 +280,8 @@ describe("pollBflTask (exported seam)", () => {
       },
     });
     expect(root.status).toBe("Ready");
-    // 1 s initial, doubling per 30 s window, capped at 5 s.
-    expect(waits).toEqual([1_000, 1_000, 1_000]);
+    // 1 s initial, doubling per 30 s elapsed window, capped at 5 s.
+    expect(waits).toEqual(EXPECTED_BACKOFF_WAITS);
   });
 
   it("treats Content Moderated as terminal with its own message", async () => {
@@ -601,7 +611,11 @@ describe("fal queue arm (Authorization: Key, status→response→CDN download)",
 
 describe("pollFalRequest (exported seam)", () => {
   it("keeps polling IN_QUEUE/IN_PROGRESS with 1s→5s back-off, resolves on COMPLETED", async () => {
-    const statuses = [{ status: "IN_QUEUE", queue_position: 2 }, { status: "IN_PROGRESS" }, falReady()];
+    const statuses = [
+      { status: "IN_QUEUE", queue_position: 2 },
+      ...Array.from({ length: 54 }, () => ({ status: "IN_PROGRESS" })),
+      falReady(),
+    ];
     const waits: number[] = [];
     const { recording } = scriptFal({ statuses });
     await pollFalRequest({
@@ -613,7 +627,7 @@ describe("pollFalRequest (exported seam)", () => {
         return Promise.resolve();
       },
     });
-    expect(waits).toEqual([1_000, 1_000]);
+    expect(waits).toEqual(EXPECTED_BACKOFF_WAITS);
   });
 
   it("fails closed on an unrecognized status", async () => {
@@ -834,7 +848,7 @@ describe("pollReplicatePrediction (exported seam)", () => {
     const waits: number[] = [];
     const polls = [
       { status: "starting" },
-      { status: "processing" },
+      ...Array.from({ length: 54 }, () => ({ status: "processing" })),
       { status: "succeeded", output: [REP_IMAGE_URL] },
     ];
     const { recording } = scriptRep({ polls });
@@ -847,7 +861,7 @@ describe("pollReplicatePrediction (exported seam)", () => {
         return Promise.resolve();
       },
     });
-    expect(waits).toEqual([1_000, 1_000]);
+    expect(waits).toEqual(EXPECTED_BACKOFF_WAITS);
   });
 
   it("treats canceled as terminal with its own message", async () => {
@@ -1171,7 +1185,11 @@ describe("pollLumaGeneration (exported seam)", () => {
   it("keeps polling queued/processing with 1s→5s back-off, resolves on completed", async () => {
     const waits: number[] = [];
     const { recording } = scriptLuma({
-      states: [{ id: "gen-1", state: "queued", output: [] }, { id: "gen-1", state: "processing", output: [] }, lumaCompleted()],
+      states: [
+        { id: "gen-1", state: "queued", output: [] },
+        ...Array.from({ length: 54 }, () => ({ id: "gen-1", state: "processing", output: [] })),
+        lumaCompleted(),
+      ],
     });
     await pollLumaGeneration({
       getUrl: LUMA_GET_URL,
@@ -1182,7 +1200,7 @@ describe("pollLumaGeneration (exported seam)", () => {
         return Promise.resolve();
       },
     });
-    expect(waits).toEqual([1_000, 1_000]);
+    expect(waits).toEqual(EXPECTED_BACKOFF_WAITS);
   });
 
   it("fails closed on an unrecognized state and gives up after the 150s budget", async () => {
@@ -1352,7 +1370,7 @@ describe("pollNovitaTask (exported seam)", () => {
     const { recording } = scriptNov({
       polls: [
         { extra: {}, task: { status: "TASK_STATUS_QUEUED", reason: "" }, images: [] },
-        { extra: {}, task: { status: "TASK_STATUS_PROCESSING", reason: "" }, images: [] },
+        ...Array.from({ length: 54 }, () => ({ extra: {}, task: { status: "TASK_STATUS_PROCESSING", reason: "" }, images: [] })),
         novSucceed(),
       ],
     });
@@ -1366,7 +1384,7 @@ describe("pollNovitaTask (exported seam)", () => {
         return Promise.resolve();
       },
     });
-    expect(waits).toEqual([1_000, 1_000]);
+    expect(waits).toEqual(EXPECTED_BACKOFF_WAITS);
   });
 
   it("gives up after the 150s budget; fails closed on unknown statuses", async () => {
