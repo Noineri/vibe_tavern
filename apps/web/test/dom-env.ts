@@ -1,5 +1,6 @@
 import { afterAll, afterEach, expect } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
+import { flushSchedulerQueue } from "./scheduler-drain.js";
 
 /** Longest `outerHTML` snippet an inspected node prints before it is elided. */
 const INSPECT_HTML_LIMIT = 2000;
@@ -147,27 +148,6 @@ ensureDomEnvRegistration();
 const { default: _cjsInteropDefault, ...matchers } = await import("@testing-library/jest-dom/matchers");
 const { cleanup } = await import("@testing-library/react");
 
-/**
- * Drain the React 19 scheduler's macrotask queue.
- *
- * React's `commitRoot` schedules `flushPassiveEffects()` via
- * `scheduleCallback(NormalPriority)` on a `MessageChannel` macrotask (see
- * react-dom-client.development.js `scheduleCallback$1` in commitRoot).
- * RTL's `cleanup()` flushes microtasks + sync work via `act()`, but does NOT
- * drain that macrotask queue. Draining a bounded number of macrotask ticks
- * between files lets those callbacks fire while the file's tree is still
- * mounted, so no stale effect fires into the NEXT file's DOM.
- *
- * Letting a bounded number of macrotask ticks elapse lets those callbacks fire
- * while the file's effects are still relevant. We loop rather than tick once
- * because passive effects can schedule further passive effects; five is a safe
- * bounded drain (no public "scheduler idle" signal exists to spin against).
- */
-async function flushSchedulerQueue(): Promise<void> {
-	for (let i = 0; i < 5; i++) {
-		await new Promise<void>((resolve) => setTimeout(resolve, 0));
-	}
-}
 
 /**
  * Scoped DOM test environment for bun:test.

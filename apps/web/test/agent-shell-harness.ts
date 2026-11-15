@@ -42,6 +42,7 @@ import { useAgentTurnStore } from "../src/stores/agent-turn-store.js";
 import { useBootstrapStore } from "../src/stores/api-actions/bootstrap-actions.js";
 import { useProviderDataStore } from "../src/stores/provider-data-store.js";
 import { useSnapshotStore } from "../src/stores/snapshot-store.js";
+import { flushSchedulerQueue } from "./scheduler-drain.js";
 import { wireUiSettings } from "./wire-fixtures.js";
 
 // ── Layer 0: micro-helpers ─────────────────────────────────────────────────
@@ -75,9 +76,7 @@ export function sseResponse(events: readonly string[]): Response {
 export async function flushSessionLoad(): Promise<void> {
 	const { act } = await import("@testing-library/react");
 	await act(async () => {
-		for (let i = 0; i < 5; i++) {
-			await new Promise((resolve) => setTimeout(resolve, 0));
-		}
+		await flushSchedulerQueue();
 	});
 }
 
