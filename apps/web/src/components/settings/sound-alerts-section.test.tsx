@@ -1,4 +1,4 @@
-import { afterAll, beforeEach, describe, expect, test } from "bun:test";
+import { afterAll, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { useDomEnv } from "../../../test/dom-env.js";
 
 useDomEnv({ failOnNetwork: true });
@@ -94,9 +94,17 @@ describe("SoundAlertsSection layout", () => {
 
   test("the test button stays silent and throws nothing without Web Audio", () => {
     const view = render(<SoundAlertsSection />);
-
-    expect(() => fireEvent.click(view.getByText("settings_sound_test"))).not.toThrow();
-    view.unmount();
+    const warnSpy = spyOn(console, "warn").mockImplementation(() => {});
+    const errorSpy = spyOn(console, "error").mockImplementation(() => {});
+    try {
+      expect(() => fireEvent.click(view.getByText("settings_sound_test"))).not.toThrow();
+      expect(warnSpy).not.toHaveBeenCalled();
+      expect(errorSpy).not.toHaveBeenCalled();
+    } finally {
+      warnSpy.mockRestore();
+      errorSpy.mockRestore();
+      view.unmount();
+    }
   });
 });
 

@@ -262,6 +262,8 @@ describe("CharacterFilterPicker — search / order / mobile (LB-3B)", () => {
 	it("typing filters case-insensitively (incl. Cyrillic), order preserved", () => {
 		renderPicker([]);
 		openAdd();
+		typeQuery("E");
+		expect(rowNames()).toEqual(["bree", "Eli", "Gale"]);
 		typeQuery("BREE");
 		expect(rowNames()).toEqual(["bree"]);
 		typeQuery("\u0410\u041d"); // upper-case Cyrillic query matches the mixed-case name

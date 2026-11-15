@@ -27,6 +27,11 @@ describe("dynamic lamp configuration", () => {
       { size: 0.12, speed: 0.8 },
       { size: 0.2, speed: 1.5 },
     ]);
+    expect(parseLampBalls("0.9 9, 0.01 -1")).toEqual([
+      { size: 0.3, speed: 3 },
+      { size: 0.05, speed: 0 },
+    ]);
+    expect(parseLampBalls(Array.from({ length: 17 }, () => "0.1 1").join(", "))).toHaveLength(16);
     expect(parseLampBalls("not-a-ball")).toBeNull();
     expect(DEFAULT_LAMP_BALLS).toHaveLength(8);
   });

@@ -131,6 +131,16 @@ describe("AvatarDescriptionField (characterization)", () => {
 		expect(onPatch).toHaveBeenCalledWith({ avatarDescription: "hello" });
 	});
 
+	it("(f2) blur after clearing existing value → onPatch({ avatarDescription: null })", async () => {
+		const onPatch = mock();
+		const { container } = renderField({ avatarDescription: "existing", onPatch });
+		const textarea = container.querySelector("textarea")!;
+
+		await userEvent.setup().clear(textarea);
+		fireEvent.blur(textarea);
+		expect(onPatch).toHaveBeenCalledWith({ avatarDescription: null });
+	});
+
 	it("(g) blur with unchanged draft → no onPatch", () => {
 		const onPatch = mock();
 		const { container } = renderField({ avatarDescription: "same", onPatch });

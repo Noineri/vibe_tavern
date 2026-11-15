@@ -1,4 +1,4 @@
-import { beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterAll, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
 import { brandId } from "@vibe-tavern/domain";
 import type { CharacterId, ChatId, RegexPresetId } from "@vibe-tavern/domain";
 import { useDomEnv } from "../../../test/dom-env.js";
@@ -10,7 +10,7 @@ import type { ReactNode } from "react";
 import type { RegexPresetRecord } from "../../api/types.js";
 
 useDomEnv();
-const { render } = await import("@testing-library/react");
+const { fireEvent, render } = await import("@testing-library/react");
 
 /**
  * RX-14 (REGEX_EXTENSION_PLAN Wave 3): the TopBar global-regex indicator.
@@ -179,4 +179,24 @@ describe("TopBar — RX-14 global-regex indicator", () => {
     expect(container.querySelector("[data-testid='topbar-regex-indicator']")).toBeNull();
     mockResolveFails = false;
   });
+
+  test("click opens the Prompt Manager", async () => {
+    const { useModalStore } = await import("../../stores/modal-store.js");
+    useModalStore.setState({ isPromptManagerOpen: false });
+    mockResolvedPresets = [wirePreset()];
+    try {
+      const { container } = await mountTopBar();
+      const indicator = container.querySelector("[data-testid='topbar-regex-indicator']");
+      expect(indicator).not.toBeNull();
+      fireEvent.click(indicator!);
+      expect(useModalStore.getState().isPromptManagerOpen).toBe(true);
+    } finally {
+      useModalStore.setState({ isPromptManagerOpen: false });
+    }
+  });
+});
+
+afterAll(async () => {
+  const { useModalStore } = await import("../../stores/modal-store.js");
+  useModalStore.setState({ isPromptManagerOpen: false });
 });

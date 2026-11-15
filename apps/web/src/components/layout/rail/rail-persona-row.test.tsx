@@ -193,6 +193,7 @@ describe("Rail bottom panel — persona row", () => {
 		const row = panelRows(openRail())[0];
 		expect(labelOf(row)).toBe("no_persona");
 		expect(row.querySelector("img")).toBeNull();
+		expect(row.querySelector("span.rounded-full")?.textContent).toBe("N");
 	});
 
 	it("the active chat's persona wins over the bootstrap default", () => {

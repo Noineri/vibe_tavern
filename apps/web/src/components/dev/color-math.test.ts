@@ -43,7 +43,7 @@ describe("page background blob helpers (characterization)", () => {
 });
 
 describe("theme token groups", () => {
-  it("exposes the authored selection, glass, logo, and strong diff colors", () => {
+  it("exposes the authored selection, glass, accent-mid, and strong diff colors", () => {
     const grouped = new Set(GROUPS.flatMap((group) => group.tokens));
     for (const token of [
       "--sel-text",

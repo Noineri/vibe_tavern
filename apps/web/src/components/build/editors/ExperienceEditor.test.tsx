@@ -308,7 +308,10 @@ beforeAll(async () => {
   };
 });
 
+const originalIntersectionObserver = globalThis.IntersectionObserver;
+
 afterAll(() => {
+  globalThis.IntersectionObserver = originalIntersectionObserver;
   useBuildNavigationStore.setState(navigationBeforeSuite, true);
   const host = getAgentHost("experience");
   host.renderEditorPane = originalExperiencePane;
@@ -1424,30 +1427,6 @@ describe("ExperienceEditor", () => {
     await waitFor(() => expect(queryByText(/experience_editor_visual_delete_error/)).not.toBeNull());
     expect(deleteExperienceVisual).toHaveBeenCalledWith("vis_1");
     expect(useExperienceVisualDraftStore.getState().drafts["vis_1"]).toBeDefined();
-  });
-
-  it("deleting a visual never mutates an already-pinned source snapshot (live-session isolation)", async () => {
-    serverScripts = [{ ...baseScript }];
-    serverVisuals = [{ ...baseVisual }];
-    // A live session pins its own immutable copy of the visual source at start
-    // time, independent of the resource row (the editor has no session handle).
-    const pinnedBySession = serverVisuals[0]!.source;
-
-    const { container, findByText, getByRole } = render(<ExperienceEditor />);
-    fireEvent.click(await findByText("Existing Rules"));
-    fireEvent.click(getByRole("radio", { name: "agent_visual" }));
-    await pickDropdown({ container, baseElement: document.body }, "experience_assign_visual_placeholder", "Existing Visual");
-
-    fireEvent.click(visualDeleteButton(container));
-    fireEvent.click(await waitForVisualDeleteConfirm());
-
-    await waitFor(() => expect(deleteExperienceVisual).toHaveBeenCalledTimes(1));
-    // The resource row was removed (delete reached the API) …
-    expect(deleteExperienceVisual).toHaveBeenCalledWith("vis_1");
-    // … but the session's pinned snapshot is byte-identical: the editor's delete
-    // path (deleteExperienceVisual + list filter + draft remove) cannot and did
-    // not reach an external pinned copy.
-    expect(pinnedBySession).toBe(baseVisual.source);
   });
 
   // ── IR-90E: compact friendly rules validation ───────────────────────────

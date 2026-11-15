@@ -256,14 +256,26 @@ describe("CharacterForm — alt-greeting chips delete safely (E2)", () => {
   });
 
   it("confirm removes exactly the chosen greeting and clamps the selection", () => {
-    render(createElement(Harness, { greetings: ["one", "two", "three"] }));
-    fireEvent.click(chipRemoveButtons()[2]); // the LAST one — selection must clamp
+    const { getByPlaceholderText, queryByText } = render(createElement(Harness, { greetings: ["one", "two", "three"] }));
+    const chipAt = (index: number) => chipRemoveButtons()[index]?.parentElement;
+    // Select the last chip ("Alt 3" / "three") before deleting it so removal
+    // actually triggers altGreetIdx clamping back to index 1 ("Alt 2" / "two").
+    fireEvent.click(chipAt(2)!);
+    expect(chipAt(2)?.className).toContain("border-accent");
+    expect((getByPlaceholderText("alternate_greeting_placeholder") as HTMLTextAreaElement).value).toBe("three");
+
+    fireEvent.click(chipRemoveButtons()[2]);
     const confirm = dangerConfirm();
     expect(confirm).not.toBeNull();
     fireEvent.click(confirm!);
+
     expect(chipRemoveButtons()).toHaveLength(2);
-    expect(document.body.textContent).toContain("Alt 1");
-    expect(document.body.textContent).toContain("Alt 2");
+    expect(chipAt(0)?.textContent).toContain("Alt 1");
+    expect(chipAt(1)?.textContent).toContain("Alt 2");
+    expect(queryByText(/Alt 3/)).toBeNull();
+    expect(chipAt(1)?.className).toContain("border-accent");
+    expect(chipAt(0)?.className).not.toContain("border-accent");
+    expect((getByPlaceholderText("alternate_greeting_placeholder") as HTMLTextAreaElement).value).toBe("two");
     expect(dangerConfirm()).toBeNull();
   });
 });

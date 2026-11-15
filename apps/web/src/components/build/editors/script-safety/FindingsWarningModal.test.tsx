@@ -128,19 +128,29 @@ describe("FindingsWarningModal", () => {
   });
 
   it("«Show in code» closes via onShowInCode with the FIRST finding's line", () => {
-    const onShowInCode = mock((_line: number) => {});
-    const view = render(
-      <FindingsWarningModal
-        findings={FINDINGS}
-        showHonestWarning={false}
-        intent="enable"
-        onShowInCode={onShowInCode}
-        onConfirm={() => {}}
-        onCancel={() => {}}
-      />,
-    );
+    const recorded: number[] = [];
+    function Harness() {
+      const [open, setOpen] = React.useState(true);
+      if (!open) return null;
+      return (
+        <FindingsWarningModal
+          findings={FINDINGS}
+          showHonestWarning={false}
+          intent="enable"
+          onShowInCode={(line) => {
+            recorded.push(line);
+            setOpen(false);
+          }}
+          onConfirm={() => {}}
+          onCancel={() => {}}
+        />
+      );
+    }
+    const view = render(<Harness />);
+    expect(view.queryByTestId("script-safety-findings-modal")).not.toBeNull();
     fireEvent.click(view.getByText("script_safety_findings_show_in_code"));
-    expect(onShowInCode).toHaveBeenCalledWith(3);
+    expect(recorded).toEqual([3]);
+    expect(view.queryByTestId("script-safety-findings-modal")).toBeNull();
   });
 
   it("confirm and cancel route through their handlers (run intent labels the button)", () => {

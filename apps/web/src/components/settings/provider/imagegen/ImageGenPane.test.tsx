@@ -1,4 +1,4 @@
-import { describe, expect, it, afterEach, mock } from "bun:test";
+import { describe, expect, it, afterEach, mock, spyOn } from "bun:test";
 import React from "react";
 import { useDomEnv } from "../../../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../../../test/i18n-context-seam.js";
@@ -206,6 +206,7 @@ const { ImageGenPane, IMAGE_GEN_PROBE_RETRY_MS } = await import("./ImageGenPane.
 const { useImageProfiles } = await import("../../../../hooks/use-image-profiles.js");
 const { IMAGE_GEN_BACKENDS, IMAGE_GENERATION_MODES, IMAGE_GEN_PARAM_RANGES } = await import("@vibe-tavern/domain");
 const { TooltipProvider } = await import("../../../shared/Tooltip.js");
+const { toast } = await import("sonner");
 
 /** App-realistic tree: app.tsx mounts TooltipProvider at the root, so the
  *  picker's CustomTooltip-wrapped in-row stars (CF3) render inside it in
@@ -692,6 +693,9 @@ describe("ImageGenPane — local connection status (IG-CF12a)", () => {
     const chip = view.getByTestId("image-gen-local-status");
     expect(chip.textContent).toContain("local_connection_offline");
     expect(chip.textContent).toContain("http://127.0.0.1:7860");
+    expect(chip.compareDocumentPosition(view.getByTestId("image-gen-field-model"))).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
     // The pane never writes the shared error for connectivity (that was the
     // CF12 origin defect — the synthetic hook pins the pane side: the pane
     // reads the status, not the error, to grey the panel).
@@ -707,6 +711,8 @@ describe("ImageGenPane — local connection status (IG-CF12a)", () => {
     // Settle the always-mounted family registry effect before this fast test
     // completes so its asynchronous state update stays inside React's act.
     await act(async () => {});
+    expect(imageGen.error).toBeNull();
+    expect(view.queryByTestId("image-gen-family-error")).toBeNull();
   });
 
   it("online: no disabled attribute, no grey, panel fully interactive", async () => {
@@ -787,7 +793,7 @@ describe("ImageGenPane — per-mode sizes (IG-CF14: accordion + stepper ladder +
   }
 
   it("unset rows display the anchor defaults (1024×1024) and store NOTHING until edited", async () => {
-    const { view } = await renderFree();
+    const { view, setForm } = await renderFree();
     const width = sizeCell(view, "width");
     const height = sizeCell(view, "height");
     expect((width.querySelector("input") as HTMLInputElement).value).toBe("1024");
@@ -795,6 +801,7 @@ describe("ImageGenPane — per-mode sizes (IG-CF14: accordion + stepper ladder +
     expect(view.getByTestId("image-gen-mode-preset-portrait").textContent).toContain("image_gen_size_auto");
     // The vendor-set dropdown must not render for a free backend.
     expect(view.queryByTestId("image-gen-mode-size-portrait")).toBeNull();
+    expect(setForm).not.toHaveBeenCalled();
   });
 
   it("steppers walk the ±128 ladder (owner example: 720 → 848↑ / 592↓) and pin the untouched side", async () => {
@@ -2102,21 +2109,28 @@ describe("ImageGenPane — named set row in the advanced header (CF15c, LLM acco
       updatedAt: "2026-09-25T00:00:00.000Z",
     } as ImageGenSamplerSet;
     listSamplerSetsApi.mockImplementation(async () => [bogus]);
-    const view = render(
-      <ImageGenPane
-        imageGen={makeImageGen({
-          applyBaseSamplerSet,
-          form: makeForm({ backend: IMAGE_GEN_BACKENDS.ComfyUI }),
-          samplersByProfile: { ig1: [{ name: "euler" }] },
-          schedulersByProfile: { ig1: [{ name: "simple" }] },
-        })}
-      />,
-    );
-    await waitFor(() => expect(view.getByTestId("image-gen-model-set-row")).toBeTruthy());
-    await pickOption(view, "image-gen-model-set-trigger", "Bogus");
-    await waitFor(() => expect(applyBaseSamplerSet).toHaveBeenCalledTimes(1));
-    // The arm keeps its current sampler (field skipped), steps still apply.
-    expect(applyBaseSamplerSet.mock.calls[0]![1]).toEqual({ steps: 30 });
+    const warnSpy = spyOn(toast, "warning").mockImplementation(() => "");
+    try {
+      const view = render(
+        <ImageGenPane
+          imageGen={makeImageGen({
+            applyBaseSamplerSet,
+            form: makeForm({ backend: IMAGE_GEN_BACKENDS.ComfyUI }),
+            samplersByProfile: { ig1: [{ name: "euler" }] },
+            schedulersByProfile: { ig1: [{ name: "simple" }] },
+          })}
+        />,
+      );
+      await waitFor(() => expect(view.getByTestId("image-gen-model-set-row")).toBeTruthy());
+      await pickOption(view, "image-gen-model-set-trigger", "Bogus");
+      await waitFor(() => expect(applyBaseSamplerSet).toHaveBeenCalledTimes(1));
+      // The arm keeps its current sampler (field skipped), steps still apply.
+      expect(applyBaseSamplerSet.mock.calls[0]![1]).toEqual({ steps: 30 });
+      await waitFor(() => expect(warnSpy).toHaveBeenCalledTimes(1));
+      expect(warnSpy.mock.calls[0]![0]).toBe("sampler_set_note_sampler_missing:TotallyMissing");
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 
   it("IF-7c: a set vae on a DiT target (family-fixed sidecar) is stripped — the encoder never applies, the sampler still does", async () => {

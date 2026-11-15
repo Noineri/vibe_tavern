@@ -1,5 +1,7 @@
 import { beforeAll, describe, expect, it } from "bun:test";
+import { join } from "node:path";
 import { StrictMode } from "react";
+import { MESSAGE_WIDTH_MAP } from "../../lib/local-storage.js";
 import { useDomEnv } from "../../../test/dom-env.js";
 import { strictTestDouble } from "../../../test/strict-test-double.js";
 
@@ -97,12 +99,23 @@ function installWebGlMock() {
 }
 
 describe("ThemeTuner preview geometry", () => {
-  it("pins each message to the production chat-column boundary", () => {
+  it("pins each message to the production chat-column boundary", async () => {
+    const defaultWidth = MESSAGE_WIDTH_MAP.medium;
+    const [tunerCss, coffeeCss, messageShellSource] = await Promise.all([
+      Bun.file(join(import.meta.dir, "theme-tuner-css.ts")).text(),
+      Bun.file(join(import.meta.dir, "../../themes/coffee.css")).text(),
+      Bun.file(join(import.meta.dir, "../chat/MessageShell.tsx")).text(),
+    ]);
+    expect(coffeeCss).toContain(`--mw: ${defaultWidth};`);
+    expect(tunerCss).toContain(`--tt-message-width:${defaultWidth}`);
+    expect(messageShellSource).toContain("max-w-[min(calc(var(--mw)+160px),calc(100vw-var(--sw)-64px))]");
+    expect(tunerCss).toContain("max-width:min(calc(var(--tt-message-width) + 160px),calc(100% - 64px))");
+
     const { container } = render(<ThemeTuner />);
     const message = container.querySelector<HTMLElement>(".tt-msg");
     expect(message).not.toBeNull();
     expect(getComputedStyle(message!).maxWidth).toBe(
-      "min(calc(820px + 160px),calc(100% - 64px))",
+      `min(calc(${defaultWidth} + 160px),calc(100% - 64px))`,
     );
   });
 

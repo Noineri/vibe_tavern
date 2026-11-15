@@ -35,7 +35,7 @@
  * AutoTextarea is stubbed to a plain textarea. The blob-URL spy pattern
  * mirrors ExperienceFrame.test.tsx (happy-dom must not navigate the iframe).
  */
-import { beforeAll, beforeEach, describe, expect, it, jest, mock } from "bun:test";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, jest, mock } from "bun:test";
 import { wireScript } from "../../../../test/wire-fixtures.js";
 import type { ChangeEvent, ReactNode } from "react";
 import type {
@@ -456,6 +456,8 @@ function restoreUrl() {
   URL.revokeObjectURL = realRevoke;
 }
 
+afterAll(restoreUrl);
+
 // ── Tests ────────────────────────────────────────────────────────────────────
 
 describe("ExperiencePlayground", () => {
@@ -637,6 +639,8 @@ describe("ExperiencePlayground", () => {
     // Informational only: no error block, and no advance/provider call.
     expect(queryByText("experience_playground_error_title")).toBeNull();
     expect(advanceExperiencePlayground).not.toHaveBeenCalled();
+    expect(listProviderProfiles).not.toHaveBeenCalled();
+    expect(fetchProviderProfileModels).not.toHaveBeenCalled();
   });
 
   it("read-only invariant: a full start → advance → reset cycle leaves the rules and visual draft stores byte-identical", async () => {

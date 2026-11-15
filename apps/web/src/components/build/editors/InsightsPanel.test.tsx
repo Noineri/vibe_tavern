@@ -370,6 +370,23 @@ describe("InsightsPanel (INS-2)", () => {
     expect(mocks.refetchCharacterTrackerTemplate).toHaveBeenCalled();
   });
 
+  it("saves directly without confirmation when the character has no template", async () => {
+    mocks.activeChat = {
+      id: "chat_template",
+      characterId: "char_template",
+      mode: "rp",
+      insightsConfig: { objectiveEnabled: false, trackerEnabled: false },
+    };
+    mocks.characterTrackerTemplate = null;
+
+    const { getByRole, queryByText } = render(<InsightsPanel />);
+    fireEvent.click(getByRole("button", { name: "insights_template_save_as_character" }));
+    expect(queryByText("insights_template_save_title")).toBeNull();
+
+    await waitFor(() => expect(mocks.saveAsCharacterTrackerTemplate).toHaveBeenCalledWith("chat_template"));
+    expect(mocks.refetchCharacterTrackerTemplate).toHaveBeenCalled();
+  });
+
   it("does not render tracker-template actions for Co-Author chats", () => {
     mocks.activeChat = {
       id: "chat_coauthor",

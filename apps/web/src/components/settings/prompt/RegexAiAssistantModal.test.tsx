@@ -35,7 +35,9 @@ const RUSSIAN_LABELS: Record<string, string> = {
 	"regexAssistant.refine": "\u0423\u0442\u043e\u0447\u043d\u0438\u0442\u044c",
 	"regexAssistant.apply": "\u041f\u0440\u0438\u043c\u0435\u043d\u0438\u0442\u044c \u043a \u0447\u0435\u0440\u043d\u043e\u0432\u0438\u043a\u0443",
 };
+const tCalls: Array<{ key: string; opts?: Record<string, unknown> }> = [];
 const localized = (key: string, opts?: Record<string, unknown>) => {
+	tCalls.push({ key, opts });
 	const label = useRussianLabels ? (RUSSIAN_LABELS[key] ?? key) : key;
 	return opts && opts.count !== undefined ? `${label}:${String(opts.count)}` : label;
 };
@@ -99,6 +101,7 @@ beforeAll(async () => {
 afterEach(() => {
 	// Call-count assertions (auto-refine ≤2) must not see earlier tests' calls.
 	assistMock.mockClear();
+	tCalls.length = 0;
 	isMobile = false;
 	useRussianLabels = false;
 });
@@ -190,6 +193,10 @@ describe("RegexAiAssistantModal", () => {
 		expect(baseElement.textContent).toContain("a⟨⟩b⟨⟩c");
 		// Removal count: 2 ZWSP removed — count passed as a NUMBER (2, not "2"-string).
 		expect(baseElement.textContent).toContain("regexAssistant.removedCount:2");
+		const removedCall = tCalls.findLast((call) => call.key === "regexAssistant.removedCount");
+		expect(removedCall).toBeDefined();
+		expect(typeof removedCall?.opts?.count).toBe("number");
+		expect(removedCall?.opts?.count).toBe(2);
 	});
 
 	it("apply writes to the editor draft only — disabled:true, depth mapped, modal closes", async () => {

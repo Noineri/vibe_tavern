@@ -577,7 +577,12 @@ describe("ServicePromptsPane", () => {
 		getDetailMock.mockResolvedValue({ profile: def, resolved: makeResolved() });
 		const { getByTestId } = render(<Harness active={true} />);
 		await waitFor(() => expect(getByTestId("service-row-p2")).toBeTruthy());
-		expect(getByTestId("service-row-p2").querySelector(".bg-success")).toBeTruthy();
+		const liveRow = getByTestId("service-row-p2");
+		expect(liveRow.querySelector(".bg-success")).toBeTruthy();
+		expect(liveRow.className).not.toContain("bg-success");
+		const idleRow = getByTestId("service-row-default");
+		expect(idleRow.querySelector(".bg-success")).toBeNull();
+		expect(idleRow.querySelector(".bg-danger")).toBeNull();
 	});
 
 	test("row titles wrap instead of truncating", async () => {

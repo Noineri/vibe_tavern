@@ -290,20 +290,47 @@ describe("RegexPresetEditor — R-7 redesign", () => {
     const onDraftChange = mock();
     const user = userEvent.setup();
     const record = baseRecord({ isGlobal: false });
-    const { getByText, getAllByRole } = render(<RegexPresetEditor preset={record} draft={regexDraftFromRecord(record)} onDraftChange={onDraftChange} />);
+    function Controlled() {
+      const [draft, setDraft] = useState(regexDraftFromRecord(record));
+      return (
+        <RegexPresetEditor
+          preset={record}
+          draft={draft}
+          onDraftChange={(next) => {
+            onDraftChange(next);
+            setDraft(next);
+          }}
+        />
+      );
+    }
+    const { getByText, queryByText, getAllByRole } = render(<Controlled />);
     // Bind-mode default: bindings visible.
     expect(getByText("promptManager.regex.bindingsLabel")).toBeTruthy();
     const allChats = getAllByRole("radio").find((s) => s.getAttribute("value") === "all" && s.textContent === "promptManager.regex.scopeAll") as HTMLElement;
     await user.click(allChats);
     const called = onDraftChange.mock.calls[0][0] as ReturnType<typeof emptyRegexDraft>;
     expect(called.isGlobal).toBe(true);
+    expect(queryByText("promptManager.regex.bindingsLabel")).toBeNull();
   });
 
   it("scope segmented: «Привязать к» from a global preset shows the dead-zone warning", async () => {
     const onDraftChange = mock();
     const user = userEvent.setup();
     const record = baseRecord({ isGlobal: true });
-    const { queryByText, getAllByRole } = render(<RegexPresetEditor preset={record} draft={regexDraftFromRecord(record)} onDraftChange={onDraftChange} />);
+    function Controlled() {
+      const [draft, setDraft] = useState(regexDraftFromRecord(record));
+      return (
+        <RegexPresetEditor
+          preset={record}
+          draft={draft}
+          onDraftChange={(next) => {
+            onDraftChange(next);
+            setDraft(next);
+          }}
+        />
+      );
+    }
+    const { findByText, getByText, queryByText, getAllByRole } = render(<Controlled />);
     expect(queryByText("promptManager.regex.bindingsDeadZone")).toBeNull();
     const bind = getAllByRole("radio").find((s) => s.getAttribute("value") === "bind") as HTMLElement;
     await user.click(bind);
@@ -311,6 +338,8 @@ describe("RegexPresetEditor — R-7 redesign", () => {
     // (the warning IS the empty state, R-7).
     const called = onDraftChange.mock.calls[0][0] as ReturnType<typeof emptyRegexDraft>;
     expect(called.isGlobal).toBe(false);
+    expect(await findByText("promptManager.regex.bindingsDeadZone")).toBeTruthy();
+    expect(getByText("promptManager.regex.bindingsLabel")).toBeTruthy();
   });
 
   it("placement chips toggle codes in the draft", async () => {

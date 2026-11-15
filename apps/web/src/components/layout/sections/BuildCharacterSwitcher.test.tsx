@@ -396,6 +396,14 @@ describe("BuildCharacterSwitcher — unit (LB-3A)", () => {
 		it(`${variant}: typing filters case-insensitively, order preserved, Cyrillic matches`, async () => {
 			const tabs = makeTabs(["Alpha", "bree", "\u0410\u043d\u043d\u0430", "Cory", "Dana", "Eli", "Finn"]);
 			await renderSettled(<MockSwitcher variant={variant} tabs={tabs} />);
+			await typeQuery("a");
+			const alpha = within(document.body).getByText("Alpha");
+			const dana = within(document.body).getByText("Dana");
+			expect(alpha.compareDocumentPosition(dana) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+				Node.DOCUMENT_POSITION_FOLLOWING,
+			);
+			expect(within(document.body).queryByText("bree")).toBeNull();
+			expect(within(document.body).queryByText("Cory")).toBeNull();
 			await typeQuery("BREE");
 			expect(within(document.body).queryByText("Alpha")).toBeNull();
 			expect(within(document.body).getByText("bree")).toBeTruthy();
