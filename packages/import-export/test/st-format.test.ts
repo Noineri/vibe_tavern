@@ -109,8 +109,12 @@ describe("parseStInstruct (LS-3e storage map kind 3)", () => {
 	});
 
 	it("maps numeric names_behavior ids (0=force, 1=always, 2=none) and unknowns to force", () => {
-		const num = parseStInstruct(JSON.stringify({ input_sequence: "U", output_sequence: "A", names_behavior: 2 }));
-		expect(num.format.namesBehavior).toBe("never");
+		const id0 = parseStInstruct(JSON.stringify({ input_sequence: "U", output_sequence: "A", names_behavior: 0 }));
+		expect(id0.format.namesBehavior).toBe("force");
+		const id1 = parseStInstruct(JSON.stringify({ input_sequence: "U", output_sequence: "A", names_behavior: 1 }));
+		expect(id1.format.namesBehavior).toBe("always");
+		const id2 = parseStInstruct(JSON.stringify({ input_sequence: "U", output_sequence: "A", names_behavior: 2 }));
+		expect(id2.format.namesBehavior).toBe("never");
 		const unknown = parseStInstruct(JSON.stringify({ input_sequence: "U", output_sequence: "A", names_behavior: 42 }));
 		expect(unknown.format.namesBehavior).toBe("force");
 	});

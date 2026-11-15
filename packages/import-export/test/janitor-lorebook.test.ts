@@ -110,12 +110,18 @@ describe("importJanitorLorebookJson", () => {
     // Old VT exports always wrote booleans — those stay pinned (explicit).
     // Entries that never carried the flags import as null = inherit the book
     // default, not as an explicit false.
-    const explicit = importJanitorLorebookJson(
+    const explicitFalse = importJanitorLorebookJson(
       [janitorEntry({ case_sensitive: false, matchWholeWords: false })],
-      { fallbackName: "Explicit" },
+      { fallbackName: "Explicit False" },
     );
-    expect(explicit.entries[0].caseSensitive).toBe(false);
-    expect(explicit.entries[0].matchWholeWords).toBe(false);
+    expect(explicitFalse.entries[0].caseSensitive).toBe(false);
+    expect(explicitFalse.entries[0].matchWholeWords).toBe(false);
+    const explicitTrue = importJanitorLorebookJson(
+      [janitorEntry({ case_sensitive: true, matchWholeWords: true })],
+      { fallbackName: "Explicit True" },
+    );
+    expect(explicitTrue.entries[0].caseSensitive).toBe(true);
+    expect(explicitTrue.entries[0].matchWholeWords).toBe(true);
     const absent = importJanitorLorebookJson(
       [janitorEntry({ name: "NoFlags", case_sensitive: undefined, matchWholeWords: undefined })],
       { fallbackName: "Absent" },
@@ -145,6 +151,11 @@ describe("importJanitorLorebookJson", () => {
         { fallbackName: `Logic ${logic}` },
       );
       expect(result.entries[0].logic).toBe(expected);
+      const noSecondary = importJanitorLorebookJson(
+        [janitorEntry({ keysecondary: [], selectiveLogic: logic })],
+        { fallbackName: `Logic ${logic} empty secondary` },
+      );
+      expect(noSecondary.entries[0].logic).toBe("and_any");
     }
   });
 
@@ -172,12 +183,23 @@ describe("importJanitorLorebookJson", () => {
   });
 
   it("falls back to index-based order when insertion_order is missing", () => {
-    const { insertion_order, ...withoutOrder } = janitorEntry({ priority: 3 });
-    void insertion_order;
-    const result = importJanitorLorebookJson([withoutOrder], { fallbackName: "FB" });
-    // First entry → index 0 → fallback = 0 * 10 = 0.
+    const { insertion_order: omit0, ...firstWithoutOrder } = janitorEntry({ id: "fb-0", priority: 3 });
+    const { insertion_order: omit2, ...thirdWithoutOrder } = janitorEntry({ id: "fb-2", priority: 4 });
+    void omit0;
+    void omit2;
+    const result = importJanitorLorebookJson(
+      [firstWithoutOrder, janitorEntry({ id: "explicit-1", insertion_order: 55 }), thirdWithoutOrder],
+      { fallbackName: "FB" },
+    );
+    // Missing insertion_order falls back to array index * 10 (`0 * 10 = 0`, `2 * 10 = 20`).
     expect(result.entries[0].priority).toBe(0);
+    expect(result.entries[0].sortOrder).toBe(0);
     expect(result.entries[0].metadata.janitorPriority).toBe(3);
+    expect(result.entries[1].priority).toBe(55);
+    expect(result.entries[1].sortOrder).toBe(55);
+    expect(result.entries[2].priority).toBe(20);
+    expect(result.entries[2].sortOrder).toBe(20);
+    expect(result.entries[2].metadata.janitorPriority).toBe(4);
   });
 
   it("warns on empty content and on keyless non-constant entries", () => {

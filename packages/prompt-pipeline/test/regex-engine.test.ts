@@ -105,7 +105,7 @@ describe("compile + run", () => {
   });
 
   it("applies globally even when the author omitted the g flag", () => {
-    const compiled = compileRegexScript(makePreset({ findRegex: "/a/gi", replaceString: "-" }));
+    const compiled = compileRegexScript(makePreset({ findRegex: "/a/i", replaceString: "-" }));
     expect(compiled!.run("AaA")).toBe("---");
   });
 
@@ -143,8 +143,9 @@ describe("substituteRegex macro modes", () => {
       makePreset({ findRegex: "/{{char}}/g", replaceString: "[{{match}}]", substituteRegex: REGEX_SUBSTITUTE.None }),
       macros,
     );
-    // The pattern still looks for literal "{{char}}"; input has none → unchanged.
+    // Pattern retains literal "{{char}}": macro value does not match, literal text does.
     expect(compiled!.run("xA(B)y")).toBe("xA(B)y");
+    expect(compiled!.run("x{{char}}y")).toBe("x[{{char}}]y");
   });
 
   it("RAW substitutes macros unescaped — A(B) compiles as a GROUP", () => {
@@ -171,33 +172,46 @@ describe("substituteRegex macro modes", () => {
 
   it("substitutes macros in trimStrings before applying (ST parity, independent of substituteRegex mode)", () => {
     // ST filterString: substituteParams(trimString) then replaceAll. Plain
-    // unescaped resolution, applied even when substituteRegex is NONE.
-    const compiled = compileRegexScript(
-      makePreset({
-        findRegex: "/A\\(B\\)/g",
-        replaceString: "{{match}}",
-        trimStrings: ["{{char}}"],
-        substituteRegex: REGEX_SUBSTITUTE.None,
-      }),
-      macros,
-    );
-    // {{char}} resolves to "A(B)"; the matched "A(B)" is fully trimmed away.
-    // With literal (unsubstituted) trims the "A(B)" would survive.
-    expect(compiled!.run("abA(B)cd")).toBe("abcd");
+    // unescaped resolution, applied across NONE, RAW, and ESCAPED modes.
+    for (const [mode, findRegex] of [
+      [REGEX_SUBSTITUTE.None, "/A\\(B\\)/g"],
+      [REGEX_SUBSTITUTE.Raw, "/AB/g"],
+      [REGEX_SUBSTITUTE.Escaped, "/{{char}}/g"],
+    ] as const) {
+      const target = mode === REGEX_SUBSTITUTE.Raw ? "AB" : "A(B)";
+      const rawMacros: RegexMacroSource =
+        mode === REGEX_SUBSTITUTE.Raw
+          ? { resolve: (t) => t.replaceAll("{{char}}", "AB"), resolveEscaped: macros.resolveEscaped }
+          : macros;
+      const compiled = compileRegexScript(
+        makePreset({
+          findRegex,
+          replaceString: "{{match}}",
+          trimStrings: ["{{char}}"],
+          substituteRegex: mode,
+        }),
+        rawMacros,
+      );
+      expect(compiled!.run(`ab${target}cd`)).toBe("abcd");
+    }
   });
 });
 
 describe("applyRegexLayer", () => {
   it("applies presets in array order and skips un-compilable ones silently", () => {
     const broken = makePreset({ name: "broken", findRegex: "/([/g", replaceString: "never" });
-    const italics = makePreset({ name: "italics", findRegex: "/\\*(.+?)\\*/g", replaceString: "<i>$1</i>" });
-    const shout = makePreset({ name: "shout", findRegex: "/wow/g", replaceString: "WOW" });
-    expect(applyRegexLayer("*wow*", [broken, italics, shout])).toBe("<i>WOW</i>");
+    const stage1 = makePreset({ name: "stage1", findRegex: "/foo/g", replaceString: "bar" });
+    const stage2 = makePreset({ name: "stage2", findRegex: "/bar/g", replaceString: "[bar]" });
+    expect(applyRegexLayer("foo", [broken, stage1, stage2])).toBe("[bar]");
+    expect(applyRegexLayer("foo", [broken, stage2, stage1])).toBe("bar");
   });
 
-  it("returns input unchanged when no preset applies", () => {
+  it("returns input unchanged when no pre-filtered preset matches (disabled filtering belongs to filterRegexPresets)", () => {
     const disabled = makePreset({ disabled: true });
-    expect(applyRegexLayer("untouched", [disabled])).toBe("untouched");
+    const kept = filterRegexPresets([disabled], { placement: REGEX_PLACEMENT.AiOutput });
+    expect(kept).toEqual([]);
+    expect(applyRegexLayer("foo", kept)).toBe("foo");
+    expect(applyRegexLayer("untouched", [makePreset()])).toBe("untouched");
     expect(applyRegexLayer("untouched", [])).toBe("untouched");
   });
 });
@@ -226,10 +240,11 @@ describe("filterRegexPresets", () => {
   });
 
   it("enforces the inclusive [minDepth, maxDepth] window", () => {
-    const windowed = makePreset({ minDepth: 0, maxDepth: 2 });
-    expect(filterRegexPresets([windowed], { placement: REGEX_PLACEMENT.AiOutput, depth: 0 })).toHaveLength(1);
+    const windowed = makePreset({ minDepth: 1, maxDepth: 2 });
+    expect(filterRegexPresets([windowed], { placement: REGEX_PLACEMENT.AiOutput, depth: 0 })).toHaveLength(0);
+    expect(filterRegexPresets([windowed], { placement: REGEX_PLACEMENT.AiOutput, depth: 1 })).toHaveLength(1);
     expect(filterRegexPresets([windowed], { placement: REGEX_PLACEMENT.AiOutput, depth: 2 })).toHaveLength(1);
-    expect(filterRegexPresets([windowed], { placement: REGEX_PLACEMENT.AiOutput, depth: 5 })).toHaveLength(0);
+    expect(filterRegexPresets([windowed], { placement: REGEX_PLACEMENT.AiOutput, depth: 3 })).toHaveLength(0);
   });
 
   it("does not filter by depth when none is requested", () => {

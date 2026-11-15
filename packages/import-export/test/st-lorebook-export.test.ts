@@ -141,20 +141,29 @@ describe("exportLorebookToSt (SillyTavern serializer)", () => {
   });
 
   test("reports chat-off entries without adding VT metadata to the ST file", () => {
-    const result = exportLorebookToStWithWarnings(
-      baseLorebook(),
-      [
-        baseEntry({ title: "Description only", keys: ["a"], matchSources: ["character_desc"] }),
-        baseEntry({ title: "", keys: ["fallback key"], matchSources: ["chat_messages"] }),
-        baseEntry({ title: "", keys: [], matchSources: ["scenario"] }),
-      ],
-    );
+    const book = baseLorebook();
+    const entries = [
+      baseEntry({ title: "Description only", keys: ["a"], matchSources: ["character_desc"] }),
+      baseEntry({ title: "", keys: ["fallback key"], matchSources: ["chat_messages"] }),
+      baseEntry({ title: "", keys: [], matchSources: ["scenario"] }),
+    ];
+    const result = exportLorebookToStWithWarnings(book, entries);
 
     expect(result.warnings).toEqual([
       { kind: "chat_off_entry", entryTitle: "Description only" },
       { kind: "chat_off_entry", entryTitle: "Entry 3" },
     ]);
     expect(Object.hasOwn(result.data, "warnings")).toBe(false);
+    expect(result.data).toEqual(exportLorebookToSt(book, entries));
+    const stEntries = result.data.entries as Record<string, Record<string, unknown>>;
+    for (const stEntry of Object.values(stEntries)) {
+      expect(Object.hasOwn(stEntry, "warnings")).toBe(false);
+      expect(Object.hasOwn(stEntry, "metadata")).toBe(false);
+      expect(Object.hasOwn(stEntry, "matchSources")).toBe(false);
+    }
+    expect(stEntries["0"].comment).toBe("Description only");
+    expect(stEntries["0"].matchCharacterDescription).toBe(true);
+    expect(stEntries["2"].matchScenario).toBe(true);
   });
 
   test("round-trips case forms as a compiled ST regex while retaining the plain key", () => {

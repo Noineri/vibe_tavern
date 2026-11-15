@@ -125,6 +125,39 @@ describe("parseStTextgen (ST → VT sampler-set payload, LS-5g)", () => {
 			mirostatTau: 5,
 			mirostatEta: 0.1,
 		});
+
+		// Enabling dynatemp covers the remaining 2 supported fields as well.
+		const withDynatemp = parseStTextgen({
+			...DIVINE_INTELLECT,
+			dynatemp: true,
+			min_temp: 0.5,
+			max_temp: 1.75,
+			dynatemp_exponent: 1.25,
+		})!;
+		expect(withDynatemp.payload).toEqual({
+			temperature: 1.31,
+			topP: 0.14,
+			topK: 49,
+			topA: 0.52,
+			minP: 0,
+			typicalP: 1,
+			tfsZ: 1,
+			repetitionPenalty: 1.17,
+			repeatLastN: 0,
+			frequencyPenalty: 0,
+			presencePenalty: 0,
+			smoothingFactor: 0,
+			dynatempRange: 1.25,
+			dynatempExponent: 1.25,
+			dryMultiplier: 0,
+			dryBase: 1.75,
+			dryAllowedLength: 2,
+			dryPenaltyLastN: 0,
+			drySequenceBreakers: ["\n", ":", '"', "*"],
+			mirostat: 0,
+			mirostatTau: 5,
+			mirostatEta: 0.1,
+		});
 	});
 
 	test("skipped-but-value-carrying fields produce notes (sampler_order, json_schema); empty fields stay silent", () => {
@@ -161,9 +194,11 @@ describe("parseStTextgen (ST → VT sampler-set payload, LS-5g)", () => {
 	test("dry_sequence_breakers as a real array or comma string still decodes", () => {
 		const asArray = parseStTextgen({ ...DIVINE_INTELLECT, dry_sequence_breakers: ["a", "b"] })!;
 		expect(asArray.payload.drySequenceBreakers).toEqual(["a", "b"]);
-		// Not JSON — kept as a single chip (lenient, ooba accepted raw strings).
-		const raw = parseStTextgen({ ...DIVINE_INTELLECT, dry_sequence_breakers: "\\n" })!;
-		expect(raw.payload.drySequenceBreakers).toEqual(["\\n"]);
+		// Not JSON — kept as a single chip (lenient, ooba accepted raw comma strings).
+		const rawComma = parseStTextgen({ ...DIVINE_INTELLECT, dry_sequence_breakers: "\\n, *" })!;
+		expect(rawComma.payload.drySequenceBreakers).toEqual(["\\n, *"]);
+		const rawSingle = parseStTextgen({ ...DIVINE_INTELLECT, dry_sequence_breakers: "\\n" })!;
+		expect(rawSingle.payload.drySequenceBreakers).toEqual(["\\n"]);
 	});
 
 	test("VT-native payloads are not parsed as ST (returns null → caller tries the VT path)", () => {

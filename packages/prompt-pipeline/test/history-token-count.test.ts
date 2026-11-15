@@ -58,11 +58,12 @@ describe("formatRecentMessages output (characterization)", () => {
   it("formats every role the history layer carries", () => {
     const allRoles: RecentMessage[] = [
       { id: "m1", role: "system", content: "system note" },
-      { id: "m2", role: "tool", content: "tool result" },
-      { id: "m3", role: "assistant", content: "\tTabbed and spaced reply  \n" },
+      { id: "m2", role: "user", content: "user prompt" },
+      { id: "m3", role: "tool", content: "tool result" },
+      { id: "m4", role: "assistant", content: "\tTabbed and spaced reply  \n" },
     ];
     expect(formatRecentMessages(allRoles)).toBe(
-      "SYSTEM: system note\n\nTOOL: tool result\n\nASSISTANT: Tabbed and spaced reply",
+      "SYSTEM: system note\n\nUSER: user prompt\n\nTOOL: tool result\n\nASSISTANT: Tabbed and spaced reply",
     );
   });
 

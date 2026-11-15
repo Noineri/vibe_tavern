@@ -126,13 +126,24 @@ describe("pronoun macros (ST-extension compat: {{pronoun.*}})", () => {
 
   test("null persona → {{pronoun.*}} expand to empty", () => {
     const c = ctx({ name: "", description: "", pronouns: null, pronounForms: null, avatarAssetId: null });
-    expect(engine.resolve("[{{pronoun.subjective}}][{{pronoun.pos_pro}}]", c)).toBe("[][]");
+    expect(
+      engine.resolve(
+        "[{{pronoun.subjective}}][{{pronoun.objective}}][{{pronoun.pos_det}}][{{pronoun.pos_pro}}][{{pronoun.reflexive}}]",
+        c,
+      ),
+    ).toBe("[][][][][]");
   });
 
   test("VT-native and ST-extension macros resolve consistently from the same persona", () => {
-    const c = ctx({ name: "A", description: "", pronouns: "she/her", pronounForms: null, avatarAssetId: null });
-    expect(engine.resolve("{{sub}}/{{pronoun.subjective}}", c)).toBe("she/she");
-    expect(engine.resolve("{{poss}}/{{pronoun.pos_det}}", c)).toBe("her/her");
-    expect(engine.resolve("{{poss_p}}/{{pronoun.pos_pro}}", c)).toBe("hers/hers");
+    const she = ctx({ name: "A", description: "", pronouns: "she/her", pronounForms: null, avatarAssetId: null });
+    expect(engine.resolve("{{sub}}/{{pronoun.subjective}}", she)).toBe("she/she");
+    expect(engine.resolve("{{obj}}/{{pronoun.objective}}", she)).toBe("her/her");
+    expect(engine.resolve("{{poss}}/{{pronoun.pos_det}}", she)).toBe("her/her");
+    expect(engine.resolve("{{poss_p}}/{{pronoun.pos_pro}}", she)).toBe("hers/hers");
+    expect(engine.resolve("{{ref}}/{{pronoun.reflexive}}", she)).toBe("herself/herself");
+
+    const they = ctx({ name: "A", description: "", pronouns: "they/them", pronounForms: null, avatarAssetId: null });
+    expect(engine.resolve("{{sub}}/{{pronoun.subjective}}|{{obj}}/{{pronoun.objective}}|{{poss}}/{{pronoun.pos_det}}|{{poss_p}}/{{pronoun.pos_pro}}|{{ref}}/{{pronoun.reflexive}}", they))
+      .toBe("they/they|them/them|their/their|theirs/theirs|themselves/themselves");
   });
 });

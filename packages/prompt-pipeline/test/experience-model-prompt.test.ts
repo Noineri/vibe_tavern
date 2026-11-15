@@ -108,8 +108,15 @@ describe("buildExperienceModelPrompt — privacy / model-view isolation", () => 
 			privateView: "PRIVATE VIEW",
 		});
 		const text = JSON.stringify(result.finalPayload.messages);
-		expect(text.indexOf("PUBLIC RECAP")).toBeLessThan(text.indexOf("PUBLIC RP LINE"));
-		expect(text.indexOf("PUBLIC RP LINE")).toBeLessThan(text.indexOf("PRIVATE VIEW"));
+		expect(text).toContain("PUBLIC RECAP");
+		expect(text).toContain("PUBLIC RP LINE");
+		expect(text).toContain("PRIVATE VIEW");
+		const recapIdx = text.indexOf("PUBLIC RECAP");
+		const rpIdx = text.indexOf("PUBLIC RP LINE");
+		const privateIdx = text.indexOf("PRIVATE VIEW");
+		expect(recapIdx).toBeGreaterThanOrEqual(0);
+		expect(recapIdx).toBeLessThan(rpIdx);
+		expect(rpIdx).toBeLessThan(privateIdx);
 	});
 });
 
@@ -119,13 +126,40 @@ describe("buildExperienceModelPrompt — output shape", () => {
 			hostProtocol: "Protocol.",
 			context: bundle([msg("m1", "user", "hi")]),
 		});
-		expect(Array.isArray(result.layers)).toBe(true);
+		expect(Object.keys(result).sort()).toEqual([
+			"activatedLoreEntries",
+			"compactionSummary",
+			"finalPayload",
+			"layers",
+			"prefill",
+			"retrievedMemories",
+			"scriptInjections",
+			"tokenAccounting",
+		]);
+		expect(result.layers.map((l) => l.id)).toEqual([
+			"xp_host_protocol",
+			"xp_character",
+			"xp_persona",
+			"xp_context_history",
+		]);
+		expect(
+			result.layers.every(
+				(l) => typeof l.text === "string" && typeof l.tokenCount === "number" && l.enabled === true,
+			),
+		).toBe(true);
 		expect(result.scriptInjections).toEqual([]);
 		expect(result.retrievedMemories).toEqual([]);
 		expect(result.activatedLoreEntries).toEqual([]);
 		expect(result.prefill).toBeNull();
-		expect(result.finalPayload.messages).toBeInstanceOf(Array);
-		expect(result.tokenAccounting).toBeInstanceOf(Object);
+		expect(result.compactionSummary).toBeNull();
+		expect(Array.isArray(result.finalPayload.messages)).toBe(true);
+		expect(result.finalPayload.messages).toHaveLength(4);
+		expect(result.tokenAccounting).toEqual({
+			xp_host_protocol: "Protocol.".length,
+			xp_character: result.layers[1]!.tokenCount,
+			xp_persona: result.layers[2]!.tokenCount,
+			xp_context_history: result.layers[3]!.tokenCount,
+		});
 	});
 
 	it("tokenAccounting mirrors every emitted layer with a matching count", () => {
@@ -155,27 +189,36 @@ describe("buildExperienceModelPrompt — output shape", () => {
 		}
 	});
 
-	it("a minimal prompt (only host protocol + empty context) still validates", () => {
+	it("a minimal prompt (only host protocol + empty context) preserves the complete response shape", () => {
 		const result = buildExperienceModelPrompt({
 			hostProtocol: "Protocol.",
-			context: bundle([]),
+			context: bundle([], { character: null, persona: null }),
 		});
-		expect(result.layers.length).toBeGreaterThanOrEqual(1);
-		expect(result.finalPayload.messages.length).toBeGreaterThanOrEqual(1);
+		expect(result.layers.map((l) => l.id)).toEqual(["xp_host_protocol", "xp_context_history"]);
+		expect(result.finalPayload.messages).toEqual([{ role: "system", content: "Protocol." }]);
+		expect(result.tokenAccounting).toEqual({
+			xp_host_protocol: "Protocol.".length,
+			xp_context_history: 0,
+		});
+		expect(result.scriptInjections).toEqual([]);
+		expect(result.retrievedMemories).toEqual([]);
+		expect(result.activatedLoreEntries).toEqual([]);
+		expect(result.prefill).toBeNull();
+		expect(result.compactionSummary).toBeNull();
 	});
 });
 
 describe("buildExperienceModelPrompt — authoritative final trim", () => {
 	it("drops additional oldest history when framing + private view push over budget", () => {
-		// Bundle has 4 messages (each 10 chars). No bundle budget → all 4 carried.
+		// Bundle has 4 distinct messages (each 10 chars). No bundle budget → all 4 carried.
 		// Model-prompt budget: framing "Protocol." (9) + private view "Act." (4)
 		// = reserved 13; contextBudget 40 → historyBudget 27 → largest suffix
 		// ≤27 = 2 messages (20). The 2 oldest drop HERE (the bundle did not trim).
 		const messages = [
-			msg("m1", "user", "0123456789"),
-			msg("m2", "assistant", "0123456789"),
-			msg("m3", "user", "0123456789"),
-			msg("m4", "assistant", "0123456789"),
+			msg("m1", "user", "msg-1-old!"),
+			msg("m2", "assistant", "msg-2-old!"),
+			msg("m3", "user", "msg-3-new!"),
+			msg("m4", "assistant", "msg-4-new!"),
 		];
 		const result = buildExperienceModelPrompt({
 			hostProtocol: "Protocol.",
@@ -184,14 +227,17 @@ describe("buildExperienceModelPrompt — authoritative final trim", () => {
 			budget: { contextBudget: 40, responseReserve: 0 },
 		});
 		const historyLayer = result.layers.find((l) => l.id === "xp_context_history");
-		// The history layer text is the FORMATTED debug rendering (role-labeled),
-		// so its tokenCount reflects "USER: ...\n\nASSISTANT: ..." — distinct from
-		// the raw-content count the trim uses (the same split as the chat
-		// pipeline's recent_history layer). Assert presence + non-empty instead.
-		expect(historyLayer?.text).toContain("USER:");
+		expect(historyLayer?.text).toContain("msg-3-new!");
+		expect(historyLayer?.text).toContain("msg-4-new!");
+		expect(historyLayer?.text).not.toContain("msg-1-old!");
+		expect(historyLayer?.text).not.toContain("msg-2-old!");
 		// finalPayload: framing system + m3(user) + m4(assistant) + private-view user.
-		const msgs = result.finalPayload.messages as Array<{ role: string }>;
-		expect(msgs.map((m) => m.role)).toEqual(["system", "user", "assistant", "user"]);
+		expect(result.finalPayload.messages).toEqual([
+			{ role: "system", content: "Protocol." },
+			{ role: "user", content: "msg-3-new!" },
+			{ role: "assistant", content: "msg-4-new!" },
+			{ role: "user", content: "Act." },
+		]);
 		expect(result.compactionSummary).toContain("dropped 2 additional oldest");
 	});
 
@@ -215,28 +261,30 @@ describe("buildExperienceModelPrompt — authoritative final trim", () => {
 		expect(result.compactionSummary).toBe(trimmed.compactionSummary);
 	});
 
-	it("never splits an assistant tool-call from its tool-result during the final trim", () => {
+	it("never splits an assistant/tool role pair during the final trim", () => {
 		// a1+t1 pair; tight model-prompt budget → t1 must not be orphaned.
 		// framing "P." (2) reserved; contextBudget 32 → historyBudget 30 → suffix
 		// [t1,u2,a2] (30) would orphan t1, so the safe boundary pulls a1 in →
 		// preserved = [a1,t1,u2,a2]; u1 dropped.
 		const messages = [
-			msg("u1", "user", "0123456789"),
-			msg("a1", "assistant", "0123456789"),
-			msg("t1", "tool", "0123456789"),
-			msg("u2", "user", "0123456789"),
-			msg("a2", "assistant", "0123456789"),
+			msg("u1", "user", "u1-oldest!"),
+			msg("a1", "assistant", "a1-tcall!!"),
+			msg("t1", "tool", "t1-result!"),
+			msg("u2", "user", "u2-recent!"),
+			msg("a2", "assistant", "a2-recent!"),
 		];
 		const result = buildExperienceModelPrompt({
 			hostProtocol: "P.",
 			context: bundle(messages, { character: null, persona: null }),
 			budget: { contextBudget: 32, responseReserve: 0 },
 		});
-		const roles = (result.finalPayload.messages as Array<{ role: string }>).map((m) => m.role);
 		// framing system + a1 + t1 + u2 + a2 (u1 dropped). No private view here.
-		expect(roles).toEqual(["system", "assistant", "tool", "user", "assistant"]);
-		const toolIdx = roles.indexOf("tool");
-		expect(toolIdx).toBeGreaterThan(0);
-		expect(roles[toolIdx - 1]).toBe("assistant"); // the tool-call / tool-result pair is intact
+		expect(result.finalPayload.messages).toEqual([
+			{ role: "system", content: "P." },
+			{ role: "assistant", content: "a1-tcall!!" },
+			{ role: "tool", content: "t1-result!" },
+			{ role: "user", content: "u2-recent!" },
+			{ role: "assistant", content: "a2-recent!" },
+		]);
 	});
 });

@@ -25,7 +25,11 @@ function assemble(
   });
 }
 
-function assembleMessageMode(mode: AiAssistantMode, contextBudget: number) {
+function assembleMessageMode(
+  mode: AiAssistantMode,
+  contextBudget: number,
+  instruction = "EDITOR_TASK_FOR_{{char}}",
+) {
   return getAiAssistantAssembler(mode).assemble({
     identity: { chatId: "message_editor_1" },
     character: {
@@ -73,7 +77,7 @@ function assembleMessageMode(mode: AiAssistantMode, contextBudget: number) {
       enabledLayers: [],
       systemPrompt: "EDITOR_SYSTEM_FOR_{{char}}",
       existingContent: "EXISTING_MESSAGE_TOKEN",
-      instruction: "EDITOR_TASK_FOR_{{char}}",
+      instruction,
     },
   });
 }
@@ -90,8 +94,16 @@ const EXISTING_AI_ASSISTANT_MODES = [
 
 describe("AI assistant assembly", () => {
   it("keeps existing registry modes' minimal final payload bytes stable", () => {
-    const baseline = assemble();
-    const expectedPayload = JSON.stringify(baseline.finalPayload);
+    const expectedPayload = JSON.stringify({
+      messages: [
+        { role: "system", content: "You improve character cards.", layerId: "ai_assistant_system" },
+        { role: "system", content: "Character: Aria\nA fire mage.\nBold.\nScenario: A burning tower.", layerId: "character_base" },
+        { role: "system", content: "User persona (Mira): A scholar.", layerId: "persona" },
+        { role: "system", content: "Lore: Ember\nFire magic is forbidden.", layerId: "lore_lore_1" },
+        { role: "system", content: "Old description.", layerId: "ai_assistant_existing" },
+        { role: "user", content: "Rewrite it.", layerId: "ai_assistant_instruction" },
+      ],
+    });
 
     for (const mode of EXISTING_AI_ASSISTANT_MODES) {
       const result = assemble({
@@ -105,7 +117,7 @@ describe("AI assistant assembly", () => {
       }, mode);
 
       expect(JSON.stringify(result.finalPayload)).toBe(expectedPayload);
-      expect(result.totalTokenEstimate).toBe(baseline.totalTokenEstimate);
+      expect(result.totalTokenEstimate).toBe(0);
       expect(result.prefill).toBeNull();
     }
   });
@@ -149,16 +161,35 @@ describe("AI assistant assembly", () => {
   });
 
   it("adds the chat history layer only for chat_impersonate", () => {
-    const result = assemble({
-      chat: { recentMessages: [{ id: "msg_1", role: "user", content: "Hello" }, { id: "msg_2", role: "assistant", content: "Hi" }] },
+    const recentMessages = [
+      { id: "msg_1", role: "user" as const, content: "Hello" },
+      { id: "msg_2", role: "assistant" as const, content: "Hi" },
+    ];
+    const impersonateResult = assemble({
+      chat: { recentMessages },
       aiAssistant: { mode: "chat_impersonate", enabledLayers: [], systemPrompt: "Impersonate.", instruction: "Continue." },
     });
-    expect(result.layers.map((layer) => layer.id)).toEqual([
+    expect(impersonateResult.layers.map((layer) => layer.id)).toEqual([
       "ai_assistant_system",
       "ai_assistant_chat_history",
       "ai_assistant_instruction",
     ]);
-    expect(result.finalPayload.messages[1]).toEqual({ role: "system", content: "[user]: Hello\n\n[assistant]: Hi", layerId: "ai_assistant_chat_history" });
+    const impersonateMessages = impersonateResult.finalPayload.messages as Array<Record<string, unknown>>;
+    expect(impersonateMessages[1]).toEqual({
+      role: "system",
+      content: "[user]: Hello\n\n[assistant]: Hi",
+      layerId: "ai_assistant_chat_history",
+    });
+
+    for (const otherMode of EXISTING_AI_ASSISTANT_MODES) {
+      if (otherMode === "chat_impersonate") continue;
+      const nonImpersonateResult = assemble({
+        chat: { recentMessages },
+        aiAssistant: { mode: otherMode, enabledLayers: [], systemPrompt: "Edit.", instruction: "Continue." },
+      }, otherMode);
+      expect(nonImpersonateResult.layers.map((layer) => layer.id)).not.toContain("ai_assistant_chat_history");
+      expect(JSON.stringify(nonImpersonateResult.finalPayload)).not.toContain("ai_assistant_chat_history");
+    }
   });
 });
 
@@ -214,15 +245,30 @@ describe("message AI assistant assembly", () => {
     it(`accounts for the editor instruction before compacting history when mode is ${mode}`, () => {
       setTokenCountFn((text) => text.length);
       try {
-        const result = assembleMessageMode(mode, 900);
+        const unbounded = assembleMessageMode(mode, 100_000);
+        expect(unbounded.compactionSummary).toBeNull();
+        const fitAtShortInstruction = assembleMessageMode(mode, unbounded.totalTokenEstimate);
+        expect(fitAtShortInstruction.compactionSummary).toBeNull();
+        expect(fitAtShortInstruction.layers.find((layer) => layer.id === "recent_history")?.text).toContain("HISTORY_EARLY_TOKEN");
+
+        const result = assembleMessageMode(
+          mode,
+          unbounded.totalTokenEstimate,
+          `EDITOR_TASK_FOR_{{char}} ${"EXTRA_EDITOR_CONSTRAINT ".repeat(8)}`,
+        );
         const editorLayer = result.layers.find((layer) => layer.id === "ai_assistant_instruction");
+        const historyText = result.layers.find((layer) => layer.id === "recent_history")?.text ?? "";
         const finalMessage = result.finalPayload.messages.at(-1);
 
         expect(result.compactionSummary).not.toBeNull();
-        expect(editorLayer?.tokenCount).toBeGreaterThan(0);
+        expect(historyText).not.toContain("HISTORY_EARLY_TOKEN");
+        expect(historyText).toContain("HISTORY_RECENT_TOKEN");
+        expect(editorLayer?.tokenCount).toBeGreaterThan(
+          fitAtShortInstruction.layers.find((layer) => layer.id === "ai_assistant_instruction")!.tokenCount,
+        );
         expect(result.totalTokenEstimate).toBe(result.layers.reduce((total, layer) => total + layer.tokenCount, 0));
         expect(finalMessage?.layerId).toBe("ai_assistant_instruction");
-        expect(finalMessage?.content).toContain("EDITOR_TASK_FOR_Aria");
+        expect(finalMessage?.content).toContain("EXTRA_EDITOR_CONSTRAINT");
         expect(result.prefill).toBeNull();
       } finally {
         setTokenCountFn(() => 0);

@@ -81,21 +81,28 @@ describe("Prompt pipeline: ST custom injection semantics", () => {
         id: "preset_1",
         text: "system prompt",
         advancedMode: true,
+        // Intentionally list order 200 before order 100 so sorting by order is exercised.
         customInjections: [
           { identifier: "absolute_user", name: "Absolute User", content: "absolute depth instruction", role: "user" },
+          { identifier: "absolute_early", name: "Absolute Early", content: "earlier order bucket instruction", role: "assistant" },
         ],
         promptOrder: [
           { identifier: "absolute_user", enabled: true, zone: "in_chat", depth: 1, order: 200, kind: "custom" },
+          { identifier: "absolute_early", enabled: true, zone: "in_chat", depth: 1, order: 100, kind: "custom" },
         ],
       },
     });
 
+    const earlyIndex = result.finalPayload.messages.findIndex((m) => m.layerId === "preset_injection_absolute_early");
     const absoluteIndex = result.finalPayload.messages.findIndex((m) => m.layerId === "preset_injection_absolute_user");
+    const m2Index = result.finalPayload.messages.findIndex((m) => m.messageId === "m2");
     const lastHistoryIndex = result.finalPayload.messages.findIndex((m) => m.messageId === "m3");
 
-    expect(absoluteIndex).toBeGreaterThan(-1);
-    expect(lastHistoryIndex).toBeGreaterThan(-1);
-    expect(absoluteIndex).toBe(lastHistoryIndex - 1);
+    expect(m2Index).toBeGreaterThan(-1);
+    expect(earlyIndex).toBe(m2Index + 1);
+    expect(absoluteIndex).toBe(earlyIndex + 1);
+    expect(lastHistoryIndex).toBe(absoluteIndex + 1);
+    expect(result.finalPayload.messages[earlyIndex]!.role).toBe("assistant");
     expect(result.finalPayload.messages[absoluteIndex]!.role).toBe("user");
   });
 });

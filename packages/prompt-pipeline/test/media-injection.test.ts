@@ -165,18 +165,29 @@ describe("A7 media injection", () => {
 					avatarDescription: "x", includeAvatarInPrompt: true,
 				},
 			}));
-			// before_chat layers are rendered in the system prompt (in_prompt position
-			// after resolver.position maps before_chat→in_prompt). The key invariant:
-			// their subPosition ranks place them between the character block and
-			// chatHistory. Verify they exist and sort after personality, before history.
-			const avatar = result.layers.find((l) => l.id === "character_avatar")!;
+			const cAvatar = result.layers.find((l) => l.id === "character_avatar")!;
+			const cGallery = result.layers.find((l) => l.id === "character_gallery")!;
+			const pAvatar = result.layers.find((l) => l.id === "persona_avatar")!;
 			const personality = result.layers.find((l) => l.id === "character_personality")!;
-			expect(avatar.subPosition!).toBeGreaterThan(personality.subPosition!);
-			// chatHistory is the message layers; media must rank before it.
-			const historyLayer = result.layers.find((l) => l.sourceType === "chat_history" || l.id === "recent_history");
-			if (historyLayer?.subPosition != null) {
-				expect(avatar.subPosition!).toBeLessThan(historyLayer.subPosition);
+			const historyLayer = result.layers.find((l) => l.sourceType === "chat_history" || l.id === "recent_history")!;
+			expect(historyLayer).toBeDefined();
+			expect(historyLayer.subPosition).toEqual(expect.any(Number));
+
+			for (const mediaLayer of [cAvatar, cGallery, pAvatar]) {
+				expect(mediaLayer.position).toBe("in_prompt");
+				expect(mediaLayer.subPosition).toEqual(expect.any(Number));
+				expect(mediaLayer.subPosition!).toBeLessThan(historyLayer.subPosition!);
 			}
+			expect(cAvatar.subPosition!).toBeGreaterThan(personality.subPosition!);
+
+			const payloadMessages = result.finalPayload.messages as Array<{ content: unknown }>;
+			const payloadText = payloadMessages.map((m) => String(m.content));
+			const firstHistoryIdx = payloadText.findIndex((text) => text === "Hello.");
+			expect(firstHistoryIdx).toBeGreaterThan(0);
+			const preHistoryText = payloadText.slice(0, firstHistoryIdx).join("\n");
+			expect(preHistoryText).toContain("[Character appearance:");
+			expect(preHistoryText).toContain("[Character references:");
+			expect(preHistoryText).toContain("[Persona appearance: x]");
 		});
 
 		it("characterGallery ranks after characterAvatar, personaAvatar after persona", () => {
@@ -215,8 +226,7 @@ describe("A7 media injection", () => {
 		});
 
 		it("characterGallery honored when canvas entry is enabled (or absent)", () => {
-			// No canvas entry for characterGallery → resolver.enabled defaults true.
-			const result = assemblePrompt(baseContext({
+			const absentEntry = assemblePrompt(baseContext({
 				character: mediaCharacter(),
 				preset: {
 					id: "preset_1",
@@ -227,8 +237,35 @@ describe("A7 media injection", () => {
 					],
 				},
 			}));
-			expect(result.layers.find((l) => l.id === "character_gallery")).toBeTruthy();
-			expect(result.layers.find((l) => l.id === "character_avatar")).toBeTruthy();
+			expect(absentEntry.layers.find((l) => l.id === "character_gallery")).toBeTruthy();
+			expect(absentEntry.layers.find((l) => l.id === "character_avatar")).toBeTruthy();
+
+			const explicitEnabled = assemblePrompt(baseContext({
+				character: mediaCharacter(),
+				preset: {
+					id: "preset_1",
+					text: "system",
+					advancedMode: true,
+					promptOrder: [
+						{ identifier: "characterAvatar", enabled: true },
+						{ identifier: "characterGallery", enabled: true },
+					],
+				},
+			}));
+			expect(explicitEnabled.layers.find((l) => l.id === "character_gallery")).toBeTruthy();
+
+			const explicitDisabled = assemblePrompt(baseContext({
+				character: mediaCharacter(),
+				preset: {
+					id: "preset_1",
+					text: "system",
+					advancedMode: true,
+					promptOrder: [
+						{ identifier: "characterGallery", enabled: false },
+					],
+				},
+			}));
+			expect(explicitDisabled.layers.find((l) => l.id === "character_gallery")).toBeUndefined();
 		});
 	});
 

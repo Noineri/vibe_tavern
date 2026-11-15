@@ -129,20 +129,28 @@ describe("assemblePrompt — request_instruction layer (DMT-12)", () => {
     const simplePreset = { id: "preset_1", text: "RP system prompt." };
     const advancedPreset = { id: "preset_1", text: "RP system prompt.", advancedMode: true };
     const expected = {
+      id: "request_instruction",
       sourceType: "request_instruction",
       sourceId: "chat_1",
       sourceName: "Request Instruction",
-      position: "in_chat",
+      position: "in_chat" as const,
       injectionDepth: 1,
-      role: "user",
+      role: "user" as const,
       priority: 190,
+      enabled: true,
+      reason: "included as the one-shot request-local instruction at depth 1",
+      tokenCount: INSTRUCTION.length,
       text: INSTRUCTION,
     };
+    const emitted: unknown[] = [];
     for (const preset of [undefined, simplePreset, advancedPreset]) {
       const result = assemblePrompt(baseContext({ preset, requestInstruction: INSTRUCTION }));
       const layer = result.layers.find((candidate) => candidate.id === "request_instruction");
-      expect(layer).toMatchObject(expected);
+      expect(layer).toEqual(expected);
+      emitted.push(layer);
     }
+    expect(emitted[1]).toEqual(emitted[0]);
+    expect(emitted[2]).toEqual(emitted[0]);
   });
 
   it("participates in the token budget: its tokens compact history instead of riding free", () => {

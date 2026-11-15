@@ -185,11 +185,11 @@ describe("activateLoreEntries", () => {
     });
 
     it("does not match invalid regex as regex", () => {
-      const entries = [makeEntry({ keys: ["/unclosed"] })];
+      const entries = [makeEntry({ keys: ["/[invalid/"] })];
       const result = activateLoreEntries(entries, {
-        recentMessagesText: "Some text.",
+        recentMessagesText: "Text containing literal /[invalid/ syntax.",
       });
-      expect(result.length).toBe(0);
+      expect(result).toEqual([]);
     });
   });
 
