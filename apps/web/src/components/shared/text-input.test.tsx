@@ -89,12 +89,16 @@ describe("FS-2 primitives carry the canon by default", () => {
 	});
 
 	it("TextInput spreads standard input props (controlled value + onChange)", () => {
+		const seen: string[] = [];
+		const onChange = (event: { target: { value: string } }) => seen.push(event.target.value);
 		const { getByRole } = render(
-			<TextInput value="abc" onChange={() => {}} placeholder="p" />,
+			<TextInput value="abc" onChange={onChange} placeholder="p" />,
 		);
 		const el = getByRole("textbox") as HTMLInputElement;
 		expect(el.value).toBe("abc");
 		expect(el.placeholder).toBe("p");
+		fireEvent.change(el, { target: { value: "abcd" } });
+		expect(seen).toEqual(["abcd"]);
 	});
 
 	it("MaskedConnectionKeyField is built on the canonical shape (mono + eye gutter)", () => {

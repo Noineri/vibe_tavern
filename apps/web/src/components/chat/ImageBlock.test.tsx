@@ -1,16 +1,17 @@
 /**
- * ImageBlock (IG-CF6, IMAGE_GENERATION_PLAN): the shared justified image row.
- * Pins the gallery-pattern budget the plan locks: fixed image height from the
- * gallery's OWN constants (imported, never re-declared), tile width derived
- * from the image's aspect ratio, panorama cap, object-cover + cursor-zoom-in,
- * click → the shared FloatingImageViewer, and the prompt accordion (MR-8:
+ * ImageBlock (IG-CF6, IMAGE_GENERATION_PLAN): orientation-driven message sizing
+ * (MR-7 — landscape full-width, portrait/square half-width, 70vh desktop cap
+ * via CSS aspect-ratio and ratio-true tiles), object-cover + cursor-zoom-in,
+ * click → the shared FloatingImageViewer, and the prompt accordion (MR-8/MR-9:
  * collapsed row = label + chevron, no text; click opens the full pre-wrap
- * text). Also pins AttachmentGrid's slot routing
- * parity: imageGen attachments render the ImageBlock; ordinary uploads keep
- * the plain lightbox.
+ * text; inline editor when onEditPrompt is wired). Also pins AttachmentGrid's
+ * slot routing parity: imageGen attachments render ImageBlock; ordinary
+ * uploads keep the plain lightbox.
  */
 
 import { afterEach, describe, expect, it, mock } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import React from "react";
 import { useDomEnv } from "../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
@@ -47,7 +48,7 @@ mock.module("../../api/chat-api.js", () => ({
 
 const { ImageBlock } = await import("./ImageBlock.js");
 const { AttachmentGrid } = await import("./AttachmentGrid.js");
-const { fireEvent, render, cleanup } = await import("@testing-library/react");
+const { act, fireEvent, render, cleanup, waitFor } = await import("@testing-library/react");
 
 import type { Attachment } from "@vibe-tavern/domain";
 
@@ -134,6 +135,10 @@ describe("ImageBlock — orientation-driven message sizing (MR-7)", () => {
     const tile = view.getByTestId("image-block-img").closest("div.flex.shrink-0")!;
     expect(tile.className).toContain("image-tile-portrait");
     expect(tile.getAttribute("style")).toContain("--tile-ratio: 0.2");
+    const css = readFileSync(join(import.meta.dir, "../../styles.css"), "utf8");
+    expect(css).toContain(
+      ".image-tile-portrait { width: min(calc(50% - 6px), calc(70vh * var(--tile-ratio, 1))); max-width: 100%; }",
+    );
   });
 
   it("unknown ratio reserves the portrait bucket with a square footprint (ratio 1) until load", () => {
@@ -337,18 +342,39 @@ describe("ImageBlock — prompt editing (MR-9)", () => {
   });
 
   it("failed save (saver resolves false) keeps the editor open with the draft", async () => {
+    let resolveSave!: (ok: boolean) => void;
+    const saverCalls: string[] = [];
+    const onEditPrompt = (next: string) => {
+      saverCalls.push(next);
+      return new Promise<boolean>((resolve) => {
+        resolveSave = resolve;
+      });
+    };
     const view = render(
-      <ImageBlock images={[{ src: "/api/assets/ed3", alt: "gen", caption: "old", onEditPrompt: async () => false }]} />,
+      <ImageBlock images={[{ src: "/api/assets/ed3", alt: "gen", caption: "old", onEditPrompt }]} />,
     );
     fireEvent.click(view.getByTestId("image-block-caption"));
     fireEvent.click(view.getByTestId("image-block-prompt-edit"));
     const textarea = view.getByTestId("image-block-prompt-editor").querySelector("textarea")!;
     fireEvent.change(textarea, { target: { value: "doomed edit" } });
     fireEvent.click(view.getByTestId("image-block-prompt-save"));
-    const { waitFor } = await import("@testing-library/react");
-    await waitFor(() => expect(textarea.value).toBe("doomed edit"));
+    expect(saverCalls).toEqual(["doomed edit"]);
+    expect(view.getByTestId("image-block-prompt-save").hasAttribute("disabled")).toBe(true);
+    expect(view.getByTestId("image-block-prompt-save").textContent).toBe("saving");
+    expect(textarea.hasAttribute("disabled")).toBe(true);
+    await act(async () => {
+      resolveSave(false);
+    });
+    await waitFor(() => {
+      const saveBtn = view.getByTestId("image-block-prompt-save");
+      expect(saveBtn.hasAttribute("disabled")).toBe(false);
+      expect(saveBtn.textContent).toBe("save");
+    });
     // Still editing — the failure keeps the draft for a retry.
     expect(view.getByTestId("image-block-prompt-editor")).toBeTruthy();
+    expect(
+      (view.getByTestId("image-block-prompt-editor").querySelector("textarea") as HTMLTextAreaElement).value,
+    ).toBe("doomed edit");
   });
 
   it("Cancel discards the draft — the saver is never called", () => {

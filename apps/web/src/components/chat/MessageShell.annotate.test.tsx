@@ -120,8 +120,8 @@ describe("MessageShell annotate button (TPE-14)", () => {
       isGreeting: false,
       canAiEdit: true,
     })));
-    // No annotate button…
     expect(container.querySelector('[data-testid="desktop-annotate-btn"]')).toBeNull();
+    expect(container.querySelector('button[aria-label="message_ai_editor_tooltip"]')).not.toBeNull();
     cleanup();
   });
 });

@@ -34,7 +34,7 @@ import { useDomEnv } from "../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 import { createElement, type ReactNode } from "react";
 
-useDomEnv();
+useDomEnv({ failOnNetwork: true });
 const { act, fireEvent, render, waitFor } = await import("@testing-library/react");
 import type { AppMessage, AppSnapshot, AppCharacter } from "../../api/types.js";
 
@@ -50,11 +50,13 @@ const mocks = {
 };
 const noop = mock();
 const noopAsync = mock(async () => undefined);
-const realChatController = await import("../../hooks/use-chat-controller.js");
-const realMobileHook = await import("../../hooks/use-mobile.js");
-const realTooltip = await import("../shared/Tooltip.js");
-const realBottomSheet = await import("../shared/BottomSheet.js");
-const realChatActions = await import("../../stores/api-actions/chat-actions.js");
+const realChatController = { ...await import("../../hooks/use-chat-controller.js") };
+const realMobileHook = { ...await import("../../hooks/use-mobile.js") };
+const realTooltip = { ...await import("../shared/Tooltip.js") };
+const realBottomSheet = { ...await import("../shared/BottomSheet.js") };
+const realChatActions = { ...await import("../../stores/api-actions/chat-actions.js") };
+const realVoiceMapData = { ...await import("../../lib/tts/voice-map-data.js") };
+const realRegexApi = { ...await import("../../api/regex-api.js") };
 
 mock.module("../../hooks/use-chat-controller.js", () => ({
   ...realChatController,
@@ -111,6 +113,16 @@ mock.module("../../stores/api-actions/chat-actions.js", () => ({
     ...realChatActions,
     getSceneStatusAction: mocks.getSceneStatus,
     cancelSceneAction: mocks.cancelScene,
+}));
+
+mock.module("../../lib/tts/voice-map-data.js", () => ({
+  ...realVoiceMapData,
+  useVoiceMapData: () => ({ data: null, refresh: async () => {} }),
+}));
+
+mock.module("../../api/regex-api.js", () => ({
+  ...realRegexApi,
+  resolveActiveRegexPresets: async () => [],
 }));
 
 // ── Dynamic import (after mocks register) ──────────────────────────────────

@@ -102,7 +102,7 @@ describe("BottomSheet", () => {
 			fireEvent(button, event);
 			return event;
 		}
-		return { onClose, onClick, button, touch };
+		return { onClose, onClick, button, popup, touch };
 	}
 
 	it("a 2px jitter move is not claimed and leaves the button's native click eligible", async () => {
@@ -168,24 +168,33 @@ describe("BottomSheet", () => {
 		expect(onClose).not.toHaveBeenCalled();
 	});
 
-	it("a short downward swipe does NOT fire onClose", () => {
-		const onClose = mock(() => {});
-		render(<BottomSheet open={true} onClose={onClose}><span>x</span></BottomSheet>);
-		const sheet = sheetEl(document);
-		fireEvent.touchStart(sheet, { touches: [{ clientY: 500 }] });
-		fireEvent.touchMove(sheet, { touches: [{ clientY: 540 }] }); // delta +40 < 80
-		fireEvent.touchEnd(sheet);
-		expect(onClose).not.toHaveBeenCalled();
+	it("a short downward swipe does NOT fire onClose", async () => {
+		const s = gestureSheet();
+		s.touch("touchstart", 450, 100);
+		const activation = s.touch("touchmove", 458, 200);
+		expect(activation.defaultPrevented).toBe(true);
+		expect(s.popup.hasAttribute("data-swiping")).toBe(true);
+		s.touch("touchmove", 490, 450); // delta +40 < 80 and slow release
+		expect(s.popup.hasAttribute("data-swiping")).toBe(true);
+		s.touch("touchend", 490, 600);
+		await act(async () => { await Promise.resolve(); });
+		expect(s.popup.hasAttribute("data-swiping")).toBe(false);
+		expect(s.onClose).not.toHaveBeenCalled();
 	});
 
-	it("an upward swipe does NOT fire onClose", () => {
-		const onClose = mock(() => {});
-		render(<BottomSheet open={true} onClose={onClose}><span>x</span></BottomSheet>);
-		const sheet = sheetEl(document);
-		fireEvent.touchStart(sheet, { touches: [{ clientY: 500 }] });
-		fireEvent.touchMove(sheet, { touches: [{ clientY: 400 }] }); // delta -100 (upward)
-		fireEvent.touchEnd(sheet);
-		expect(onClose).not.toHaveBeenCalled();
+	it("an upward swipe does NOT fire onClose", async () => {
+		const s = gestureSheet();
+		s.touch("touchstart", 450, 100);
+		const firstUp = s.touch("touchmove", 440, 200);
+		expect(firstUp.defaultPrevented).toBe(true);
+		expect(s.popup.hasAttribute("data-swiping")).toBe(true);
+		s.touch("touchmove", 350, 300); // delta -100 (upward)
+		expect(s.popup.hasAttribute("data-swiping")).toBe(true);
+		s.touch("touchend", 350, 350);
+		await act(async () => { await Promise.resolve(); });
+		expect(s.popup.hasAttribute("data-swiping")).toBe(false);
+		expect(s.popup.isConnected).toBe(true);
+		expect(s.onClose).not.toHaveBeenCalled();
 	});
 });
 

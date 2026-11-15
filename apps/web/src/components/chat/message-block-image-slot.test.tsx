@@ -22,7 +22,7 @@ import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 import { installFramerMotionSeam } from "../../../test/framer-motion-seam.js";
 import type { ReactNode } from "react";
 
-useDomEnv();
+useDomEnv({ failOnNetwork: true });
 const { render, cleanup, fireEvent, waitFor } = await import("@testing-library/react");
 
 const NOOP = () => {};
@@ -45,9 +45,11 @@ const STABLE_CONTROLLER = {
   handleRenameBranch: async () => {},
 };
 
-const realChatController = await import("../../hooks/use-chat-controller.js");
-const realChatActions = await import("../../stores/api-actions/chat-actions.js");
-const realTooltip = await import("../shared/Tooltip.js");
+const realChatController = { ...await import("../../hooks/use-chat-controller.js") };
+const realChatActions = { ...await import("../../stores/api-actions/chat-actions.js") };
+const realTooltip = { ...await import("../shared/Tooltip.js") };
+const realVoiceMapData = { ...await import("../../lib/tts/voice-map-data.js") };
+const realRegexApi = { ...await import("../../api/regex-api.js") };
 
 mock.module("../../hooks/use-chat-controller.js", () => ({
   ...realChatController,
@@ -73,6 +75,16 @@ mock.module("../shared/Tooltip.js", () => ({
   ...realTooltip,
   CustomTooltip: ({ children }: { children: ReactNode }) => children,
   TooltipProvider: ({ children }: { children: ReactNode }) => children,
+}));
+
+mock.module("../../lib/tts/voice-map-data.js", () => ({
+  ...realVoiceMapData,
+  useVoiceMapData: () => ({ data: null, refresh: async () => {} }),
+}));
+
+mock.module("../../api/regex-api.js", () => ({
+  ...realRegexApi,
+  resolveActiveRegexPresets: async () => [],
 }));
 
 // House animation mock via the shared co-load seam (the AP-29 fix): the

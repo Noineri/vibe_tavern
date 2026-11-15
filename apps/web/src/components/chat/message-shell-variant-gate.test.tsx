@@ -6,7 +6,7 @@ import { useDomEnv } from "../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 import type { ReactNode } from "react";
 
-useDomEnv();
+useDomEnv({ failOnNetwork: true });
 
 /**
  * Variant-carousel gating invariant for the mobile message actions row.
@@ -61,8 +61,10 @@ const STABLE_CONTROLLER = {
   handleRenameBranch: NOOP_ASYNC,
 };
 
-const realChatController = await import("../../hooks/use-chat-controller.js");
-const realTooltip = await import("../shared/Tooltip.js");
+const realChatController = { ...await import("../../hooks/use-chat-controller.js") };
+const realTooltip = { ...await import("../shared/Tooltip.js") };
+const realVoiceMapData = { ...await import("../../lib/tts/voice-map-data.js") };
+const realRegexApi = { ...await import("../../api/regex-api.js") };
 mock.module("../../hooks/use-chat-controller.js", () => ({
 	...realChatController,
   useChatController: () => STABLE_CONTROLLER,
@@ -76,6 +78,16 @@ mock.module("../shared/Tooltip.js", () => ({
 	...realTooltip,
   CustomTooltip: ({ children }: { children: ReactNode }) => children,
   TooltipProvider: ({ children }: { children: ReactNode }) => children,
+}));
+
+mock.module("../../lib/tts/voice-map-data.js", () => ({
+  ...realVoiceMapData,
+  useVoiceMapData: () => ({ data: null, refresh: async () => {} }),
+}));
+
+mock.module("../../api/regex-api.js", () => ({
+  ...realRegexApi,
+  resolveActiveRegexPresets: async () => [],
 }));
 
 // ---------------------------------------------------------------------------

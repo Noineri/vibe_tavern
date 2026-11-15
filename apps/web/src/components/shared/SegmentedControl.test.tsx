@@ -28,21 +28,11 @@ useDomEnv();
 
 const { render, fireEvent, act, waitFor } = await import("@testing-library/react");
 
-// CustomTooltip (Radix Tooltip) needs a TooltipProvider ancestor that the
-// isolated render here doesn't mount. The app mounts one globally; tests mock
-// it to a passthrough (same pattern as VibeMdView.test.tsx /
-// CoauthorInputArea.test.tsx). This test cares that SegmentedControl correctly
-// delegates the segment into the tooltip slot — not about tooltip behavior.
-const realTooltip = await import("./Tooltip.js");
-mock.module("./Tooltip.js", () => ({
-	...realTooltip,
-	CustomTooltip: ({ children }: { children: React.ReactNode }) => children,
-}));
-
 let SegmentedControl: typeof import("./SegmentedControl.js").SegmentedControl;
+let TooltipProvider: typeof import("./Tooltip.js").TooltipProvider;
 
 // ── Mobile mock (SP-12 mobileSelect) ───────────────────────────
-const realUseMobile = await import("../../hooks/use-mobile.js");
+const realUseMobile = { ...(await import("../../hooks/use-mobile.js")) };
 
 let isMobile = false;
 mock.module("../../hooks/use-mobile.js", () => ({
@@ -52,6 +42,7 @@ mock.module("../../hooks/use-mobile.js", () => ({
 
 beforeAll(async () => {
 	({ SegmentedControl } = await import("./SegmentedControl.js"));
+	({ TooltipProvider } = await import("./Tooltip.js"));
 });
 
 
@@ -194,19 +185,18 @@ describe("SegmentedControl — option slots (load-bearing for VersionSwitcher)",
 	});
 
 	it("tooltip option does not break segment rendering", () => {
-		// CustomTooltip wraps the segment; we only assert the segment still
-		// renders and is interactive. Tooltip-hover behavior is CustomTooltip's
-		// own concern, tested separately if at all.
 		const onChange = mock();
 		const { getAllByRole, getByText } = render(
-			<SegmentedControl
-				value="a"
-				options={[
-					{ value: "a", label: "Apple", tooltip: "an apple" },
-					{ value: "b", label: "Banana" },
-				]}
-				onChange={onChange}
-			/>,
+			<TooltipProvider>
+				<SegmentedControl
+					value="a"
+					options={[
+						{ value: "a", label: "Apple", tooltip: "an apple" },
+						{ value: "b", label: "Banana" },
+					]}
+					onChange={onChange}
+				/>
+			</TooltipProvider>,
 		);
 		expect(getAllByRole("radio")).toHaveLength(2);
 		fireEvent.click(getByText("Banana"));
@@ -219,20 +209,26 @@ describe("SegmentedControl — option slots (load-bearing for VersionSwitcher)",
 		// open/closed state clobbered the radio's `data-state=checked` (the
 		// visual-selection CSS hook) — the selected logic segment lost its
 		// highlight. The fix wraps the item in a span so each Radix primitive owns
-		// its own DOM node. This pins that the radio keeps data-state=checked.
+		// its own DOM node. This pins that both primitives keep separate data-state attributes.
 		const { getAllByRole } = render(
-			<SegmentedControl
-				value="a"
-				options={[
-					{ value: "a", label: "Apple", tooltip: "an apple" },
-					{ value: "b", label: "Banana", tooltip: "a banana" },
-				]}
-				onChange={() => {}}
-			/>,
+			<TooltipProvider>
+				<SegmentedControl
+					value="a"
+					options={[
+						{ value: "a", label: "Apple", tooltip: "an apple" },
+						{ value: "b", label: "Banana", tooltip: "a banana" },
+					]}
+					onChange={() => {}}
+				/>
+			</TooltipProvider>,
 		);
 		const radios = getAllByRole("radio");
 		expect(radios[0].getAttribute("data-state")).toBe("checked");
 		expect(radios[1].getAttribute("data-state")).toBe("unchecked");
+		expect(radios[0].parentElement?.tagName).toBe("SPAN");
+		expect(radios[0].parentElement?.getAttribute("data-state")).toBe("closed");
+		expect(radios[1].parentElement?.tagName).toBe("SPAN");
+		expect(radios[1].parentElement?.getAttribute("data-state")).toBe("closed");
 	});
 });
 
@@ -392,11 +388,23 @@ describe("SegmentedControl — mobileSelect (regex tab mobile adaptation)", () =
 
 	it("mobile: group disabled disables the dropdown trigger", () => {
 		isMobile = true;
-		const { container } = render(
-			<SegmentedControl value="a" options={opts} onChange={() => {}} mobileSelect disabled />,
+		const onChange = mock();
+		const { getByRole, queryByText, rerender } = render(
+			<SegmentedControl value="a" options={opts} onChange={onChange} mobileSelect disabled />,
 		);
-		const trigger = container.querySelector("button")!;
-		expect(trigger.className).toMatch(/pointer-events-none/);
+		const trigger = getByRole("button") as HTMLButtonElement;
+		expect(trigger.disabled).toBe(true);
+		expect(trigger.getAttribute("disabled")).not.toBeNull();
+		fireEvent.click(trigger);
+		expect(queryByText("Banana")).toBeNull();
+		expect(onChange).not.toHaveBeenCalled();
+
+		// Positive counterpart: enabling opens the dropdown and emits selection.
+		rerender(<SegmentedControl value="a" options={opts} onChange={onChange} mobileSelect disabled={false} />);
+		expect(trigger.disabled).toBe(false);
+		fireEvent.click(trigger);
+		fireEvent.click(getByRole("option", { name: "Banana" }));
+		expect(onChange).toHaveBeenCalledWith("b");
 	});
 
 	it("mobile WITHOUT mobileSelect keeps segments (opt-in only)", () => {

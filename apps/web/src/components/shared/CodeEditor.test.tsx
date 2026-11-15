@@ -73,19 +73,20 @@ describe("CodeEditor — caller extensions prop (CD-4)", () => {
 
   it("reconfigures extensions in place (no remount) when the array identity changes", async () => {
     const { EditorState } = await import("@codemirror/state");
-    const { rerender } = render(
+    const { container, rerender } = render(
       <CodeEditor value="abc" onChange={() => {}} extensions={[EditorState.tabSize.of(8)]} />,
     );
+    const initialView = getView(container);
+    expect(initialView.state.facet(EditorState.tabSize)).toBe(8);
+
     // Fresh array with new content — the identity churn must NOT remount.
     rerender(<CodeEditor value="abc" onChange={() => {}} extensions={[EditorState.tabSize.of(6)]} />);
-    const dom = document.querySelector(".cm-editor");
-    if (!(dom instanceof HTMLElement)) throw new Error("cm-editor not mounted");
-    const view = EditorView.findFromDOM(dom)!;
-    expect(view.state.facet(EditorState.tabSize)).toBe(6);
+    const viewAfterChange = getView(container);
+    expect(viewAfterChange).toBe(initialView);
+    expect(viewAfterChange.state.facet(EditorState.tabSize)).toBe(6);
 
     // Same view instance across a further identity-only change (content equal).
-    const before = view;
     rerender(<CodeEditor value="abc" onChange={() => {}} extensions={[EditorState.tabSize.of(6)]} />);
-    expect(EditorView.findFromDOM(document.querySelector(".cm-editor") as HTMLElement)).toBe(before);
+    expect(getView(container)).toBe(initialView);
   });
 });

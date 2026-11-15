@@ -9,12 +9,15 @@
  * MediaLightbox not using the hook at all. These tests fail against exactly
  * that regression shape.
  */
-import { afterEach, beforeAll, describe, expect, it, mock } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { testFetch } from "@vibe-tavern/test-fetch";
 import { useDomEnv } from "../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
+import { useChatStore } from "../../stores/chat-store.js";
 import { useGalleryStore } from "../../stores/gallery-store.js";
 
 useDomEnv();
+const origFetch = globalThis.fetch;
 
 
 installI18nContextSeam();
@@ -23,14 +26,25 @@ let MediaModal: typeof import("./MediaModal.js").MediaModal;
 let render: typeof import("@testing-library/react").render;
 let fireEvent: typeof import("@testing-library/react").fireEvent;
 let act: typeof import("@testing-library/react").act;
+let waitFor: typeof import("@testing-library/react").waitFor;
 
 beforeAll(async () => {
-  ({ render, fireEvent, act } = await import("@testing-library/react"));
+  ({ render, fireEvent, act, waitFor } = await import("@testing-library/react"));
   ({ MediaModal } = await import("./MediaModal.js"));
+});
+
+beforeEach(() => {
+  globalThis.fetch = origFetch;
+  useChatStore.setState({ draftAttachments: [] });
 });
 
 afterEach(() => {
   localStorage.clear();
+  useChatStore.setState({ draftAttachments: [] });
+});
+
+afterAll(() => {
+  globalThis.fetch = origFetch;
 });
 
 const asset: import("@vibe-tavern/domain").CharacterAsset = {
@@ -46,7 +60,7 @@ const asset: import("@vibe-tavern/domain").CharacterAsset = {
   createdAt: "2026-09-10T00:00:00.000Z",
 };
 
-function setup() {
+function setup(onClose: () => void = () => {}) {
   useGalleryStore.setState({
     byCharacter: { "char-1": [asset] },
     loading: {},
@@ -66,7 +80,7 @@ function setup() {
     reset: mock(() => {}),
   });
   return render(
-    <MediaModal open onClose={() => {}} characterId="char-1" characterName="Test Char" />,
+    <MediaModal open onClose={onClose} characterId="char-1" characterName="Test Char" />,
   );
 }
 
@@ -138,10 +152,20 @@ describe("MediaModal lightbox — one-finger pan parity (avatar-panel canon)", (
     expect(img.style.transform).toMatch(/translate\(60px/);
   });
 
-  it("a plain tap on the send button still fires onSend (tap never enters the pan path)", async () => {
-    const onSend = mock(() => {});
-    void onSend;
-    setup();
+  it("a plain tap on the send button still promotes the asset, drafts it, and closes (tap never enters the pan path)", async () => {
+    const fetchCalls: Array<{ url: string; method: string | undefined }> = [];
+    globalThis.fetch = testFetch(async (input, init) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      fetchCalls.push({ url, method: init?.method });
+      return Response.json({
+        assetId: "asset-promoted",
+        name: "photo.jpg",
+        mimeType: "image/jpeg",
+        sizeBytes: 123,
+      });
+    });
+    const onClose = mock(() => {});
+    setup(onClose);
     const img = openLightbox();
     // Tap the image area without movement (no pan, no zoom change).
     await act(async () => {
@@ -152,8 +176,24 @@ describe("MediaModal lightbox — one-finger pan parity (avatar-panel canon)", (
     const sendBtn = [...document.querySelectorAll("button")]
       .find((b) => b.textContent?.includes("media_send_to_chat"));
     expect(sendBtn).toBeTruthy();
-    // The button click path is what the phone executes for a zero-move tap.
     expect(sendBtn!.disabled).toBe(false);
+
+    await act(async () => {
+      fireEvent.click(sendBtn!);
+    });
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+    expect(fetchCalls).toEqual([
+      { url: expect.stringContaining("/api/characters/char-1/assets/gal_1/promote-to-attachment"), method: "POST" },
+    ]);
+    expect(useChatStore.getState().draftAttachments).toEqual([
+      expect.objectContaining({
+        assetId: "asset-promoted",
+        type: "image",
+        name: "photo.jpg",
+        mimeType: "image/jpeg",
+        sizeBytes: 123,
+      }),
+    ]);
   });
 
   it("rides the thin vertical lane for the thumbnail grid; the gesture stage stays native (CNR-8k)", async () => {

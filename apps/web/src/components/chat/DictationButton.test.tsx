@@ -24,6 +24,7 @@ import { listAllSttProfiles, type SttProfileRecord } from "../../api/stt-api.js"
 import { useDictationStore } from "../../stores/dictation-store.js";
 import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js";
 import type { VoiceRecorder } from "../../lib/stt/voice-recorder.js";
+import type { DictationTranscriber } from "./use-dictation.js";
 import { DictationButton } from "./DictationButton.js";
 
 // SAFE mock.module (gotcha pattern): capture the real module first, spread,
@@ -139,6 +140,31 @@ beforeEach(() => {
   listAll.mockImplementation(async () => [profile()]);
 });
 
+async function recordAndStop(view: ReturnType<typeof render> extends infer R ? R extends { getByTestId: Function } ? R : never : never): Promise<void> {
+  const user = userEvent.setup();
+  // The profile list loads in an effect — wait for the mic to appear first.
+  await waitFor(() => {
+    expect(view.getByTestId("dictation-mic")).toBeTruthy();
+  });
+  await act(async () => {
+    await user.click(view.getByTestId("dictation-mic"));
+  });
+  await waitFor(() => {
+    expect(view.getByTestId("dictation-mic").dataset.status).toBe("recording");
+  });
+  await act(async () => {
+    await user.click(view.getByTestId("dictation-mic"));
+  });
+  // The transcriber promise chain resolves outside the click's act scope —
+  // flush it inside act so the status transitions land wrapped.
+  await act(async () => {
+    await Bun.sleep(5);
+  });
+  await waitFor(() => {
+    expect(view.getByTestId("dictation-mic").dataset.status).toBe("idle");
+  });
+}
+
 describe("DictationButton opt-in gate", () => {
   test("hidden by default (enable off)", () => {
     const { view } = renderButton();
@@ -168,38 +194,15 @@ describe("DictationButton opt-in gate", () => {
       },
     });
     listAll.mockImplementation(async () => [profile(), profile({ id: "stt-2", name: "Server", isDefault: false })]);
-    const { view } = renderButton();
-    await waitFor(() => {
-      expect(view.getByTestId("dictation-mic")).toBeTruthy();
-    });
+    const transcriber = mock(async (_resolvedProfile: Parameters<DictationTranscriber>[0], _blob: Blob) => "ok");
+    const { view } = renderButton({ transcriber });
+    await recordAndStop(view);
+    expect(transcriber).toHaveBeenCalledTimes(1);
+    expect(transcriber.mock.calls[0]?.[0]?.id).toBe("stt-2");
   });
 });
 
 describe("DictationButton transcript modes", () => {
-  async function recordAndStop(view: ReturnType<typeof render> extends infer R ? R extends { getByTestId: Function } ? R : never : never): Promise<void> {
-    const user = userEvent.setup();
-    // The profile list loads in an effect — wait for the mic to appear first.
-    await waitFor(() => {
-      expect(view.getByTestId("dictation-mic")).toBeTruthy();
-    });
-    await act(async () => {
-      await user.click(view.getByTestId("dictation-mic"));
-    });
-    await waitFor(() => {
-      expect(view.getByTestId("dictation-mic").dataset.status).toBe("recording");
-    });
-    await act(async () => {
-      await user.click(view.getByTestId("dictation-mic"));
-    });
-    // The transcriber promise chain resolves outside the click's act scope —
-    // flush it inside act so the status transitions land wrapped.
-    await act(async () => {
-      await Bun.sleep(5);
-    });
-    await waitFor(() => {
-      expect(view.getByTestId("dictation-mic").dataset.status).toBe("idle");
-    });
-  }
 
   test("append joins onto the draft", async () => {
     useDictationStore.setState({ enabled: true, mode: "append" });

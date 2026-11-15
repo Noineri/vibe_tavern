@@ -25,7 +25,7 @@ mock.module("./Tooltip.js", () => ({
   TooltipProvider: ({ children }: { children: ReactNode }) => children,
 }));
 
-const { render, fireEvent } = await import("@testing-library/react");
+const { render, fireEvent, createEvent } = await import("@testing-library/react");
 const { ChipInput } = await import("./ChipInput.js");
 
 function renderChipInput(values: string[] = [], onChange = mock()) {
@@ -34,15 +34,18 @@ function renderChipInput(values: string[] = [], onChange = mock()) {
   return { container, input, onChange };
 }
 
-function paste(input: HTMLInputElement, text: string) {
-  fireEvent.paste(input, { clipboardData: { getData: () => text } });
+function paste(input: HTMLInputElement, text: string): Event {
+  const event = createEvent.paste(input, { clipboardData: { getData: () => text } });
+  fireEvent(input, event);
+  return event;
 }
 
 describe("ChipInput paste interceptor (B3)", () => {
   it("commits an ST-style JSON array as many chips instead of one literal chip", () => {
     const onChange = mock();
     const { input } = renderChipInput([], onChange);
-    paste(input, '[" finger", " moan"]');
+    const ev = paste(input, '[" finger", " moan"]');
+    expect(ev.defaultPrevented).toBe(true);
     expect(onChange).toHaveBeenCalledTimes(1);
     expect(onChange).toHaveBeenCalledWith([" finger", " moan"]);
   });
@@ -58,17 +61,22 @@ describe("ChipInput paste interceptor (B3)", () => {
   it("leaves plain text on the unchanged paste path (no chips from paste)", () => {
     const onChange = mock();
     const { input } = renderChipInput([], onChange);
-    paste(input, " just a phrase");
+    const ev = paste(input, " just a phrase");
+    expect(ev.defaultPrevented).toBe(false);
     expect(onChange).not.toHaveBeenCalled();
   });
 
   it("falls through for clipboard text that looks like JSON but is not a string array", () => {
     const onChange = mock();
     const { input } = renderChipInput([], onChange);
-    paste(input, '{"not":"an array"}');
-    paste(input, "[1, 2, 3]");
-    paste(input, "[not valid json");
+    expect(paste(input, '{"not":"an array"}').defaultPrevented).toBe(false);
+    expect(paste(input, "[1, 2, 3]").defaultPrevented).toBe(false);
+    expect(paste(input, "[not valid json").defaultPrevented).toBe(false);
     expect(onChange).not.toHaveBeenCalled();
+    // Positive control: valid string-array JSON IS intercepted and prevented.
+    const valid = paste(input, '["ok"]');
+    expect(valid.defaultPrevented).toBe(true);
+    expect(onChange).toHaveBeenCalledWith(["ok"]);
   });
 
   it("typed input still commits via Enter as a single chip (existing contract)", () => {
@@ -106,7 +114,9 @@ describe("ChipInput words mode (FS-8c simple-words semantics)", () => {
     expect(onChange).toHaveBeenCalledWith(["wyrm"]);
 
     fireEvent.change(input, { target: { value: "keep" } });
-    fireEvent.keyDown(input, { key: "Tab" });
+    const tabEvent = createEvent.keyDown(input, { key: "Tab" });
+    fireEvent(input, tabEvent);
+    expect(tabEvent.defaultPrevented).toBe(false);
     expect(onChange).toHaveBeenCalledTimes(1); // Tab did not commit; draft kept
     expect(input.value).toBe("keep");
   });
@@ -136,6 +146,14 @@ describe("ChipInput words mode (FS-8c simple-words semantics)", () => {
     fireEvent.change(r1.input, { target: { value: "one" } });
     fireEvent.keyDown(r1.input, { key: "," });
     expect(dup).not.toHaveBeenCalled(); // dup dropped, draft cleared
+    expect(r1.input.value).toBe("");
+
+    const freshComma = mock();
+    const rComma = renderWords(["one"], freshComma);
+    fireEvent.change(rComma.input, { target: { value: "fresh" } });
+    fireEvent.keyDown(rComma.input, { key: "," });
+    expect(freshComma).toHaveBeenCalledWith(["one", "fresh"]);
+    expect(rComma.input.value).toBe("");
 
     const r2 = renderWords(["one"], mock());
     fireEvent.change(r2.input, { target: { value: "two" } });

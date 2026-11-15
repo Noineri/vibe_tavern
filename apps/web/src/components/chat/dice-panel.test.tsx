@@ -1,14 +1,25 @@
-import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import type { ReactNode } from "react";
 import { useDomEnv } from "../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
-import type { DiceDefinitionsResponse, DiceLaneState, DiceRollSnapshot } from "../../api/types.js";
+import { installPersonaApiSeam } from "../../../test/persona-api-seam.js";
+import type { DiceDefinitionsResponse, DiceLaneState, DiceRollSnapshot, ExperienceChatConfigRow } from "../../api/types.js";
 
-useDomEnv();
+useDomEnv({ failOnNetwork: true });
 
 let fireEvent: typeof import("@testing-library/react").fireEvent;
 let render: typeof import("@testing-library/react").render;
 let waitFor: typeof import("@testing-library/react").waitFor;
+let act: typeof import("@testing-library/react").act;
+
+const originalHitTest = Object.getOwnPropertyDescriptor(document, "elementFromPoint");
+function restoreHitTest() {
+  if (originalHitTest) Object.defineProperty(document, "elementFromPoint", originalHitTest);
+  else Reflect.deleteProperty(document, "elementFromPoint");
+}
+beforeEach(restoreHitTest);
+afterEach(restoreHitTest);
+afterAll(restoreHitTest);
 
 const mocks = {
   activeChat: null as null | {
@@ -23,6 +34,7 @@ const mocks = {
   lanes: null as { normal: DiceLaneState; immersive: DiceLaneState } | null,
   rolling: false,
   lastError: null as string | null,
+  experienceConfig: null as ExperienceChatConfigRow | null,
   mobile: false,
   actions: {
     setScope: mock(),
@@ -33,16 +45,17 @@ const mocks = {
     chooseAttempt: mock(async () => undefined),
   },
 };
-const realMobileHook = await import("../../hooks/use-mobile.js");
-const realSnapshotStore = await import("../../stores/snapshot-store.js");
-const realDiceStore = await import("../../stores/dice-store.js");
-const realExperienceStore = await import("../../stores/experience-store.js");
-const realTooltip = await import("../shared/Tooltip.js");
-const realBottomSheet = await import("../shared/BottomSheet.js");
-const realQueueManager = await import("./QueueManager.js");
-const realInputArea = await import("./InputArea.js");
-const realMessageList = await import("./MessageList.js");
-const realMessageAiEditorModal = await import("./MessageAiEditorModal.js");
+const realMobileHook = { ...(await import("../../hooks/use-mobile.js")) };
+const realSnapshotStore = { ...(await import("../../stores/snapshot-store.js")) };
+const realDiceStore = { ...(await import("../../stores/dice-store.js")) };
+const realExperienceStore = { ...(await import("../../stores/experience-store.js")) };
+const realTooltip = { ...(await import("../shared/Tooltip.js")) };
+const realBottomSheet = { ...(await import("../shared/BottomSheet.js")) };
+const realVoiceMapData = { ...(await import("../../lib/tts/voice-map-data.js")) };
+const realQueueManager = { ...(await import("./QueueManager.js")) };
+const realInputArea = { ...(await import("./InputArea.js")) };
+const realMessageList = { ...(await import("./MessageList.js")) };
+const realMessageAiEditorModal = { ...(await import("./MessageAiEditorModal.js")) };
 
 installI18nContextSeam({
   custom: {
@@ -58,6 +71,8 @@ installI18nContextSeam({
   },
 });
 
+installPersonaApiSeam({ listPersonas: async () => [] });
+
 mock.module("../../hooks/use-mobile.js", () => ({
   ...realMobileHook,
   useIsMobile: () => mocks.mobile,
@@ -70,18 +85,32 @@ mock.module("../../stores/snapshot-store.js", () => ({
     activeBranch: typeof mocks.activeBranch;
     character: typeof mocks.character;
     persona: typeof mocks.persona;
+    chatIds: string[];
+    chatsById: Record<string, unknown>;
     messagesById: Record<string, unknown>;
     messageOrder: string[];
+    branches: unknown[];
+    summaries: unknown[];
+    promptTrace: null;
+    swipeDirection: 1 | -1;
+    allCharacters: unknown[];
   }) => unknown) => selector({
     activeChat: mocks.activeChat,
     activeBranch: mocks.activeBranch,
     character: mocks.character,
     persona: mocks.persona,
+    chatIds: [],
+    chatsById: {},
     // TPE-18a: the full PlayMode tree (incl. the narration playlist pill
     // mounted beside Dice) reads the message index through the real
     // useOrderedMessages — an empty index, same as a fresh chat.
     messagesById: {},
     messageOrder: [],
+    branches: [],
+    summaries: [],
+    promptTrace: null,
+    swipeDirection: 1,
+    allCharacters: [],
   }),
 }));
 
@@ -89,6 +118,7 @@ mock.module("../../stores/dice-store.js", () => {
   const useDiceStore = (selector: (state: typeof mocks.actions) => unknown) => selector(mocks.actions);
   useDiceStore.getState = () => mocks.actions;
   return {
+    ...realDiceStore,
     useDiceDefinitions: () => mocks.definitions,
     useDiceLanes: () => mocks.lanes,
     useDiceRolling: () => mocks.rolling,
@@ -103,11 +133,11 @@ mock.module("../shared/Tooltip.js", () => ({
   TooltipProvider: ({ children }: { children: ReactNode }) => children,
 }));
 
-// Mock the Experience store so the ExperienceLauncher returns null (no config)
-// and its setScope/rehydrate do not make real API calls inside the Dice tests.
+// Mock the Experience store so tests control ExperienceLauncher visibility
+// without making real API calls inside the Dice tests.
 mock.module("../../stores/experience-store.js", () => ({
   ...realExperienceStore,
-  useExperienceConfig: () => null,
+  useExperienceConfig: () => mocks.experienceConfig,
   useExperienceSession: () => null,
   useExperienceEffects: () => [],
   useExperienceQueuedAttachment: () => null,
@@ -117,6 +147,11 @@ mock.module("../../stores/experience-store.js", () => ({
   useExperienceModalOpen: () => false,
   useExperienceDetached: () => false,
   useExperienceStore: { getState: () => ({ setScope: () => {}, openModal: () => {}, closeModal: () => {}, setDetached: () => {} }) },
+}));
+
+mock.module("../../lib/tts/voice-map-data.js", () => ({
+  ...realVoiceMapData,
+  useVoiceMapData: () => ({ data: null, refresh: async () => {} }),
 }));
 
 mock.module("../shared/BottomSheet.js", () => ({
@@ -134,7 +169,7 @@ let DicePanel: typeof import("./DicePanel.js").DicePanel;
 let DiceTray: typeof import("./DiceTray.js").DiceTray;
 let PlayMode: typeof import("../play/PlayMode.js").PlayMode;
 beforeAll(async () => {
-  ({ fireEvent, render, waitFor } = await import("@testing-library/react"));
+  ({ fireEvent, render, waitFor, act } = await import("@testing-library/react"));
   ({ DicePanel } = await import("./DicePanel.js"));
   ({ DiceTray } = await import("./DiceTray.js"));
   ({ PlayMode } = await import("../play/PlayMode.js"));
@@ -204,6 +239,7 @@ beforeEach(() => {
   mocks.lanes = lanes();
   mocks.rolling = false;
   mocks.lastError = null;
+  mocks.experienceConfig = null;
   mocks.mobile = false;
   for (const action of Object.values(mocks.actions)) action.mockClear();
 });
@@ -284,28 +320,121 @@ describe("DiceTray", () => {
     }));
   });
 
-  it("marks every tray control as swipe-ignored so BottomSheet touch dismissal cannot eat taps", () => {
-    // Mechanism (verified against @base-ui/react drawer source + a live mobile-viewport
-    // repro): DrawerViewport registers a non-passive capture-phase touchmove and, when the
-    // touched region is not a scrolling container, calls preventDefault()+stopPropagation()
-    // on ANY moving touch — finger jitter of 1-2px — which suppresses Chrome's synthesized
-    // click. On phones the roll buttons then never fire; desktop mouse clicks are unaffected.
-    // `data-base-ui-swipe-ignore` makes the drawer reset its touch tracking for these
-    // elements, restoring taps. Pin it on every interactive control in the tray.
-    const { getByTestId, getByRole } = render(
-      <DiceTray
-        chatId="chat_1"
-        branchId="branch_1"
-        mode="normal"
-        definitions={definitions}
-        lane={lanes().normal}
-        character={mocks.character}
-        persona={mocks.persona}
-        diceActorBindings={null}
-      />,
+  it("marks every tray control as swipe-ignored so BottomSheet touch dismissal cannot eat taps", async () => {
+    // Mechanism (verified against patched @base-ui/react DrawerViewport): non-passive
+    // capture-phase touchmove claims moving touches past AXIS_LOCK_SLOP (6px) in
+    // non-overflowing sheet regions and calls preventDefault(), suppressing taps.
+    // Exercise every tray control inside the real BottomSheet with an 8px vertical move.
+    mocks.mobile = true;
+    const onClose = mock(() => {});
+    const immersiveRoll = makeRoll({
+      mode: "immersive",
+      policy: "choose",
+      finalAttemptId: null,
+      attempts: [
+        { attemptId: "attempt_1", faces: [5], modifier: 0, subtotal: 5, total: 5 },
+        { attemptId: "attempt_2", faces: [16], modifier: 0, subtotal: 16, total: 16 },
+      ],
+    });
+    const { getAllByRole, getByRole, getByTestId, rerender } = render(
+      <realBottomSheet.BottomSheet open={true} onClose={onClose} title="Dice">
+        <DiceTray
+          chatId="chat_1"
+          branchId="branch_1"
+          mode="immersive"
+          definitions={definitions}
+          lane={lanes([], [immersiveRoll]).immersive}
+          character={mocks.character}
+          persona={mocks.persona}
+          diceActorBindings={null}
+        />
+      </realBottomSheet.BottomSheet>,
     );
-    expect(getByTestId("roll-btn-character-fate").getAttribute("data-base-ui-swipe-ignore")).not.toBeNull();
-    expect(getByTestId("roll-btn-persona-fate").getAttribute("data-base-ui-swipe-ignore")).not.toBeNull();
+
+    const configureSheetGeometry = () => {
+      const popup = document.querySelector<HTMLElement>(".bs-popup");
+      if (!popup) throw new Error("missing real .bs-popup");
+      Object.defineProperties(popup, {
+        offsetHeight: { value: 300, configurable: true },
+        offsetWidth: { value: 320, configurable: true },
+        scrollHeight: { value: 180, configurable: true },
+        clientHeight: { value: 180, configurable: true },
+      });
+      popup.getBoundingClientRect = () => new DOMRect(0, 300, 320, 300);
+      for (const scroller of popup.querySelectorAll<HTMLElement>(".overflow-y-auto")) {
+        Object.defineProperties(scroller, {
+          scrollHeight: { value: 180, configurable: true },
+          clientHeight: { value: 180, configurable: true },
+        });
+      }
+    };
+    configureSheetGeometry();
+
+    const dispatchTouch = (type: string, target: HTMLElement, y: number, time: number) => {
+      const point = { identifier: 0, clientX: 50, clientY: y, target };
+      const event = new Event(type, { bubbles: true, cancelable: true });
+      Object.defineProperties(event, {
+        touches: { value: type === "touchend" ? [] : [point] },
+        changedTouches: { value: [point] },
+        timeStamp: { value: time },
+      });
+      act(() => {
+        target.dispatchEvent(event);
+      });
+      return event;
+    };
+
+    const assertSwipeIgnored = (target: HTMLElement) => {
+      expect(target.getAttribute("data-base-ui-swipe-ignore")).not.toBeNull();
+      document.elementFromPoint = () => target;
+      dispatchTouch("touchstart", target, 460, 100);
+      const mv = dispatchTouch("touchmove", target, 468, 120);
+      dispatchTouch("touchend", target, 468, 140);
+      expect(mv.defaultPrevented).toBe(false);
+      expect(onClose).not.toHaveBeenCalled();
+    };
+
+    assertSwipeIgnored(getByTestId("roll-btn-character-fate"));
+    assertSwipeIgnored(getByTestId("roll-btn-persona-fate"));
+    const chooseButtons = getAllByRole("button", { name: "dice_choose_attempt" });
+    expect(chooseButtons).toHaveLength(2);
+    for (const btn of chooseButtons) assertSwipeIgnored(btn);
+    const detailsBtn = getByRole("button", { name: "dice_details" });
+    assertSwipeIgnored(detailsBtn);
+    const excludeBtn = getByRole("button", { name: "dice_exclude_roll" });
+    assertSwipeIgnored(excludeBtn);
+
+    fireEvent.click(detailsBtn);
+    expect(getByTestId("bottom-sheet").textContent).toContain("dice_details_title");
+    fireEvent.click(chooseButtons[0]);
+    fireEvent.click(excludeBtn);
+    await waitFor(() => {
+      expect(mocks.actions.chooseAttempt).toHaveBeenCalledWith("chat_1", "branch_1", immersiveRoll.rollId, "attempt_1");
+      expect(mocks.actions.setIncluded).toHaveBeenCalledWith("chat_1", "branch_1", immersiveRoll.rollId, false);
+    });
+
+    rerender(
+      <realBottomSheet.BottomSheet open={true} onClose={onClose} title="Dice">
+        <DiceTray
+          chatId="chat_1"
+          branchId="branch_1"
+          mode="normal"
+          definitions={definitions}
+          lane={lanes([makeRoll()]).normal}
+          character={mocks.character}
+          persona={mocks.persona}
+          diceActorBindings={null}
+        />
+      </realBottomSheet.BottomSheet>,
+    );
+    configureSheetGeometry();
+    const clearBtn = getByRole("button", { name: "dice_clear_lane" });
+    assertSwipeIgnored(clearBtn);
+    assertSwipeIgnored(getByRole("button", { name: "dice_remove_roll" }));
+    fireEvent.click(clearBtn);
+    await waitFor(() => {
+      expect(mocks.actions.clearLane).toHaveBeenCalledWith("chat_1", "branch_1");
+    });
   });
 
   it("supports Normal remove and clear actions", async () => {
@@ -692,16 +821,40 @@ describe("DicePanel docked", () => {
 
 describe("PlayMode composer stack", () => {
   it("mounts Dice and the Experience launcher as siblings in a shared bar", () => {
-	const { getByTestId, getByRole } = render(<PlayMode />);
-	const wrapper = getByTestId("queue-manager").parentElement;
-	if (wrapper === null) throw new Error("missing wrapper");
-	// Wrapper children: QueueManager, the shared launcher bar, InputArea.
-	expect(Array.from(wrapper.children)).toHaveLength(3);
-	expect(wrapper.children[0]).toBe(getByTestId("queue-manager"));
-	expect(wrapper.children[2]).toBe(getByTestId("input-area"));
-	// The shared bar contains the Dice pill (coexistence: the Experience
-	// launcher renders null with no config, but its sibling slot remains).
-	const sharedBar = wrapper.children[1];
-	expect(sharedBar.querySelector('button[aria-label="dice_panel_title"]')).not.toBeNull();
+    mocks.experienceConfig = {
+      id: "cfg-chat_1",
+      chatId: "chat_1",
+      enabled: true,
+      scriptId: "script_1",
+      scriptName: "Hearts",
+      visualId: "vis_1",
+      capabilityGrants: [],
+      contextMode: "none",
+      contextSourceCharacterId: null,
+      contextSourceChatId: null,
+      contextSourcePersonaId: null,
+      launcherVisible: true,
+      createdAt: "2026-01-01T00:00:00Z",
+      updatedAt: "2026-01-01T00:00:00Z",
+    };
+    const { getByTestId } = render(<PlayMode />);
+    const wrapper = getByTestId("queue-manager").parentElement;
+    if (wrapper === null) throw new Error("missing wrapper");
+    // Wrapper children: QueueManager, the shared launcher bar, InputArea.
+    expect(Array.from(wrapper.children)).toHaveLength(3);
+    expect(wrapper.children[0]).toBe(getByTestId("queue-manager"));
+    expect(wrapper.children[2]).toBe(getByTestId("input-area"));
+    // The shared bar hosts Dice and the visible Experience launcher in separate sibling wrappers.
+    const sharedBar = wrapper.children[1];
+    const diceTrigger = sharedBar.querySelector('button[aria-label="dice_panel_title"]');
+    const launcherPill = getByTestId("experience-launcher-pill");
+    expect(diceTrigger).not.toBeNull();
+    expect(sharedBar.contains(launcherPill)).toBe(true);
+    const wrappers = Array.from(sharedBar.children);
+    const diceWrapper = wrappers.find((el) => diceTrigger !== null && el.contains(diceTrigger));
+    const launcherWrapper = wrappers.find((el) => el.contains(launcherPill));
+    expect(diceWrapper).toBeDefined();
+    expect(launcherWrapper).toBeDefined();
+    expect(diceWrapper).not.toBe(launcherWrapper);
   });
 });

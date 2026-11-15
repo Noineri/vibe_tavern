@@ -29,20 +29,30 @@ const mockState = {
   requests: [] as AiAssistantRequestBody[],
   /** Whether streamAiAssistant should throw on the next call. */
   shouldThrow: false as boolean,
+  /** Optional hook after yielding the first chunk so stop tests can park the stream deterministically. */
+  afterFirstChunk: null as ((signal?: AbortSignal) => Promise<void>) | null,
 };
-const realAiAssistantApi = await import("../../api/ai-assistant-api.js");
-const realSettingsApi = await import("../../api/settings-api.js");
-const realLorebookApi = await import("../../api/lorebook-api.js");
-const realProviderActions = await import("../../stores/api-actions/provider-actions.js");
-const realMobileHook = await import("../../hooks/use-mobile.js");
+const realAiAssistantApi = { ...(await import("../../api/ai-assistant-api.js")) };
+const realSettingsApi = { ...(await import("../../api/settings-api.js")) };
+const realLorebookApi = { ...(await import("../../api/lorebook-api.js")) };
+const realProviderActions = { ...(await import("../../stores/api-actions/provider-actions.js")) };
+const realMobileHook = { ...(await import("../../hooks/use-mobile.js")) };
 
 // Capture request bodies + control the stream.
 mock.module("../../api/ai-assistant-api.js", () => ({
   ...realAiAssistantApi,
-  streamAiAssistant: mock(async function* (body: AiAssistantRequestBody): AsyncGenerator<AiAssistantChunk> {
+  streamAiAssistant: mock(async function* (
+    body: AiAssistantRequestBody,
+    options?: { signal?: AbortSignal },
+  ): AsyncGenerator<AiAssistantChunk> {
     mockState.requests.push(body);
     if (mockState.shouldThrow) throw new Error("network-down");
-    for (const chunk of mockState.chunks) yield chunk;
+    for (let i = 0; i < mockState.chunks.length; i++) {
+      yield mockState.chunks[i]!;
+      if (i === 0 && mockState.afterFirstChunk) {
+        await mockState.afterFirstChunk(options?.signal);
+      }
+    }
   }),
   countAiAssistantTokens: mock(async () => ({ tokens: 42, model: "test-model", layerCount: 1, messageCount: 1 })),
 }));
@@ -225,8 +235,11 @@ async function generateWithPrompt(findByText: ModalView["findByText"], prompt: s
 
 // ── Tests ─────────────────────────────────────────────────────────────────
 
-// Reset mock call history between tests (keeps factory implementations).
-beforeEach(() => { mock.clearAllMocks(); });
+// Reset mock call history and per-test stream hooks between tests.
+beforeEach(() => {
+  mock.clearAllMocks();
+  mockState.afterFirstChunk = null;
+});
 
 describe("AiAssistantModal — request construction", () => {
   beforeEach(() => {
@@ -400,8 +413,41 @@ describe("AiAssistantModal — stop / cancellation", () => {
   });
 
   it("stop button cancels the stream and returns to generate", async () => {
-    // A chunk that we yield, then the test clicks stop before "done".
-    setChunks([{ type: "text", text: "partial" }]);
+    let parkedSignal: AbortSignal | undefined;
+    let releaseContinuation!: () => void;
+    let continuationResolved = false;
+    let secondYielded = false;
+    const continuation = new Promise<void>((resolve) => {
+      releaseContinuation = () => {
+        continuationResolved = true;
+        resolve();
+      };
+    });
+    const abortedObserved = new Promise<void>((resolve) => {
+      mockState.afterFirstChunk = async (signal) => {
+        parkedSignal = signal;
+        if (signal?.aborted) {
+          resolve();
+          throw new DOMException("Aborted", "AbortError");
+        }
+        await Promise.race([
+          continuation,
+          new Promise<void>((onAbort) => signal?.addEventListener("abort", () => {
+            resolve();
+            onAbort();
+          }, { once: true })),
+        ]);
+        if (signal?.aborted) {
+          throw new DOMException("Aborted", "AbortError");
+        }
+        secondYielded = true;
+      };
+    });
+    setChunks([
+      { type: "text", text: "partial" },
+      { type: "text", text: " late-tail" },
+      { type: "done" },
+    ]);
 
     const { findByText, getByText } = renderModal(
       <AiAssistantModal mode="full" apiMode="lore_entry" isOpen={true} onClose={() => {}} />,
@@ -409,15 +455,32 @@ describe("AiAssistantModal — stop / cancellation", () => {
 
     await generateWithPrompt(findByText, "go");
 
-    // While the stream is mid-flight, the Stop button should be visible.
+    // While the stream is parked mid-flight, Stop stays active and chunk #2 has not consumed.
     const stopBtn = await findByText("script_ai_stop");
     expect(stopBtn).toBeTruthy();
-    await act(async () => { fireEvent.click(stopBtn); });
+    await waitFor(() => {
+      expect(getByText(/partial/)).toBeTruthy();
+      expect(parkedSignal).toBeDefined();
+    });
+    expect(parkedSignal?.aborted).toBe(false);
+    expect(continuationResolved).toBe(false);
+    expect(secondYielded).toBe(false);
 
-    // After stop, the generate button returns (streaming=false).
+    await act(async () => { fireEvent.click(stopBtn); });
+    await abortedObserved;
+
+    // Stop aborted the active signal immediately and returned to Generate.
+    expect(parkedSignal?.aborted).toBe(true);
     await waitFor(() => {
       expect(getByText("script_ai_generate")).toBeTruthy();
     });
+
+    // Releasing the parked continuation later never resumes or appends chunk #2.
+    releaseContinuation();
+    await act(async () => { await Promise.resolve(); });
+    expect(secondYielded).toBe(false);
+    expect(document.body.textContent).toContain("partial");
+    expect(document.body.textContent).not.toContain("late-tail");
   });
 });
 
@@ -571,20 +634,57 @@ describe("AiAssistantModal — quickpill settings sync", () => {
 
   it("quickpill: does NOT persist provider/model to UI settings", async () => {
     const { updateUiSettings } = await mocks();
+    const onSettingsChange = mock();
+    const onClose = mock();
 
-    renderModal(
+    const view = renderModal(
       <AiAssistantModal
         mode="quickpill"
         isOpen={true}
-        onClose={() => {}}
-        settings={{ providerId: "prov-1", modelName: "model-a" }}
-        onSettingsChange={() => {}}
+        onClose={onClose}
+        settings={{ providerId: "prov-1", modelName: "model-a", enhanceDraft: false }}
+        onSettingsChange={onSettingsChange}
+        showEnhanceDraftToggle={true}
       />,
     );
 
-    // In quickpill mode, changing settings should not call updateUiSettings.
-    // The only writes to ui settings come from full-mode persistence.
+    // Switch model + toggle + click Done in quickpill mode.
+    const modelTrigger = await view.findByText("Model A");
+    await act(async () => { fireEvent.click(modelTrigger); });
+    const modelBOption = await view.findByText("Model B");
+    await act(async () => { fireEvent.click(modelBOption); });
+
+    const enhanceToggle = document.body.querySelector('[role="switch"]');
+    if (!enhanceToggle) throw new Error("Draft enhancement toggle was not rendered.");
+    await act(async () => { fireEvent.click(enhanceToggle); });
+
+    const doneBtn = view.getByText("done_btn");
+    await act(async () => { fireEvent.click(doneBtn); });
+
+    // Quickpill reports via onSettingsChange without persisting to ui_settings.
+    expect(onSettingsChange).toHaveBeenCalledTimes(1);
+    expect(onSettingsChange).toHaveBeenCalledWith(
+      expect.objectContaining({ providerId: "prov-1", modelName: "model-b", enhanceDraft: true }),
+    );
+    expect(onClose).toHaveBeenCalledTimes(1);
     expect(updateUiSettings).not.toHaveBeenCalled();
+
+    // Positive counterpart: switching the model in full mode DOES persist via updateUiSettings.
+    view.unmount();
+    const fullView = renderModal(
+      <AiAssistantModal mode="full" apiMode="lore_entry" isOpen={true} onClose={() => {}} />,
+    );
+    const fullModelTrigger = await fullView.findByText("Model A");
+    await act(async () => { fireEvent.click(fullModelTrigger); });
+    const fullModelBOption = await fullView.findByText("Model B");
+    await act(async () => { fireEvent.click(fullModelBOption); });
+    await waitFor(() => {
+      expect(updateUiSettings).toHaveBeenCalledTimes(1);
+      expect(updateUiSettings).toHaveBeenCalledWith({
+        aiAssistantProviderId: "prov-1",
+        aiAssistantModelName: "model-b",
+      });
+    });
   });
 });
 

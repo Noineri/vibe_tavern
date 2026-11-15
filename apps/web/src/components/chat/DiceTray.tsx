@@ -386,6 +386,7 @@ function RollCard({ roll, mode, stale, onRemove, onIncludedChange, onChoose }: R
                 ) : (
                   <button
                     type="button"
+                    data-base-ui-swipe-ignore=""
                     onClick={() => onChoose(item.attemptId)}
                     aria-label={t("dice_choose_attempt")}
                     className="ml-auto min-h-9 rounded-md px-2.5 text-accent-t transition-colors hover:bg-accent-dim"
@@ -404,6 +405,7 @@ function RollCard({ roll, mode, stale, onRemove, onIncludedChange, onChoose }: R
           <Popover.Trigger asChild>
             <button
               type="button"
+              data-base-ui-swipe-ignore=""
               className="min-h-9 rounded-md px-2.5 text-left text-[calc(var(--ui-fs)-3px)] text-t2 transition-colors hover:bg-s2 hover:text-t1"
             >
               {t("dice_details")}
@@ -426,6 +428,7 @@ function RollCard({ roll, mode, stale, onRemove, onIncludedChange, onChoose }: R
         {mode === "immersive" && (
           <button
             type="button"
+            data-base-ui-swipe-ignore=""
             onClick={() => onIncludedChange(!roll.included)}
             aria-label={t(roll.included ? "dice_exclude_roll" : "dice_include_roll")}
             className={cn(

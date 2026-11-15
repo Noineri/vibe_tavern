@@ -88,10 +88,15 @@ describe("vt-logo — orbit geometry", () => {
 
 describe("vt-logo — inertial bottom whip", () => {
 	it("inertiaTurns derivative is maximal at the bottom and minimal at the apex", () => {
-		// d/du inertiaTurns = 1 − A·cos(2π·N·u). At u=0 (apex): 1−A. At u=0.5 (bottom): 1+A.
-		const speedTop = 1 - inertia * Math.cos(0);
-		const speedBottom = 1 - inertia * Math.cos(2 * Math.PI * loops * 0.5);
-		expect(speedBottom).toBeGreaterThan(speedTop);
+		// Finite-difference the real inertiaTurns(u, inertia, loops) at apex (u=0) vs bottom (u=0.5/loops).
+		const du = 1e-4;
+		const rateAt = (u: number) =>
+			(inertiaTurns(u + du, inertia, loops) - inertiaTurns(u - du, inertia, loops)) / (2 * du);
+		const speedTop = rateAt(0);
+		const speedMid = rateAt(0.25 / loops);
+		const speedBottom = rateAt(0.5 / loops);
+		expect(speedTop).toBeLessThan(speedMid);
+		expect(speedBottom).toBeGreaterThan(speedMid);
 		expect(speedBottom / speedTop).toBeGreaterThan(8); // ~10× with A=0.82
 	});
 
