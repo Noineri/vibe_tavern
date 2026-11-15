@@ -29,6 +29,7 @@ import { beforeAll, describe, it, expect, mock } from "bun:test";
 import type { ComponentProps, ReactElement, ReactNode } from "react";
 import type { DragEndEvent, DragStartEvent } from "@dnd-kit/core";
 import { useDomEnv } from "../../../../test/dom-env.js";
+import { flush } from "../../../../test/flush.js";
 import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 import type { CustomInjection, PromptOrderEntry } from "@vibe-tavern/domain";
 import type { CanvasLoreEntrySummary } from "../../../lib/prompt-canvas-lore.js";
@@ -810,7 +811,7 @@ describe("PromptOrderCanvas — characterization", () => {
     expect(q.queryByRole("switch")).toBeNull();
     // Expand: the header is the click target (cursor-pointer when expandable).
     fireEvent.click(card!.querySelector(".canvas-card-header")!);
-    await new Promise((r) => setTimeout(r, 10));
+    await flush();
     const toggle = q.getByRole("switch");
     expect(toggle.getAttribute("aria-checked")).toBe("true");
     // The toggle + hint render INSIDE the card, below the prefill editor.
@@ -826,7 +827,7 @@ describe("PromptOrderCanvas — characterization", () => {
     const card = view.baseElement.querySelector('[data-canvas-identifier="assistantPrefill"]') as HTMLElement | null;
     expect(card).toBeTruthy();
     fireEvent.click(card!.querySelector(".canvas-card-header")!);
-    await new Promise((r) => setTimeout(r, 10));
+    await flush();
     expect(within(view.baseElement).queryByRole("switch")).toBeNull();
     expect(within(card!).queryByText("per_send_prefill_enable")).toBeNull();
   });

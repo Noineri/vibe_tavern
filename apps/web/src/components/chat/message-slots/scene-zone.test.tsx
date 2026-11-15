@@ -21,6 +21,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bu
 import { brandId, normalizeInsightsConfig, type ChatBranchId, type MessageVariantId } from "@vibe-tavern/domain";
 import { wireBranch, wireChat, wireMessage, wireVariant } from "../../../../test/wire-fixtures.js";
 import { useDomEnv } from "../../../../test/dom-env.js";
+import { flush } from "../../../../test/flush.js";
 import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 import { createElement, type ReactNode } from "react";
 
@@ -511,12 +512,12 @@ describe("Scene zone component (SCN-12)", () => {
     ]);
     render(createElement(CountingZone));
     // Let the mount effect (status hydration) settle first.
-    await new Promise((r) => setTimeout(r, 10));
+    await flush();
     const before = log.length;
     // Mutate message B's record (an unrelated variant/message). A's primitive
     // selectors are scoped to m1, so A must NOT re-render.
     useSnapshotStore.getState().updateMessage("m2", { sceneTracker: record("v2", { mood: "changed" }) });
-    await new Promise((r) => setTimeout(r, 10));
+    await flush();
     expect(log.length).toBe(before); // no re-render for A when B mutated
   });
 });

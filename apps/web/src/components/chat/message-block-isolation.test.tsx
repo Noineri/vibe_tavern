@@ -3,6 +3,7 @@ import { brandId, normalizeInsightsConfig, normalizeObjectiveState } from "@vibe
 import type { CharacterId, MessageVariantId } from "@vibe-tavern/domain";
 import { wireBranch, wireChat, wireChatListItem, wireCharacter, wireMessage, wirePersona, wireVariant } from "../../../test/wire-fixtures.js";
 import { useDomEnv } from "../../../test/dom-env.js";
+import { flush } from "../../../test/flush.js";
 import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 import { installFramerMotionSeam } from "../../../test/framer-motion-seam.js";
 import { Profiler, type ProfilerOnRenderCallback, type ReactNode } from "react";
@@ -555,7 +556,7 @@ describe("MessageBlock — render isolation invariant", () => {
     const probeA = await mountBlockForCounting("m1");
     expect(probeA.commits).toBe(1); // mount
     // Let the latest zone's status-hydration effect settle.
-    await act(async () => { await new Promise((r) => setTimeout(r, 10)); });
+    await flush();
     probeA.reset();
 
     // Mutate B's scene record (an unrelated message/variant). A's scene zone
