@@ -108,12 +108,25 @@ describe("LorebookStore.listAllActiveForChat (owners are links)", () => {
     expect(active.some((a) => a.lorebook.id === lb.id)).toBe(true);
   });
 
-  test("junction-linked global lorebook activates for the linked owner", async () => {
+  test("junction-linked global lorebook activates and participates via its link independently of the global pool", async () => {
     const { store } = await setup();
     const lb = await store.createLorebook({ name: "linked", scopeType: "global" });
     await store.addLink(lb.id, "persona", "persona_X");
     const active = await store.listAllActiveForChat("char_X", "persona_X", "chat_X");
     expect(active.some((a) => a.lorebook.id === lb.id)).toBe(true);
+
+    // Disabled global books are excluded from the global pool unless entity/chat
+    // bound — isolating the link's contribution in listParticipatingForChat.
+    const disabledLinked = await store.createLorebook({ name: "disabled-linked", scopeType: "global", enabled: false });
+    await store.addLink(disabledLinked.id, "persona", "persona_X");
+    const disabledUnlinked = await store.createLorebook({ name: "disabled-unlinked", scopeType: "global", enabled: false });
+
+    const participatingIds = (await store.listParticipatingForChat("char_X", "persona_X", "chat_X")).map((b) => b.id);
+    expect(participatingIds).toContain(disabledLinked.id);
+    expect(participatingIds).not.toContain(disabledUnlinked.id);
+    const activeIds = (await store.listAllActiveForChat("char_X", "persona_X", "chat_X")).map((a) => a.lorebook.id);
+    expect(activeIds).not.toContain(disabledLinked.id);
+    void disabledUnlinked;
   });
 
   test("double-bound (two links to the same persona) does not double-activate (Set dedup by id)", async () => {

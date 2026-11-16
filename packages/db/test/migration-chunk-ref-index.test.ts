@@ -31,12 +31,15 @@ async function readJournal(): Promise<JournalEntry[]> {
 }
 
 describe("prompt_trace_chunk_refs chunk_id index (LONG_CHAT_PERFORMANCE_REPORT step 8)", () => {
-	test("journal `when` stays strictly increasing at the tail after the new entry", async () => {
+	test("journal `when` stays strictly increasing from 0134's predecessor through the tail", async () => {
 		const entries = await readJournal();
+		const idx134 = entries.findIndex((candidate) => candidate.tag === "0134_common_masked_marvel");
+		expect(idx134).toBeGreaterThan(0);
+		// Pin the chunk-ref index migration specifically against its own predecessor
+		// (unrelated later migrations must not mask a regression at 0134).
+		expect(entries[idx134]!.when).toBeGreaterThan(entries[idx134 - 1]!.when);
 		const last = entries[entries.length - 1]!;
 		const prev = entries[entries.length - 2]!;
-		// The new entry must not regress the stamp (a non-increasing `when`
-		// makes drizzle skip the migration on already-migrated DBs).
 		expect(last.when).toBeGreaterThan(prev.when);
 	});
 
@@ -56,12 +59,26 @@ describe("prompt_trace_chunk_refs chunk_id index (LONG_CHAT_PERFORMANCE_REPORT s
 		expect(entry).toBeDefined();
 		const tag = entry!.tag;
 		const migrationSql = await readFile(join(DRIZZLE_DIR, `${tag}.sql`), "utf8");
-		expect(migrationSql).toContain("CREATE INDEX");
-		expect(migrationSql).toContain("idx_prompt_trace_chunk_refs_chunk");
-		expect(migrationSql).toContain("chunk_id");
+		expect(migrationSql).toMatch(/CREATE\s+INDEX\s+`?idx_prompt_trace_chunk_refs_chunk`?\s+ON\s+`?prompt_trace_chunk_refs`?\s*\(\s*`?chunk_id`?\s*\)/i);
 		// The (trace_id, chunk_id) PK stays the table's key — the index is
 		// purely additive.
 		expect(migrationSql).not.toContain("DROP");
+
+		// Verify real SQLite index column ownership and preserved PK via PRAGMA.
+		const db = await createDb(":memory:", undefined, { realMigrations: true });
+		const idxCols = db.all<{ seqno: number; name: string }>(
+			sql`PRAGMA index_info('idx_prompt_trace_chunk_refs_chunk')`,
+		);
+		expect(idxCols.map((c) => ({ seqno: c.seqno, name: c.name }))).toEqual([{ seqno: 0, name: "chunk_id" }]);
+		const indexList = db.all<{ name: string; origin: string }>(
+			sql`PRAGMA index_list('prompt_trace_chunk_refs')`,
+		);
+		const pk = indexList.find((r) => r.origin === "pk");
+		expect(pk).toBeDefined();
+		const pkCols = db.all<{ name: string }>(
+			sql.raw(`PRAGMA index_info('${pk!.name}')`),
+		);
+		expect(pkCols.map((c) => c.name)).toEqual(["trace_id", "chunk_id"]);
 	});
 
 	test("a fresh DB carries the index (the test template rides the new migration)", async () => {

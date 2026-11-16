@@ -298,6 +298,12 @@ describe("MessageStore guarded edit base-content checks (DMT-22)", () => {
       messages.editMessage(message.id, "must not land", staleVariant.id, "second"),
     ).rejects.toMatchObject({ name: "SelectedVariantMismatchError" });
 
+    // Even when BOTH expectedVariantId AND expectedBaseContent are stale,
+    // SelectedVariantMismatchError still fires first before base-content validation.
+    await expect(
+      messages.editMessage(message.id, "must not land", staleVariant.id, "completely wrong base"),
+    ).rejects.toMatchObject({ name: "SelectedVariantMismatchError" });
+
     expect(await snapshotRows(message.id)).toEqual(before);
   });
 });
@@ -474,31 +480,35 @@ describe("scene backfill runs (SCN-3)", () => {
   });
 
   test("update round-trips status, cursor, errors, cancel, and summary", async () => {
+    const errorsPayload = [{ variantId: "mvar_test_0001", error: "rate limited" }];
+    const summaryPayload = { processed: 3, succeeded: 2, failed: 1 };
     const run = await messages.createSceneBackfillRun({
       chatId: "chat_1", manifestJson: "[]", totalItems: 3,
     });
     await messages.updateSceneBackfillRun(run.id, {
       status: "running",
       cursor: 1,
-      errorsJson: JSON.stringify([{ variantId: "mvar_test_0001", error: "rate limited" }]),
+      errorsJson: JSON.stringify(errorsPayload),
       cancelRequested: true,
     });
     let reloaded = await messages.getSceneBackfillRun(run.id);
     expect(reloaded!.status).toBe("running");
     expect(reloaded!.cursor).toBe(1);
     expect(reloaded!.cancelRequested).toBe(true);
-    expect(JSON.parse(reloaded!.errorsJson)).toHaveLength(1);
+    expect(reloaded!.errorsJson).toBe(JSON.stringify(errorsPayload));
+    expect(JSON.parse(reloaded!.errorsJson)).toEqual(errorsPayload);
 
     await messages.updateSceneBackfillRun(run.id, {
       status: "completed",
       cursor: 3,
-      summaryJson: JSON.stringify({ processed: 3, succeeded: 2, failed: 1 }),
+      summaryJson: JSON.stringify(summaryPayload),
     });
     reloaded = await messages.getSceneBackfillRun(run.id);
     expect(reloaded!.status).toBe("completed");
     expect(reloaded!.cursor).toBe(3);
-    expect(reloaded!.summaryJson).not.toBeNull();
-    expect(JSON.parse(reloaded!.summaryJson!).succeeded).toBe(2);
+    expect(reloaded!.errorsJson).toBe(JSON.stringify(errorsPayload));
+    expect(reloaded!.summaryJson).toBe(JSON.stringify(summaryPayload));
+    expect(JSON.parse(reloaded!.summaryJson!)).toEqual(summaryPayload);
   });
 
   test("the run row is NOT authoritative for scene data — it never touches variant records", async () => {
@@ -525,7 +535,18 @@ describe("scene backfill runs (SCN-3)", () => {
   });
 
   test("getActiveSceneBackfillRun returns the pending/running run and null once terminal (SCN-14)", async () => {
-    // No runs yet → null.
+    // Seed a second chat as a scope control whose active run must stay intact.
+    db.insert(schema.chats).values({
+      id: "chat_2", characterId: "char_1", personaId: null,
+      activeBranchId: "brnch_2", promptPresetId: null,
+      title: "Other chat", summary: "", messageHistoryLimit: 0,
+      status: "active", createdAt: FIXED_NOW, updatedAt: FIXED_NOW,
+    }).run();
+    const otherChatRun = await messages.createSceneBackfillRun({
+      chatId: "chat_2", manifestJson: "[]", totalItems: 1,
+    });
+
+    // No runs yet for chat_1 → null.
     expect(await messages.getActiveSceneBackfillRun("chat_1")).toBeNull();
 
     // A pending run is active.
@@ -540,9 +561,24 @@ describe("scene backfill runs (SCN-3)", () => {
     expect(active!.id).toBe(run.id);
     expect(active!.status).toBe("running");
 
-    // Once terminal (completed/cancelled/failed) it is no longer active.
+    // Once terminal (completed / cancelled / failed) it is no longer active.
     await messages.updateSceneBackfillRun(run.id, { status: "completed", summaryJson: "{}" });
     expect(await messages.getActiveSceneBackfillRun("chat_1")).toBeNull();
+    expect(await messages.getActiveSceneBackfillRun("chat_2")).toEqual(otherChatRun);
+
+    const cancelledRun = await messages.createSceneBackfillRun({
+      chatId: "chat_1", manifestJson: "[]", totalItems: 1,
+    });
+    await messages.updateSceneBackfillRun(cancelledRun.id, { status: "cancelled" });
+    expect(await messages.getActiveSceneBackfillRun("chat_1")).toBeNull();
+    expect(await messages.getActiveSceneBackfillRun("chat_2")).toEqual(otherChatRun);
+
+    const failedRun = await messages.createSceneBackfillRun({
+      chatId: "chat_1", manifestJson: "[]", totalItems: 1,
+    });
+    await messages.updateSceneBackfillRun(failedRun.id, { status: "failed" });
+    expect(await messages.getActiveSceneBackfillRun("chat_1")).toBeNull();
+    expect(await messages.getActiveSceneBackfillRun("chat_2")).toEqual(otherChatRun);
   });
 });
 
@@ -577,6 +613,11 @@ describe("MessageStore TTS annotation (TPE-1)", () => {
   test("null / empty / whitespace text clears the annotation", async () => {
     const { messageId, variantId } = await makeAnnotatedVariant();
     await messages.setTtsAnnotation(variantId, null);
+    expect((await messages.getVariants(messageId))[0]!.ttsAnnotation).toBeNull();
+
+    await messages.setTtsAnnotation(variantId, "She [laugh] softly.");
+    expect((await messages.getVariants(messageId))[0]!.ttsAnnotation).toBe("She [laugh] softly.");
+    await messages.setTtsAnnotation(variantId, "");
     expect((await messages.getVariants(messageId))[0]!.ttsAnnotation).toBeNull();
 
     await messages.setTtsAnnotation(variantId, "She [laugh] softly.");

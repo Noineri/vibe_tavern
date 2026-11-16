@@ -75,17 +75,24 @@ describe("LorebookStore.listLorebooksByScope", () => {
     // Regression pin (owner-reported 2026-09-09): the sidebar's Bound tab
     // used to resolve an owner from context, so a character-bound book was
     // invisible when a persona context was active. Browse semantics: no
-    // ownerId → every entity-home book, both FK kinds, and nothing else.
-    const charBound = await store.createLorebook({ name: "Silk Lair", scopeType: "entity" });
-    const personaBound = await store.createLorebook({ name: "Persona notes", scopeType: "entity" });
+    // ownerId → every entity-home book, both owner link kinds, and nothing else.
+    const charBound = await store.createLorebook({
+      name: "Silk Lair",
+      scopeType: "entity",
+      links: [{ targetType: "character", targetId: "char_arachnid" }],
+    });
+    const personaBound = await store.createLorebook({
+      name: "Persona notes",
+      scopeType: "entity",
+      links: [{ targetType: "persona", targetId: "persona_1" }],
+    });
     await store.createLorebook({ name: "Global one", scopeType: "global" });
     await store.createLorebook({ name: "Chat one", scopeType: "chat", chatId: "chat_1" });
 
     const browsed = await store.listLorebooksByScope("entity");
-    const ids = browsed.map((lb) => lb.id);
-    expect(ids).toContain(charBound.id);
-    expect(ids).toContain(personaBound.id);
-    expect(ids.filter((id) => id !== charBound.id && id !== personaBound.id)).toEqual([]);
+    expect(browsed.map((lb) => lb.id).sort()).toEqual([charBound.id, personaBound.id].sort());
+    expect((await store.listLorebooksByScope("entity", "char_arachnid")).map((lb) => lb.id)).toEqual([charBound.id]);
+    expect((await store.listLorebooksByScope("entity", "persona_1")).map((lb) => lb.id)).toEqual([personaBound.id]);
   });
 });
 
@@ -462,13 +469,17 @@ describe("LorebookStore entry field round-trip (characterization)", () => {
 });
 
 describe("LorebookStore.applyCoauthorLoreDraft (CTX-L2)", () => {
-  /** Store with a real character 'char_1' so the characterId FK is satisfied. */
-  async function mkStoreWithChar(): Promise<LorebookStore> {
+  /** Store + DB handle with real character 'char_1' for transaction probes. */
+  async function mkStoreWithCharAndDb() {
     const dir = await mkdtemp(join(tmpdir(), "vt-lore-apply-test-"));
     const db = await createDb(join(dir, "test.db"));
     const store = new LorebookStore(db, { clock: testClock, idGenerator: testIdGen, content: null });
     await db.run(sql`INSERT INTO characters (id, name, created_at, updated_at) VALUES ('char_1', 'C', '2026-01-01', '2026-01-01')`);
-    return store;
+    return { store, db };
+  }
+
+  async function mkStoreWithChar(): Promise<LorebookStore> {
+    return (await mkStoreWithCharAndDb()).store;
   }
 
   /** A minimal character-scoped bundle: one book + one entry under it. */
@@ -483,8 +494,10 @@ describe("LorebookStore.applyCoauthorLoreDraft (CTX-L2)", () => {
     };
   }
 
-  test("before Apply the lorebook/entry tables are empty (Cancel leaves no rows)", async () => {
+  test("before Apply is invoked, constructing a draft bundle leaves lorebook/entry tables untouched", async () => {
     const store = await mkStoreWithChar();
+    const unappliedDraft = sampleBundle();
+    expect(unappliedDraft.lorebooks).toHaveLength(1);
     expect(await store.listAllLorebooks()).toEqual([]);
     expect(await store.getLorebook("lorebook_draft1")).toBeNull();
     expect(await store.getEntry("lore_entry_draft1")).toBeNull();
@@ -605,26 +618,125 @@ describe("LorebookStore.applyCoauthorLoreDraft (CTX-L2)", () => {
   test("re-Apply with changed settings UPDATES every field (edit path across turns)", async () => {
     const store = await mkStoreWithChar();
     await store.applyCoauthorLoreDraft("char_1", fullSettingsBundle());
-    const edited = fullSettingsBundle();
-    edited.lorebooks[0]!.tokenBudgetPercent = 80;
-    edited.lorebooks[0]!.overflowAlert = false;
-    edited.lorebooks[0]!.characterStrategy = 0;
-    edited.entries[0]!.probability = 10;
-    edited.entries[0]!.stickyWindow = 6;
-    edited.entries[0]!.useGroupScoring = null; // tri-state: explicit null override
-    edited.entries[0]!.caseFormsKeys = []; // pruned
+    const edited = {
+      lorebooks: [
+        {
+          id: "lb_full",
+          name: "Tuned Book v2",
+          description: "d2",
+          scopeType: "entity" as const,
+          enabled: false,
+          scanDepth: 33,
+          tokenBudget: 999,
+          tokenBudgetPercent: 80,
+          tokenBudgetCap: 1500,
+          recursiveScanning: false,
+          useGroupScoring: false,
+          caseSensitive: false,
+          matchWholeWords: false,
+          maxRecursionSteps: 9,
+          includeNames: false,
+          minActivations: 5,
+          minActivationsDepthMax: 60,
+          overflowAlert: false,
+          characterStrategy: 0,
+        },
+      ],
+      entries: [
+        {
+          id: "le_full",
+          lorebookId: "lb_full",
+          title: "T v2",
+          content: "c v2",
+          keys: ["k2"],
+          secondaryKeys: ["s2"],
+          constant: false,
+          position: "before_char",
+          depth: 2,
+          logic: "and_all",
+          enabled: false,
+          priority: 99,
+          probability: 10,
+          ignoreBudget: false,
+          role: "user",
+          groupName: "alpha",
+          groupWeight: 12,
+          prioritizeInclusion: false,
+          useGroupScoring: null,
+          excludeRecursion: false,
+          preventRecursion: false,
+          delayUntilRecursion: false,
+          recursionLevel: 1,
+          scanDepthOverride: 3,
+          caseSensitive: false,
+          matchWholeWords: false,
+          caseFormsKeys: [] as string[], // pruned
+          characterFilter: [{ id: "char_2", name: "Bob" }],
+          characterFilterExclude: false,
+          matchSources: ["persona_description"],
+          stickyWindow: 6,
+          cooldownWindow: 2,
+          minChatMessages: 4,
+        },
+      ],
+    };
     await store.applyCoauthorLoreDraft("char_1", edited);
 
     const lb = (await store.getLorebook("lb_full"))!;
-    expect(lb.tokenBudgetPercent).toBe(80);
-    expect(lb.overflowAlert).toBe(false);
-    expect(lb.characterStrategy).toBe(0);
+    expect(lb).toMatchObject({
+      name: "Tuned Book v2",
+      description: "d2",
+      enabled: false,
+      scanDepth: 33,
+      tokenBudget: 999,
+      tokenBudgetPercent: 80,
+      tokenBudgetCap: 1500,
+      recursiveScanning: false,
+      useGroupScoring: false,
+      caseSensitive: false,
+      matchWholeWords: false,
+      maxRecursionSteps: 9,
+      includeNames: false,
+      minActivations: 5,
+      minActivationsDepthMax: 60,
+      overflowAlert: false,
+      characterStrategy: 0,
+    });
     const e = (await store.getEntry("le_full"))!;
-    expect(e.probability).toBe(10);
-    expect(e.stickyWindow).toBe(6);
-    expect(e.useGroupScoring).toBeNull();
-    // An empty caseFormsKeys list prunes the stored flag list (updateEntry merge rule).
-    expect(e.caseFormsKeys).toEqual([]);
+    expect(e).toMatchObject({
+      title: "T v2",
+      content: "c v2",
+      keys: ["k2"],
+      secondaryKeys: ["s2"],
+      constant: false,
+      position: "before_char",
+      depth: 2,
+      logic: "and_all",
+      enabled: false,
+      priority: 99,
+      probability: 10,
+      ignoreBudget: false,
+      role: "user",
+      groupName: "alpha",
+      groupWeight: 12,
+      prioritizeInclusion: false,
+      useGroupScoring: null,
+      excludeRecursion: false,
+      preventRecursion: false,
+      delayUntilRecursion: false,
+      recursionLevel: 1,
+      scanDepthOverride: 3,
+      caseSensitive: false,
+      matchWholeWords: false,
+      // An empty caseFormsKeys list prunes the stored flag list (updateEntry merge rule).
+      caseFormsKeys: [],
+      characterFilter: [{ id: "char_2", name: "Bob" }],
+      characterFilterExclude: false,
+      matchSources: ["persona_description"],
+      stickyWindow: 6,
+      cooldownWindow: 2,
+      minChatMessages: 4,
+    });
   });
 
   test("absent book settings fall back to the store create defaults (incl. includeNames=true)", async () => {
@@ -642,7 +754,38 @@ describe("LorebookStore.applyCoauthorLoreDraft (CTX-L2)", () => {
   });
 
   test("multiple books + entries apply in one transaction and compose", async () => {
-    const store = await mkStoreWithChar();
+    const { store, db } = await mkStoreWithCharAndDb();
+
+    // Inject a failure on the second entry AFTER books + first entry + links
+    // have already been inserted inside the same transaction.
+    await db.run(sql.raw(`
+      CREATE TRIGGER inject_lore_apply_fail
+      BEFORE INSERT ON lore_entries
+      WHEN NEW.id = 'le_fail'
+      BEGIN
+        SELECT RAISE(ABORT, 'inject_lore_apply_fail');
+      END
+    `));
+    try {
+      await expect(
+        store.applyCoauthorLoreDraft("char_1", {
+          lorebooks: [
+            { id: "lb_a", name: "A", description: "", scopeType: "entity" as const, enabled: true },
+            { id: "lb_b", name: "B", description: "", scopeType: "entity" as const, enabled: true },
+          ],
+          entries: [
+            { id: "le_a1", lorebookId: "lb_a", title: "a1", content: "c", keys: ["k"], secondaryKeys: [], constant: true, position: "before_char", depth: 4, enabled: true },
+            { id: "le_fail", lorebookId: "lb_b", title: "fail", content: "c", keys: [], secondaryKeys: [], constant: false, position: "at_depth", depth: 2, enabled: true },
+          ],
+        }),
+      ).rejects.toThrow("inject_lore_apply_fail");
+      expect(await store.listAllLorebooks()).toEqual([]);
+      expect(await store.getLinks("lb_a")).toEqual([]);
+      expect(await store.getEntry("le_a1")).toBeNull();
+    } finally {
+      await db.run(sql.raw("DROP TRIGGER IF EXISTS inject_lore_apply_fail"));
+    }
+
     const bundle = {
       lorebooks: [
         { id: "lb_a", name: "A", description: "", scopeType: "entity" as const, enabled: true },
@@ -819,7 +962,9 @@ describe("LorebookStore.createLorebook owner links (step 2)", () => {
         { targetType: "character", targetId: "char_a" },
       ],
     });
-    expect(await store.getLinks(created.id)).toHaveLength(1);
+    expect(await store.getLinks(created.id)).toEqual([
+      { lorebookId: created.id, targetType: "character", targetId: "char_a" },
+    ]);
   });
 
   test("deleteLinksForTarget removes only the target's rows; other links survive", async () => {

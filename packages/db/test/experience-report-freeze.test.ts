@@ -27,7 +27,7 @@
  *  - bound historical attachments are immutable (freezeReport never updates them)
  */
 import { describe, expect, test, beforeEach } from "bun:test";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 
 import { createDb, type AppDb } from "../src/db-connection.js";
 import type { DbTransaction } from "../src/db-connection.js";
@@ -221,10 +221,16 @@ describe("IR-70B — freezeReport first freeze + in-place replacement", () => {
     const firstId = first.attachment.id;
 
     // "Add later events": freeze a later report at a higher revision.
+    const nextEvents = JSON.stringify({
+      title: "Report",
+      summary: "round 2",
+      events: [{ type: "move", detail: { cell: 1 } }],
+    });
+    const nextCheckpoint = '{"board":["X","O","","","","","","",""]}';
     const second = store.freezeReport(
       freezeData(sessionId, 5, {
-        publicEventsJson: JSON.stringify({ title: "Report", summary: "round 2", events: [{ type: "move", detail: { cell: 1 } }] }),
-        hiddenStateCheckpointJson: '{"board":["X","O","","","","","","",""]}',
+        publicEventsJson: nextEvents,
+        hiddenStateCheckpointJson: nextCheckpoint,
       }),
     );
 
@@ -234,7 +240,13 @@ describe("IR-70B — freezeReport first freeze + in-place replacement", () => {
     expect(second.attachment.id).toBe(firstId); // SAME id — replaced in place
     expect(second.attachment.queueRevision).toBe(2); // advanced
     expect(second.attachment.sessionRevision).toBe(5);
+    expect(second.attachment.publicEventsJson).toBe(nextEvents);
+    expect(second.attachment.hiddenStateCheckpointJson).toBe(nextCheckpoint);
     expect(second.session.reportFrontier).toBe(5);
+    const persisted = await store.getAttachmentById(firstId);
+    expect(persisted?.publicEventsJson).toBe(nextEvents);
+    expect(persisted?.hiddenStateCheckpointJson).toBe(nextCheckpoint);
+    expect(persisted?.queueRevision).toBe(2);
     // Still exactly one row (no second row created).
     expect(attachmentCount(sessionId)).toBe(1);
   });
@@ -275,7 +287,10 @@ describe("IR-70B — exact-duplicate idempotency", () => {
 
   test("a content change at the same frontier is rejected as stale_freeze", async () => {
     const sessionId = await seedSession(3);
-    store.freezeReport(freezeData(sessionId, 3));
+    const first = store.freezeReport(freezeData(sessionId, 3));
+    if (!first.ok) throw new Error("first freeze failed");
+    const rowBefore = await store.getAttachmentById(first.attachment.id);
+    const sessionBefore = await store.getSessionById(sessionId);
 
     const stale = store.freezeReport(
       freezeData(sessionId, 3, { publicEventsJson: JSON.stringify({ events: [{ type: "other" }] }) }),
@@ -284,8 +299,10 @@ describe("IR-70B — exact-duplicate idempotency", () => {
     expect(stale.ok).toBe(false);
     if (stale.ok) return;
     expect(stale.conflict).toBe("stale_freeze");
-    // No partial writes: still one row, frontier unchanged.
+    // No partial writes: full row and session frontier are identical before/after.
     expect(attachmentCount(sessionId)).toBe(1);
+    expect(await store.getAttachmentById(first.attachment.id)).toEqual(rowBefore);
+    expect(await store.getSessionById(sessionId)).toEqual(sessionBefore);
   });
 });
 
@@ -340,11 +357,29 @@ describe("IR-70B — atomic frontier update", () => {
   test("reportFrontier advances to the frozen revision in the same transaction", async () => {
     const sessionId = await seedSession(4);
 
+    // Inject a failure on the session report_frontier update AFTER the attachment insert.
+    await db.run(sql.raw(`
+      CREATE TRIGGER inject_freeze_frontier_fail
+      BEFORE UPDATE OF report_frontier ON experience_sessions
+      WHEN NEW.report_frontier = 4
+      BEGIN
+        SELECT RAISE(ABORT, 'inject_frontier_fail');
+      END
+    `));
+    try {
+      expect(() => store.freezeReport(freezeData(sessionId, 4))).toThrow("inject_frontier_fail");
+      expect(attachmentCount(sessionId)).toBe(0);
+      expect((await store.getSessionById(sessionId))?.reportFrontier).toBe(0);
+    } finally {
+      await db.run(sql.raw("DROP TRIGGER IF EXISTS inject_freeze_frontier_fail"));
+    }
+
     const result = store.freezeReport(freezeData(sessionId, 4));
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.session.reportFrontier).toBe(4);
+    expect(attachmentCount(sessionId)).toBe(1);
     // Re-read from the DB to confirm the write actually persisted.
     const fresh = await store.getSessionById(sessionId);
     expect(fresh?.reportFrontier).toBe(4);
@@ -352,10 +387,26 @@ describe("IR-70B — atomic frontier update", () => {
 
   test("reportFrontier never decreases across successive freezes", async () => {
     const sessionId = await seedSession(6);
-    store.freezeReport(freezeData(sessionId, 2));
-    store.freezeReport(freezeData(sessionId, 4, {
+    const first = store.freezeReport(freezeData(sessionId, 2));
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+    expect(first.session.reportFrontier).toBe(2);
+    expect((await store.getSessionById(sessionId))?.reportFrontier).toBe(2);
+
+    const second = store.freezeReport(freezeData(sessionId, 4, {
       publicEventsJson: JSON.stringify({ events: [{ type: "b" }] }),
     }));
+    expect(second.ok).toBe(true);
+    if (!second.ok) return;
+    expect(second.session.reportFrontier).toBe(4);
+    expect((await store.getSessionById(sessionId))?.reportFrontier).toBe(4);
+
+    const lower = store.freezeReport(freezeData(sessionId, 3, {
+      publicEventsJson: JSON.stringify({ events: [{ type: "lower" }] }),
+    }));
+    expect(lower).toEqual({ ok: false, conflict: "frontier_regression" });
+    expect((await store.getSessionById(sessionId))?.reportFrontier).toBe(4);
+
     const last = store.freezeReport(freezeData(sessionId, 6, {
       publicEventsJson: JSON.stringify({ events: [{ type: "c" }] }),
     }));
@@ -363,6 +414,7 @@ describe("IR-70B — atomic frontier update", () => {
     expect(last.ok).toBe(true);
     if (!last.ok) return;
     expect(last.session.reportFrontier).toBe(6);
+    expect((await store.getSessionById(sessionId))?.reportFrontier).toBe(6);
   });
 });
 
@@ -430,6 +482,8 @@ describe("IR-70B — every rejection rolls back both row and frontier (no partia
     // Bind the row so no unbound row remains.
     bindInTx(first.attachment.id, first.attachment.queueRevision, first.attachment.sessionRevision);
     const rowsBefore = attachmentCount(sessionId);
+    const boundBefore = await store.getAttachmentById(first.attachment.id);
+    const sessionBefore = await store.getSessionById(sessionId);
 
     const result = store.freezeReport(freezeData(sessionId, 4, {
       publicEventsJson: JSON.stringify({ events: [{ type: "dup" }] }),
@@ -439,6 +493,8 @@ describe("IR-70B — every rejection rolls back both row and frontier (no partia
     if (result.ok) return;
     expect(result.conflict).toBe("stale_freeze");
     expect(attachmentCount(sessionId)).toBe(rowsBefore);
+    expect(await store.getAttachmentById(first.attachment.id)).toEqual(boundBefore);
+    expect(await store.getSessionById(sessionId)).toEqual(sessionBefore);
   });
 });
 
@@ -507,17 +563,27 @@ describe("IR-70B — old client revision rejection after replacement", () => {
 describe("IR-70B — deterministic queued read", () => {
   test("getQueuedAttachmentForSession returns the highest-queueRevision unbound row", async () => {
     const sessionId = await seedSession(5);
-    const first = store.freezeReport(freezeData(sessionId, 3));
-    if (!first.ok) throw new Error("first freeze failed");
-    bindInTx(first.attachment.id, 1, 3);
-
-    // Freeze again → new row at qr 2 (the first was bound).
-    const second = store.freezeReport(freezeData(sessionId, 5));
-    if (!second.ok) throw new Error("second freeze failed");
+    // Insert unbound rows with queueRevision out of insertion order [1, 5, 3]
+    // so neither first-row nor last-row insertion order can masquerade as DESC.
+    await store.queueAttachment({
+      chatId: "chat_1", branchId: "branch_1", sessionId, sessionRevision: 1, queueRevision: 1,
+      kind: "report", publicEventsJson: JSON.stringify({ events: [{ type: "q1" }] }),
+      hiddenStateCheckpointJson: "{}", rulesSourceHash: "hash_1",
+    });
+    const highest = await store.queueAttachment({
+      chatId: "chat_1", branchId: "branch_1", sessionId, sessionRevision: 5, queueRevision: 5,
+      kind: "report", publicEventsJson: JSON.stringify({ events: [{ type: "q5" }] }),
+      hiddenStateCheckpointJson: "{}", rulesSourceHash: "hash_1",
+    });
+    await store.queueAttachment({
+      chatId: "chat_1", branchId: "branch_1", sessionId, sessionRevision: 3, queueRevision: 3,
+      kind: "report", publicEventsJson: JSON.stringify({ events: [{ type: "q3" }] }),
+      hiddenStateCheckpointJson: "{}", rulesSourceHash: "hash_1",
+    });
 
     const queued = await store.getQueuedAttachmentForSession(sessionId);
-    expect(queued?.id).toBe(second.attachment.id);
-    expect(queued?.queueRevision).toBe(2);
+    expect(queued?.id).toBe(highest.id);
+    expect(queued?.queueRevision).toBe(5);
   });
 
   test("getQueuedAttachmentForSession returns null when the only row is bound", async () => {
@@ -627,20 +693,26 @@ describe("IR-70B — bound historical attachments are immutable", () => {
     const originalCheckpoint = first.attachment.hiddenStateCheckpointJson;
 
     bindInTx(boundId, 1, 3);
+    const boundSnapshotBefore = await store.getAttachmentById(boundId);
+    expect(boundSnapshotBefore).not.toBeNull();
 
     // Freeze a later report (new row at qr 2).
-    store.freezeReport(freezeData(sessionId, 5, {
+    const second = store.freezeReport(freezeData(sessionId, 5, {
       publicEventsJson: JSON.stringify({ title: "Updated", events: [{ type: "b" }] }),
       hiddenStateCheckpointJson: '{"board":["X","O"]}',
     }));
+    expect(second.ok).toBe(true);
+    if (!second.ok) return;
+    expect(second.attachment.id).not.toBe(boundId);
+    expect(second.attachment.queueRevision).toBe(2);
+    expect(attachmentCount(sessionId)).toBe(2);
+    expect(await store.getAttachmentById(second.attachment.id)).toEqual(second.attachment);
 
-    // The bound historical row is byte-for-byte unchanged.
+    // The bound historical row is byte-for-byte unchanged across all columns.
     const bound = await store.getAttachmentById(boundId);
-    expect(bound).not.toBeNull();
+    expect(bound).toEqual(boundSnapshotBefore);
     expect(bound!.publicEventsJson).toBe(originalEvents);
     expect(bound!.hiddenStateCheckpointJson).toBe(originalCheckpoint);
-    expect(bound!.queueRevision).toBe(1);
-    expect(bound!.sessionRevision).toBe(3);
   });
 
   test("a content-only difference at the same frontier does not mutate the bound row", async () => {

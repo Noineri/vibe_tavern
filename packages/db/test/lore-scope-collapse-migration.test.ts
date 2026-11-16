@@ -174,10 +174,16 @@ describe("migration 0062 — lore scope collapse 4 → 3 (data-only)", () => {
     const dbPath = join(dir, "test.db");
     const db = await setupWithLegacyRows(dbPath);
     await runCommittedMigration(db, MIGRATION_FILE);
-    const snapshot = q(db, "SELECT id, scope_type FROM lorebooks ORDER BY id");
-    const links = q(db, "SELECT COUNT(*) n FROM lorebook_links")[0].n;
+    const snapshot = {
+      lorebooks: q(db, "SELECT id, scope_type, character_id, persona_id, chat_id FROM lorebooks ORDER BY id"),
+      scripts: q(db, "SELECT id, scope_type, character_id, persona_id, chat_id FROM scripts ORDER BY id"),
+      lorebookLinks: q(db, "SELECT lorebook_id, target_type, target_id FROM lorebook_links ORDER BY lorebook_id, target_type, target_id"),
+      scriptLinks: q(db, "SELECT script_id, target_type, target_id FROM script_links ORDER BY script_id, target_type, target_id"),
+    };
     await runCommittedMigration(db, MIGRATION_FILE);
-    expect(q(db, "SELECT id, scope_type FROM lorebooks ORDER BY id")).toEqual(snapshot);
-    expect(q(db, "SELECT COUNT(*) n FROM lorebook_links")[0].n).toBe(links);
+    expect(q(db, "SELECT id, scope_type, character_id, persona_id, chat_id FROM lorebooks ORDER BY id")).toEqual(snapshot.lorebooks);
+    expect(q(db, "SELECT id, scope_type, character_id, persona_id, chat_id FROM scripts ORDER BY id")).toEqual(snapshot.scripts);
+    expect(q(db, "SELECT lorebook_id, target_type, target_id FROM lorebook_links ORDER BY lorebook_id, target_type, target_id")).toEqual(snapshot.lorebookLinks);
+    expect(q(db, "SELECT script_id, target_type, target_id FROM script_links ORDER BY script_id, target_type, target_id")).toEqual(snapshot.scriptLinks);
   });
 });

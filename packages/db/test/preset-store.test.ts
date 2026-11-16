@@ -72,18 +72,21 @@ describe("PresetStore — isDefault designated-default marker", () => {
 
   test("ensureDefault() prefers the isDefault-flagged row when presets already exist", async () => {
     const { store } = await createStore();
-    // Seed the default first (rowid 1, isDefault true).
-    const def = await store.ensureDefault();
-    // Add a non-default preset (rowid 2, isDefault false).
+    // Seed an unflagged preset first (rowid 1) so rowid order and isDefault diverge.
     const other = await store.create({ name: "Other", systemPrompt: "x" });
+    const def = await store.create({ name: "Designated", systemPrompt: "y", isDefault: true });
 
     expect(other.isDefault).toBe(false);
-    // ensureDefault must return the flagged row, NOT merely the first by rowid
-    // (they happen to coincide here, so also assert against an explicit case
-    // where the default is not the first row — see next test).
+    expect(def.isDefault).toBe(true);
+    // ensureDefault must return the flagged row rather than falling back to rowid 1.
     const resolved = await store.ensureDefault();
     expect(resolved.id).toBe(def.id);
+    expect(resolved.name).toBe("Designated");
     expect(resolved.isDefault).toBe(true);
+    expect((await store.listAll()).map((p) => ({ id: p.id, isDefault: p.isDefault }))).toEqual([
+      { id: other.id, isDefault: false },
+      { id: def.id, isDefault: true },
+    ]);
   });
 
   test("ensureDefault() falls back to the first row by rowid when no row carries the flag", async () => {

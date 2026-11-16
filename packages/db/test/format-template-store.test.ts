@@ -31,6 +31,7 @@ beforeEach(async () => {
 });
 
 const PAYLOAD = { mode: "manual", inputSequence: "<|u|>", outputSequence: "<|a|>" };
+const UPDATED_PAYLOAD = { mode: "system", inputSequence: "<|sys|>", outputSequence: "<|end|>", stopSequence: "<|stop|>" };
 
 describe("FormatTemplateStore (LS-10)", () => {
   it("create → list → update payload → delete (the small-resource round trip)", async () => {
@@ -40,9 +41,15 @@ describe("FormatTemplateStore (LS-10)", () => {
 
     expect((await store.list()).map((row) => row.name)).toEqual(["My ChatML"]);
 
-    const renamed = await store.update(created.id, { name: "Renamed" });
-    expect(renamed.name).toBe("Renamed");
-    expect((await store.getById(created.id))?.name).toBe("Renamed");
+    const updated = await store.update(created.id, { name: "Renamed", payload: UPDATED_PAYLOAD });
+    expect(updated.name).toBe("Renamed");
+    expect(updated.payload).toEqual(UPDATED_PAYLOAD);
+    const reloaded = await store.getById(created.id);
+    expect(reloaded?.name).toBe("Renamed");
+    expect(reloaded?.payload).toEqual(UPDATED_PAYLOAD);
+    expect((await store.list()).map((row) => ({ id: row.id, name: row.name, payload: row.payload }))).toEqual([
+      { id: created.id, name: "Renamed", payload: UPDATED_PAYLOAD },
+    ]);
 
     await store.delete(created.id);
     expect(await store.getById(created.id)).toBeNull();

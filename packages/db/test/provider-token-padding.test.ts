@@ -5,13 +5,16 @@
  * DEFAULT 0, so existing profiles keep their behavior unchanged).
  */
 import { describe, test, expect, beforeEach } from "bun:test";
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { createDb } from "../src/db-connection.js";
-import * as schema from "../src/db-schema.js";
 import { ProviderStore } from "../src/stores/provider-store.js";
 import type { StoreClock, StoreIdGenerator } from "../src/persistence.js";
 import { effectiveContextBudget } from "@vibe-tavern/domain";
 import { makeCreateProviderData } from "./provider-test-builders.js";
 
+const REAL_DRIZZLE = resolve(import.meta.dir, "..", "drizzle");
 const FIXED_NOW = "2025-05-04T12:00:00.000Z";
 
 let clockTick = 0;
@@ -35,16 +38,25 @@ async function createTestDb() {
   return await createDb(":memory:");
 }
 
-function bootstrap(db: Awaited<ReturnType<typeof createTestDb>>) {
-  db.insert(schema.providerProfiles).values({
-    id: "prov_legacy", name: "LegacyProvider", providerPreset: "openai",
-    endpoint: "http://localhost", maxTokens: 2000,
-    temperature: 1.0, topP: 1.0, topK: 0, minP: 0,
-    frequencyPenalty: 0, presencePenalty: 0, repetitionPenalty: 1.0,
-    reasoningEffort: "auto", streamResponse: 1, customSamplers: 0,
-    isActive: 1,
-    createdAt: FIXED_NOW, updatedAt: FIXED_NOW,
-  }).run();
+async function buildPre0066Folder(root: string): Promise<string> {
+  const folder = join(root, "drizzle");
+  const meta = join(folder, "meta");
+  await mkdir(meta, { recursive: true });
+  await cp(REAL_DRIZZLE, folder, { recursive: true });
+
+  const journalPath = join(meta, "_journal.json");
+  const journal = JSON.parse(await readFile(journalPath, "utf8")) as { entries: Array<{ tag: string }> };
+  const idx = journal.entries.findIndex((entry) => entry.tag.startsWith("0066_"));
+  if (idx === -1) throw new Error("Migration 0066 is missing from the real migration journal");
+
+  for (const entry of journal.entries.slice(idx)) {
+    const prefix = entry.tag.slice(0, 4);
+    await rm(join(folder, `${entry.tag}.sql`), { force: true });
+    await rm(join(meta, `${prefix}_snapshot.json`), { force: true });
+  }
+  journal.entries = journal.entries.slice(0, idx);
+  await writeFile(journalPath, JSON.stringify(journal, null, 2));
+  return folder;
 }
 
 describe("ProviderStore tokenPadding persistence (LS-1d)", () => {
@@ -55,15 +67,57 @@ describe("ProviderStore tokenPadding persistence (LS-1d)", () => {
     clockTick = 0;
     idCounters = new Map();
     db = await createTestDb();
-    bootstrap(db);
     store = new ProviderStore(db, { idGenerator: testIdGen, clock: testClock });
   });
 
-  test("defaults to 0 when not provided (pre-existing profile behavior unchanged)", async () => {
+  test("defaults to 0 when not provided and backfills pre-0066 rows during migration", async () => {
     const created = await store.create(makeCreateProviderData({ name: "Test" }));
     expect(created.tokenPadding).toBe(0);
-    const legacy = await store.getById("prov_legacy");
-    expect(legacy!.tokenPadding).toBe(0);
+
+    const work = await mkdtemp(join(tmpdir(), "vt-token-pad-pre-"));
+    const preFolder = await buildPre0066Folder(work);
+    const dbPath = join(work, "upgrade.db");
+    const preDb = await createDb(dbPath, preFolder);
+    try {
+      const colsBefore = preDb.$client
+        .query<{ name: string }, []>("PRAGMA table_info('provider_profiles')")
+        .all()
+        .map((c) => c.name);
+      expect(colsBefore).not.toContain("token_padding");
+      preDb.$client.exec(`
+        INSERT INTO provider_profiles (
+          id, name, provider_preset, endpoint, max_tokens,
+          temperature, top_p, top_k, min_p,
+          frequency_penalty, presence_penalty, repetition_penalty,
+          reasoning_effort, stream_response, custom_samplers, is_active,
+          created_at, updated_at
+        ) VALUES (
+          'prov_legacy', 'LegacyProvider', 'openai', 'http://localhost', 2000,
+          1.0, 1.0, 0, 0,
+          0, 0, 1.0,
+          'auto', 1, 0, 1,
+          '${FIXED_NOW}', '${FIXED_NOW}'
+        )
+      `);
+    } finally {
+      preDb.$client.close();
+    }
+
+    const upgradedDb = await createDb(dbPath, REAL_DRIZZLE);
+    try {
+      const colsAfter = upgradedDb.$client
+        .query<{ name: string }, []>("PRAGMA table_info('provider_profiles')")
+        .all()
+        .map((c) => c.name);
+      expect(colsAfter).toContain("token_padding");
+
+      const upgradedStore = new ProviderStore(upgradedDb, { idGenerator: testIdGen, clock: testClock });
+      const legacy = await upgradedStore.getById("prov_legacy");
+      expect(legacy?.name).toBe("LegacyProvider");
+      expect(legacy?.tokenPadding).toBe(0);
+    } finally {
+      upgradedDb.$client.close();
+    }
   });
 
   test("create with tokenPadding → read back", async () => {

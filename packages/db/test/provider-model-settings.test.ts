@@ -105,8 +105,20 @@ describe("ProviderStore per-model settings overlay", () => {
     expect(await store.getModelSettings(profileId, "model-a")).toBeNull();
   });
 
-  test("deleteModelSettings is a no-op when none exists", async () => {
+  test("deleteModelSettings is a no-op when none exists and leaves unrelated overlays untouched", async () => {
+    const otherProfile = await store.create(makeCreateProviderData({ name: "Other" }));
+    const preservedSame = await store.upsertModelSettings(profileId, "model-other", {
+      temperature: 0.8,
+      contextBudget: 12000,
+    });
+    const preservedCross = await store.upsertModelSettings(otherProfile.id, "never-bound", {
+      topP: 0.7,
+    });
+
     await expect(store.deleteModelSettings(profileId, "never-bound")).resolves.toBeUndefined();
+    expect(await store.getModelSettings(profileId, "never-bound")).toBeNull();
+    expect(await store.listModelSettings(profileId)).toEqual([preservedSame]);
+    expect(await store.getModelSettings(otherProfile.id, "never-bound")).toEqual(preservedCross);
   });
 
   test("malformed settingsJson degrades to empty overlay (not a throw)", async () => {

@@ -1,4 +1,5 @@
-import { describe, test, expect, beforeEach } from "bun:test";
+import { describe, test, expect, beforeEach, spyOn } from "bun:test";
+import type { SQLQueryBindings } from "bun:sqlite";
 import { createDb } from "../src/db-connection.js";
 import { sql } from "drizzle-orm";
 import * as schema from "../src/db-schema.js";
@@ -136,18 +137,66 @@ describe("PromptTraceStore — getLatestTraceByChat (LC-1: one row in SQL)", () 
   test("getTracesByChat pushes the limit into SQL (same rows as the old slice)", async () => {
     const T3 = "2025-05-04T12:00:02.000Z";
     currentNow = T1;
-    await store.saveTrace(makeTraceData("msg_1", "old", bigText("old")));
+    const oldTrace = await store.saveTrace(makeTraceData("msg_1", "old", bigText("old")));
     currentNow = T2;
-    await store.saveTrace(makeTraceData("msg_1", "mid", bigText("mid")));
+    const midTrace = await store.saveTrace(makeTraceData("msg_1", "mid", bigText("mid")));
     currentNow = T3;
-    await store.saveTrace(makeTraceData("msg_1", "new", bigText("new")));
+    const newTrace = await store.saveTrace(makeTraceData("msg_1", "new", bigText("new")));
+
+    const chunkIdsFor = (traceId: string) =>
+      db.$client
+        .query<{ id: string }, [string]>("SELECT DISTINCT chunk_id AS id FROM prompt_trace_chunk_refs WHERE trace_id = ?")
+        .all(traceId)
+        .map((r) => r.id);
+    const recentIds = new Set([...chunkIdsFor(midTrace.id), ...chunkIdsFor(newTrace.id)]);
+    const oldOnlyChunkIds = chunkIdsFor(oldTrace.id).filter((id) => !recentIds.has(id));
+    expect(oldOnlyChunkIds.length).toBeGreaterThan(0);
 
     // slice(0, n) over the unlimited list ≡ the limited query — the exact
     // swap getPromptTraceHistory made (LC-1); limits stay optional for the
     // lazy history route (no limit → full list).
     const unlimited = await store.getTracesByChat("chat_1", "brnch_1");
-    const limited = await store.getTracesByChat("chat_1", "brnch_1", undefined, 2);
+
+    const queries: Array<{ sql: string; params: unknown[] }> = [];
+    const origPrepare = db.$client.prepare.bind(db.$client);
+    const prepareSpy = spyOn(db.$client, "prepare").mockImplementation(((sqlText: string, ...rest: unknown[]) => {
+      const stmt = origPrepare(sqlText, ...(rest as []));
+      const origValues = stmt.values.bind(stmt);
+      stmt.values = ((...params: SQLQueryBindings[]) => {
+        queries.push({ sql: sqlText, params });
+        return origValues(...params);
+      }) as typeof stmt.values;
+      const origAll = stmt.all.bind(stmt);
+      stmt.all = ((...params: SQLQueryBindings[]) => {
+        queries.push({ sql: sqlText, params });
+        return origAll(...params);
+      }) as typeof stmt.all;
+      return stmt;
+    }) as typeof db.$client.prepare);
+
+    let limited: Awaited<ReturnType<typeof store.getTracesByChat>>;
+    try {
+      limited = await store.getTracesByChat("chat_1", "brnch_1", undefined, 2);
+    } finally {
+      prepareSpy.mockRestore();
+    }
+
     expect(limited).toEqual(unlimited.slice(0, 2));
     expect(limited.map((t) => t.model)).toEqual(["model-new", "model-mid"]);
+
+    const traceSelect = queries.find((q) => q.sql.toLowerCase().includes('from "prompt_traces"'));
+    expect(traceSelect).toBeDefined();
+    expect(traceSelect!.sql.toLowerCase()).toContain("limit ?");
+    expect(traceSelect!.params).toContain(2);
+
+    const chunkSelects = queries.filter((q) => q.sql.toLowerCase().includes('from "prompt_trace_chunks"'));
+    expect(chunkSelects.length).toBeGreaterThan(0);
+    const loadedChunkIds = new Set(chunkSelects.flatMap((q) => q.params.map(String)));
+    for (const id of oldOnlyChunkIds) {
+      expect(loadedChunkIds.has(id)).toBe(false);
+    }
+    for (const id of recentIds) {
+      expect(loadedChunkIds.has(id)).toBe(true);
+    }
   });
 });

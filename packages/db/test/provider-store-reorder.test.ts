@@ -76,13 +76,15 @@ describe("ProviderStore — reorder + sort_order", () => {
     await store.activate(a.id);
     const active = await store.getActive();
     expect(active?.id).toBe(a.id);
-    // Reorder to swap positions.
+    // Actually swap positions so reorder writes real changes alongside preserving isActive.
     await store.reorder([
-      { id: a.id, sortOrder: 0 },
-      { id: b.id, sortOrder: 1 },
+      { id: b.id, sortOrder: 0 },
+      { id: a.id, sortOrder: 1 },
     ]);
+    expect((await store.listAll()).map((p) => p.id)).toEqual([b.id, a.id]);
     // isActive must survive the reorder.
     const stillActive = await store.getActive();
     expect(stillActive?.id).toBe(a.id);
+    expect(stillActive?.isActive).toBe(true);
   });
 });

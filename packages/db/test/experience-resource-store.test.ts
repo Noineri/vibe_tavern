@@ -11,9 +11,10 @@ import { describe, expect, test, beforeEach } from "bun:test";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 
 import { createDb, type AppDb } from "../src/db-connection.js";
+import * as schema from "../src/db-schema.js";
 import { ExperienceResourceStore } from "../src/stores/experience-resource-store.js";
 import type { StoreClock, StoreIdGenerator } from "../src/persistence.js";
 
@@ -58,23 +59,25 @@ describe("ExperienceResourceStore — visuals", () => {
     counter = 0;
   });
 
+const EXPECTED_V1_HASH = "b364aaf9d2f2fa39b34547c72272e76086d200a9686500ebf5ffff919ac61348";
+const EXPECTED_V2_HASH = "5bd2d65b75caca27af50b7e08c4a980e5b97057dbef10a394545e00901638239";
+
   test("create computes a SHA-256 source hash; update re-hashes on source change", async () => {
     const v = await store.createVisual({
       name: "Card Table",
       source: "<html>v1</html>",
       apiVersion: 1,
     });
-    expect(v.sourceHash).toMatch(/^[0-9a-f]{64}$/);
-    const hashV1 = v.sourceHash;
+    expect(v.sourceHash).toBe(EXPECTED_V1_HASH);
 
     // A non-source update does NOT change the hash.
     const renamed = await store.updateVisual(v.id, { name: "Card Table 2" });
-    expect(renamed.sourceHash).toBe(hashV1);
+    expect(renamed.sourceHash).toBe(EXPECTED_V1_HASH);
 
     // A source edit DOES change the hash (trust-invalidation signal).
     const edited = await store.updateVisual(v.id, { source: "<html>v2</html>" });
-    expect(edited.sourceHash).not.toBe(hashV1);
-    expect(edited.sourceHash).toMatch(/^[0-9a-f]{64}$/);
+    expect(edited.sourceHash).toBe(EXPECTED_V2_HASH);
+    expect(edited.sourceHash).not.toBe(EXPECTED_V1_HASH);
   });
 
   test("CRUD round-trip; compatible manifest ids serialize", async () => {
@@ -95,17 +98,28 @@ describe("ExperienceResourceStore — visuals", () => {
   });
 
   test("listVisualsForScope returns globals, or the scope-owned visual", async () => {
-    await store.createVisual({ name: "G", source: "g", apiVersion: 1, scopeType: "global" });
-    await store.createVisual({
+    await db.run(
+      sql`INSERT INTO characters (id, name, created_at, updated_at) VALUES ('char_2', 'Rival', '2026-01-01', '2026-01-01')`,
+    );
+    const g = await store.createVisual({ name: "G", source: "g", apiVersion: 1, scopeType: "global" });
+    const c1 = await store.createVisual({
       name: "CharOnly",
       source: "c",
       apiVersion: 1,
       scopeType: "character",
       characterId: "char_1",
     });
-    expect((await store.listVisualsForScope("global", null))).toHaveLength(1);
-    expect((await store.listVisualsForScope("character", "char_1"))).toHaveLength(1);
-    expect((await store.listVisualsForScope("character", "char_other"))).toHaveLength(0);
+    const c2 = await store.createVisual({
+      name: "CharTwoOnly",
+      source: "c2",
+      apiVersion: 1,
+      scopeType: "character",
+      characterId: "char_2",
+    });
+    expect((await store.listVisualsForScope("global", null)).map((r) => r.id)).toEqual([g.id]);
+    expect((await store.listVisualsForScope("character", "char_1")).map((r) => r.id)).toEqual([c1.id]);
+    expect((await store.listVisualsForScope("character", "char_2")).map((r) => r.id)).toEqual([c2.id]);
+    expect(await store.listVisualsForScope("character", "char_other")).toEqual([]);
   });
 
   test("ensureVisualByKey is idempotent — same key returns the same row, no duplicate, no update", async () => {
@@ -126,9 +140,15 @@ describe("ExperienceResourceStore — visuals", () => {
     expect(b.name).toBe("Conversation");
     expect(b.source).toBe("<html>a</html>");
 
-    // Exactly one row exists for that key.
+    // Complete returned set AND raw table contain only this single row for the key.
     const globals = await store.listVisualsForScope("global", null);
-    expect(globals.filter((v) => v.id === a.id)).toHaveLength(1);
+    expect(globals.map((v) => v.id)).toEqual([a.id]);
+    const rawKeyRows = db
+      .select({ id: schema.experienceVisuals.id })
+      .from(schema.experienceVisuals)
+      .where(eq(schema.experienceVisuals.stableKey, "builtin:conversation"))
+      .all();
+    expect(rawKeyRows.map((r) => r.id)).toEqual([a.id]);
   });
 
   test("ensureVisualByKey with distinct keys creates distinct visuals", async () => {
@@ -235,10 +255,13 @@ describe("ExperienceResourceStore — chat configs (one per chat)", () => {
     // null the pointer, not cascade the config away (personas has no cascade
     // from chats, unlike characters).
     await db.run(sql`INSERT INTO personas (id, name, description, default_for_new_chats, has_file_on_disk, created_at, updated_at) VALUES ('persona_2', 'Side', '', 0, 0, '2026-01-01', '2026-01-01')`);
-    await store.updateConfig("chat_1", { contextSourcePersonaId: "persona_2" });
+    const before = await store.updateConfig("chat_1", { contextSourcePersonaId: "persona_2" });
     await db.run(sql`DELETE FROM personas WHERE id = 'persona_2'`);
-    const after = await store.getOrCreateConfigForChat("chat_1");
-    expect(after.contextSourcePersonaId).toBeNull();
+    // Use the non-creating reader so a deleted-and-recreated row cannot pass.
+    const after = await store.getConfigForChat("chat_1");
+    expect(after).not.toBeNull();
+    expect(after!.id).toBe(before.id);
+    expect(after!.contextSourcePersonaId).toBeNull();
   });
 
   test("deleting a referenced source character sets the config pointer null (SET NULL)", async () => {
@@ -246,10 +269,12 @@ describe("ExperienceResourceStore — chat configs (one per chat)", () => {
     // NOT cascade the config away (the chat's own character has cascade via
     // chats.character_id, which would take the config down with it).
     await db.run(sql`INSERT INTO characters (id, name, created_at, updated_at) VALUES ('char_2', 'Side', '2026-01-01', '2026-01-01')`);
-    await store.updateConfig("chat_1", { contextSourceCharacterId: "char_2" });
+    const before = await store.updateConfig("chat_1", { contextSourceCharacterId: "char_2" });
     await db.run(sql`DELETE FROM characters WHERE id = 'char_2'`);
-    const after = await store.getOrCreateConfigForChat("chat_1");
-    expect(after.contextSourceCharacterId).toBeNull();
+    const after = await store.getConfigForChat("chat_1");
+    expect(after).not.toBeNull();
+    expect(after!.id).toBe(before.id);
+    expect(after!.contextSourceCharacterId).toBeNull();
   });
 
   test("deleting the bound script nulls scriptId AND the derived scriptName (SET NULL)", async () => {

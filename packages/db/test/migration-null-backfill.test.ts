@@ -166,6 +166,18 @@ describe("createDb rebuild NULL pre-repair + gap-repair (0059 class)", () => {
     // And it was migrate() that applied it — stamped once, in-order.
     expect(stampCount(dbPath, folders.rebuildHash)).toBe(1);
     db.$client.close();
+
+    const probe = new Database(dbPath, { readonly: true });
+    try {
+      const rows = probe.query("SELECT id, title, content_hash FROM lore_entries ORDER BY id").all() as Array<{
+        id: string;
+        title: string;
+        content_hash: string;
+      }>;
+      expect(rows).toEqual([{ id: "le1", title: "legacy", content_hash: "" }]);
+    } finally {
+      probe.close();
+    }
   });
 
   test("gap-repair re-applies a rebuild the watermark skipped (owner's 0059 state)", async () => {
@@ -194,9 +206,16 @@ describe("createDb rebuild NULL pre-repair + gap-repair (0059 class)", () => {
 
     db.$client.close();
     const probe = new Database(dbPath, { readonly: true });
-    const titles = probe.query("SELECT title FROM lore_entries").all() as { title: string }[];
-    probe.close();
-    expect(titles.map((t) => t.title)).toEqual(["legacy"]);
+    try {
+      const rows = probe.query("SELECT id, title, content_hash FROM lore_entries ORDER BY id").all() as Array<{
+        id: string;
+        title: string;
+        content_hash: string;
+      }>;
+      expect(rows).toEqual([{ id: "le1", title: "legacy", content_hash: "" }]);
+    } finally {
+      probe.close();
+    }
   });
 
   test("healthy DBs are untouched — no re-apply over a stamped rebuild", async () => {
