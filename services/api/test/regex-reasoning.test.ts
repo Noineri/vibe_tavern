@@ -28,6 +28,11 @@ import { strictTestDouble } from "./strict-test-double.js";
 
 // ════════════════════════════════════════════════════════════════════════════
 // RX-10 (REGEX_EXTENSION_PLAN, Wave 2b) — REASONING live hook.
+// fork #2 of services/api/test/dice-send-stream-nonstream.test.ts (branched
+// via regex-hooks.test.ts; source carries `forks: 3`). Harness correspondence:
+// clones the RX-8 `makeHarness` / `setup` / `fakeAssembleResult` / `presetInput`
+// / `lastMessage` / `drain` bundle; deviates by adding per-test mutable reply
+// state (reset in `beforeEach`) and an optional `hooksOverride` spy parameter.
 //
 // Full-path boundary test mirroring regex-hooks.test.ts (RX-8): the REAL
 // RegexHookService is wired into the orchestrator exactly as

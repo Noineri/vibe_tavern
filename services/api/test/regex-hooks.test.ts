@@ -28,6 +28,12 @@ import { strictTestDouble } from "./strict-test-double.js";
 
 // ════════════════════════════════════════════════════════════════════════════
 // RX-8 (REGEX_EXTENSION_PLAN, Wave 2) — USER_INPUT + AI_OUTPUT live hooks.
+// fork #1 of services/api/test/dice-send-stream-nonstream.test.ts (source
+// carries `forks: 3`). Harness correspondence: clones the tmp-dir `setup`,
+// `fakeAssembleResult`, and `ChatRuntime` / `LiveChatOrchestrator` wiring;
+// deviates by bundling them in `makeHarness` (with `assembledUserContent`
+// capture + `presetInput`/`lastMessage`/`drain` helpers), omitting the proxy
+// fetch factory block, and swapping failing stubs for `AI_REPLY_TEXT` stubs.
 //
 // Full-path boundary test mirroring dice-send-stream-nonstream.test.ts: the
 // REAL RegexHookService is wired into the orchestrator exactly as

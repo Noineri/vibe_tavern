@@ -34,6 +34,12 @@ import { streamProviderExecutor } from "../src/infrastructure/ai/stream-provider
 
 // ════════════════════════════════════════════════════════════════════════════
 // DICE-B11 (DICE_SYSTEM_BACKEND_PLAN, Wave B4 unit 2) — stream/non-stream send.
+// forks: 3 — services/api/test/regex-hooks.test.ts (fork #1),
+//          services/api/test/regex-reasoning.test.ts (fork #2),
+//          services/api/test/stream-provider-cut-partial.test.ts (fork #3).
+// Canonical send-harness ancestor (`setup` / `fakeAssembleResult` /
+// `makeChatRuntime` / `LiveChatOrchestrator` with executor DI stubs); any
+// fourth send-harness copy should extract a shared builder instead of forking.
 //
 // Full-path boundary test mirroring existing send coverage. Exercises BOTH send
 // endpoints (non-stream `sendMessage` + stream `sendMessageStream`) through the

@@ -31,9 +31,12 @@ import { streamProviderExecutor } from "../src/infrastructure/ai/stream-provider
 // keeps it the same way, and the error event says so (`partialSaved`) so the
 // client reloads the chat instead of restoring the draft.
 //
-// Harness forked from regex-reasoning.test.ts (real ChatRuntime + real
-// stores; provider executors through the orchestrator's `executors`
-// constructor seam — no mock.module).
+// fork #3 of services/api/test/dice-send-stream-nonstream.test.ts (harness
+// forked via regex-reasoning.test.ts; source carries `forks: 3`). Same real
+// ChatRuntime + real stores + orchestrator `executors` constructor seam (no
+// mock.module); deviates by adding `model` to `fakeAssembleResult`, using
+// `unusedDep` for unused branch/chat builders, dropping `RegexHookService` and
+// `strictTestDouble`, and driving mid-stream provider-cut executor stubs.
 // ════════════════════════════════════════════════════════════════════════════
 
 // Per-test stub state (reset in beforeEach): what streams before the cut.
