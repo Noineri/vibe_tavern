@@ -134,6 +134,13 @@ describe("experienceCopilotStreamRequestSchema (ER-6)", () => {
 
   // ─── SC-17: attached RP variants (the "discuss in the sidechat" wire arm) ───
 
+  test("prompt attachments accept identity only", () => {
+    const base = { content: 'Hello', providerProfileId: 'provider' };
+    expect(experienceCopilotStreamRequestSchema.parse({ ...base, promptAttachments: [{ presetId: 'preset' }] }).promptAttachments).toEqual([{ presetId: 'preset' }]);
+    expect(experienceCopilotStreamRequestSchema.safeParse({ ...base, promptAttachments: [{ presetId: '' }] }).success).toBe(false);
+    expect(experienceCopilotStreamRequestSchema.safeParse({ ...base, promptAttachments: [{ presetId: 'preset', promptText: 'untrusted' }] }).success).toBe(false);
+  });
+
   test("accepts attachedVariants as plain (messageId, variantId) pairs", () => {
     const parsed = experienceCopilotStreamRequestSchema.parse({
       content: "compare those takes",
@@ -278,6 +285,15 @@ describe("experienceCopilotStreamRequestSchema — answer mode (TAG-5)", () => {
     expect(() =>
       experienceCopilotStreamRequestSchema.parse({ ...base, answer: { text: "x" } }),
     ).toThrow();
+    expect(() =>
+      experienceCopilotStreamRequestSchema.parse({ ...base, answer: { toolCallId: "", text: "x" } }),
+    ).toThrow();
+    expect(() =>
+      experienceCopilotStreamRequestSchema.parse({
+        ...base,
+        answer: { toolCallId: "", decision: "allow" },
+      }),
+    ).toThrow();
   });
 
   // ── SC-23e: the permission decision family joins the answer union ──
@@ -302,6 +318,12 @@ describe("experienceCopilotStreamRequestSchema — answer mode (TAG-5)", () => {
       experienceCopilotStreamRequestSchema.parse({
         ...base,
         answer: { toolCallId: "tc_perm_1", decision: "allow", text: "why not" },
+      }),
+    ).toThrow();
+    expect(() =>
+      experienceCopilotStreamRequestSchema.parse({
+        ...base,
+        answer: { toolCallId: "tc_perm_1", decision: "allow", skipped: true },
       }),
     ).toThrow();
     expect(() =>
@@ -469,6 +491,8 @@ describe("experienceCopilotThreadSchema (ER-7)", () => {
         createdAt: "2026-01-01T00:00:00.000Z",
         updatedAt: "2026-01-01T00:00:00.000Z",
         metrics: null,
+        contextLinks: [],
+        todo: [],
       }),
     ).toThrow();
   });
@@ -484,6 +508,8 @@ describe("experienceCopilotThreadSchema (ER-7)", () => {
         createdAt: "2026-01-01T00:00:00.000Z",
         updatedAt: "2026-01-01T00:00:00.000Z",
         metrics: null,
+        contextLinks: [],
+        todo: [],
       }),
     ).toThrow();
   });
@@ -521,7 +547,20 @@ describe("experienceCopilotContextMetricsSchema (CM-1)", () => {
   });
 
   test("rejects a fractional token count (all plain ints)", () => {
-    expect(() => experienceCopilotContextMetricsSchema.parse({ ...valid, totalTokens: 1.5 })).toThrow();
+    const intFields = [
+      "systemTokens",
+      "digestTokens",
+      "historyTokens",
+      "attachedTokens",
+      "totalTokens",
+      "budgetTokens",
+      "reserveTokens",
+    ] as const;
+    for (const field of intFields) {
+      expect(() =>
+        experienceCopilotContextMetricsSchema.parse({ ...valid, [field]: 1.5 }),
+      ).toThrow();
+    }
   });
 });
 
@@ -541,8 +580,8 @@ describe("experienceCopilotMessageSchema (ER-7)", () => {
     expect(experienceCopilotMessageSchema.parse(payload)).toEqual(payload);
   });
 
-  test("accepts a valid tool-call message (tool fields present)", () => {
-    const payload = {
+  test("accepts valid tool-call and tool-result messages (tool fields populated)", () => {
+    const toolCallPayload = {
       id: "msg_002",
       threadId: "thread_001",
       role: "assistant",
@@ -553,7 +592,20 @@ describe("experienceCopilotMessageSchema (ER-7)", () => {
       reasoningDurationMs: null,
       createdAt: "2026-01-01T00:00:01.000Z",
     };
-    expect(experienceCopilotMessageSchema.parse(payload)).toEqual(payload);
+    expect(experienceCopilotMessageSchema.parse(toolCallPayload)).toEqual(toolCallPayload);
+
+    const toolResultPayload = {
+      id: "msg_002r",
+      threadId: "thread_001",
+      role: "tool",
+      content: '{"ok":true}',
+      toolCallsJson: null,
+      toolCallId: "call_1",
+      reasoning: null,
+      reasoningDurationMs: null,
+      createdAt: "2026-01-01T00:00:02.000Z",
+    };
+    expect(experienceCopilotMessageSchema.parse(toolResultPayload)).toEqual(toolResultPayload);
   });
 
   // AP-28: the reasoning pair round-trips on the wire — values on the row
@@ -627,13 +679,17 @@ describe("experienceCopilotBoundVisualSchema (ER-7)", () => {
 // ─── CP-1: copilot toolset + profile schemas ────────────────────────────────
 
 describe("copilotToolSetSchema (CP-1)", () => {
-  test("accepts all 5 toggleable tools", () => {
+  test("accepts all 9 toggleable tools", () => {
     const payload = {
       write_buffer: true,
       edit_buffer: true,
       run_test: false,
       run_simulate: true,
       suggest_visual_binding: false,
+      plan: true,
+      read_plan: false,
+      todo: true,
+      ask_user: false,
     };
     expect(copilotToolSetSchema.parse(payload)).toEqual(payload);
   });
@@ -704,12 +760,21 @@ describe("sidechatOocToolSetSchema (SIDECHAT_PLAN SC-5)", () => {
     expect(() => sidechatOocToolSetSchema.parse({ search_contex: true })).toThrow();
   });
 
-  test("SIDECHAT_OOC_TOOL_KEYS lists exactly the 9 toggles in definition order", () => {
+  test("SIDECHAT_OOC_TOOL_KEYS lists exactly the 13 toggles in definition order", () => {
     // Behavior change (DR-4a): was the 6 landed toggles → now 8, the two
     // director proposal tools appended, basis: DIRECTOR_MODE_PLAN DR-4a.
     // Behavior change (DR-4b, owner ruling 2026-10-27): 8 → 9, `ask_user`
     // appended — the shared ask tool serves the sidechat, on for the
     // director seed, off for the OOC seed.
+    // Behavior change (DMT-34): 9 → 12, the three director message tools
+    // appended — this time keys and implementations landed TOGETHER (the
+    // DMT-21 builder was complete and dormant first); on for the director
+    // seed, off for the OOC seed and the kind default.
+    // Behavior change (DK-5a): 12 → 13, `propose_deck` appended — the
+    // DMT-34 land-together pattern again (the key and its finished
+    // implementation in one unit); on for the director seed, off for the
+    // OOC seed and the kind default, basis: DIRECTOR_DECK_CALENDAR_PLAN
+    // DK-5a.
     expect(SIDECHAT_OOC_TOOL_KEYS).toEqual([
       "search_context",
       "read_context_item",
@@ -720,6 +785,10 @@ describe("sidechatOocToolSetSchema (SIDECHAT_PLAN SC-5)", () => {
       "propose_plan",
       "propose_tracker_template",
       "ask_user",
+      "propose_message_edit",
+      "propose_message_variant",
+      "request_message_swipe",
+      "propose_deck",
     ]);
   });
 

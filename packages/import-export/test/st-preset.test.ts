@@ -7,7 +7,7 @@ import {
   type StPresetBlock,
   type StPromptOrderBlock,
 } from "../src/presets/st-preset.js";
-import { slotToStFields, type PromptOrderEntry, type PromptPresetDto } from "@vibe-tavern/domain";
+import { DEFAULT_PROMPT_ORDER, slotToStFields, type PromptOrderEntry, type PromptPresetDto } from "@vibe-tavern/domain";
 
 // ── stBlockToCanvasEntry ───────────────────────────────────────────────────
 
@@ -54,7 +54,8 @@ test("stBlockToCanvasEntry — fills zone via inferSlot when missing", () => {
     // no zone, no depth
   };
   const entry = stBlockToCanvasEntry(block);
-  expect(entry.zone).toMatch(/^(before_chat|after_chat|in_chat)$/);
+  expect(entry.zone).toBe("after_chat");
+  expect(entry.order).toBe(5);
   expect(entry.depth).toBeNull(); // no ST data → no depth
 });
 
@@ -179,16 +180,39 @@ test("serializeStPreset — emits name, prompts, prompt_order, and _vibe_tavern"
 
 test("serializeStPreset — named slots map to the correct ST blocks", () => {
   const json = serializeStPreset(makeDto());
-  const out = JSON.parse(json) as { prompts: StPresetBlock[] };
-  const ids = out.prompts.map((p) => p.identifier);
-  expect(ids).toContain("main");
-  expect(ids).toContain("jailbreak");
-  expect(ids).toContain("nsfw");
-  expect(ids).toContain("enhanceDefinitions");
-  expect(ids).toContain("authorsNote");
-  const main = out.prompts.find((p) => p.identifier === "main")!;
-  expect(main.content).toBe("You are a helpful assistant.");
-  expect(main.role).toBe("system");
+  const out = JSON.parse(json) as {
+    prompts: Array<StPresetBlock & { injection_position?: number; injection_depth?: number }>;
+  };
+  const byId = new Map(out.prompts.map((p) => [p.identifier, p]));
+  expect([...byId.keys()]).toEqual([
+    "main",
+    "jailbreak",
+    "nsfw",
+    "enhanceDefinitions",
+    "authorsNote",
+  ]);
+  expect(byId.get("main")).toMatchObject({
+    content: "You are a helpful assistant.",
+    role: "system",
+  });
+  expect(byId.get("jailbreak")).toMatchObject({
+    content: "Continue the story.",
+    role: "system",
+  });
+  expect(byId.get("nsfw")).toMatchObject({
+    content: "nsfw content",
+    role: "system",
+  });
+  expect(byId.get("enhanceDefinitions")).toMatchObject({
+    content: "enhance",
+    role: "system",
+  });
+  expect(byId.get("authorsNote")).toMatchObject({
+    content: "Focus on pacing.",
+    role: "system",
+    injection_position: 1,
+    injection_depth: 4,
+  });
 });
 
 test("serializeStPreset — authorsNote role + in_chat depth are emitted", () => {
@@ -222,13 +246,32 @@ test("serializeStPreset — custom injections become content blocks", () => {
     ],
     advancedMode: true,
   });
-    const out = JSON.parse(serializeStPreset(dto)) as { prompts: Array<{ identifier: string; name: string; injection_position: number; injection_depth: number }> };
+  const out = JSON.parse(serializeStPreset(dto)) as {
+    prompts: Array<{
+      identifier: string;
+      name: string;
+      content: string;
+      role: string;
+      injection_position: number;
+      injection_depth: number;
+    }>;
+  };
   const rule1 = out.prompts.find((p) => p.identifier === "rule1")!;
-  expect(rule1.name).toBe("Rule One");
-  expect(rule1.injection_position).toBe(1); // in_chat → absolute
-  expect(rule1.injection_depth).toBe(2);
+  expect(rule1).toMatchObject({
+    name: "Rule One",
+    content: "Be terse.",
+    role: "system",
+    injection_position: 1, // in_chat → absolute
+    injection_depth: 2,
+  });
   const rule2 = out.prompts.find((p) => p.identifier === "rule2")!;
-  expect(rule2.injection_position).toBe(0); // after_chat → relative
+  expect(rule2).toMatchObject({
+    name: "Rule Two",
+    content: "No emojis.",
+    role: "user",
+    injection_position: 0, // after_chat → relative
+    injection_depth: 0,
+  });
 });
 
 test("serializeStPreset — prompt_order global layout: before_chat precedes after_chat", () => {
@@ -250,27 +293,51 @@ test("serializeStPreset — prompt_order global layout: before_chat precedes aft
 
 test("serializeStPreset — simple mode (empty promptOrder) synthesizes a complete default canvas", () => {
   const dto = makeDto({ promptOrder: [], advancedMode: false });
-  const out = JSON.parse(serializeStPreset(dto)) as { prompt_order: Array<{ order: Array<{ identifier: string }> }> };
-  const ids = new Set(out.prompt_order[0].order.map((o) => o.identifier));
-  // Core ST built-in markers must be present so ST accepts the preset.
-  for (const marker of ["main", "chatHistory", "jailbreak", "worldInfoBefore", "worldInfoAfter"]) {
-    expect(ids.has(marker)).toBe(true);
-  }
+  const out = JSON.parse(serializeStPreset(dto)) as {
+    prompt_order: Array<{ order: Array<{ identifier: string; enabled: boolean; order: number }> }>;
+  };
+  const expectedOrder = [
+    "main",
+    "charSystemPrompt",
+    "worldInfoBefore",
+    "personaDescription",
+    "charDescription",
+    "charPersonality",
+    "scenario",
+    "characterAvatar",
+    "characterGallery",
+    "personaAvatar",
+    "chatSummary",
+    "authorsNote",
+    "chatDynamicPrompt",
+    "charDepthPrompt",
+    "enhanceDefinitions",
+    "nsfw",
+    "worldInfoAfter",
+    "dialogueExamples",
+    "chatHistory",
+    "jailbreak",
+    "charPostHistory",
+    "assistantPrefill",
+  ];
+  expect(new Set(expectedOrder)).toEqual(new Set(Object.keys(DEFAULT_PROMPT_ORDER)));
+  expect(out.prompt_order[0].order).toEqual(
+    expectedOrder.map((identifier, order) => ({ identifier, enabled: true, order })),
+  );
 });
 
 test("serializeStPreset — _vibe_tavern carries the full DTO minus id/timestamps", () => {
   const dto = makeDto();
+  const { id, createdAt, updatedAt, ...expectedExt } = dto;
+  void id;
+  void createdAt;
+  void updatedAt;
   const out = JSON.parse(serializeStPreset(dto)) as { _vibe_tavern: Record<string, unknown> };
   const ext = out._vibe_tavern;
-  expect(ext.id).toBeUndefined();
-  expect(ext.createdAt).toBeUndefined();
-  expect(ext.updatedAt).toBeUndefined();
-  // VT-only fields survive (these have no ST projection).
-  expect(ext.aiAssistantPrompts).toBe('{"greeting":"hi"}');
-  expect(ext.scriptAiSystemPrompt).toBe("script sys");
-  expect(ext.tools).toBe("tls");
-  expect(ext.summary).toBe("sum");
-  expect(ext.system).toBe("You are a helpful assistant.");
+  expect("id" in ext).toBe(false);
+  expect("createdAt" in ext).toBe(false);
+  expect("updatedAt" in ext).toBe(false);
+  expect(ext).toEqual(expectedExt);
 });
 
 // ── Round-trip: VT → serialize → parse ──────────────────────────────────────
@@ -281,28 +348,20 @@ test("round-trip — VT→VT via _vibe_tavern is lossless for every DTO field", 
     promptOrder: [makeOrderEntry({ identifier: "r", zone: "in_chat", depth: 5, order: 0, kind: "custom" })],
     advancedMode: true,
     mergeConsecutiveRoles: true,
+    perSendPrefillEnabled: true,
+    generationFormat: {
+      mode: "manual",
+      inputSequence: "<|user|>",
+      outputSequence: "<|assistant|>",
+    },
   });
+  const { id, createdAt, updatedAt, ...expectedExt } = dto;
+  void id;
+  void createdAt;
+  void updatedAt;
   const reparsed = parseStPreset(serializeStPreset(dto));
-  expect(reparsed.vibeTavern).toBeDefined();
-  const ext = reparsed.vibeTavern!;
-  // Every field that survives in the extension is recovered exactly.
-  expect(ext.system).toBe(dto.system);
-  expect(ext.jailbreak).toBe(dto.jailbreak);
-  expect(ext.prefill).toBe(dto.prefill);
-  expect(ext.authorsNote).toBe(dto.authorsNote);
-  expect(ext.authorsNoteDepth).toBe(dto.authorsNoteDepth);
-  expect(ext.authorsNotePosition).toBe(dto.authorsNotePosition);
-  expect(ext.authorsNoteRole).toBe(dto.authorsNoteRole);
-  expect(ext.summary).toBe(dto.summary);
-  expect(ext.tools).toBe(dto.tools);
-  expect(ext.nsfw).toBe(dto.nsfw);
-  expect(ext.enhanceDefinitions).toBe(dto.enhanceDefinitions);
-  expect(ext.scriptAiSystemPrompt).toBe(dto.scriptAiSystemPrompt);
-  expect(ext.aiAssistantPrompts).toBe(dto.aiAssistantPrompts);
-  expect(ext.advancedMode).toBe(dto.advancedMode);
-  expect(ext.mergeConsecutiveRoles).toBe(dto.mergeConsecutiveRoles);
-  expect(ext.customInjections).toEqual(dto.customInjections);
-  expect(ext.promptOrder).toEqual(dto.promptOrder);
+  expect(reparsed.name).toBe(dto.name);
+  expect(reparsed.vibeTavern).toEqual(expectedExt);
 });
 
 test("round-trip — promptOrder entry role survives VT→serialize→parse", () => {
@@ -380,10 +439,12 @@ test("serializeStPreset — canvas entry role writes onto the ST content block",
 test("round-trip — ST projection recovers named-slot content (lossy on VT-only fields)", () => {
   const dto = makeDto();
   const reparsed = parseStPreset(serializeStPreset(dto));
-  const main = reparsed.blocks.find((b) => b.identifier === "main");
-  expect(main?.content).toBe("You are a helpful assistant.");
-  const jb = reparsed.blocks.find((b) => b.identifier === "jailbreak");
-  expect(jb?.content).toBe("Continue the story.");
+  const byId = new Map(reparsed.blocks.map((b) => [b.identifier, b.content]));
+  expect(byId.get("main")).toBe("You are a helpful assistant.");
+  expect(byId.get("jailbreak")).toBe("Continue the story.");
+  expect(byId.get("nsfw")).toBe("nsfw content");
+  expect(byId.get("enhanceDefinitions")).toBe("enhance");
+  expect(byId.get("authorsNote")).toBe("Focus on pacing.");
 });
 
 test("round-trip — custom injection in_chat zone survives the ST projection", () => {

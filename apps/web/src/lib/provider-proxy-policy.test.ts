@@ -20,6 +20,8 @@ describe("provider proxy selector policy", () => {
     expect(proxyPolicyFromSelection(INHERIT_PROXY_SELECTION)).toEqual({ proxyMode: "inherit", proxyId: null });
     expect(selectionFromProxyPolicy({ proxyMode: "direct", proxyId: null })).toBe(DIRECT_PROXY_SELECTION);
     expect(proxyPolicyFromSelection(DIRECT_PROXY_SELECTION)).toEqual({ proxyMode: "direct", proxyId: null });
+    expect(selectionFromProxyPolicy({ proxyMode: "proxy", proxyId: "proxy_1" })).toBe("proxy_1");
+    expect(selectionFromProxyPolicy({ proxyMode: "proxy", proxyId: null })).toBe(INHERIT_PROXY_SELECTION);
     expect(proxyPolicyFromSelection("proxy_1")).toEqual({ proxyMode: "proxy", proxyId: "proxy_1" });
   });
 

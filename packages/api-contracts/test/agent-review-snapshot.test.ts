@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   agentReviewSnapshotSchema,
+  experienceCopilotStreamRequestSchema,
   reviewOutcomeSchema,
   reviewTargetRecordSchema,
 } from "../src/index.js";
@@ -22,7 +23,19 @@ describe("agentReviewSnapshotSchema", () => {
   });
 
   test("keeps an explicit empty snapshot distinct from an absent request field", () => {
-    expect(agentReviewSnapshotSchema.parse({ targets: [] })).toEqual({ targets: [] });
+    const absent = experienceCopilotStreamRequestSchema.parse({
+      providerProfileId: "p1",
+      content: "hi",
+    });
+    expect(absent.reviewSnapshot).toBeUndefined();
+    expect("reviewSnapshot" in absent).toBe(false);
+
+    const explicitEmpty = experienceCopilotStreamRequestSchema.parse({
+      providerProfileId: "p1",
+      content: "hi",
+      reviewSnapshot: { targets: [] },
+    });
+    expect(explicitEmpty.reviewSnapshot).toEqual({ targets: [] });
   });
 
   test("accepts the inclusive hex round id boundary", () => {

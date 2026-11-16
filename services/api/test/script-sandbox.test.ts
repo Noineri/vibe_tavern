@@ -192,10 +192,9 @@ describe("executeScripts — context.lore", () => {
     const r = run(`context.lore.activeEntries[0].title = "hacked"; context.character.personality += context.lore.activeEntries[0].title;`, {
       activeLoreEntries: [{ title: "Original", content: "", keys: [] }],
     });
-    // Frozen: assignment is a no-op (or throws, caught as an error).
-    if (r.errors.length === 0) {
-      expect(r.character.personality).toBe("Original");
-    }
+    // Frozen in non-strict VM mode: assignment fails silently with no errors.
+    expect(r.errors).toEqual([]);
+    expect(r.character.personality).toBe("Original");
   });
 
   test("activeEntries is empty when no lore activated", () => {
@@ -470,8 +469,9 @@ describe("executeScripts — scriptRuns per-script breakdown (P4)", () => {
 
 describe("executeScripts — sandbox isolation", () => {
   test("globals are limited to an allowlist (no process, no require)", () => {
-    // The sandbox must not leak Node primitives. `process` and `require` are
-    // the obvious exfiltration vectors — pin their absence.
+    // Direct globals are omitted from the vm context allowlist (`process` and
+    // `require` are undefined), though host constructors still escape via the
+    // injected host objects — see the owner-ruled SECURITY DIVERGENCE probes below.
     const r = run(`context.character.personality += typeof process + "," + typeof require;`);
     expect(r.character.personality).toBe("undefined,undefined");
   });
@@ -623,6 +623,13 @@ describe("executeScripts — Bun node:vm compatibility probes", () => {
   });
 });
 
+// Owner ruling (2026-11-14, TQ18b12-F03(b) / TEST_QUALITY_FIX_WAVE_REPORT #14):
+// A green run in this suite does NOT certify security confinement. The owner
+// ruled production unfixed because `node:vm` script execution has never been
+// a true sandbox and full confinement is impossible on this production surface
+// (exact verbatim RU ruling archived in the plan reports). The probes below stay
+// as honest characterization pinning both direct-global absence and the known
+// host-constructor escape.
 describe("executeScripts — Bun node:vm security probes", () => {
   test("direct Node and CommonJS globals remain absent", () => {
     const r = run(`
@@ -672,10 +679,13 @@ describe("executeScripts — Bun node:vm security probes", () => {
       probe("exposedObjectConstructor", () => Object.constructor("return typeof process")());
     `);
 
-    // SECURITY DIVERGENCE: Bun observed host process through `this`, the
-    // host-created context object/prototype, and explicitly injected Object.
-    // The sandbox's intended allowlist posture expects every result to be
-    // "undefined"; only the object-literal constructor stays context-local.
+    // SECURITY DIVERGENCE (owner ruling 2026-11-14 — known, unfixed in prod):
+    // Bun observed host process through `this`, the host-created context
+    // object/prototype, and explicitly injected Object. The owner ruled that
+    // `executeScripts` has never been a true security sandbox and full
+    // confinement is impossible in production (TQ18b12-F03(b); plan reports hold
+    // the verbatim ruling); this assertion characterizes the unfixed escape so
+    // any posture shift stays visible rather than implying confinement.
     expect(r.shared).toEqual({
       thisConstructor: "object",
       literalConstructor: "undefined",
@@ -696,9 +706,13 @@ describe("executeScripts — Bun node:vm security probes", () => {
       context.shared.set("escapedLocalStorage", Object.constructor("return typeof localStorage")());
     `);
 
-    // SECURITY DIVERGENCE: direct probes are absent, but the injected host
-    // Object's Function constructor reaches host process/Bun/network globals.
-    // A confined allowlist would keep all seven values "undefined".
+    // SECURITY DIVERGENCE (owner ruling 2026-11-14 — known, unfixed in prod):
+    // direct probes are absent, but the injected host Object's Function
+    // constructor reaches host process/Bun/network globals. Per the
+    // 2026-11-14 owner ruling (TQ18b12-F03(b) / TEST_QUALITY_FIX_WAVE_REPORT
+    // #14), production remains intentionally unfixed because `node:vm`
+    // confinement is impossible; a confined sandbox would keep all seven
+    // values "undefined", and this pin preserves honest characterization.
     expect(r.shared).toEqual({
       escapedProcess: "object",
       escapedBun: "object",

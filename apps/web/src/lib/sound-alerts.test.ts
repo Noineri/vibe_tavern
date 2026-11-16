@@ -26,14 +26,21 @@ class FakeAudioContext {
   };
 }
 
-const audioWindow = window as Window & { AudioContext?: typeof AudioContext };
+/** The audio-constructor surface sound-alerts.ts actually consumes
+ *  (audioContextCtor → `new Ctor()` → `.state === "suspended"` → `.resume()`):
+ *  the documented test-driver view of `window` for this suite. Declaring the
+ *  member optional-with-narrow-type is what makes BOTH installs honest — the
+ *  fake constructor AND the deliberate `undefined` (absent-member) install of
+ *  the no-op test — without erasing anything. */
+type AudioWindow = Window & { AudioContext?: new () => FakeAudioContext };
+const audioWindow = window as AudioWindow;
 const originalAudioContext = audioWindow.AudioContext;
 
 beforeEach(() => {
   FakeAudioContext.constructed = 0;
   FakeAudioContext.resumed = 0;
   _resetSoundAlertsForTests();
-  audioWindow.AudioContext = FakeAudioContext as unknown as typeof AudioContext;
+  audioWindow.AudioContext = FakeAudioContext;
 });
 
 afterAll(() => {
@@ -70,18 +77,25 @@ describe("installSoundAlertsGesturePrimer", () => {
     dispose();
   });
 
-  test("keydown primes too, and the disposer removes the listeners", () => {
-    const dispose = installSoundAlertsGesturePrimer();
-    dispose();
-
+  test("keydown primes too, and the disposer removes the listeners", async () => {
+    const disposedPrimer = installSoundAlertsGesturePrimer();
+    disposedPrimer();
     window.dispatchEvent(new window.Event("keydown"));
+    await Promise.resolve();
     expect(FakeAudioContext.constructed).toBe(0);
+
+    const activePrimer = installSoundAlertsGesturePrimer();
+    window.dispatchEvent(new window.Event("keydown"));
+    await Promise.resolve();
+    expect(FakeAudioContext.constructed).toBe(1);
+    expect(FakeAudioContext.resumed).toBe(1);
+    activePrimer();
   });
 });
 
 describe("playAlert without a primed context", () => {
   test("stays a silent no-op — never throws where Web Audio is absent", () => {
-    audioWindow.AudioContext = undefined as unknown as typeof AudioContext;
+    audioWindow.AudioContext = undefined;
     expect(() => {
       primeSoundAlerts();
       playAlert("success", 0.5);

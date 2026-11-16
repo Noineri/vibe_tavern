@@ -453,10 +453,29 @@ describe("Slider", () => {
 		expect(onValueChange).toHaveBeenLastCalledWith(6);
 		expect(onValueCommitted).toHaveBeenCalledTimes(2);
 
+		const callsBeforeCancel = onValueChange.mock.calls.length;
 		fireEvent.pointerDown(field, { pointerId: 4, pointerType: "touch", clientX: 20, clientY: 10, button: 0 });
 		fireEvent.pointerMove(field, { pointerId: 4, pointerType: "touch", clientX: 80, clientY: 10 });
+		const callsDuringDrag = onValueChange.mock.calls.length;
+		expect(callsDuringDrag).toBeGreaterThan(callsBeforeCancel);
 		fireEvent.pointerCancel(field, { pointerId: 4, pointerType: "touch" });
+		fireEvent.pointerMove(field, { pointerId: 4, pointerType: "touch", clientX: 30, clientY: 10 });
+		fireEvent.pointerUp(field, { pointerId: 4, pointerType: "touch", clientX: 30, clientY: 10 });
+		expect(onValueChange).toHaveBeenCalledTimes(callsDuringDrag);
 		expect(onValueCommitted).toHaveBeenCalledTimes(2);
+
+		// Sub-4px horizontal jitter remains pending without scrubbing until >= 4px.
+		const callsBeforeThreshold = onValueChange.mock.calls.length;
+		fireEvent.pointerDown(field, { pointerId: 5, pointerType: "touch", clientX: 36, clientY: 10, button: 0 });
+		fireEvent.pointerMove(field, { pointerId: 5, pointerType: "touch", clientX: 39, clientY: 10 });
+		expect(onValueChange).toHaveBeenCalledTimes(callsBeforeThreshold);
+		expect(onValueCommitted).toHaveBeenCalledTimes(2);
+		fireEvent.pointerMove(field, { pointerId: 5, pointerType: "touch", clientX: 40, clientY: 10 });
+		expect(onValueChange).toHaveBeenCalledTimes(callsBeforeThreshold + 1);
+		expect(onValueChange).toHaveBeenLastCalledWith(4);
+		fireEvent.pointerUp(field, { pointerId: 5, pointerType: "touch", clientX: 40, clientY: 10 });
+		expect(onValueCommitted).toHaveBeenCalledTimes(3);
+		expect(onValueCommitted).toHaveBeenLastCalledWith(4);
 	});
 
 	it("moves labels above and back inside while measured help stays interactive and does not scrub", () => {

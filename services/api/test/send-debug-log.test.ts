@@ -24,6 +24,9 @@ const root = resolve(tmpdir(), "vt-send-debug-" + crypto.randomUUID().slice(0, 8
 const coldDir = resolve(root, "a", "b", "c");
 
 afterAll(async () => {
+	// Restore process-global log target before removing the test directory so
+	// subsequent files in the shared test process do not write into deleted paths.
+	configureLogDir(resolve(process.cwd(), "logs"));
 	try { await rm(root, { recursive: true, force: true }); } catch { /* temp cleanup best-effort */ }
 });
 

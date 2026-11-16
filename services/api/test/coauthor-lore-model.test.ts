@@ -3,7 +3,8 @@ import { mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 
-import type { StoredProviderProfileRecord } from "@vibe-tavern/domain";
+import { brandId } from "@vibe-tavern/domain";
+import type { ChatId, StoredProviderProfileRecord } from "@vibe-tavern/domain";
 import { createRuntimeStore } from "../src/runtime/session/session-runtime-store.js";
 import { SessionRuntime } from "../src/runtime/session/session-runtime.js";
 import type { CreateLoreDelegateDeps } from "../src/domain/coauthor/lore/lore-delegate.js";
@@ -134,7 +135,7 @@ function isResourceBusyError(error: unknown): boolean {
 }
 
 async function assembleCoauthorTurn(runtime: SessionRuntime, chatId: string): Promise<void> {
-	await runtime.chatRuntime.prepareLiveTurn(chatId as never, "", "coauthor-turn-model");
+	await runtime.chatRuntime.prepareLiveTurn(brandId<ChatId>(chatId), "", "coauthor-turn-model");
 }
 
 describe("Co-Author lore model delegation", () => {

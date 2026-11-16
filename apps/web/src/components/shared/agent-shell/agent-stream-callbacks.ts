@@ -4,10 +4,11 @@ import {
   parseTodoToolResult,
   parseTodoToolArgs,
   parseAgentAskState,
-  parseAgentPermissionState,
 } from "../../../stores/agent-turn-store.js";
 import { parseAgentPlanToolResult } from "../../../hooks/use-agent-plan.js";
 import {
+  decodeAgentPermissionState,
+  isAgentPermissionToolName,
   coauthorSkillReadOutputSchema,
   experienceCopilotToolOutputSchema,
 } from "@vibe-tavern/api-contracts";
@@ -202,12 +203,16 @@ export function createAgentStreamCallbacks(
         });
         return;
       }
-      // SC-23f: a permission result is the awaiting marker (the only
-      // permission output a live turn ever sees — granted/denied rewrites
-      // only exist in persisted rows). Parsed by the ONE parser the
-      // persisted extraction shares, so live === persisted field-for-field.
-      if (info.toolName === "read_message_prompt") {
-        const permission = parseAgentPermissionState(info.output);
+      // SC-23f / DMT-31: a permission-family result (`read_message_prompt` or
+      // the Director's `request_message_swipe`) is the awaiting marker (the
+      // only permission output a live turn ever sees — granted/denied
+      // rewrites only exist in persisted rows; a replay re-runs THIS path
+      // over the recorded events, BR-3a). Decoded by THE ONE shared decoder
+      // the persisted extraction uses (packages/api-contracts
+      // agent-permission-state.ts), so live === replay === persisted
+      // field-for-field, and the `kind` comes from the tool NAME alone.
+      if (isAgentPermissionToolName(info.toolName)) {
+        const permission = decodeAgentPermissionState(info.toolName, info.output);
         useAgentTurnStore.getState().upsertActivity(kind, activeThreadId, {
           toolCallId: info.toolCallId,
           toolName: info.toolName,

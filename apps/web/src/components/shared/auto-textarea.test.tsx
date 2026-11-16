@@ -155,10 +155,26 @@ describe("AutoTextarea — macro autocomplete", () => {
   it("filters the list as the query grows", () => {
     render(<Controlled />);
     const ta = textarea();
+
+    typeInto(ta, "{{");
+    const allTexts = Array.from(document.body.querySelectorAll('[role="option"]')).map((o) => o.textContent ?? "");
+    expect(allTexts.some((t) => t.includes("{{user}}"))).toBe(true);
+    expect(allTexts.some((t) => t.includes("{{char}}"))).toBe(true);
+    expect(allTexts.some((t) => t.includes("{{charPrompt}}"))).toBe(true);
+
     typeInto(ta, "{{char");
-    const opts = Array.from(document.body.querySelectorAll('[role="option"]'));
-    expect(opts.length).toBeGreaterThanOrEqual(1);
-    expect(opts[0]!.textContent).toContain("{{char}}");
+    const charTexts = Array.from(document.body.querySelectorAll('[role="option"]')).map((o) => o.textContent ?? "");
+    expect(charTexts.length).toBeGreaterThan(1);
+    expect(charTexts.length).toBeLessThan(allTexts.length);
+    expect(charTexts.some((t) => t.includes("{{user}}"))).toBe(false);
+    expect(charTexts.some((t) => t.includes("{{persona}}"))).toBe(false);
+    expect(charTexts.some((t) => t.includes("{{char}}"))).toBe(true);
+    expect(charTexts.some((t) => t.includes("{{charPrompt}}"))).toBe(true);
+
+    typeInto(ta, "{{charPrompt");
+    const narrowTexts = Array.from(document.body.querySelectorAll('[role="option"]')).map((o) => o.textContent ?? "");
+    expect(narrowTexts).toHaveLength(1);
+    expect(narrowTexts[0]).toContain("{{charPrompt}}");
   });
 
   it("shows the alias that matched the query beside its canonical macro", () => {

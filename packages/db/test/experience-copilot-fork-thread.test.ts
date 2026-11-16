@@ -83,22 +83,33 @@ function identityRemap(trailingPayload: unknown) {
 describe("ExperienceCopilotStore.listActiveChatThreadsForBranch (SC-20)", () => {
   test("active chat-owned threads across kinds, oldest first; archived and script rows excluded", async () => {
     const { store } = await setup();
-    const first = await store.startNewChatSession("chat_1", "brnch_1", "sidechat-ooc");
+    const firstOoc = await store.startNewChatSession("chat_1", "brnch_1", "sidechat-ooc");
+    await store.archive(firstOoc.id);
 
-    expect((await store.listActiveChatThreadsForBranch("chat_1", "brnch_1")).map((t) => t.id)).toEqual([first.id]);
-    expect(await store.listActiveChatThreadsForBranch("chat_1", "brnch_2")).toEqual([]);
-
-    // Archiving the only session empties the listing (the row stays in
-    // listSessionsForChat, archived).
-    await store.archive(first.id);
-    expect(await store.listActiveChatThreadsForBranch("chat_1", "brnch_1")).toEqual([]);
-    expect(await store.listSessionsForChat("chat_1", "brnch_1", "sidechat-ooc")).toHaveLength(1);
-
-    // A script-owned thread never appears (chat_id IS NULL on it).
+    const activeDirector = await store.startNewChatSession("chat_1", "brnch_1", "director");
+    const activeOoc = await store.startNewChatSession("chat_1", "brnch_1", "sidechat-ooc");
+    const otherBranchThread = await store.startNewChatSession("chat_1", "brnch_2", "director");
     const scriptThread = await store.startNewSession("script_sc20_store");
-    expect((await store.listActiveChatThreadsForBranch("chat_1", "brnch_1")).map((t) => t.id)).not.toContain(
-     	scriptThread.id,
-    );
+
+    const brnch1Active = await store.listActiveChatThreadsForBranch("chat_1", "brnch_1");
+    expect(brnch1Active.map((t) => ({ id: t.id, agentKind: t.agentKind }))).toEqual([
+      { id: activeDirector.id, agentKind: "director" },
+      { id: activeOoc.id, agentKind: "sidechat-ooc" },
+    ]);
+    expect(brnch1Active.map((t) => t.id)).not.toContain(firstOoc.id);
+    expect(brnch1Active.map((t) => t.id)).not.toContain(otherBranchThread.id);
+    expect(brnch1Active.map((t) => t.id)).not.toContain(scriptThread.id);
+    expect(await store.listSessionsForChat("chat_1", "brnch_1", "sidechat-ooc")).toHaveLength(2);
+
+    // Other branch remains scoped independently.
+    expect((await store.listActiveChatThreadsForBranch("chat_1", "brnch_2")).map((t) => t.id)).toEqual([
+      otherBranchThread.id,
+    ]);
+
+    // Archiving both empties the active branch listing while preserving rows.
+    await store.archive(activeDirector.id);
+    await store.archive(activeOoc.id);
+    expect(await store.listActiveChatThreadsForBranch("chat_1", "brnch_1")).toEqual([]);
   });
 });
 
@@ -108,7 +119,8 @@ describe("ExperienceCopilotStore.forkChatThreadToBranch (SC-20)", () => {
     // for the drop-behavior call below, and the source.
     const { store } = await setup("chat_1", ["brnch_1", "brnch_2", "brnch_3"]);
     const thread = await store.startNewChatSession("chat_1", "brnch_1", "sidechat-ooc");
-    await store.appendMessage(thread.id, { role: "user", content: "one" });
+    const promptAttachments = [{ presetId: 'p', displayName: 'Preset', promptText: 'Frozen' }];
+    await store.appendMessage(thread.id, { role: "user", content: "one", promptAttachments });
     await store.appendContextEvent(thread.id, "rp_sync", { fromPosition: 0, toPosition: 0, messages: [] });
     await store.appendMessage(thread.id, { role: "assistant", content: "two" });
     await store.setContextLinks(thread.id, [{ targetType: "persona", targetId: "p1" }]);
@@ -117,6 +129,7 @@ describe("ExperienceCopilotStore.forkChatThreadToBranch (SC-20)", () => {
     await store.updateContextMetrics(thread.id, METRICS, "prof_fixture", "model-fixture");
     await store.setFrontier(thread.id, { lastPosition: 0, selected: { m: "v" } });
     const sourceMessages = await store.listMessages(thread.id);
+    const sourceTimeline = await store.listTimeline(thread.id);
 
     const copied = await store.forkChatThreadToBranch(thread.id, "brnch_2", identityRemap({ at: 0 }));
     expect(copied).not.toBeNull();
@@ -133,14 +146,48 @@ describe("ExperienceCopilotStore.forkChatThreadToBranch (SC-20)", () => {
     expect(copied!.lastProviderProfileId).toBe("prof_fixture");
     expect(copied!.lastModel).toBe("model-fixture");
 
-    // Messages and events copy with fresh ids; the frontier passes through
-    // the identity hook; the trailing event rides the NEXT seq.
+    // Messages and events copy with fresh ids and exact content/payload projections;
+    // the frontier passes through the identity hook; the trailing event rides the NEXT seq.
     const copiedMessages = await store.listMessages(copied!.id);
-    expect(copiedMessages.map((message) => message.seq)).toEqual(sourceMessages.map((message) => message.seq));
-    expect(copiedMessages.map((message) => message.id)).not.toEqual(sourceMessages.map((message) => message.id));
+    expect(copiedMessages.map((m) => ({
+      role: m.role,
+      content: m.content,
+      reasoning: m.reasoning,
+      toolCallsJson: m.toolCallsJson,
+      toolCallId: m.toolCallId,
+      promptAttachments: m.promptAttachments,
+      seq: m.seq,
+      createdAt: m.createdAt,
+    }))).toEqual(sourceMessages.map((m) => ({
+      role: m.role,
+      content: m.content,
+      reasoning: m.reasoning,
+      toolCallsJson: m.toolCallsJson,
+      toolCallId: m.toolCallId,
+      promptAttachments: m.promptAttachments,
+      seq: m.seq,
+      createdAt: m.createdAt,
+    })));
+    for (const [i, message] of copiedMessages.entries()) {
+      expect(message.id).not.toBe(sourceMessages[i]!.id);
+      expect(message.threadId).toBe(copied!.id);
+    }
+        expect(copiedMessages[0]?.promptAttachments).toEqual(promptAttachments);
 
     const copiedTimeline = await store.listTimeline(copied!.id);
     expect(copiedTimeline.map((entry) => entry.rowType)).toEqual(["message", "event", "message", "event"]);
+    const sourceEvent = sourceTimeline[1]!;
+    const copiedEvent = copiedTimeline[1]!;
+    if (sourceEvent.rowType !== "event" || copiedEvent.rowType !== "event") {
+      throw new Error("fixture: expected source and copied middle entries to be events");
+    }
+    expect(copiedEvent.id).not.toBe(sourceEvent.id);
+    expect(copiedEvent.threadId).toBe(copied!.id);
+    expect(copiedEvent.kind).toBe("rp_sync");
+    expect(copiedEvent.seq).toBe(sourceEvent.seq);
+    expect(copiedEvent.payload).toEqual({ fromPosition: 0, toPosition: 0, messages: [] });
+    expect(copiedEvent.createdAt).toBe(sourceEvent.createdAt);
+
     const trailing = copiedTimeline[3]!;
     if (trailing.rowType !== "event") throw new Error("fixture: expected the trailing event");
     expect(trailing.kind).toBe("branch_forked");
@@ -161,6 +208,7 @@ describe("ExperienceCopilotStore.forkChatThreadToBranch (SC-20)", () => {
       eventPayload: (kind) => (kind === "rp_sync" ? { drop: true } : { payloadJson: null }),
     });
     const droppedTimeline = await store.listTimeline(dropped!.id);
+    expect(droppedTimeline.map((e) => e.rowType)).toEqual(["message", "message", "event"]);
     expect(droppedTimeline.filter((entry) => entry.rowType === "event" && entry.kind === "rp_sync")).toEqual([]);
 
     // The SOURCE is untouched — metrics, messages, and timeline stay as they
@@ -168,7 +216,7 @@ describe("ExperienceCopilotStore.forkChatThreadToBranch (SC-20)", () => {
     expect(await store.getById(thread.id)).toMatchObject({ archivedAt: null, branchId: "brnch_1" });
     expect((await store.getById(thread.id))!.contextMetrics).toEqual(METRICS);
     expect(await store.listMessages(thread.id)).toEqual(sourceMessages);
-   	expect((await store.listTimeline(thread.id)).length).toBe(3);
+    expect(await store.listTimeline(thread.id)).toEqual(sourceTimeline);
   });
 
   test("an occupied target slot THROWS (the partial index, fail-loud) — the existing conversation is never replaced", async () => {

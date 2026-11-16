@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { regexAssistRequestSchema, regexAssistResponseSchema } from "@vibe-tavern/api-contracts";
+import { regexAssistRequestSchema, regexAssistResponseSchema, type AiAssistantStreamChunk } from "@vibe-tavern/api-contracts";
 
 describe("regex-assist contracts", () => {
   it("validates request and response schemas", () => {
@@ -41,27 +41,43 @@ describe("regex-assist contracts", () => {
 // dialect contract is asserted end-to-end too.
 
 import { createDb, type AppDb } from "@vibe-tavern/db";
+import { Hono } from "hono";
+import type { EventBus } from "@vibe-tavern/domain";
+import { strictTestDouble } from "./strict-test-double.js";
+import { makeProviderProfileRow } from "./copilot-test-builders.js";
 import type { StreamDeps } from "../src/domain/ai-assistant/ai-assistant-stream.js";
 import { generateRegexAssist } from "../src/domain/ai-assistant/regex-assist-service.js";
 import { createAiAssistantFeature } from "../src/domain/ai-assistant/ai-assistant-feature.js";
-import type { ModelMessage } from "ai";
+import type { AiAssistantRuntimeApi } from "../src/api/contract/runtime-api.js";
+import type { LanguageModel, ModelMessage } from "ai";
 
 type StreamDepsSeam = StreamDeps & { streamTextImpl?: import("../src/domain/ai-assistant/regex-assist-service.js").RegexAssistStreamFn };
 
 async function makeDeps(streamTextImpl: NonNullable<StreamDepsSeam["streamTextImpl"]>): Promise<StreamDepsSeam> {
   const db: AppDb = await createDb(":memory:");
-  const profile = { id: "profile_1", providerPreset: "openai", endpoint: "", apiKey: "key", defaultModel: "model_1", contextBudget: null, maxTokens: 2000 };
+  const profile = makeProviderProfileRow({ id: "profile_1", providerPreset: "openai", endpoint: "", apiKey: "key", defaultModel: "model_1", contextBudget: null, maxTokens: 2000 });
   return {
     db,
-    resolveModel: () => ({}) as never,
+    // The streamTextImpl seam short-circuits the executor, so the model the
+    // service resolves is an opaque handle the fake never touches — the same
+    // LanguageModel stub the agent/copilot suites carry.
+    resolveModel: () => ({}) as LanguageModel,
     getProviderProfile: async () => profile,
     getEffectiveProviderProfile: async () => profile,
+    // No character context is seeded in this fixture: the request carries no
+    // character/persona/lorebook ids, so resolveContext never calls these
+    // (empty ids short-circuit in context-resolver.ts) — null is the honest
+    // "not found". The impersonation builder mirrors the editor seam's
+    // not-configured throw below.
+    getCharacterById: async () => null,
+    getPersonaById: async () => null,
+    getLoreEntryById: async () => null,
     getPresetPromptData: async () => ({ aiAssistantPrompts: null, scriptAiSystemPrompt: null }),
-    getChatMessages: async () => [],
     getMessageEditorChat: async () => null,
     getMessageEditorMessages: async () => [],
     getMessageEditorVariantsByBranch: async () => new Map(),
     buildMessageEditorPipelineContext: async () => { throw new Error("message editor context is not configured"); },
+    buildChatImpersonationPipelineContext: async () => { throw new Error("impersonation context is not configured"); },
     streamTextImpl,
   };
 }
@@ -154,27 +170,52 @@ describe("generateRegexAssist — full path (real resolver + injected executor)"
 describe("POST /api/ai/regex-assist route (feature mount)", () => {
   it("passes the request through and serializes the response", async () => {
     const seen: Array<Record<string, unknown>> = [];
-    const runtime = {
-      streamAiAssistant: async function* () {},
+    const draft = { name: "N", findRegex: "/x/g", replaceString: "", trimStrings: [], applyTarget: "persist" as const, depthMode: "all" as const, explanation: "e" };
+    const runtime: AiAssistantRuntimeApi = {
+      streamAiAssistant: async function* (): AsyncGenerator<AiAssistantStreamChunk> {},
       countAiAssistantTokens: async () => ({ tokens: 0, model: "m", layerCount: 0, messageCount: 0, activatedLoreCount: 0 }),
       regexAssist: async (body: Record<string, unknown>) => {
         seen.push(body);
-        return { draft: { name: "N", findRegex: "/x/g", replaceString: "", trimStrings: [], applyTarget: "persist", depthMode: "all", explanation: "e" } };
+        return { draft };
       },
     };
-    const feature = createAiAssistantFeature(runtime as never);
-    const router = feature.activate as unknown as (deps: unknown) => { post: (path: string, handler: (c: unknown) => Promise<Response>) => { json: (fn: (c: unknown) => Response) => void } };
-    // The feature module's activate({router}) registers routes on a Hono-like
-    // router; drive the real shape instead: build the Hono app the way the
-    // server does is heavy — assert the route registration surface directly.
-    const registered: Array<string> = [];
-    const fakeRouter = {
-      post(path: string, handler: (c: unknown) => unknown) {
-        registered.push(path);
-        (fakeRouter as unknown as Record<string, unknown>)[path] = handler;
+    const feature = createAiAssistantFeature(runtime);
+    const app = new Hono();
+    feature.activate({
+      events: strictTestDouble<EventBus>({}, "EventBus (regex-assist route registration)"),
+      router: app,
+    });
+    expect(app.routes.map((route) => route.path)).toContain("/api/ai/regex-assist");
+
+    // Validation gate rejects incomplete requests at zValidator before hitting runtime.
+    const invalidRes = await app.request("/api/ai/regex-assist", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ providerProfileId: "p1" }),
+    });
+    expect(invalidRes.status).toBe(400);
+    expect(seen).toHaveLength(0);
+
+    // Valid body goes through regexAssistRequestSchema (defaulting archetype to "custom")
+    // to runtime.regexAssist and serializes the returned draft with status 200.
+    const res = await app.request("/api/ai/regex-assist", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        providerProfileId: "p1",
+        task: "strip zero-width spaces",
+        sampleText: "a\u200Bb",
+      }),
+    });
+    expect(res.status).toBe(200);
+    expect(seen).toEqual([
+      {
+        providerProfileId: "p1",
+        task: "strip zero-width spaces",
+        archetype: "custom",
+        sampleText: "a\u200Bb",
       },
-    };
-    feature.activate({ router: fakeRouter as never } as never);
-    expect(registered).toContain("/api/ai/regex-assist");
+    ]);
+    expect(await res.json()).toEqual({ draft });
   });
 });

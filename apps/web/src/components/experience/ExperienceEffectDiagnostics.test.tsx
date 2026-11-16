@@ -19,7 +19,8 @@
  * Runner: bun:test + happy-dom (useDomEnv). i18n returns keys verbatim. RTL
  * cleanup() runs after every test.
  */
-import { describe, it, expect, mock, beforeEach, afterEach } from "bun:test";
+import { describe, it, expect, mock, beforeEach } from "bun:test";
+import type { Mock } from "bun:test";
 import { useDomEnv } from "../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 
@@ -53,17 +54,19 @@ function makeEffect(over: Partial<ExperienceEffectRow> = {}): ExperienceEffectRo
   } as ExperienceEffectRow;
 }
 
-let onRetry: ReturnType<typeof mock>;
+// Typed by the component's real retry contract so the mock is directly
+// assignable to the onRetry prop (the ungenerified `ReturnType<typeof mock>`
+// erased the call signature to a bare Mock and forced an erasure at every
+// render call site).
+let onRetry: Mock<(effectId: string) => Promise<void>>;
 let retryImpl: (effectId: string) => Promise<void>;
 
 beforeEach(() => {
-  onRetry = mock((_effectId: string) => retryImpl(_effectId));
+  onRetry = mock((_effectId: string): Promise<void> => retryImpl(_effectId));
   retryImpl = async () => {};
 });
-
-afterEach(() => {
-  // Drain pending microtasks so an in-flight retry never leaks across tests.
-});
+// In-flight retries are awaited inside each test's act(); dom-env handles
+// RTL unmount cleanup and drains passive effects at teardown.
 
 describe("ExperienceEffectDiagnostics — row filtering", () => {
   it("renders nothing when there are no retryable rows", () => {
@@ -74,7 +77,7 @@ describe("ExperienceEffectDiagnostics — row filtering", () => {
           makeEffect({ id: "e-r", status: "running", error: null }),
           makeEffect({ id: "e-s", status: "succeeded", error: null }),
         ]}
-        onRetry={onRetry as unknown as (effectId: string) => Promise<void>}
+        onRetry={onRetry}
       />,
     );
     expect(container.querySelector('[data-testid="experience-effect-diagnostics"]')).toBeNull();
@@ -90,7 +93,7 @@ describe("ExperienceEffectDiagnostics — row filtering", () => {
           makeEffect({ id: "e-c", status: "cancelled", error: null }),
           makeEffect({ id: "e-u", status: "unknown", error: "outcome never recorded" }),
         ]}
-        onRetry={onRetry as unknown as (effectId: string) => Promise<void>}
+        onRetry={onRetry}
       />,
     );
     expect(getByTestId("experience-effect-row-e-f").textContent).toContain("experience_effect_status_failed");
@@ -107,7 +110,7 @@ describe("ExperienceEffectDiagnostics — row filtering", () => {
     const { getByTestId, queryByTestId } = render(
       <ExperienceEffectDiagnostics
         effects={[makeEffect({ id: "e-f", status: "failed", error: null })]}
-        onRetry={onRetry as unknown as (effectId: string) => Promise<void>}
+        onRetry={onRetry}
       />,
     );
     expect(getByTestId("experience-effect-row-e-f")).toBeTruthy();
@@ -120,7 +123,7 @@ describe("ExperienceEffectDiagnostics — retry action", () => {
     const { getByTestId } = render(
       <ExperienceEffectDiagnostics
         effects={[makeEffect({ id: "eff-9", status: "failed", error: "boom" })]}
-        onRetry={onRetry as unknown as (effectId: string) => Promise<void>}
+        onRetry={onRetry}
       />,
     );
     await act(async () => {
@@ -138,7 +141,7 @@ describe("ExperienceEffectDiagnostics — retry action", () => {
     const { getByTestId } = render(
       <ExperienceEffectDiagnostics
         effects={[makeEffect({ id: "eff-9", status: "failed" })]}
-        onRetry={onRetry as unknown as (effectId: string) => Promise<void>}
+        onRetry={onRetry}
       />,
     );
     await act(async () => {
@@ -163,7 +166,7 @@ describe("ExperienceEffectDiagnostics — retry action", () => {
     const { getByTestId } = render(
       <ExperienceEffectDiagnostics
         effects={[makeEffect({ id: "eff-9", status: "failed", error: "boom" })]}
-        onRetry={onRetry as unknown as (effectId: string) => Promise<void>}
+        onRetry={onRetry}
       />,
     );
     await act(async () => {

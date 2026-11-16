@@ -16,7 +16,7 @@ import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
  * setRegexLinks test for the forward direction.
  */
 useDomEnv();
-const { render, screen } = await import("@testing-library/react");
+const { render } = await import("@testing-library/react");
 
 const realTooltip = await import("./Tooltip.js");
 const realLorebookApi = await import("../../api/lorebook-api.js");
@@ -106,19 +106,19 @@ describe("BoundResourcesField — regex group", () => {
         id === "rx1" ? [{ regexPresetId: "rx1", targetType: "character" as const, targetId: "c1" }] : [],
       ),
     );
-    render(<BoundResourcesField entityKind="character" entityId="c1" isMobile={false} />);
-    expect(await screen.findByText("bound_regex_label")).toBeTruthy();
+    const { findByText, queryByText } = render(<BoundResourcesField entityKind="character" entityId="c1" isMobile={false} />);
+    expect(await findByText("bound_regex_label")).toBeTruthy();
     // Linked preset renders as a pill; the unlinked one does not appear in the row.
-    expect(await screen.findByText("No Italics")).toBeTruthy();
-    expect(screen.queryByText("Trim Think")).toBeNull();
+    expect(await findByText("No Italics")).toBeTruthy();
+    expect(queryByText("Trim Think")).toBeNull();
   });
 
   it("renders no regex group for a persona (regex links are character-only)", async () => {
     listAllRegexPresetsMock.mockClear();
-    render(<BoundResourcesField entityKind="persona" entityId="p1" isMobile={false} />);
+    const { findByText, queryByText } = render(<BoundResourcesField entityKind="persona" entityId="p1" isMobile={false} />);
     // The script group marks the field as loaded; the regex label must never appear.
-    expect(await screen.findByText("bound_scripts_label")).toBeTruthy();
-    expect(screen.queryByText("bound_regex_label")).toBeNull();
+    expect(await findByText("bound_scripts_label")).toBeTruthy();
+    expect(queryByText("bound_regex_label")).toBeNull();
     // And the regex API is never even queried for a persona.
     expect(listAllRegexPresetsMock).not.toHaveBeenCalled();
   });

@@ -6,6 +6,7 @@ import { useAgentTurnStore } from "../stores/agent-turn-store.js";
 import { useAgentReviewRoundStore, EMPTY_REVIEW_ROUND } from "../stores/agent-review-store.js";
 import { prepareScriptAgentReviewTurn, rehydrateScriptAgentDraft, streamPersistedScriptAgent, syncPersistedScriptAgentRound } from "./script-agent-draft.js";
 import { serializeBufferAgentReview } from "./buffer-agent-review-persistence.js";
+import { testFetch } from "@vibe-tavern/test-fetch";
 
 const originalFetch = globalThis.fetch;
 const originalTurns = useAgentTurnStore.getState();
@@ -21,7 +22,7 @@ beforeEach(() => {
   reviews = new Map();
   streamEvents = [event("finish", { finishReason: "stop" })];
   onPost = undefined;
-  globalThis.fetch = (async (input, init) => {
+  globalThis.fetch = testFetch(async (input, init) => {
     const path = new URL(String(input), "http://gateway.test").pathname;
     if (path.endsWith("/api/agent-runs")) return Response.json([]);
     const id = path.match(/\/experience-copilot\/([^/]+)\/(review|stream)$/)?.[1];
@@ -33,7 +34,7 @@ beforeEach(() => {
     if (init?.method === "PUT") reviews.set(id, JSON.parse(String(init.body)));
     if (init?.method === "DELETE") { reviews.delete(id); return Response.json({ ok: true }); }
     return Response.json(reviews.get(id) ?? null);
-  }) as typeof fetch;
+  });
 });
 afterAll(() => {
   globalThis.fetch = originalFetch;

@@ -2,18 +2,16 @@ import { describe, expect, test } from "bun:test";
 import type { PronounForms } from "@vibe-tavern/domain";
 import { PRESET_PRONOUN_FORMS, resolvePronounForms } from "../src/pronoun-forms.js";
 import { createFullMacroEngine } from "../src/macro-registry.js";
-import type { PromptVariableContext } from "../src/prompt-variable-context.js";
+import { buildPromptVariableContext, type PromptVariableContext } from "../src/prompt-variable-context.js";
 
-/** Minimal variable context — only `persona` matters for the pronoun macros. */
+/** Minimal variable context — only `persona` matters for the pronoun macros
+ *  (plus `{{user}}`'s pinned "User"); the rest of the shape comes from the
+ *  production builder, not a second hand-written derivation. */
 function ctx(persona: PromptVariableContext["persona"]): PromptVariableContext {
-  return {
+  return buildPromptVariableContext({
     names: { userName: "User", charName: "Assistant" },
     persona,
-    character: { name: "", description: "", personality: null, scenario: null },
-    prompt: { system: "", jailbreak: "", summary: "", tools: "", prefill: null, authorsNote: null, authorsNoteDepth: null, customInjections: [], promptOrder: [], original: null, contextBudget: null, maxResponseTokens: null },
-    chat: { messages: [], messageIds: [] },
-    runtime: { contextBudget: null, maxPromptTokens: null },
-  } as unknown as PromptVariableContext;
+  });
 }
 
 describe("PRESET_PRONOUN_FORMS", () => {
@@ -128,13 +126,24 @@ describe("pronoun macros (ST-extension compat: {{pronoun.*}})", () => {
 
   test("null persona → {{pronoun.*}} expand to empty", () => {
     const c = ctx({ name: "", description: "", pronouns: null, pronounForms: null, avatarAssetId: null });
-    expect(engine.resolve("[{{pronoun.subjective}}][{{pronoun.pos_pro}}]", c)).toBe("[][]");
+    expect(
+      engine.resolve(
+        "[{{pronoun.subjective}}][{{pronoun.objective}}][{{pronoun.pos_det}}][{{pronoun.pos_pro}}][{{pronoun.reflexive}}]",
+        c,
+      ),
+    ).toBe("[][][][][]");
   });
 
   test("VT-native and ST-extension macros resolve consistently from the same persona", () => {
-    const c = ctx({ name: "A", description: "", pronouns: "she/her", pronounForms: null, avatarAssetId: null });
-    expect(engine.resolve("{{sub}}/{{pronoun.subjective}}", c)).toBe("she/she");
-    expect(engine.resolve("{{poss}}/{{pronoun.pos_det}}", c)).toBe("her/her");
-    expect(engine.resolve("{{poss_p}}/{{pronoun.pos_pro}}", c)).toBe("hers/hers");
+    const she = ctx({ name: "A", description: "", pronouns: "she/her", pronounForms: null, avatarAssetId: null });
+    expect(engine.resolve("{{sub}}/{{pronoun.subjective}}", she)).toBe("she/she");
+    expect(engine.resolve("{{obj}}/{{pronoun.objective}}", she)).toBe("her/her");
+    expect(engine.resolve("{{poss}}/{{pronoun.pos_det}}", she)).toBe("her/her");
+    expect(engine.resolve("{{poss_p}}/{{pronoun.pos_pro}}", she)).toBe("hers/hers");
+    expect(engine.resolve("{{ref}}/{{pronoun.reflexive}}", she)).toBe("herself/herself");
+
+    const they = ctx({ name: "A", description: "", pronouns: "they/them", pronounForms: null, avatarAssetId: null });
+    expect(engine.resolve("{{sub}}/{{pronoun.subjective}}|{{obj}}/{{pronoun.objective}}|{{poss}}/{{pronoun.pos_det}}|{{poss_p}}/{{pronoun.pos_pro}}|{{ref}}/{{pronoun.reflexive}}", they))
+      .toBe("they/they|them/them|their/their|theirs/theirs|themselves/themselves");
   });
 });

@@ -8,6 +8,7 @@ import {
 } from "@vibe-tavern/domain";
 import { createProviderProfileService } from "../src/domain/providers/provider-profile-service.js";
 import { QuotaService } from "../src/domain/quota/quota-service.js";
+import { testFetch } from "./test-fetch-seam.js";
 
 const WINDOWED_CONFIG = {
 	kind: PROVIDER_QUOTA_KIND.windowed,
@@ -52,10 +53,10 @@ describe("quota resync on provider profile lifecycle", () => {
 			quota,
 			profiles: profileService,
 			events,
-			resolveFetch: async () => (async (input: string | URL | Request) => {
+			resolveFetch: async () => testFetch(async (input: string | URL | Request) => {
 				fetchCalls.push(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
 				return new Response("{}", { status: 500 });
-			}) as typeof fetch,
+			}),
 			now: () => new Date("2026-08-07T10:00:00.000Z"),
 			random: () => 0.5,
 		});

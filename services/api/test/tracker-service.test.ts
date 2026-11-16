@@ -6,9 +6,9 @@
  * schema/config revision bump, explicit cancel) and assert nothing stale persists.
  */
 import { describe, it, expect } from "bun:test";
-import type { StoreContainer } from "@vibe-tavern/db";
+import type { ChatStore, MessageStore, MessageVariantSceneRecord, StoreContainer } from "@vibe-tavern/db";
 import type { PromptAssemblyContext } from "@vibe-tavern/prompt-pipeline";
-import type { ProviderExecutionInput } from "../src/infrastructure/ai/provider-execution-types.js";
+import type { GenerationResult, ProviderExecutionInput } from "../src/infrastructure/ai/provider-execution-types.js";
 import {
 	SceneTrackerService,
 	composeSceneInstruction,
@@ -16,8 +16,21 @@ import {
 	type SceneTarget,
 	type SceneGenerateInput,
 } from "../src/domain/insights/tracker-service.js";
-import { computeSceneSourceHash } from "@vibe-tavern/domain";
+import {
+	brandId,
+	computeSceneSchemaHash,
+	computeSceneSourceHash,
+	normalizeInsightsConfig,
+	type ChatBranchId,
+	type ChatId,
+	type MessageId,
+	type MessageVariantId,
+} from "@vibe-tavern/domain";
 import type { SceneTrackerRecord } from "@vibe-tavern/domain";
+import { execResult, makeChatRow, makeMessageRow, makeVariantRow } from "./insights-test-builders.js";
+import { makeProviderProfileRow } from "./copilot-test-builders.js";
+import { unusedObjectiveDeps } from "./objective-service-fixture.js";
+import { strictTestDouble } from "./strict-test-double.js";
 
 // ─── fixtures ───────────────────────────────────────────────────────────────
 
@@ -37,12 +50,12 @@ const context: PromptAssemblyContext = {
 		],
 	},
 } as PromptAssemblyContext;
-const profile = {} as never; // fake execute ignores it
+const profile = makeProviderProfileRow(); // the fake execute ignores it; the row is the real stored shape
 const BASE_TARGET: SceneTarget = {
-	chatId: "chat_1" as never,
-	branchId: "branch_1" as never,
-	messageId: "m2" as never,
-	variantId: "var_1" as never,
+	chatId: brandId<ChatId>("chat_1"),
+	branchId: brandId<ChatBranchId>("branch_1"),
+	messageId: brandId<MessageId>("m2"),
+	variantId: brandId<MessageVariantId>("var_1"),
 };
 
 interface MockVariant {
@@ -50,22 +63,13 @@ interface MockVariant {
 	content: string;
 	isSelected?: boolean;
 }
-interface MockRecord {
-	variantId: string;
-	schemaHash: string;
-	configRevision: number;
-	sourceHash: string;
-	sceneState: Record<string, unknown>;
-	modelId: string | null;
-	generatedAt: string;
-}
 
 /** Mutable store fake. `trackerRaw` is the raw `.tracker` sub-object the service
  *  normalizes; mutating it mid-job simulates a config/schema/revision drift. */
 function makeStore(opts: {
 	tracker?: Record<string, unknown>;
 	variants?: Record<string, MockVariant[]>;
-	records?: Record<string, MockRecord>;
+	records?: Record<string, MessageVariantSceneRecord>;
 	messages?: Array<{ id: string; role: string }>;
 	/** Wire the current-Scene cache rebuild path (getCurrentSceneTarget + updateInsightsCurrentScene). */
 	cacheRebuild?: boolean;
@@ -76,55 +80,71 @@ function makeStore(opts: {
 	const variants: Record<string, MockVariant[]> = opts.variants ?? {
 		m2: [{ id: "var_1", content: "The warlord sneers.", isSelected: true }],
 	};
-	const records: Record<string, MockRecord> = opts.records ? structuredClone(opts.records) : {};
+	const records: Record<string, MessageVariantSceneRecord> = opts.records ? structuredClone(opts.records) : {};
 	const messages = opts.messages ?? [];
 
 	const cacheWrites: unknown[] = [];
-	const stores = {
-		chats: {
-			getById: async () => ({ insightsConfig: { tracker: trackerRaw } }),
-			...(opts.cacheRebuild
-				? {
-						updateInsightsCurrentScene: async (_chatId: string, cache: unknown) => {
-							if (opts.cacheThrow) throw new Error("cache write failed");
-							cacheWrites.push(cache);
-						},
-					}
-				: {}),
-		},
-		messages: {
-			...(opts.cacheRebuild
-				? {
-						getCurrentSceneTarget: async () => {
-							for (let i = messages.length - 1; i >= 0; i -= 1) {
-								const m = messages[i];
-								if (!m || m.role !== "assistant") continue;
-								const sel = (variants[m.id] ?? []).find((v) => v.isSelected);
-								if (!sel) continue;
-								const rec = records[sel.id];
-								if (!rec) continue;
-								return { messageId: m.id, variantId: sel.id, record: rec };
+	const stores = strictTestDouble<StoreContainer>(
+		{
+			chats: strictTestDouble<ChatStore>(
+				{
+					// The chat row completes through the standing builder; the config
+					// rides the domain's persisted-column seam (raw stored json →
+					// normalized InsightsConfig — the same tracker values the old
+					// erasure handed the service, plus inert defaults it never
+					// reads; trackerEnabled stays falsy on this path either way).
+					getById: async () => makeChatRow({ insightsConfig: normalizeInsightsConfig({ tracker: trackerRaw }) }),
+					...(opts.cacheRebuild
+						? {
+								updateInsightsCurrentScene: async (_chatId: string, cache: unknown) => {
+									if (opts.cacheThrow) throw new Error("cache write failed");
+									cacheWrites.push(cache);
+								},
 							}
-							return null;
-						},
-					}
-				: {}),
-			getVariants: async (messageId: string) =>
-				(variants[messageId] ?? []).map((v) => ({ id: v.id, content: v.content, isSelected: v.isSelected ?? false })),
-			getSceneRecord: async (variantId: string) => records[variantId] ?? null,
-			setSceneRecord: async (variantId: string, record: MockRecord) => {
-				records[variantId] = record;
-			},
-			clearSceneRecord: async (variantId: string) => {
-				delete records[variantId];
-			},
-			getMessages: async () => messages,
-			getSelectedVariant: async (messageId: string) => {
-				const sel = (variants[messageId] ?? []).find((v) => v.isSelected);
-				return sel ? { id: sel.id, content: sel.content } : null;
-			},
+						: {}),
+				},
+				"makeStore: chats (tracker-service)",
+			),
+			messages: strictTestDouble<MessageStore>(
+				{
+					...(opts.cacheRebuild
+						? {
+								getCurrentSceneTarget: async () => {
+									for (let i = messages.length - 1; i >= 0; i -= 1) {
+										const m = messages[i];
+										if (!m || m.role !== "assistant") continue;
+										const sel = (variants[m.id] ?? []).find((v) => v.isSelected);
+										if (!sel) continue;
+										const rec = records[sel.id];
+										if (!rec) continue;
+										return { messageId: m.id, variantId: sel.id, record: rec };
+									}
+									return null;
+								},
+							}
+						: {}),
+					// Rows/variants complete through the standing builders (the erased
+					// fragments carried only the fields the service reads).
+					getVariants: async (messageId: string) =>
+						(variants[messageId] ?? []).map((v) => makeVariantRow({ id: v.id, content: v.content, isSelected: v.isSelected ?? false })),
+					getSceneRecord: async (variantId) => records[variantId] ?? null,
+					setSceneRecord: async (variantId, record) => {
+						records[variantId] = record;
+					},
+					clearSceneRecord: async (variantId) => {
+						delete records[variantId];
+					},
+					getMessages: async () => messages.map((m) => makeMessageRow(m)),
+					getSelectedVariant: async (messageId) => {
+						const sel = (variants[messageId] ?? []).find((v) => v.isSelected);
+						return sel ? makeVariantRow({ id: sel.id, content: sel.content }) : null;
+					},
+				},
+				"makeStore: messages (tracker-service)",
+			),
 		},
-	} as unknown as StoreContainer;
+		"StoreContainer (tracker-service)",
+	);
 
 	return {
 		stores,
@@ -139,7 +159,7 @@ function makeStore(opts: {
 			const v = list?.find((item) => item.id === variantId);
 			if (v) v.content = content;
 		},
-		getRecord: (variantId: string): MockRecord | null => records[variantId] ?? null,
+		getRecord: (variantId: string): MessageVariantSceneRecord | null => records[variantId] ?? null,
 	};
 }
 
@@ -153,9 +173,9 @@ function quickService(handle: StoreHandle, reply: string, promptBase = "BASE") {
 	let captured: ProviderExecutionInput["prompt"] | null = null;
 	const execute = async (input: ProviderExecutionInput) => {
 		captured = input.prompt;
-		return { text: reply } as never;
+		return execResult(reply);
 	};
-	const service = new SceneTrackerService(handle.stores, null as never, null as never, execute as never, async () => promptBase);
+	const service = new SceneTrackerService(handle.stores, unusedObjectiveDeps, unusedObjectiveDeps, execute, async () => promptBase);
 	return { service, capturedPrompt: () => captured };
 }
 
@@ -165,24 +185,24 @@ function quickService(handle: StoreHandle, reply: string, promptBase = "BASE") {
  */
 function blockingService(handle: StoreHandle, promptBase = "BASE") {
 	let captured: ProviderExecutionInput["prompt"] | null = null;
-	let releaseExecute: ((value: { text: string }) => void) | undefined;
+	let releaseExecute: ((value: GenerationResult) => void) | undefined;
 	let markStarted: (() => void) | undefined;
 	const started = new Promise<void>((resolve) => {
 		markStarted = resolve;
 	});
 	const execute = async (input: ProviderExecutionInput) => {
 		captured = input.prompt;
-		return new Promise<{ text: string }>((resolve) => {
+		return new Promise<GenerationResult>((resolve) => {
 			releaseExecute = resolve;
 			markStarted?.();
 		});
 	};
-	const service = new SceneTrackerService(handle.stores, null as never, null as never, execute as never, async () => promptBase);
+	const service = new SceneTrackerService(handle.stores, unusedObjectiveDeps, unusedObjectiveDeps, execute, async () => promptBase);
 	return {
 		service,
 		capturedPrompt: () => captured,
 		started,
-		release: (reply: string) => releaseExecute?.({ text: reply }),
+		release: (reply: string) => releaseExecute?.(execResult(reply)),
 	};
 }
 
@@ -197,7 +217,7 @@ function generateInput(target: SceneTarget = BASE_TARGET, continuity?: SceneGene
 describe("composeSceneInstruction (SCN-5)", () => {
 	it("embeds the schema descriptor and the continuity window into the base", () => {
 		const instruction = composeSceneInstruction("BASE", TEST_SCHEMA, [
-			{ variantId: "v0" as never, sceneState: { mood: "tense", tension: 8 } },
+			{ variantId: brandId<MessageVariantId>("v0"), sceneState: { mood: "tense", tension: 8 } },
 		]);
 		expect(instruction).toContain("BASE");
 		expect(instruction).toContain('"mood"'); // schema descriptor
@@ -299,6 +319,89 @@ describe("composeSceneInstruction (SCN-5)", () => {
 				"\n\nRequired output: one JSON object matching the schema exactly.",
 		);
 	});
+
+	// ── DK-2: the story clock hint block ────────────────────────────────────────
+
+	const CLOCK_SCHEMA = {
+		story_day: { $type: "number", min: 1, max: 999, clock: "day", label: "Story day" },
+		story_time: { $type: "string", clock: "part", label: "Part of day" },
+		story_date: { $type: "string", clock: "label", label: "Date label" },
+		mood: { $type: "string" },
+	} as const;
+
+	it("adds ONE story clock block for a marked schema: day rule, the four closed part words, the label field", () => {
+		const instruction = composeSceneInstruction("BASE", CLOCK_SCHEMA, []);
+		expect(instruction).toContain("Story clock (the schema marks these fields as the story clock)");
+		expect(instruction).toContain('the story day field "story_day" is the 1-based day counter: it starts at 1 and grows by 1 when the night passes');
+		expect(instruction).toContain('the part-of-day field "story_time" accepts exactly one of these four words');
+		expect(instruction).toContain('"morning", "day", "evening", "night"');
+		expect(instruction).toContain("closed set");
+		expect(instruction).toContain('the date-label field "story_date" carries a free-form display label');
+		// ONE block, not one per field.
+		expect(instruction.split("Story clock (the schema marks these fields").length - 1).toBe(1);
+	});
+
+	it("teaches the part words as a CLOSED rule (unlike the toneBy preference list)", () => {
+		const instruction = composeSceneInstruction("BASE", { story_time: { $type: "string", clock: "part" } }, []);
+		expect(instruction).toContain("closed set");
+		expect(instruction).toContain("no other word is valid there");
+		// The toneBy phrasing ("a preference, not a closed enum") never leaks into the clock block.
+		expect(instruction).not.toContain("preference");
+	});
+
+	it("mentions only the fields the schema actually marks (day-only and label-only schemas)", () => {
+		const dayOnly = composeSceneInstruction("BASE", { story_day: { $type: "number", clock: "day" } }, []);
+		expect(dayOnly).toContain('the story day field "story_day"');
+		expect(dayOnly).not.toContain("part-of-day field");
+		expect(dayOnly).not.toContain("date-label field");
+
+		const labelOnly = composeSceneInstruction("BASE", { caption: { $type: "string", clock: "label" } }, []);
+		expect(labelOnly).toContain('the date-label field "caption"');
+		expect(labelOnly).not.toContain("story day field");
+	});
+
+	it("places the clock block after the vocabulary block and before the required-output line", () => {
+		const schema = {
+			timeOfDay: { $type: "string", clock: "part", toneBy: { Night: "danger" } },
+			story_day: { $type: "number", clock: "day" },
+		} as const;
+		const instruction = composeSceneInstruction("BASE", schema, []);
+		const labels = instruction.indexOf("Field labels");
+		const vocabulary = instruction.indexOf(VOCABULARY_PHRASE);
+		const clock = instruction.indexOf("Story clock (");
+		const required = instruction.indexOf("Required output: one JSON object");
+		expect(vocabulary).toBeGreaterThan(labels);
+		expect(clock).toBeGreaterThan(vocabulary);
+		expect(required).toBeGreaterThan(clock);
+	});
+
+	it("adds no clock block without a marked field — an unmarked schema keeps the byte-identical instruction", () => {
+		const schema = {
+			story_day: { $type: "number", min: 1, max: 999 },
+			story_time: { $type: "string" },
+		} as const;
+		const instruction = composeSceneInstruction("BASE", schema, []);
+		expect(instruction).not.toContain("Story clock (");
+		expect(instruction).toBe(
+			"BASE\n\n" +
+				'Scene schema (produce one JSON object with exactly these fields, no extras): {"story_day":{"$type":"number","min":1,"max":999},"story_time":{"$type":"string"}}\n\n' +
+				"Recent scene continuity (prior states — evolve them to match the current scene): []" +
+				"\n\nRequired output: one JSON object matching the schema exactly.",
+		);
+	});
+
+	it("keeps the clock marker visible in the schema JSON (semantic — the marker rides the strip projection) while presentation stays out", () => {
+		const instruction = composeSceneInstruction("BASE", CLOCK_SCHEMA, []);
+		const schemaPart = instruction.slice(
+			instruction.indexOf("Scene schema ("),
+			instruction.indexOf("Recent scene continuity"),
+		);
+		expect(schemaPart).toContain('"clock":"day"');
+		expect(schemaPart).toContain('"clock":"part"');
+		expect(schemaPart).toContain('"clock":"label"');
+		expect(schemaPart).not.toMatch(/"label"\s*:/);
+		expect(schemaPart).not.toContain("toneBy");
+	});
 });
 
 // ─── service (DI execute + resolvePrompt) ───────────────────────────────────
@@ -313,7 +416,7 @@ describe("SceneTrackerService.generateScene (SCN-5)", () => {
 		expect(record.sceneState).toEqual({ mood: "calm", tension: 3 });
 		expect(record.modelId).toBe("scene-model");
 		expect(record.sourceHash).toBe(computeSceneSourceHash("The warlord sneers."));
-		expect(record.schemaHash).toBe(record.schemaHash); // recomputed from schema
+		expect(record.schemaHash).toBe(computeSceneSchemaHash(TEST_SCHEMA));
 		expect(record.configRevision).toBe(0); // default revision
 
 		// Persisted.
@@ -348,7 +451,7 @@ describe("SceneTrackerService.generateScene (SCN-5)", () => {
 	});
 
 	it("preserves a prior record when generation fails (in-place Update overwrites only on success)", async () => {
-		const prior: MockRecord = {
+		const prior: MessageVariantSceneRecord = {
 			variantId: "var_1",
 			schemaHash: "old-hash",
 			configRevision: 0,
@@ -417,7 +520,7 @@ describe("SceneTrackerService.generateScene (SCN-5)", () => {
 	});
 
 	it("preserves a prior record when cancelled mid-job", async () => {
-		const prior: MockRecord = {
+		const prior: MessageVariantSceneRecord = {
 			variantId: "var_1", schemaHash: "h", configRevision: 0, sourceHash: "s",
 			sceneState: { mood: "calm", tension: 2 }, modelId: "m", generatedAt: "2026-01-01T00:00:00.000Z",
 		};
@@ -432,7 +535,7 @@ describe("SceneTrackerService.generateScene (SCN-5)", () => {
 	});
 
 	it("preserves a prior record when the provider execution fails", async () => {
-		const prior: MockRecord = {
+		const prior: MessageVariantSceneRecord = {
 			variantId: "var_1", schemaHash: "h", configRevision: 0, sourceHash: "s",
 			sceneState: { mood: "calm", tension: 2 }, modelId: "m", generatedAt: "2026-01-01T00:00:00.000Z",
 		};
@@ -440,7 +543,7 @@ describe("SceneTrackerService.generateScene (SCN-5)", () => {
 		const execute = async () => {
 			throw new Error("provider 500");
 		};
-		const service = new SceneTrackerService(handle.stores, null as never, null as never, execute as never, async () => "BASE");
+		const service = new SceneTrackerService(handle.stores, unusedObjectiveDeps, unusedObjectiveDeps, execute, async () => "BASE");
 		await expect(service.generateScene(generateInput())).rejects.toThrow("provider 500");
 		expect(handle.getRecord("var_1")).toEqual(prior); // preserved
 	});
@@ -451,8 +554,9 @@ describe("SceneTrackerService.generateScene (SCN-5)", () => {
 		const pending = service.generateScene(generateInput());
 		await started;
 		handle.setVariantContent("m2", "var_1", "The warlord sneers.");
-		// Simulate deletion: replace the message's variants with none matching.
-		(handle.stores as unknown as { messages: { getVariants: () => Promise<MockVariant[]> } }).messages.getVariants = async () => [];
+		// Simulate deletion: replace the message's variants with none matching
+		// (the typed store double takes the mutation directly).
+		handle.stores.messages.getVariants = async () => [];
 		release(VALID_REPLY);
 		await expect(pending).rejects.toThrow(/no longer exists/i);
 	});
@@ -475,7 +579,7 @@ describe("SceneTrackerService.generateScene (SCN-5)", () => {
 			},
 		});
 		const { service } = quickService(handle, '{"mood":"calm","tension":3}');
-		const targetB: SceneTarget = { ...BASE_TARGET, variantId: "var_2" as never };
+		const targetB: SceneTarget = { ...BASE_TARGET, variantId: brandId<MessageVariantId>("var_2") };
 		const record = await service.generateScene(generateInput(targetB));
 		expect(record.variantId).toBe("var_2");
 		expect(handle.getRecord("var_1")).toBeNull(); // sibling untouched

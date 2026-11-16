@@ -12,36 +12,20 @@ import {
 } from "@vibe-tavern/domain";
 import { QuotaService } from "../src/domain/quota/quota-service.js";
 import type { ProviderProfileService } from "../src/domain/providers/provider-profile-service.js";
+import { strictTestDouble } from "./strict-test-double.js";
+import { makeProviderProfileRow } from "./copilot-test-builders.js";
 
 const FIXTURES = join(import.meta.dir, "fixtures", "quota");
-
-const BASE_CREATE = {
-	endpoint: "https://api.z.ai/api/paas/v4",
-	apiKey: "sk-test",
-	defaultModel: "glm-4.6",
-	contextBudget: null as null,
-	temperature: 1, topP: 1, minP: 0, topK: 0, topA: 0,
-	typicalP: 1, tfsZ: 1, repeatLastN: 0,
-	mirostat: 0, mirostatTau: 5, mirostatEta: 0.1,
-	dryMultiplier: 0, dryBase: 1.75, dryAllowedLength: 2,
-	drySequenceBreakers: null as null,
-	xtcThreshold: 0.1, xtcProbability: 0,
-	frequencyPenalty: 0, presencePenalty: 0, repetitionPenalty: 1,
-	maxTokens: 2000,
-	stopSequences: null as null, logitBias: null as null, seed: null as null,
-	reasoningEffort: "auto" as const,
-	showReasoning: false, streamResponse: true, customSamplers: false,
-};
 
 /**
  * The service only ever calls `getProviderProfile`. A narrow stub keeps the
  * test honest about that instead of dragging the whole profile service in.
  */
 function profileServiceFor(profiles: Map<string, StoredProviderProfileRecord>): ProviderProfileService {
-	const service = {
-		getProviderProfile: async (id: string) => profiles.get(id) ?? null,
-	};
-	return service as unknown as ProviderProfileService;
+	return strictTestDouble<ProviderProfileService>(
+		{ getProviderProfile: async (id: string) => profiles.get(id) ?? null },
+		"ProviderProfileService (quota-service)",
+	);
 }
 
 async function zaiBody(usedFraction: number, resetsAtMs: number): Promise<string> {
@@ -89,7 +73,26 @@ describe("QuotaService", () => {
 		services = [];
 		clockMs = Date.parse("2026-08-07T10:00:00.000Z");
 
-		const created = await providers.create({ name: "ZAI", providerPreset: "zai", ...BASE_CREATE });
+		const created = await providers.create(
+			makeProviderProfileRow({
+				name: "ZAI",
+				providerPreset: "zai",
+				endpoint: "https://api.z.ai/api/paas/v4",
+				apiKey: "sk-test",
+				defaultModel: "glm-4.6",
+				contextBudget: null,
+				temperature: 1, topP: 1, minP: 0, topK: 0, topA: 0,
+				typicalP: 1, tfsZ: 1, repeatLastN: 0,
+				mirostat: 0, mirostatTau: 5, mirostatEta: 0.1,
+				dryMultiplier: 0, dryBase: 1.75, dryAllowedLength: 2,
+				xtcThreshold: 0.1, xtcProbability: 0,
+				frequencyPenalty: 0, presencePenalty: 0, repetitionPenalty: 1,
+				maxTokens: 2000,
+				seed: null,
+				reasoningEffort: "auto",
+				showReasoning: false, streamResponse: true, customSamplers: false,
+			}),
+		);
 		profileId = created.id;
 		const stored = await providers.getById(profileId);
 		profiles = new Map([[profileId, stored!]]);

@@ -42,6 +42,13 @@ describe("upsertSummary — archive list ordering", () => {
 		// Pre-existing entry spanning T5..T8; inserting a T1..T3 entry lands first.
 		const out = upsertSummary([base({ id: "b", summarizedFrom: 5, summarizedTo: 8 })], base({ id: "a", summarizedFrom: 1, summarizedTo: 3 }));
 		expect(out.map((s) => s.id)).toEqual(["a", "b"]);
+
+		// Same summarizedFrom breaks ties ascending by createdAt.
+		const tied = upsertSummary(
+			[base({ id: "later", summarizedFrom: 5, createdAt: "2026-01-02T00:00:00Z" })],
+			base({ id: "earlier", summarizedFrom: 5, createdAt: "2026-01-01T00:00:00Z" }),
+		);
+		expect(tied.map((s) => s.id)).toEqual(["earlier", "later"]);
 	});
 
 	test("replaces an existing entry in place (keeps position by summarizedFrom)", () => {

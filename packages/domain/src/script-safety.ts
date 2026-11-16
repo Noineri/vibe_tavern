@@ -40,13 +40,18 @@
  */
 import { parse } from "acorn";
 import type {
+  AssignmentExpression,
   CallExpression,
   Identifier,
   Literal,
   MemberExpression,
+  MethodDefinition,
   NewExpression,
   Node as AcornNode,
   ObjectPattern,
+  Property,
+  PropertyDefinition,
+  TemplateElement,
 } from "acorn";
 import { SCRIPT_KIND, type ScriptKind } from "./platform-constants.js";
 
@@ -269,8 +274,13 @@ function isAstNode(value: unknown): value is AcornNode {
   return typeof value === "object" && value !== null && typeof (value as { type?: unknown }).type === "string";
 }
 
-function nodeRecord(node: AcornNode): Record<string, unknown> {
-  return node as unknown as Record<string, unknown>;
+/** Record view over an acorn node: the acorn-typed members (`type`, `loc`,
+ *  `start`, …) stay typed, while the ESTree fields acorn's d.ts does not
+ *  declare on `Node` (`param`, `id`, `params`, …) remain reachable by key. */
+type NodeRecord = AcornNode & Record<string, unknown>;
+
+function nodeRecord(node: AcornNode): NodeRecord {
+  return node as NodeRecord;
 }
 
 /** Collect binding Identifier nodes from a declaration pattern (the names
@@ -322,7 +332,7 @@ function isNonReferencePosition(parent: AcornNode, key: string): boolean {
     (parent.type === "Property" || parent.type === "MethodDefinition" || parent.type === "PropertyDefinition") &&
     key === "key"
   ) {
-    return !(parent as unknown as { computed: boolean }).computed;
+    return !(parent as Property | MethodDefinition | PropertyDefinition).computed;
   }
   if (
     (parent.type === "LabeledStatement" || parent.type === "BreakStatement" || parent.type === "ContinueStatement") &&
@@ -433,7 +443,7 @@ function collectAnalysis(ast: AcornNode, code: string): AnalysisContext {
         break;
       }
       case "TemplateElement": {
-        const cooked = (node as unknown as { value: { cooked: string | null } }).value.cooked;
+        const cooked = (node as TemplateElement).value.cooked;
         if (typeof cooked === "string") templateQuasis.push({ node, value: cooked });
         break;
       }
@@ -565,7 +575,7 @@ export function analyzeScriptSource(code: string, kind: ScriptKind): readonly Sc
     let child: AcornNode = node;
     for (let i = path.length - 1; i >= 0; i--) {
       const parent = path[i] as AcornNode;
-      if (parent.type === "AssignmentExpression" && (parent as unknown as { left: AcornNode }).left === child) {
+      if (parent.type === "AssignmentExpression" && (parent as AssignmentExpression).left === child) {
         return true;
       }
       child = parent;

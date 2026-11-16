@@ -11,10 +11,12 @@
  * constructor surface for this); i18n's `useT` is mocked so the hook does not
  * need a provider.
  */
-import { afterAll, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
+import { afterAll, beforeEach, describe, expect, it, spyOn } from "bun:test";
 
 import { useDomEnv } from "../../test/dom-env.js";
 import { installI18nContextSeam } from "../../test/i18n-context-seam.js";
+import { TestEventSource } from "../../test/event-source-seam.js";
+import { toastClickEvent } from "../../test/react-event-seam.js";
 
 useDomEnv();
 
@@ -33,26 +35,11 @@ import type { ChatId } from "@vibe-tavern/domain";
 
 installI18nContextSeam();
 
-class MockEventSource {
-	static instances: MockEventSource[] = [];
-	url: string;
-	closed = false;
-	addEventListener = mock();
-	listeners = new Map<string, EventListener>();
-	constructor(url: string) {
-		this.url = url;
-		this.addEventListener.mockImplementation((kind: string, listener: EventListener) => {
-			this.listeners.set(kind, listener);
-		});
-		MockEventSource.instances.push(this);
-	}
-	emit(kind: string, payload: Record<string, unknown> = {}) {
-		this.listeners.get(kind)?.(new MessageEvent(kind, { data: JSON.stringify(payload) }));
-	}
-	close() {
-		this.closed = true;
-	}
-}
+// THE EventSource seam (../../test/event-source-seam.ts) — one derivation
+// shared with use-agent-run-events / use-quota-events / SummaryTab. Carries
+// this suite's pin verbatim: addEventListener is a per-instance bun mock,
+// so `toHaveBeenCalledWith(kind, expect.any(Function))` keeps working.
+const MockEventSource = TestEventSource;
 
 const originalEventSource = globalThis.EventSource;
 const originalFetch = globalThis.fetch;
@@ -69,7 +56,7 @@ beforeEach(() => {
 	useSnapshotStore.getState().clear();
 	useGenerationQueueStore.setState({ jobsByChat: {}, recordsByChat: {}, batchesByChat: {} });
 	MockEventSource.instances = [];
-	globalThis.EventSource = MockEventSource as unknown as typeof EventSource;
+	globalThis.EventSource = MockEventSource;
 });
 afterAll(() => {
 	globalThis.EventSource = originalEventSource;
@@ -235,7 +222,7 @@ describe("useChatEvents — SPC-7b", () => {
 		const options = success.mock.calls[0]?.[1];
 		await act(async () => {
 			if (options?.action && typeof options.action === "object" && "onClick" in options.action) {
-				await options.action.onClick?.(new MouseEvent("click") as unknown as Parameters<NonNullable<typeof options.action.onClick>>[0]);
+				await options.action.onClick?.(toastClickEvent());
 			}
 		});
 		expect(useChatStore.getState().activeChatId).toBe(brandId<ChatId>("chat-1"));

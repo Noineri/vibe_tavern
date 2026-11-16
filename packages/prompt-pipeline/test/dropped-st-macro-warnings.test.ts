@@ -26,16 +26,18 @@ describe("findDroppedStMacroWarnings", () => {
 		]);
 	});
 
-	it("never warns for supported macros, including every step 3–7 name", () => {
-		const supportedOnly =
-			"{{user}} and {{char}}; {{original}}; {{random::a::b}} {{roll 1d20}} {{pick::x::y}} {{trim}}; " +
-			"{{setvar::x::1}}{{getvar::x}} {{setglobalvar::y::2}}{{getglobalvar::y}}; " +
-			"{{lastMessage}} {{mesExamples}} {{mesExamplesRaw}}; " +
-			"{{charPrompt}} {{charInstruction}} {{systemPrompt}} {{defaultSystemPrompt}} " +
-			"{{authorsNote}} {{defaultAuthorsNote}} {{notChar}} {{reverse}} " +
-			"{{datetimeformat::%H:%M}} {{idleDuration}} {{idle_duration}} {{timeDiff::60}} {{time::UTC+3}}; " +
-			"{{outlet::memory}}";
-		expect(findDroppedStMacroWarnings([supportedOnly])).toEqual([]);
+	it("never warns for supported macros across every catalog name, alias, and step 3–7 form", () => {
+		const catalog = getMacroCatalog();
+		expect(catalog.length).toBeGreaterThan(0);
+		const catalogTokens = catalog.flatMap((entry) => [
+			`{{${entry.name}}}`,
+			...entry.aliases.map((alias) => `{{${alias}}}`),
+		]);
+		const parameterizedForms =
+			"{{random::a::b}} {{roll 1d20}} {{pick::x::y}} " +
+			"{{setvar::x::1}}{{getvar::x}} {{setglobalvar::y::2}}{{getglobalvar::y}} " +
+			"{{datetimeformat::%H:%M}} {{timeDiff::60}} {{time::UTC+3}} {{outlet::memory}}";
+		expect(findDroppedStMacroWarnings([...catalogTokens, parameterizedForms])).toEqual([]);
 	});
 
 	it("does not warn for macros that are unknown but not on the dropped list (card-author placeholders stay literal)", () => {

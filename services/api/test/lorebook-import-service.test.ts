@@ -17,8 +17,11 @@
  * service) so the entry pipeline below the flag stays honest.
  */
 import { describe, it, expect, mock } from "bun:test";
-import type { StoreContainer } from "@vibe-tavern/db";
+import type { CharacterStore, CreateLorebookData, CreateLoreEntryData, LorebookStore, StoreContainer } from "@vibe-tavern/db";
 import { importLorebook } from "../src/domain/lorebook/lorebook-import-service.js";
+import { makeLorebookRow } from "./insights-test-builders.js";
+import { makeCharacterRow } from "./copilot-test-builders.js";
+import { strictTestDouble } from "./strict-test-double.js";
 
 const ST_BOOK = {
   name: "Svc World",
@@ -39,18 +42,29 @@ const ST_BOOK = {
 };
 
 function makeStores() {
-  const createLorebook = mock(async (data: Record<string, unknown>) => ({ id: "lb_1", ...data }));
-  const bulkCreateEntries = mock(async (_lorebookId: string, _entries: unknown[]) => 1);
-  const listAll = mock(async () => [{ id: "char_alice", name: "Alice", slug: "alice" }]);
-  const stores = {
-    characters: { listAll },
-    lorebooks: {
-      createLorebook,
-      bulkCreateEntries,
-      getLorebook: async (_id: string) => ({ id: "lb_x", name: "Existing" }),
-      deleteAllEntries: async (_id: string) => {},
+  const createLorebook = mock(async (data: CreateLorebookData) =>
+    makeLorebookRow({ id: "lb_1", ...data }),
+  );
+  const bulkCreateEntries = mock(async (_lorebookId: string, _entries: CreateLoreEntryData[]) => 1);
+  const listAll = mock(async () => [makeCharacterRow("char_alice", { name: "Alice", slug: "alice" })]);
+  const stores = strictTestDouble<StoreContainer>(
+    {
+      characters: strictTestDouble<CharacterStore>(
+        { listAll },
+        "lorebook-import stores.characters",
+      ),
+      lorebooks: strictTestDouble<LorebookStore>(
+        {
+          createLorebook,
+          bulkCreateEntries,
+          getLorebook: async (_id: string) => makeLorebookRow({ id: "lb_x", name: "Existing" }),
+          deleteAllEntries: async (_id: string) => {},
+        },
+        "lorebook-import stores.lorebooks",
+      ),
     },
-  } as unknown as StoreContainer;
+    "StoreContainer (lorebook-import-service)",
+  );
   return { stores, createLorebook, bulkCreateEntries, listAll };
 }
 
@@ -70,7 +84,7 @@ describe("lorebook-import-service — enabled threading (L1a)", () => {
     expect(result.lorebookId).toBe("lb_1");
     expect(result.imported).toBe(1);
     expect(createLorebook).toHaveBeenCalledTimes(1);
-    const created = createLorebook.mock.calls[0][0] as Record<string, unknown>;
+    const created = createLorebook.mock.calls[0][0];
     expect(created.enabled).toBe(false);
     expect(created.scopeType).toBe("global");
   });
@@ -87,7 +101,7 @@ describe("lorebook-import-service — enabled threading (L1a)", () => {
     });
 
     expect(createLorebook).toHaveBeenCalledTimes(1);
-    const created = createLorebook.mock.calls[0][0] as Record<string, unknown>;
+    const created = createLorebook.mock.calls[0][0];
     expect(created.enabled).toBe(true);
   });
 
@@ -120,7 +134,7 @@ describe("lorebook-import-service — enabled threading (L1a)", () => {
       globalMatchWholeWords: true,
     });
 
-    const created = createLorebook.mock.calls[0][0] as Record<string, unknown>;
+    const created = createLorebook.mock.calls[0][0];
     expect(created).toMatchObject({
       scanDepth: 7,
       tokenBudget: 777,
@@ -157,7 +171,7 @@ describe("lorebook-import-service — enabled threading (L1a)", () => {
 
     expect(result.warnings).toContain("Lore entry 0 has character-filter tags that Vibe Tavern cannot import.");
     expect(listAll).toHaveBeenCalledTimes(1);
-    const entries = bulkCreateEntries.mock.calls[0][1] as Array<Record<string, unknown>>;
+    const entries = bulkCreateEntries.mock.calls[0][1];
     expect(entries[0].characterFilter).toEqual([
       { id: "char_alice", name: "Alice" },
       { id: null, name: "Missing.png" },

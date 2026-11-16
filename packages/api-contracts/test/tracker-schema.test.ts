@@ -264,6 +264,155 @@ describe("tone DSL (semantic color tokens)", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Clock marker DSL (DK-2 — semantic story clock marks)
+// ---------------------------------------------------------------------------
+
+describe("clock marker DSL (semantic story clock marks)", () => {
+  it("accepts `clock: \"day\"` on a number node and round-trips it", () => {
+    const node: SceneTrackerSchemaNode = { $type: "number", min: 1, max: 999, clock: "day" };
+    expect(sceneTrackerNodeSchema.parse(node)).toEqual(node);
+    expect(sceneTrackerNodeSchema.safeParse({ $type: "number" }).success).toBe(true); // unmarked stays valid
+  });
+
+  it("accepts `clock: \"part\"` and `clock: \"label\"` on string nodes and round-trips them", () => {
+    const part: SceneTrackerSchemaNode = { $type: "string", clock: "part" };
+    const label: SceneTrackerSchemaNode = { $type: "string", clock: "label" };
+    expect(sceneTrackerNodeSchema.parse(part)).toEqual(part);
+    expect(sceneTrackerNodeSchema.parse(label)).toEqual(label);
+  });
+
+  it("rejects `clock: \"day\"` on a string node and `clock: \"part\"/\"label\"` on a number node, naming the allowed marker", () => {
+    const wrongString = sceneTrackerNodeSchema.safeParse({ $type: "string", clock: "day" });
+    expect(wrongString.success).toBe(false);
+    if (!wrongString.success) expect(JSON.stringify(wrongString.error.issues)).toContain("marks a number field");
+    for (const bad of ["part", "label"]) {
+      const wrongNumber = sceneTrackerNodeSchema.safeParse({ $type: "number", clock: bad });
+      expect(wrongNumber.success).toBe(false);
+      if (!wrongNumber.success) expect(JSON.stringify(wrongNumber.error.issues)).toContain("mark string fields");
+    }
+  });
+
+  it("rejects a clock marker on boolean, object, and array nodes (strict unknown key)", () => {
+    const offenders = [
+      { $type: "boolean", clock: "day" },
+      { $type: "boolean", clock: "part" },
+      { $type: "object", properties: {}, clock: "label" },
+      { $type: "array", items: { $type: "string" }, clock: "day" },
+    ];
+    for (const node of offenders) {
+      const result = sceneTrackerNodeSchema.safeParse(node);
+      expect(result.success).toBe(false);
+      if (!result.success) expect(JSON.stringify(result.error.issues)).toContain("clock");
+    }
+  });
+
+  it("rejects an unknown marker word on any node", () => {
+    expect(sceneTrackerNodeSchema.safeParse({ $type: "string", clock: "date" }).success).toBe(false);
+    expect(sceneTrackerNodeSchema.safeParse({ $type: "number", clock: "year" }).success).toBe(false);
+  });
+
+  it("accepts a fully marked schema at the DSL root and round-trips every marker", () => {
+    const schema: SceneTrackerDsl = {
+      story_day: { $type: "number", min: 1, max: 999, clock: "day", label: "Story day" },
+      story_time: { $type: "string", clock: "part", label: "Part of day" },
+      story_date: { $type: "string", clock: "label", label: "Date label" },
+      mood: { $type: "string" },
+    };
+    expect(sceneTrackerDslSchema.parse(schema)).toEqual(schema);
+  });
+
+  it("accepts a schema with a marked day but no part/label, and vice versa for label-only", () => {
+    expect(sceneTrackerDslSchema.safeParse({ story_day: { $type: "number", clock: "day" } }).success).toBe(true);
+    expect(sceneTrackerDslSchema.safeParse({ story_date: { $type: "string", clock: "label" } }).success).toBe(true);
+    expect(
+      sceneTrackerDslSchema.safeParse({ story_day: { $type: "number", clock: "day" }, story_date: { $type: "string", clock: "label" } })
+        .success,
+    ).toBe(true);
+  });
+
+  it("rejects a schema with a marked part but no marked day (a part without a day is meaningless)", () => {
+    const result = sceneTrackerDslSchema.safeParse({ story_time: { $type: "string", clock: "part" } });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(JSON.stringify(result.error.issues)).toContain("part");
+      expect(JSON.stringify(result.error.issues)).toContain("day");
+    }
+  });
+
+  it("rejects a marker inside an object property or an array item (top-level only)", () => {
+    // Type-legal nested markers (each node carries its own clock member) — the
+    // zod validator's top-level rule is the behavior under test.
+    const nestedObject: SceneTrackerDsl = {
+      box: { $type: "object", properties: { day: { $type: "number", clock: "day" } } },
+    };
+    const nestedArray: SceneTrackerDsl = {
+      list: { $type: "array", items: { $type: "string", clock: "part" } },
+    };
+    for (const dsl of [nestedObject, nestedArray]) {
+      const result = sceneTrackerDslSchema.safeParse(dsl);
+      expect(result.success).toBe(false);
+      if (!result.success) expect(JSON.stringify(result.error.issues)).toContain("top-level");
+    }
+  });
+
+  it("rejects two fields carrying the same marker (each marker at most once)", () => {
+    const dsl: SceneTrackerDsl = {
+      story_day: { $type: "number", clock: "day" },
+      chapter: { $type: "number", clock: "day" },
+    };
+    const result = sceneTrackerDslSchema.safeParse(dsl);
+    expect(result.success).toBe(false);
+    if (!result.success) expect(JSON.stringify(result.error.issues)).toContain("at most once");
+  });
+
+  it("rejects duplicate non-day markers too (three part fields)", () => {
+    const dsl: SceneTrackerDsl = {
+      a: { $type: "string", clock: "part" },
+      b: { $type: "string", clock: "part" },
+      c: { $type: "string", clock: "part" },
+      story_day: { $type: "number", clock: "day" },
+    };
+    const result = sceneTrackerDslSchema.safeParse(dsl);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const msg = JSON.stringify(result.error.issues);
+      expect(msg).toContain("part");
+      expect(msg).toContain("at most once");
+    }
+  });
+
+  it("round-trips a marked schema through the config schema and the PATCH schema (marker survives save-path validation)", () => {
+    const schema: SceneTrackerDsl = {
+      story_day: { $type: "number", min: 1, max: 999, clock: "day" },
+      story_time: { $type: "string", clock: "part" },
+    };
+    const config = sceneTrackerConfigSchema.parse({ schema });
+    expect(config.schema).toEqual(schema); // marker not stripped at the config boundary
+    expect(config.schemaHash).toBe(computeSceneSchemaHash(schema));
+    expect(updateTrackerConfigSchema.parse({ schema })).toEqual({ schema });
+  });
+
+  it("marks the hash: two schemas differing only in a clock marker hash differently", () => {
+    const unmarked = computeSceneSchemaHash({ story_day: { $type: "number" } });
+    const marked = computeSceneSchemaHash({ story_day: { $type: "number", clock: "day" } });
+    expect(marked).not.toBe(unmarked);
+  });
+
+  it("carries clock markers through the tracker template schema (portable semantic metadata)", () => {
+    const schema: SceneTrackerDsl = {
+      story_day: { $type: "number", clock: "day" },
+      story_time: { $type: "string", clock: "part" },
+    };
+    const template = trackerTemplateSchema.parse({
+      version: 1,
+      scene: { enabled: true, config: { schema } },
+      objective: null,
+    });
+    expect(template.scene?.config.schema).toEqual(schema);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Generated-data validator
 // ---------------------------------------------------------------------------
 
@@ -386,12 +535,21 @@ describe("sceneTrackerEditPathSchema + resolveSceneDslPath", () => {
 
   it("resolves a nested path and reports stale/non-object/empty paths", () => {
     const dsl: SceneTrackerDsl = { box: { $type: "object", properties: { x: { $type: "string" } } } };
-    expect(resolveSceneDslPath(dsl, ["box", "x"]).success).toBe(true);
-    expect(resolveSceneDslPath(dsl, ["box"]).success).toBe(true);
-    expect(resolveSceneDslPath(dsl, []).success).toBe(false);
-    expect(resolveSceneDslPath(dsl, ["box", "missing"]).success).toBe(false);
-    expect(resolveSceneDslPath(dsl, ["box", "x", "deep"]).success).toBe(false);
-    expect(resolveSceneDslPath(dsl, ["__proto__"]).success).toBe(false);
+    expect(resolveSceneDslPath(dsl, ["box", "x"])).toEqual({ success: true, node: { $type: "string" } });
+    expect(resolveSceneDslPath(dsl, ["box"])).toEqual({ success: true, node: dsl.box });
+    expect(resolveSceneDslPath(dsl, [])).toEqual({ success: false, error: "Edit path is empty." });
+    expect(resolveSceneDslPath(dsl, ["box", "missing"])).toEqual({
+      success: false,
+      error: 'Path segment "missing" does not exist (at depth 2).',
+    });
+    expect(resolveSceneDslPath(dsl, ["box", "x", "deep"])).toEqual({
+      success: false,
+      error: 'Path segment "x" is not an object (at depth 2).',
+    });
+    expect(resolveSceneDslPath(dsl, ["__proto__"])).toEqual({
+      success: false,
+      error: 'Reserved path segment "__proto__" is not allowed (at depth 1).',
+    });
   });
 });
 
@@ -402,7 +560,7 @@ describe("sceneTrackerEditPathSchema + resolveSceneDslPath", () => {
 describe("sceneTrackerConfigSchema", () => {
   it("fills fixed defaults and a consistent schemaHash from an empty input", () => {
     const parsed = sceneTrackerConfigSchema.parse({});
-    expect(parsed).toMatchObject({
+    expect(parsed).toEqual({
       schema: {},
       autoMode: "assistant",
       contextWindow: 6,
@@ -413,11 +571,12 @@ describe("sceneTrackerConfigSchema", () => {
       useChatModel: true,
       generatePrompt: "",
       injectPrompt: "",
+      rulesPrompt: "",
       providerProfileId: null,
       model: null,
       revision: 0,
+      schemaHash: EMPTY_SCENE_SCHEMA_HASH,
     });
-    expect(parsed.schemaHash).toBe(EMPTY_SCENE_SCHEMA_HASH);
   });
 
   it("matches createDefaultSceneTrackerConfig()", () => {
@@ -457,7 +616,9 @@ describe("sceneTrackerConfigSchema", () => {
   });
 
   it("XML format rejects keys that are not valid XML names and names them", () => {
-    const schema = { "first name": { $type: "string" }, "123": { $type: "number" }, ok: { $type: "string" } } as unknown as SceneTrackerDsl;
+    // Invalid XML keys are valid SceneTrackerDsl keys (plain Record) — the XML
+    // check is a separate validator concern.
+    const schema: SceneTrackerDsl = { "first name": { $type: "string" }, "123": { $type: "number" }, ok: { $type: "string" } };
     const result = sceneTrackerConfigSchema.safeParse({ promptFormat: "xml", schema });
     expect(result.success).toBe(false);
     if (!result.success) {
@@ -470,7 +631,7 @@ describe("sceneTrackerConfigSchema", () => {
   });
 
   it("JSON format allows any string key (the XML check is XML-only)", () => {
-    const schema = { "first name": { $type: "string" }, "$x": { $type: "number" } } as unknown as SceneTrackerDsl;
+    const schema: SceneTrackerDsl = { "first name": { $type: "string" }, "$x": { $type: "number" } };
     expect(sceneTrackerConfigSchema.safeParse({ promptFormat: "json", schema }).success).toBe(true);
   });
 });

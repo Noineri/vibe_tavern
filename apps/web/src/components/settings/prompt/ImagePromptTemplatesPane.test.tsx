@@ -2,11 +2,17 @@ const { useDomEnv } = await import("../../../../test/dom-env.js");
 
 useDomEnv();
 
-const { describe, expect, mock, test } = await import("bun:test");
+const { afterAll, describe, expect, mock, test } = await import("bun:test");
 const React = await import("react");
 const { act, fireEvent, render, waitFor, within } = await import("@testing-library/react");
 const { LocaleProvider } = await import("../../../i18n/context.js");
+const { i18next } = await import("../../../i18n/i18n.js");
 const realTooltip = await import("../../shared/Tooltip.js");
+
+const initialLanguage = i18next.language;
+afterAll(async () => {
+  if (i18next.isInitialized) await i18next.changeLanguage(initialLanguage || "en");
+});
 
 // CustomTooltip wraps Radix's Tooltip (needs TooltipProvider) — bare wrapper,
 // the leak-safe ...real spread per the tier policy (RegexPresetList.test
@@ -107,7 +113,7 @@ function makeDetail(profile: ImagePromptProfileValue): ImagePromptProfileDetailR
 
 function makeApi(options: { profiles?: ImagePromptProfileValue[]; activeProfileId?: string | null } = {}) {
   const profiles = options.profiles ?? [makeDefaultProfile(), makeProfile()];
-  const activeProfileId = options.activeProfileId ?? null;
+  let activeProfileId = options.activeProfileId ?? null;
   const store = new Map(profiles.map((p) => [p.id, { ...p, overrides: { ...p.overrides } }]));
   return {
     api: {
@@ -137,8 +143,11 @@ function makeApi(options: { profiles?: ImagePromptProfileValue[]; activeProfileI
       }),
       remove: mock(async (id: string) => {
         store.delete(id);
+        if (activeProfileId === id) activeProfileId = null;
       }),
-      setActive: mock(async (_profileId: string | null) => {}),
+      setActive: mock(async (profileId: string | null) => {
+        activeProfileId = profileId;
+      }),
       reorder: mock(async (updates: Array<{ id: string; sortOrder: number }>): Promise<ImagePromptProfileListResponse> => ({
         profiles: [...store.values()],
         activeProfileId,
@@ -234,7 +243,7 @@ describe("ImagePromptTemplatesPane (IF-1d profile fork)", () => {
     expect(row.querySelector(".bg-success")).toBeTruthy();
     expect(row.querySelector(".truncate")).toBeNull();
     expect(row.querySelector(".break-words")).toBeTruthy();
-    // Every profile row (pinned Default included) keeps its drag handle.
+    // Custom profile rows keep their drag handle; the pinned Default row stays locked.
     expect(row.querySelector('[aria-label="drag"]')).toBeTruthy();
     expect(getByTestId("image-prompt-profile-row-default").querySelector('[aria-label="drag"]')).toBeNull();
   });
@@ -607,7 +616,7 @@ describe("ImagePromptTemplatesPane (IF-1d profile fork)", () => {
 
   test("delete flow: non-default profile removed, selection falls back to live", async () => {
     const { api } = makeApi({ profiles: [makeDefaultProfile(), makeProfile()], activeProfileId: "p1" });
-    const { getByTestId, getAllByText } = render(<Harness api={api} />);
+    const { getByTestId, getAllByText, queryByTestId } = render(<Harness api={api} />);
     await waitFor(() => expect(getByTestId("image-prompt-template-row-portrait")).toBeTruthy());
     // Desktop footer actions are icon+label SPANS with onClick (canon
     // MasterDetailFooter) — click the footer Delete by text.
@@ -625,6 +634,8 @@ describe("ImagePromptTemplatesPane (IF-1d profile fork)", () => {
       fireEvent.click(confirmButton);
     });
     await waitFor(() => expect(api.remove).toHaveBeenCalledWith("p1"));
+    await waitFor(() => expect(api.getProfile).toHaveBeenCalledWith("default"));
+    await waitFor(() => expect(queryByTestId("image-prompt-profile-row-p1")).toBeNull());
   });
 
   test("shows a retryable loading error", async () => {

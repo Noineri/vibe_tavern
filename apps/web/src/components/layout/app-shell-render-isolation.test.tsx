@@ -41,21 +41,22 @@
  * Runner: bun:test with scoped happy-dom (useDomEnv).
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { testFetch } from "@vibe-tavern/test-fetch";
 import type { ReactNode } from "react";
-import { CHAT_MODE } from "@vibe-tavern/domain";
-import type {
-  AgentKindSettingsWire,
-  ExperienceCopilotThreadWire,
-} from "@vibe-tavern/api-contracts";
+import { brandId, CHAT_MODE } from "@vibe-tavern/domain";
+import type { AgentKindSettingsWire } from "@vibe-tavern/api-contracts";
+import type { ChatBranchId, ChatId } from "@vibe-tavern/domain";
 import { useDomEnv } from "../../../test/dom-env.js";
-import { wireUiSettings } from "../../../test/wire-fixtures.js";
+import { wireBranch, wireChat, wireProviderProfile } from "../../../test/wire-fixtures.js";
 import type { ProviderProfileRecord } from "../../api/types.js";
 import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
-import { useSnapshotStore } from "../../stores/snapshot-store.js";
-import { useAgentTurnStore } from "../../stores/agent-turn-store.js";
-import { useAgentReviewRoundStore } from "../../stores/agent-review-store.js";
-import { useProviderDataStore } from "../../stores/provider-data-store.js";
-import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js";
+import {
+  chatThread,
+  flushSessionLoad,
+  resetShellStores,
+  seedShellStores,
+  shellRouter,
+} from "../../../test/agent-shell-harness.js";
 import { SIDECHAT_AGENT_KIND } from "../../api/agent-kind-served-modes.js";
 import { useSidechatOpenStore } from "../../stores/sidechat-open-store.js";
 import { useSidechatCallDirectorStore } from "../../stores/sidechat-call-director-store.js";
@@ -116,85 +117,48 @@ mock.module("../shared/resizable-side-pane.js", () => ({
   },
 }));
 
-// ── Fetch-level API router (same rationale and routes as SidechatPanel.test.tsx:
-// the transport seam is faked at the FETCH level so the REAL hono clients run
-// against canned payloads; no api-module mocking to poison co-loaded files). ──
+// ── Fetch-level API router — the SHARED harness (test/agent-shell-harness.ts,
+// ASHU-1): the transport seam is faked at the FETCH level so the REAL hono
+// clients run against canned payloads; no api-module mocking to poison
+// co-loaded files. Route behavior identical to the pre-ASHU inline table. ────
 
-const jsonResponse = (payload: unknown) =>
-  new Response(JSON.stringify(payload), { status: 200, headers: { "Content-Type": "application/json" } });
+const agentChats = {
+  activeThread: chatThread({ id: "sidechat-thread-a" }),
+  sessions: [],
+  newSession: chatThread({ id: "sidechat-thread-new" }),
+  messages: [],
+};
 
-const activeThread = chatThread("sidechat-thread-a");
+const fetchRouter = shellRouter({ agentChats });
 
-const fetchRouter = mock(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-  const path = new URL(String(input), "http://gateway.test").pathname;
-  const method = (init?.method ?? "GET").toUpperCase();
-  if (method === "GET" && /\/api\/agent\/chats\/[^/]+\/branches\/[^/]+\/[^/]+\/active$/.test(path)) {
-    return jsonResponse(activeThread);
-  }
-  if (method === "GET" && /\/api\/agent\/chats\/[^/]+\/branches\/[^/]+\/[^/]+\/sessions$/.test(path)) {
-    return jsonResponse([]);
-  }
-  if (method === "POST" && /\/api\/agent\/chats\/[^/]+\/branches\/[^/]+\/[^/]+\/session$/.test(path)) {
-    return jsonResponse(chatThread("sidechat-thread-new"));
-  }
-  if (method === "POST" && /\/api\/experience-copilot\/[^/]+\/stream/.test(path)) {
-    return new Response('data: {"finishReason":"stop"}\n\n', {
-      status: 200,
-      headers: { "Content-Type": "text/event-stream" },
-    });
-  }
-  if (method === "GET" && /\/api\/experience-copilot\/[^/]+\/messages$/.test(path)) {
-    return jsonResponse([]);
-  }
-  if (method === "GET" && /\/api\/experience-copilot\/[^/]+\/context$/.test(path)) {
-    return jsonResponse({ metrics: null, autoCompact: true });
-  }
-  if (method === "GET" && /\/api\/experience-copilot\/[^/]+\/context-links$/.test(path)) {
-    return jsonResponse([]);
-  }
-  if (method === "GET" && path.includes("/branches/") && path.endsWith("/plan")) {
-    return jsonResponse({ plan: { goal: "", constraints: [], tasks: [] } });
-  }
-  if (method === "GET" && path.endsWith("/api/personas")) return jsonResponse([]);
-  if (method === "GET" && path.endsWith("/api/lorebooks/all")) return jsonResponse([]);
-  if (method === "GET" && path.endsWith("/api/scripts/all")) return jsonResponse([]);
-  if (method === "GET" && path.endsWith("/api/coauthor/skills")) return jsonResponse({ entries: [], errors: [] });
-  if (method === "GET" && path.endsWith("/model-favorites")) return jsonResponse([]);
-  return new Response(JSON.stringify({ error: { message: `Unhandled fetch in test: ${method} ${path}` } }), { status: 500 });
+// ── Store seeding via the shared harness (same fixtures as
+//    SidechatPanel.test.tsx; the snapshot and provider rows ride the wire
+//    factories — the ONE derivation of those records; ids pinned to the values
+//    the erased literals carried) ────────────────────────────────────────────
+
+type ActiveChat = NonNullable<ReturnType<typeof import("../../stores/snapshot-store.js").useSnapshotStore.getState>["activeChat"]>;
+type ActiveBranch = NonNullable<ReturnType<typeof import("../../stores/snapshot-store.js").useSnapshotStore.getState>["activeBranch"]>;
+
+const CHAT_A: ActiveChat = wireChat({ id: brandId<ChatId>("chat-a") });
+const BRANCH_A: ActiveBranch = wireBranch({
+  id: brandId<ChatBranchId>("branch-a"),
+  chatId: brandId<ChatId>("chat-a"),
 });
 
-function chatThread(id: string): ExperienceCopilotThreadWire {
-  return {
-    id,
-    scriptId: null,
-    draftSessionId: null,
-    title: "Sidechat",
-    archivedAt: null,
-    createdAt: "",
-    updatedAt: "",
-    metrics: null,
-    contextLinks: [],
-    todo: [],
-  } as unknown as ExperienceCopilotThreadWire;
-}
-
-// ── Store seeding (same fixtures as SidechatPanel.test.tsx) ─────────────────
-
-type ActiveChat = NonNullable<ReturnType<typeof useSnapshotStore.getState>["activeChat"]>;
-type ActiveBranch = NonNullable<ReturnType<typeof useSnapshotStore.getState>["activeBranch"]>;
-
-const CHAT_A = { id: "chat-a", mode: "rp" } as unknown as ActiveChat;
-const BRANCH_A = { id: "branch-a", chatId: "chat-a", label: "main" } as unknown as ActiveBranch;
-
-const PROFILES = [
-  {
+const PROFILES: ProviderProfileRecord[] = [
+  wireProviderProfile({
     id: "p1",
     name: "Active RP provider",
     isActive: true,
     defaultModel: "m1",
-    cachedModels: { models: [{ id: "m1", label: "Model One", contextLength: 128000, capabilities: { tools: true } }] },
-  },
-] as unknown as ProviderProfileRecord[];
+    cachedModels: {
+      models: [{ id: "m1", label: "Model One", contextLength: 128000, capabilities: { tools: true } }],
+      // The erased literal omitted this required member of the cached-models
+      // record; the reader (`profile.cachedModels.models`) never looked at it.
+      cachedAt: "2026-01-01T00:00:00.000Z",
+    },
+  }),
+];
 
 function kindEntry(kind: string, servesChatModes: string[]): AgentKindSettingsWire {
   return {
@@ -206,26 +170,6 @@ function kindEntry(kind: string, servesChatModes: string[]): AgentKindSettingsWi
     servesChatModes: servesChatModes as AgentKindSettingsWire["servesChatModes"],
     autoCompactDefault: true,
   };
-}
-
-function seedStores(): void {
-  useBootstrapStore.setState({
-    data: {
-      initialChatId: null,
-      snapshot: null,
-      isFirstRun: false,
-      allCharacters: [],
-      promptPresets: [],
-      uiSettings: wireUiSettings(),
-      agentKindSettings: { [SIDECHAT_AGENT_KIND]: kindEntry(SIDECHAT_AGENT_KIND, [CHAT_MODE.rp]) },
-      isArmServer: false,
-    },
-  });
-  useProviderDataStore.setState({ profiles: PROFILES });
-}
-
-function seedChat(chat: ActiveChat, branch: ActiveBranch): void {
-  useSnapshotStore.setState({ activeChat: chat, activeBranch: branch });
 }
 
 const realFetch = globalThis.fetch;
@@ -244,16 +188,19 @@ beforeAll(async () => {
 
 beforeEach(() => {
   mobileOverride = false;
-  globalThis.fetch = fetchRouter as unknown as typeof fetch;
-  useAgentTurnStore.setState({ turnsByThread: {}, todoByThread: {} });
-  useAgentReviewRoundStore.setState({ roundsByThread: {} });
+  globalThis.fetch = testFetch(fetchRouter);
+  resetShellStores();
   localStorage.clear();
   useSidechatOpenStore.setState({ openByChat: {} });
   useSidechatCallDirectorStore.setState({ pending: {} });
   useChatStore.setState({ draft: "", editingDraft: "", editingMessageId: null });
   for (const key of Object.keys(paneRenders)) delete paneRenders[key];
-  seedStores();
-  seedChat(CHAT_A, BRANCH_A);
+  seedShellStores({
+    agentKinds: { [SIDECHAT_AGENT_KIND]: kindEntry(SIDECHAT_AGENT_KIND, [CHAT_MODE.rp]) },
+    profiles: PROFILES,
+    activeChat: CHAT_A,
+    activeBranch: BRANCH_A,
+  });
 });
 
 afterEach(() => {
@@ -279,15 +226,6 @@ function KeystrokeSubscribingRoot({ build }: { build: () => ReactNode }) {
   // Consume both values so the subscription is real (the root re-renders per
   // keystroke; the panels under test must not follow).
   return <div data-keystroke-sink={draft.length + editingDraft.length}>{build()}</div>;
-}
-
-/** Drain the shell's chained async microtasks + React's scheduler macrotasks. */
-async function flushSessionLoad() {
-  await act(async () => {
-    for (let i = 0; i < 5; i++) {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    }
-  });
 }
 
 describe("LAG-1 step 1 — right panels are immune to root keystroke re-renders", () => {

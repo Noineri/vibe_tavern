@@ -9,7 +9,6 @@ import { describe, expect, test } from "bun:test";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Database } from "bun:sqlite";
 
 import { createDb, type AppDb } from "../src/db-connection.js";
 import { buildJournalCutFolder } from "./migration-journal-cut.js";
@@ -17,10 +16,12 @@ import { buildJournalCutFolder } from "./migration-journal-cut.js";
 const PRE_0113_LAST_TAG = "0112_safe_puff_adder";
 
 function closeClient(db: AppDb): void {
-  (db as unknown as { $client: Database }).$client.close();
+  db.$client.close();
 }
 
-const q = (db: AppDb, sql: string) => db.all(sql) as unknown as Array<Record<string, unknown>>;
+// Raw-SQL row boundary: each caller's SELECT projection is the row type at
+// drizzle's all<T> seam.
+const q = <T extends Record<string, unknown> = Record<string, unknown>>(db: AppDb, sql: string) => db.all<T>(sql);
 
 describe("migration 0113 — Custom image-gen profiles get their own slug", () => {
   test("moves preset-less openai-images rows only, keeping their connection data; copies prompt caps", async () => {

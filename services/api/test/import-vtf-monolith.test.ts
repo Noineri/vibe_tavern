@@ -23,9 +23,13 @@
  * drop VTF-native fields).
  */
 import { test, expect, mock, describe } from "bun:test";
-import { packMonolith, type VtfCharacterContent } from "@vibe-tavern/db";
-import type { ImportExportModuleDeps } from "../src/runtime/session/session-runtime-import-export.js";
+import { packMonolith, type CreateCharacterData, type VtfCharacterContent } from "@vibe-tavern/db";
+import type { ChatId, PersonaId, PromptPresetId } from "@vibe-tavern/domain";
+import { brandId } from "@vibe-tavern/domain";
 import { importJson } from "../src/runtime/session/session-runtime-import-export.js";
+import { makeImportExportDeps } from "./import-test-builders.js";
+import { makeCharacterRow } from "./copilot-test-builders.js";
+import { makeSessionSnapshot } from "./insights-test-builders.js";
 
 /** A VTF-native character carrying fields ST JSON cannot losslessly represent. */
 const VTF_CONTENT: VtfCharacterContent = {
@@ -56,51 +60,43 @@ const VTF_CONTENT: VtfCharacterContent = {
 
 /** Builds a stub deps whose `create` mock captures its input for assertions. */
 function makeDeps() {
-  let createInput: unknown = null;
+  let createInput: CreateCharacterData | null = null;
   const writeEntityPaths: string[] = [];
   let seedFirst: string | undefined;
   let seedAlts: string[] | undefined;
 
-  const deps = {
-    stores: {
+  const deps = makeImportExportDeps(
+    {
       characters: {
         getById: mock((_id: string) => Promise.resolve(null)),
-        create: mock((data: unknown) => {
+        create: mock((data: CreateCharacterData) => {
           createInput = data;
-          return Promise.resolve({ id: "char_vtf_001" }) as never;
+          return Promise.resolve(makeCharacterRow("char_vtf_001"));
         }),
-        update: mock((_id: string, _patch: unknown) => Promise.resolve() as never),
+        update: mock((_id: string, _patch: unknown) => Promise.resolve(makeCharacterRow("char_updated"))),
         resolveFolderName: mock((id: string) => Promise.resolve(id)),
       },
       content: {
         writeEntity: mock((_folder: unknown, id: string, _data: unknown) => {
           writeEntityPaths.push(id);
-          return Promise.resolve("stub/path") as never;
+          return Promise.resolve("stub/path");
         }),
       },
-    },
-    chatApp: {
+      chatApp: {
       createChat: mock((_input: unknown) =>
-        Promise.resolve({ id: "chat_vtf_002", activeBranchId: "br_vtf_003" }) as never,
+        Promise.resolve({ id: brandId<ChatId>("chat_vtf_002"), activeBranchId: "br_vtf_003" }),
       ),
     },
     chatOrder: { add: mock((_id: unknown) => {}) },
-    resolveDefaultPersonaId: mock(() => Promise.resolve("persona_default" as never)),
-    resolveDefaultPromptPresetId: mock(() => Promise.resolve("preset_default" as never)),
+    resolveDefaultPersonaId: mock(() => Promise.resolve(brandId<PersonaId>("persona_default"))),
+    resolveDefaultPromptPresetId: mock(() => Promise.resolve(brandId<PromptPresetId>("preset_default"))),
     seedImportedOpening: mock((_chatId: unknown, first: string, alts?: string[]) => {
       seedFirst = first;
       seedAlts = alts;
-      return Promise.resolve() as never;
+      return Promise.resolve();
     }),
-    getSnapshot: mock((_chatId: unknown) =>
-      Promise.resolve({ chats: [], messages: [] }) as never,
-    ),
-    resolver: {
-      getCharacter: () => { throw new Error("not used"); },
-      getPersona: () => { throw new Error("not used"); },
-    },
-    fileStore: { resolvePath: () => { throw new Error("not used"); } },
-  } as unknown as ImportExportModuleDeps;
+    getSnapshot: mock((_chatId: ChatId) => Promise.resolve(makeSessionSnapshot())),
+  }, "ImportExportModuleDeps (import-vtf-monolith)");
   return { deps, getCreateInput: () => createInput, getWritePaths: () => writeEntityPaths, getSeed: () => ({ first: seedFirst, alts: seedAlts }) };
 }
 
@@ -115,21 +111,21 @@ describe("importJson — native VTF monolith path (VTF_NATIVE_ROUNDTRIP Wave 1)"
       monolithText: monolith,
     });
 
-    const created = getCreateInput() as Record<string, unknown>;
+    const created = getCreateInput();
     expect(created).not.toBeNull();
     // Fields ST JSON drops / hardcodes are preserved from the monolith.
-    expect(created.name).toBe("Silvius");
-    expect(created.personalitySummary).toBe("calm");
-    expect(created.mesExampleMode).toBe("depth");
-    expect(created.mesExampleDepth).toBe(4);
-    expect(created.depthPrompt).toBe("Remember the silver scar.");
-    expect(created.depthPromptDepth).toBe(4);
-    expect(created.depthPromptRole).toBe("system");
-    expect(created.systemPrompt).toBe("Respond in second person.");
+    expect(created!.name).toBe("Silvius");
+    expect(created!.personalitySummary).toBe("calm");
+    expect(created!.mesExampleMode).toBe("depth");
+    expect(created!.mesExampleDepth).toBe(4);
+    expect(created!.depthPrompt).toBe("Remember the silver scar.");
+    expect(created!.depthPromptDepth).toBe(4);
+    expect(created!.depthPromptRole).toBe("system");
+    expect(created!.systemPrompt).toBe("Respond in second person.");
     // The nested character_book is PROMOTED to the dedicated field...
-    expect(created.characterBook).toEqual({ entries: [{ keys: ["scar"], content: "a silver scar" }] });
+    expect(created!.characterBook).toEqual({ entries: [{ keys: ["scar"], content: "a silver scar" }] });
     // ...and STRIPPED from extensions.
-    const ext = created.extensions as Record<string, unknown>;
+    const ext = created!.extensions!;
     expect("character_book" in ext).toBe(false);
 
     // No original.json is written on the monolith path.
@@ -165,8 +161,8 @@ describe("importJson — native VTF monolith path (VTF_NATIVE_ROUNDTRIP Wave 1)"
       monolithText: monolith,
     });
 
-    const created = getCreateInput() as Record<string, unknown>;
-    expect(created.name).toBe("Silvius"); // monolith won, not "WRONG-FROM-JSON"
+    const created = getCreateInput();
+    expect(created!.name).toBe("Silvius"); // monolith won, not "WRONG-FROM-JSON"
   });
 
   test("deterministic id: re-importing the same monolith resolves to the same character id", async () => {

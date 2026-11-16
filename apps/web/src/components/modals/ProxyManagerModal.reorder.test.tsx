@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { ComponentProps } from "react";
+import type { DragEndEvent } from "@dnd-kit/core";
 import { useDomEnv } from "../../../test/dom-env.js";
 
 useDomEnv();
@@ -111,9 +112,16 @@ function rowOrder(view: ReturnType<typeof render>): string[] {
 
 function dragEnd(activeId: string, overId: string): void {
   expect(dndHandlers).toBeTruthy();
-  const endEvent = { active: { id: activeId }, over: { id: overId } } as unknown as Parameters<
-    NonNullable<RealDndContextProps["onDragEnd"]>
-  >[0];
+  // Member-for-member dnd-kit event literal (the 7d master-list shape): the
+  // reorder handler reads only active.id / over.id; the remaining members
+  // ride inert defaults.
+  const endEvent: DragEndEvent = {
+    activatorEvent: new Event("pointerdown"),
+    active: { id: activeId, data: { current: undefined }, rect: { current: { initial: null, translated: null } } },
+    collisions: null,
+    delta: { x: 0, y: 0 },
+    over: { id: overId, rect: { width: 0, height: 0, top: 0, left: 0, right: 0, bottom: 0 }, disabled: false, data: { current: undefined } },
+  };
   act(() => {
     dndHandlers!.onDragEnd!(endEvent);
   });

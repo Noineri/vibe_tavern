@@ -69,7 +69,7 @@ describe("0124 copilot_profiles sort_order backfill (ML-6)", () => {
 
     // 1. Fresh DB at the pre-0124 schema (no sort_order column).
     let db = await createDb(dbPath, preFolder);
-    (db as unknown as { $client: Database }).$client.close();
+    db.$client.close();
 
     // 2. Seed legacy profiles: experience rows with three distinct created_at
     //    values inserted OUT of chronological order (insertion order must not
@@ -100,7 +100,7 @@ describe("0124 copilot_profiles sort_order backfill (ML-6)", () => {
     //    folder. Everything before 0124 is already stamped, so drizzle runs
     //    only 0124 (ALTER + the per-kind ROW_NUMBER backfill).
     db = await createDb(dbPath, REAL_DRIZZLE);
-    const client = (db as unknown as { $client: Database }).$client;
+    const client = db.$client;
 
     // 4. Backfill: each kind numbered 0..n-1 by created_at ASC, id ASC inside
     //    ties; the globally-oldest script row takes the script list's slot 0.

@@ -120,6 +120,9 @@ export interface BranchSidechatForkDeps {
 	experienceCopilot: Pick<ExperienceCopilotStore, "listActiveChatThreadsForBranch" | "listTimeline" | "forkChatThreadToBranch">;
 	/** The SC-0h branch-plan store: the source branch's plan copies to the target. */
 	plans: Pick<StoreContainer["agentPlans"], "get" | "save">;
+	/** The DK-3 per-branch story-deck store: the source branch's deck copies
+	 *  to the target right after the plan, under the same rules. */
+	decks: Pick<StoreContainer["storyDecks"], "get" | "save">;
 }
 
 // ─── The pure id remap (old → new by position + variantIndex) ────────────────
@@ -434,6 +437,17 @@ export async function forkBranchSidechat(
 	const plan = await deps.plans.get({ kind: "chatBranch", chatId, branchId: sourceBranch.id });
 	if (plan !== null) {
 		await deps.plans.save({ kind: "chatBranch", chatId, branchId: targetBranch.id }, plan);
+	}
+
+	// The story deck (DK-3): the source's deck copies onto the target branch
+	// under the same rules as the plan above — a source with no deck row
+	// copies nothing (the target keeps whatever deck it already has; GET reads
+	// a missing row as the empty deck); a stored deck (an empty one included)
+	// copies verbatim. The deck write joins the fork's copy phase — the same
+	// sequential unit of work the plan copy runs in.
+	const deck = await deps.decks.get(chatId, sourceBranch.id);
+	if (deck !== null) {
+		await deps.decks.save(chatId, targetBranch.id, deck);
 	}
 
 	return copied;

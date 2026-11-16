@@ -1,5 +1,4 @@
 import { useShallow } from "zustand/react/shallow";
-import type { MessageVariant } from "@vibe-tavern/domain";
 import {
   deriveGenerationBatchSummary,
   useGenerationQueueStore,
@@ -12,6 +11,7 @@ import type { VariantPickerItem } from "./variants/types.js";
 
 const FOLD_THRESHOLD = 3;
 const EMPTY_RECORDS: GenerationRecord[] = [];
+type QueueVariant = Parameters<typeof deriveVariantPickerItems>[0][number];
 
 export type FinishedQueueRow = {
   kind: "finished";
@@ -33,7 +33,7 @@ export type QueueRowsResult = {
 };
 
 export function deriveQueueRows(input: {
-  variants: readonly MessageVariant[];
+  variants: readonly QueueVariant[];
   selectedVariantIndex: number;
   batch: GenerationBatch | null;
   records: readonly GenerationRecord[];
@@ -86,7 +86,7 @@ export function deriveQueueRows(input: {
 /** Store adapter for a message's queue timeline; the derivation above remains pure. */
 export function useQueueRows(input: {
   chatId: string | null | undefined;
-  variants: readonly MessageVariant[];
+  variants: readonly QueueVariant[];
   selectedVariantIndex: number;
 }): QueueRowsResult {
   const batch = useGenerationQueueStore((state) => (input.chatId ? state.batchesByChat[input.chatId] ?? null : null));

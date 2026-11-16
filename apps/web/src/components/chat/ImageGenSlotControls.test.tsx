@@ -36,6 +36,8 @@ const toastSuccess: string[] = [];
 const toastError: string[] = [];
 let describeShouldFail: Error | null = null;
 let promoteShouldFail: Error | null = null;
+let includeShouldFail: Error | null = null;
+let nextIncludeResult: (() => Promise<{ ok: boolean }>) | null = null;
 /** Click-time profile lookup seam (the PG-2 meta fix): controllable list +
  *  failure switch — the component derives liveProgress from it. */
 let profilesList: ImageGenProfileRecord[] = [];
@@ -85,6 +87,12 @@ mock.module("../../api/chat-api.js", () => ({
     includePrompt: boolean,
   ) => {
     includeCalls.push([chatId, messageId, attachmentId, includePrompt]);
+    if (nextIncludeResult) {
+      const fn = nextIncludeResult;
+      nextIncludeResult = null;
+      return fn();
+    }
+    if (includeShouldFail) return Promise.reject(includeShouldFail);
     return Promise.resolve({ ok: true });
   },
 }));
@@ -102,7 +110,7 @@ mock.module("sonner", () => ({
 }));
 
 const { ImageGenSlotControls } = await import("./ImageGenSlotControls.js");
-const { render, fireEvent, waitFor, cleanup } = await import("@testing-library/react");
+const { act, render, fireEvent, waitFor, cleanup } = await import("@testing-library/react");
 const { TooltipProvider } = await import("../shared/Tooltip.js");
 
 /** CustomTooltip requires a TooltipProvider ancestor (the app mounts one at
@@ -118,6 +126,7 @@ const { flushSync } = await import("react-dom");
 import { IMAGE_GEN_BACKENDS, IMAGE_GEN_BACKEND_CAPABILITIES, type Attachment, type ImageGenBackendType } from "@vibe-tavern/domain";
 import type { ImageGenProfileRecord } from "../../api/image-gen-api.js";
 import type { ImageGenRunMeta } from "../../stores/image-gen-chat-store.js";
+import { wireMessage } from "../../../test/wire-fixtures.js";
 
 /** Typed minimal record for the click-time lookup seam — only id/backend
  *  matter to the component; the rest satisfies the wire type. */
@@ -158,13 +167,13 @@ function slotAtt(overrides?: Partial<Attachment>): Attachment {
   };
 }
 
-/** Minimal seeded message for the optimistic-update seam. */
-type SeededMessage = { id: string; attachments: Array<Attachment> };
+/** Seeded message for the optimistic-update seam: a complete wire row
+ *  carrying the attachment set under test. */
 function seedMessage(id: string, attachments: Array<Attachment>) {
   useSnapshotStore.setState({
     messagesById: {
       ...useSnapshotStore.getState().messagesById,
-      [id]: { id, attachments } as SeededMessage as never,
+      [id]: wireMessage(id, { attachments }),
     },
   });
 }
@@ -182,6 +191,8 @@ afterEach(() => {
   toastError.length = 0;
   describeShouldFail = null;
   promoteShouldFail = null;
+  includeShouldFail = null;
+  nextIncludeResult = null;
   realChatStore.useImageGenChatStore.setState({ runningByChat: {}, activeImageGenProfileId: null, activeProfileIdByChat: {} });
 });
 
@@ -440,6 +451,39 @@ describe("ImageGenSlotControls — include-in-prompt toggle (IG-18 slice D)", ()
     fireEvent.click(view.getByTestId("image-gen-slot-include"));
     await waitFor(() => expect(includeCalls).toEqual([["_", "m1", "att-1", false]]));
     expect(describeCalls.length).toBe(0);
+  });
+
+  it("enable PATCH failure rolls back the optimistic flip and toasts the error", async () => {
+    let rejectEnable!: (err: Error) => void;
+    nextIncludeResult = () =>
+      new Promise<{ ok: boolean }>((_, reject) => {
+        rejectEnable = reject;
+      });
+    const att = slotAtt({ imageGen: { mode: "portrait", profileId: "p1", params: {}, prompt: "castle" } });
+    seedMessage("m1", [att]);
+    const view = renderControls(<ImageGenSlotControls attachments={[att]} messageId="m1" characterId="char1" />);
+    fireEvent.click(view.getByTestId("image-gen-slot-include"));
+
+    await waitFor(() => expect(includeCalls).toEqual([["_", "m1", "att-1", true]]));
+    expect(useSnapshotStore.getState().messagesById["m1"]?.attachments?.[0]?.includeInPrompt).toBe(true);
+
+    await act(async () => {
+      rejectEnable(new Error("Include write failed"));
+    });
+    await waitFor(() => expect(toastError).toEqual(["Include write failed"]));
+    expect(useSnapshotStore.getState().messagesById["m1"]?.attachments?.[0]?.includeInPrompt).toBe(false);
+  });
+
+  it("disable PATCH failure rolls back to included and toasts the error", async () => {
+    includeShouldFail = new Error("Include disable failed");
+    const att = slotAtt({ description: "d", includeInPrompt: true });
+    seedMessage("m1", [att]);
+    const view = renderControls(<ImageGenSlotControls attachments={[att]} messageId="m1" characterId="char1" />);
+    fireEvent.click(view.getByTestId("image-gen-slot-include"));
+
+    await waitFor(() => expect(includeCalls).toEqual([["_", "m1", "att-1", false]]));
+    await waitFor(() => expect(toastError).toEqual(["Include disable failed"]));
+    expect(useSnapshotStore.getState().messagesById["m1"]?.attachments?.[0]?.includeInPrompt).toBe(true);
   });
 });
 

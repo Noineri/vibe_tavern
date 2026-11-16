@@ -20,7 +20,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { createStoreContainer, experienceSessions, type StoreContainer } from "@vibe-tavern/db";
-import type { AssemblePromptResponse, ChatBranchId, StoredProviderProfileRecord } from "@vibe-tavern/domain";
+import type { AssemblePromptResponse, ChatBranchId, ExperienceCapability, StoredProviderProfileRecord } from "@vibe-tavern/domain";
 import type { ProviderModelSettingsRecord } from "@vibe-tavern/api-contracts";
 
 import { ExperienceResourceService } from "../src/domain/interactive/experience-resource-service.js";
@@ -29,9 +29,17 @@ import {
 	ExperienceContextService,
 	type ExperienceChatLifecycleSeam,
 } from "../src/domain/interactive/experience-context-service.js";
-import { ExperienceModelEffectService } from "../src/domain/interactive/experience-model-effect-service.js";
-import type { ProviderProfileService } from "../src/domain/providers/provider-profile-service.js";
-import type { ExperienceEffectRow } from "@vibe-tavern/db";
+import {
+	ExperienceModelEffectService,
+	type ExperienceModelEffectServiceDeps,
+} from "../src/domain/interactive/experience-model-effect-service.js";
+import type {
+	StructuredActionChoiceInput,
+	StructuredActionChoiceResult,
+} from "../src/domain/interactive/experience-model-effect-structured.js";
+import { nonstreamingProviderExecute } from "../src/infrastructure/ai/nonstreaming-provider-executor.js";
+import { execResult } from "./insights-test-builders.js";
+import { makeProviderProfileRow, makeProviderProfilesFixture } from "./copilot-test-builders.js";
 
 // ─── Test experiences ────────────────────────────────────────────────────────
 
@@ -126,7 +134,7 @@ context.experience.register({
 });
 `;
 
-const GRANTS = ["participants", "model"];
+const GRANTS: ExperienceCapability[] = ["participants", "model"];
 const PARTICIPANTS = [
 	{ id: "human", label: "You", controller: "human" as const },
 	{ id: "model", label: "AI", controller: "model" as const, providerProfileId: "pp1", modelId: "test-model" },
@@ -236,13 +244,13 @@ async function setup() {
 	return stores;
 }
 
-async function seedSession(source: string, participants = PARTICIPANTS, grants: string[] = GRANTS) {
-	const character = await stores.characters.create({ name: "Aria", description: "Mage." } as never);
-	const chat = await stores.chats.createChat({ characterId: character.id, title: "T" } as never);
+async function seedSession(source: string, participants = PARTICIPANTS, grants: ExperienceCapability[] = GRANTS) {
+	const character = await stores.characters.create({ name: "Aria", description: "Mage." });
+	const chat = await stores.chats.createChat({ characterId: character.id, title: "T", promptPresetId: null });
 	const branchId = chat.activeBranchId as string;
-	await stores.personas.create({ name: "Olya", description: "Scholar.", defaultForNewChats: true } as never);
-	const script = await stores.scripts.create({ name: "Rules", scriptKind: "interactive", code: source } as never);
-	await resources.updateConfig(chat.id, { enabled: true, scriptId: script.id, capabilityGrants: grants as never } as never);
+	await stores.personas.create({ name: "Olya", description: "Scholar.", defaultForNewChats: true });
+	const script = await stores.scripts.create({ name: "Rules", scriptKind: "interactive", code: source });
+	await resources.updateConfig(chat.id, { enabled: true, scriptId: script.id, capabilityGrants: grants });
 	const started = await experienceService.startSession({ chatId: chat.id, branchId, settings: {}, participants });
 	if (!started.ok) throw new Error(`startSession failed: ${started.error.code}`);
 	return { chatId: chat.id, branchId, sessionId: started.data.sessionId };
@@ -286,8 +294,8 @@ async function emitModelEffect(sessionId: string, actionType: string): Promise<s
 // ─── Mock seams ──────────────────────────────────────────────────────────────
 
 function makeProfile(overrides: Partial<StoredProviderProfileRecord> = {}): StoredProviderProfileRecord {
-	return {
-		id: "pp1", name: "Test", providerPreset: "ollama", coauthorTransport: "openai" as never,
+	return makeProviderProfileRow({
+		id: "pp1", name: "Test", providerPreset: "ollama", coauthorTransport: "chat_completions",
 		endpoint: "http://x", apiKey: null, defaultModel: "test-model", contextBudget: 8000,
 		pinContextBudget: false, bindPerModel: false, modelFreeOnly: false, modelGroupByOwner: false,
 		maxTokens: 4096, temperature: 1, topP: 1, topK: 0, minP: 0, topA: 0, typicalP: 1, tfsZ: 1,
@@ -295,10 +303,10 @@ function makeProfile(overrides: Partial<StoredProviderProfileRecord> = {}): Stor
 		dryAllowedLength: 0, drySequenceBreakers: [], xtcThreshold: 0, xtcProbability: 0,
 		frequencyPenalty: 0, presencePenalty: 0, repetitionPenalty: 1, stopSequences: [], logitBias: [],
 		seed: null, reasoningEffort: "medium", showReasoning: false, streamResponse: true,
-		customSamplers: false, proxyMode: "off" as never, proxyId: null, isActive: true, visionModel: null,
+		customSamplers: false, proxyMode: "inherit", proxyId: null, isActive: true, visionModel: null,
 		createdAt: "2024-01-01T00:00:00Z", updatedAt: "2024-01-01T00:00:00Z",
 		...overrides,
-	};
+	});
 }
 
 function minimalPrompt(): AssemblePromptResponse {
@@ -316,44 +324,44 @@ function makeServices(opts: {
 	executeReturn?: (spy: ExecuteSpy) => Promise<{ text: string }> | Promise<{ text: string }>;
 	/** When provided, passes an executeStructured seam returning this result
 	 * (kind "structured" feeds the JSON text; kind "unsupported" falls back). */
-	executeStructuredReturn?: { kind: "structured"; text: string } | { kind: "unsupported"; reason: string } | ((spy: ExecuteSpy) => Promise<{ kind: "structured"; text: string } | { kind: "unsupported"; reason: string }>);
+	executeStructuredReturn?: { kind: "structured"; text: string } | { kind: "unsupported"; reason: string } | ((input: StructuredActionChoiceInput) => Promise<StructuredActionChoiceResult>);
 	structuredThrows?: boolean;
 } = {}) {
 	const profile = opts.profile === undefined ? makeProfile() : opts.profile;
 	const profiles = opts.profiles ?? (profile ? [profile] : []);
-	const providerProfiles: Pick<ProviderProfileService, "resolveActiveProviderProfile" | "getProviderProfile" | "getProviderModelSettings"> = {
-		resolveActiveProviderProfile: async () => profile,
-		getProviderProfile: async (id: string) => profiles.find((candidate) => candidate.id === id) ?? null,
-		getProviderModelSettings: async (providerProfileId: string, modelId: string) => {
-			const settings = opts.modelSettings;
-			return settings?.providerProfileId === providerProfileId && settings.modelId === modelId ? settings : null;
+	const providerProfiles = makeProviderProfilesFixture(
+		{
+			resolveActiveProviderProfile: async () => profile,
+			getProviderProfile: async (id: string) => profiles.find((candidate) => candidate.id === id) ?? null,
+			getProviderModelSettings: async (providerProfileId: string, modelId: string) => {
+				const settings = opts.modelSettings;
+				return settings?.providerProfileId === providerProfileId && settings.modelId === modelId ? settings : null;
+			},
 		},
-	};
+		"ProviderProfileService (model-effect)",
+	);
 	const chatLifecycle: ExperienceChatLifecycleSeam = {
 		assembleSummaryPrompt: async () => ({ prompt: minimalPrompt(), branchId: "b" as ChatBranchId }),
 	};
 	const contextService = new ExperienceContextService({
 		stores,
-		providerProfiles: providerProfiles as ProviderProfileService,
+		providerProfiles,
 		chatLifecycle,
-		execute: (async () => ({ text: "" })) as never,
+		execute: async () => execResult(""),
 	});
 	const spy: ExecuteSpy = { calls: [] };
-	const execute = async (input: { profile: StoredProviderProfileRecord; model: string; prompt: AssemblePromptResponse; signal?: AbortSignal }) => {
+	const execute: typeof nonstreamingProviderExecute = async (input) => {
 		spy.calls.push({ profile: input.profile, model: input.model, prompt: input.prompt });
 		const ret = opts.executeReturn;
-		if (typeof ret === "function") {
-			const r = (ret as (s: ExecuteSpy) => Promise<{ text: string }>)(spy);
-			return await r;
-		}
-		return ret ?? { text: "A model reply." };
+		const r = typeof ret === "function" ? await ret(spy) : ret ?? { text: "A model reply." };
+		return execResult(r.text);
 	};
 	const modelEffectService = new ExperienceModelEffectService({
 		stores,
 		experienceService,
 		contextService,
-		providerProfiles: providerProfiles as ProviderProfileService,
-		execute: execute as never,
+		providerProfiles,
+		execute,
 		...makeStructuredSeam(opts),
 	});
 	return { modelEffectService, contextService, spy, providerProfiles };
@@ -361,18 +369,18 @@ function makeServices(opts: {
 
 /** Build the optional executeStructured deps entry (absent → text path only). */
 function makeStructuredSeam(opts: {
-	executeStructuredReturn?: { kind: "structured"; text: string } | { kind: "unsupported"; reason: string } | ((spy: ExecuteSpy) => Promise<{ kind: "structured"; text: string } | { kind: "unsupported"; reason: string }>);
+	executeStructuredReturn?: { kind: "structured"; text: string } | { kind: "unsupported"; reason: string } | ((input: StructuredActionChoiceInput) => Promise<StructuredActionChoiceResult>);
 	structuredThrows?: boolean;
-}): { executeStructured?: unknown } {
+}): Pick<ExperienceModelEffectServiceDeps, "executeStructured"> {
 	if (opts.structuredThrows) {
-		return { executeStructured: (async () => { throw new Error("structured seam blew up"); }) as never };
+		return { executeStructured: async () => { throw new Error("structured seam blew up"); } };
 	}
 	const ret = opts.executeStructuredReturn;
 	if (ret === undefined) return {};
 	if (typeof ret === "function") {
-		return { executeStructured: ret as never };
+		return { executeStructured: ret };
 	}
-	return { executeStructured: (async () => ret) as never };
+	return { executeStructured: async () => ret };
 }
 
 // ─── Tests: success paths ────────────────────────────────────────────────────
@@ -679,24 +687,31 @@ describe("ExperienceModelEffectService — prompt layering + model-view isolatio
 		const { sessionId } = await seedSession(TEXT_SOURCE);
 		const effectId = await emitModelEffect(sessionId, "say");
 		const boundProfile = makeProfile({ bindPerModel: true });
-		const providerProfiles = {
-			resolveActiveProviderProfile: async () => boundProfile,
-			getProviderProfile: async (id: string) => (id === boundProfile.id ? boundProfile : null),
-			getProviderModelSettings: async () => ({ settings: { contextBudget: 4096, temperature: 0.3 } } as never),
-		};
+		const providerProfiles = makeProviderProfilesFixture(
+			{
+				resolveActiveProviderProfile: async () => boundProfile,
+				getProviderProfile: async (id: string) => (id === boundProfile.id ? boundProfile : null),
+				getProviderModelSettings: async () => ({
+					id: "pms_1", providerProfileId: boundProfile.id, modelId: "test-model",
+					settings: { contextBudget: 4096, temperature: 0.3 },
+					createdAt: "2024-01-01T00:00:00Z", updatedAt: "2024-01-01T00:00:00Z",
+				}),
+			},
+			"ProviderProfileService (model-effect overlay)",
+		);
 		const contextService = new ExperienceContextService({
-			stores, providerProfiles: providerProfiles as ProviderProfileService,
+			stores, providerProfiles,
 			chatLifecycle: { assembleSummaryPrompt: async () => ({ prompt: minimalPrompt(), branchId: "b" as ChatBranchId }) },
-			execute: (async () => ({ text: "" })) as never,
+			execute: async () => execResult(""),
 		});
 		const spy: ExecuteSpy = { calls: [] };
 		const modelEffectService = new ExperienceModelEffectService({
 			stores, experienceService, contextService,
-			providerProfiles: providerProfiles as ProviderProfileService,
-			execute: (async (input: { profile: StoredProviderProfileRecord }) => {
+			providerProfiles,
+			execute: async (input) => {
 				spy.calls.push({ profile: input.profile, model: "test-model", prompt: minimalPrompt() });
-				return { text: "hi" };
-			}) as never,
+				return execResult("hi");
+			},
 		});
 
 		await modelEffectService.runEffect(effectId);
@@ -1064,7 +1079,7 @@ describe("ExperienceModelEffectService — structured action mode (1c)", () => {
 		let structuredCalls = 0;
 		const { modelEffectService } = makeServices({
 			executeReturn: async () => ({ text: "pass" }),
-			executeStructuredReturn: (async () => { structuredCalls += 1; return { kind: "unsupported", reason: "provider has no json mode" }; }) as never,
+			executeStructuredReturn: async () => { structuredCalls += 1; return { kind: "unsupported", reason: "provider has no json mode" }; },
 		});
 
 		const result = await modelEffectService.runEffect(effectId);
@@ -1096,7 +1111,7 @@ describe("ExperienceModelEffectService — structured action mode (1c)", () => {
 		let structuredCalls = 0;
 		const { modelEffectService } = makeServices({
 			executeReturn: async () => ({ text: "Greetings, traveler." }),
-			executeStructuredReturn: (async () => { structuredCalls += 1; return { kind: "structured", text: "{}" }; }) as never,
+			executeStructuredReturn: async () => { structuredCalls += 1; return { kind: "structured", text: "{}" }; },
 		});
 
 		const result = await modelEffectService.runEffect(effectId);
@@ -1227,10 +1242,10 @@ describe("ExperienceModelEffectService — corrective re-ask (1d)", () => {
 				textCalls += 1;
 				return { text: "pass" };
 			},
-			executeStructuredReturn: (async () => {
+			executeStructuredReturn: async () => {
 				structuredCalls += 1;
 				return { kind: "structured", text: JSON.stringify({ actionId: "play", args: { card: 1.5 } }) };
-			}) as never,
+			},
 		});
 
 		const result = await modelEffectService.runEffect(effectId);
@@ -1243,9 +1258,6 @@ describe("ExperienceModelEffectService — corrective re-ask (1d)", () => {
 	});
 });
 
-// Keep the imported type referenced for the cast boundaries above.
-export type { ExperienceEffectRow };
-
 // ─── Tests: character-backed seats (report item 6b) ──────────────────────────
 
 describe("ExperienceModelEffectService — seat character identity (report item 6b)", () => {
@@ -1256,8 +1268,8 @@ describe("ExperienceModelEffectService — seat character identity (report item 
 		libCharId: string;
 		libChar2Id: string;
 	}> {
-		const libChar = await stores.characters.create({ name: "Mila", description: "Rival spy with a limp." } as never);
-		const libChar2 = await stores.characters.create({ name: "Bruno", description: "Cheerful bard." } as never);
+		const libChar = await stores.characters.create({ name: "Mila", description: "Rival spy with a limp." });
+		const libChar2 = await stores.characters.create({ name: "Bruno", description: "Cheerful bard." });
 		const participants = [
 			{ id: "human", label: "You", controller: "human" as const },
 			{ id: "mila", label: "Mila", controller: "model" as const, providerProfileId: "pp_mila", modelId: "model-a", characterId: libChar.id },
@@ -1268,13 +1280,15 @@ describe("ExperienceModelEffectService — seat character identity (report item 
 		const seeded = await seedSession(SEAT_TEXT_SOURCE, participants, [...GRANTS, "rp_context"]);
 		const contextService = new ExperienceContextService({
 			stores,
-			providerProfiles: {
-				resolveActiveProviderProfile: async () => makeProfile(),
-				getProviderProfile: async () => makeProfile(),
-				getProviderModelSettings: async () => null,
-			} as ProviderProfileService,
+			providerProfiles: makeProviderProfilesFixture(
+				{
+					resolveActiveProviderProfile: async () => makeProfile(),
+					getProviderProfile: async () => makeProfile(),
+				},
+				"ProviderProfileService (model-effect seat test)",
+			),
 			chatLifecycle: { assembleSummaryPrompt: async () => ({ prompt: minimalPrompt(), branchId: "b" as ChatBranchId }) },
-			execute: (async () => ({ text: "" })) as never,
+			execute: async () => execResult(""),
 		});
 		const captured = await contextService.captureContext({ sessionId: seeded.sessionId, mode: "recent" });
 		expect(captured.characterSnapshotJson).toContain("Aria");
@@ -1340,13 +1354,15 @@ describe("ExperienceModelEffectService — seat character identity (report item 
 		);
 		const contextService = new ExperienceContextService({
 			stores,
-			providerProfiles: {
-				resolveActiveProviderProfile: async () => makeProfile(),
-				getProviderProfile: async () => makeProfile(),
-				getProviderModelSettings: async () => null,
-			} as ProviderProfileService,
+			providerProfiles: makeProviderProfilesFixture(
+				{
+					resolveActiveProviderProfile: async () => makeProfile(),
+					getProviderProfile: async () => makeProfile(),
+				},
+				"ProviderProfileService (model-effect seat test)",
+			),
 			chatLifecycle: { assembleSummaryPrompt: async () => ({ prompt: minimalPrompt(), branchId: "b" as ChatBranchId }) },
-			execute: (async () => ({ text: "" })) as never,
+			execute: async () => execResult(""),
 		});
 		await contextService.captureContext({ sessionId: seeded.sessionId, mode: "recent" });
 		const effectId = await emitModelEffect(seeded.sessionId, "ask");

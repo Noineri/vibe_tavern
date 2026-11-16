@@ -1,5 +1,5 @@
 import React from 'react';
-import { Globe, Brain, Crop, Dices, FileText, Film, Flame, Grip, Images, Repeat, Send, Settings, Sparkles, Star, Volume2, VolumeX, Square, AudioLines, Play, Pause, Folder } from 'lucide-react';
+import { Globe, Brain, Crop, Dices, FileText, Film, Flame, Grip, Images, Repeat, Send, Settings, Sparkles, Star, Volume2, VolumeX, Square, AudioLines, Play, Pause, Folder, Users, CloudLightning, SquareStack, Shuffle } from 'lucide-react';
 
 // Props forwarded so call sites passing `className` (e.g. "h-5 w-5 text-t3")
 // actually apply — the previous `() => <svg/>` no-arg shape silently dropped
@@ -79,6 +79,13 @@ export const Ic = {
   // OFF state (owner ruling 2026-09-18, verbatim in the plan repo); same
   // stroke weight so on/off read as one glyph ± the slash at row size.
   eyeOff:()=><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"><path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z"/><circle cx="8" cy="8" r="2"/><line x1="2" y1="14" x2="14" y2="2"/></svg>,
+  // Story calendar (DIRECTOR_DECK_CALENDAR_PLAN DK-9): the four day-part row
+  // glyphs (sunrise/sun twins of the existing sun/moon set), the header's
+  // clock line and the promotion flash, and the off-state's calendar glyph.
+  sunrise:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4.5 10.5a3.5 3.5 0 0 1 7 0"/><line x1="8" y1="3" x2="8" y2="5"/><line x1="3.05" y1="5.05" x2="4.4" y2="6.4"/><line x1="12.95" y1="5.05" x2="11.6" y2="6.4"/><line x1="1" y1="10.5" x2="2.5" y2="10.5"/><line x1="13.5" y1="10.5" x2="15" y2="10.5"/><line x1="2" y1="13.5" x2="14" y2="13.5"/></svg>,
+  sunset:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4.5 10.5a3.5 3.5 0 0 1 7 0"/><line x1="8" y1="2.5" x2="8" y2="4.5"/><line x1="3.05" y1="5.05" x2="4.4" y2="6.4"/><line x1="12.95" y1="5.05" x2="11.6" y2="6.4"/><line x1="1" y1="10.5" x2="2.5" y2="10.5"/><line x1="13.5" y1="10.5" x2="15" y2="10.5"/><line x1="2" y1="13.5" x2="14" y2="13.5"/><line x1="6" y1="3.5" x2="8" y2="5.5"/><line x1="10" y1="3.5" x2="8" y2="5.5"/></svg>,
+  clock:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="8" cy="8" r="6"/><polyline points="8 4.5 8 8 10.5 9.5"/></svg>,
+  calendarEvent:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="3" width="12" height="11" rx="1.5"/><line x1="2" y1="6.5" x2="14" y2="6.5"/><line x1="5.5" y1="1.5" x2="5.5" y2="4"/><line x1="10.5" y1="1.5" x2="10.5" y2="4"/><rect x="5" y="9" width="2.4" height="2.4" rx="0.4" fill="currentColor" stroke="none"/></svg>,
   chat:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M2 4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2H5l-3 3V4z"/></svg>,
   plug:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M10 2v4M6 2v4M5 6h6M6 6v3.5a2.5 2.5 0 0 0 5 0V6"/><path d="M8.5 12v2M6 13h5"/></svg>,
   expand:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 5 1 1 5 1"/><polyline points="11 1 15 1 15 5"/><polyline points="15 11 15 15 11 15"/><polyline points="5 15 1 15 1 11"/></svg>,
@@ -176,6 +183,19 @@ export const Ic = {
   // Lucide `Folder` — «Открыть папку данных» in the About settings section
   // (SM-6); same lucide adoption path as film/play above.
   folder: (props?: { className?: string }) => <Folder size={13} strokeWidth={2} {...props} />,
+  // Lucide `Users` — two people (the mockup's ti-users). The story-deck
+  // encounter suit glyph (DIRECTOR_DECK_CALENDAR_PLAN DK-6, mockup §1's
+  // suit set); same lucide adoption path as film/flame above.
+  users: (props?: { className?: string }) => <Users size={13} strokeWidth={2} {...props} />,
+  // Lucide `CloudLightning` — cloud with a bolt (the mockup's ti-cloud-storm).
+  // The story-deck change suit glyph (DK-6); same adoption path.
+  cloudStorm: (props?: { className?: string }) => <CloudLightning size={13} strokeWidth={2} {...props} />,
+  // Lucide `SquareStack` — two stacked rounded rects (the mockup's ti-cards).
+  // The deck header icon and the card-back seal (DK-6); same adoption path.
+  cards: (props?: { className?: string }) => <SquareStack size={13} strokeWidth={2} {...props} />,
+  // Lucide `Shuffle` — crossing arrows (the mockup's ti-arrows-shuffle).
+  // The deck's draw-random action (DK-6/DK-7); same adoption path.
+  shuffle: (props?: { className?: string }) => <Shuffle size={13} strokeWidth={2} {...props} />,
 };
 
 // Icon props actually used at call sites: `className` (any icon) and `direction`
@@ -186,7 +206,20 @@ type IconComponent = (props?: { direction?: string; className?: string }) => Rea
 
 // Backward-compat proxy: Icons.XXX → Ic.xxx
 // Handles PascalCase→camelCase, Trash→del, Send→terminal, Caret prop adapter
-export const Icons: Record<string, IconComponent> = new Proxy(Ic as unknown as Record<string, IconComponent>, {
+
+/** The proxy target: the REAL Ic shape (so the Trash→del / Send→terminal
+ *  reads are checked members — a typo there is a compile error) widened with
+ *  the string index the alias contract promises. `caret` is carried in its
+ *  IconComponent adapter form so both views agree (its raw `(d: string)`
+ *  signature is the one member the IconComponent surface cannot carry). */
+type IconRegistry = Record<string, IconComponent> & Omit<typeof Ic, "caret"> & { caret: IconComponent };
+
+const iconRegistry: IconRegistry = {
+  ...Ic,
+  caret: (props?: { direction?: string }) => Ic.caret(props?.direction ?? "r"),
+};
+
+export const Icons: Record<string, IconComponent> = new Proxy(iconRegistry, {
   get(target, prop: string) {
     // Special key mappings
     if (prop === 'Trash') return target.del;
@@ -203,4 +236,4 @@ export const Icons: Record<string, IconComponent> = new Proxy(Ic as unknown as R
     if (target[lower]) return target[lower];
     return undefined;
   }
-}) as Record<string, IconComponent>;
+});

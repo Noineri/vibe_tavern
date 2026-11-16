@@ -15,10 +15,12 @@ import {
 
 describe("WHISPER_MODELS roster", () => {
   test("every id is a full onnx-community repo path (no traversal, no scheme)", () => {
+    expect(WHISPER_MODELS.length).toBeGreaterThan(0);
     for (const model of WHISPER_MODELS) {
-      expect(model.id.startsWith("onnx-community/")).toBe(true);
+      expect(model.id).toMatch(/^onnx-community\/[A-Za-z0-9._-]+$/);
       expect(model.id).not.toContain("..");
       expect(model.id).not.toContain("://");
+      expect(model.id).not.toContain("\\");
       // exactly one repo separator segment pair:
       expect(model.id.split("/").length).toBe(2);
     }

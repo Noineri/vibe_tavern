@@ -1,27 +1,15 @@
 import { describe, expect, test } from "bun:test";
 import type { PersonaRecord } from "@vibe-tavern/api-contracts";
-import type { StoreContainer } from "@vibe-tavern/db";
+import type { CharacterAssetStore, Persona, PersonaStore, StoreContainer } from "@vibe-tavern/db";
 import type { AssetService } from "../src/domain/asset/asset-service.js";
 import { serializePersona, buildStPersonaSlice, buildVtPersonaPayload, mergeStSlices } from "../src/domain/persona/persona-export.js";
+import { makePersonaRow } from "./copilot-test-builders.js";
+import { makeCharacterAssetRow } from "./insights-test-builders.js";
+import { strictTestDouble } from "./strict-test-double.js";
 
 /** Minimal persona builder for fixtures. */
-function persona(over: Partial<PersonaRecord> & { id: string }): PersonaRecord {
-  return {
-    name: "N",
-    description: "",
-    pronouns: null,
-    pronounForms: null,
-    avatarAssetId: null,
-    avatarFullAssetId: null,
-    avatarCropJson: null,
-    avatarExt: null,
-    avatarFullExt: null,
-    defaultForNewChats: false,
-    avatarDescription: null,
-    includeAvatarInPrompt: false,
-    updatedAt: "2026-01-01T00:00:00.000Z",
-    ...over,
-  } as PersonaRecord;
+function persona(over: Partial<PersonaRecord> & { id: string }): Persona {
+  return makePersonaRow(over.id, over);
 }
 
 /** Build fakes capturing only the methods serializePersona touches. */
@@ -30,20 +18,33 @@ function fakes(personaById: Record<string, Persona>, assetExt: Record<string, st
   const fullBytes: Record<string, Buffer> = {};
   const legacyBytes: Record<string, Buffer> = {};
 
-  const stores = {
-    personas: {
-      getById: async (id: string) => personaById[id] ?? null,
+  const stores = strictTestDouble<StoreContainer>(
+    {
+      personas: strictTestDouble<PersonaStore>(
+        {
+          getById: async (id: string) => personaById[id] ?? null,
+        },
+        "persona-export stores.personas",
+      ),
+      characterAssets: strictTestDouble<CharacterAssetStore>(
+        {
+          getById: async (id: string) =>
+            assetExt[id] ? makeCharacterAssetRow(id, { ext: assetExt[id] }) : null,
+        },
+        "persona-export stores.characterAssets",
+      ),
     },
-    characterAssets: {
-      getById: async (id: string) => (assetExt[id] ? { ext: assetExt[id] } : null),
-    },
-  } as unknown as StoreContainer;
+    "StoreContainer (persona-export)",
+  );
 
-  const assetService = {
-    loadPersonaAvatarBuffer: async (id: string, _ext: string) => thumbBytes[id] ?? null,
-    loadPersonaAvatarFullBuffer: async (id: string, _ext: string) => fullBytes[id] ?? null,
-    loadBuffer: async (id: string) => legacyBytes[id] ?? null,
-  } as unknown as AssetService;
+  const assetService = strictTestDouble<AssetService>(
+    {
+      loadPersonaAvatarBuffer: async (id: string, _ext: string) => thumbBytes[id] ?? null,
+      loadPersonaAvatarFullBuffer: async (id: string, _ext: string) => fullBytes[id] ?? null,
+      loadBuffer: async (id: string) => legacyBytes[id] ?? null,
+    },
+    "AssetService (persona-export)",
+  );
 
   return { stores, assetService, thumbBytes, fullBytes, legacyBytes };
 }

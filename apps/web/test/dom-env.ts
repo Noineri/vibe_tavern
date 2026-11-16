@@ -1,5 +1,6 @@
 import { afterAll, afterEach, expect } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
+import { flushSchedulerQueue } from "./scheduler-drain.js";
 
 /** Longest `outerHTML` snippet an inspected node prints before it is elided. */
 const INSPECT_HTML_LIMIT = 2000;
@@ -89,6 +90,31 @@ function installNetworkGuard(): void {
   globalThis.fetch = Object.assign(guard, { preconnect: () => {} });
 }
 
+export interface DomEnvOptions {
+  /** Fail any test that reached for the network (see `installNetworkGuard`). */
+  readonly failOnNetwork?: boolean;
+}
+
+/**
+ * Build the per-test network-guard drain hook used by `useDomEnv`'s `afterEach`.
+ * Exported so the self-test can verify both strict (`failOnNetwork: true`) and
+ * permissive draining directly against `DomEnvOptions`.
+ */
+export function createNetworkGuardAfterEach(options: DomEnvOptions = {}): () => void {
+  const failOnNetwork = options.failOnNetwork === true;
+  return () => {
+    const blocked = blockedRequests.splice(0);
+    if (failOnNetwork && blocked.length > 0) {
+      const targets = [...new Set(blocked.map((r) => `${r.method} ${r.url}`))].join(", ");
+      throw new Error(
+        `This test reached for the network ${blocked.length} time(s): ${targets}. ` +
+          "Mock the module that fetches (spread the real module, override the one function), " +
+          "or assign globalThis.fetch for the duration of the test.",
+      );
+    }
+  };
+}
+
 function ensureDomEnvRegistration(): void {
   if (typeof globalThis.window === "undefined") {
     GlobalRegistrator.register();
@@ -147,27 +173,6 @@ ensureDomEnvRegistration();
 const { default: _cjsInteropDefault, ...matchers } = await import("@testing-library/jest-dom/matchers");
 const { cleanup } = await import("@testing-library/react");
 
-/**
- * Drain the React 19 scheduler's macrotask queue.
- *
- * React's `commitRoot` schedules `flushPassiveEffects()` via
- * `scheduleCallback(NormalPriority)` on a `MessageChannel` macrotask (see
- * react-dom-client.development.js `scheduleCallback$1` in commitRoot).
- * RTL's `cleanup()` flushes microtasks + sync work via `act()`, but does NOT
- * drain that macrotask queue. Draining a bounded number of macrotask ticks
- * between files lets those callbacks fire while the file's tree is still
- * mounted, so no stale effect fires into the NEXT file's DOM.
- *
- * Letting a bounded number of macrotask ticks elapse lets those callbacks fire
- * while the file's effects are still relevant. We loop rather than tick once
- * because passive effects can schedule further passive effects; five is a safe
- * bounded drain (no public "scheduler idle" signal exists to spin against).
- */
-async function flushSchedulerQueue(): Promise<void> {
-	for (let i = 0; i < 5; i++) {
-		await new Promise<void>((resolve) => setTimeout(resolve, 0));
-	}
-}
 
 /**
  * Scoped DOM test environment for bun:test.
@@ -208,25 +213,13 @@ async function flushSchedulerQueue(): Promise<void> {
  */
 expect.extend(matchers);
 
-export interface DomEnvOptions {
-  /** Fail any test that reached for the network (see `installNetworkGuard`). */
-  readonly failOnNetwork?: boolean;
-}
-
 export function useDomEnv(options: DomEnvOptions = {}): void {
   ensureDomEnvRegistration();
+  const flushBlockedNetwork = createNetworkGuardAfterEach(options);
 
   afterEach(() => {
     cleanup();
-    const blocked = blockedRequests.splice(0);
-    if (options.failOnNetwork === true && blocked.length > 0) {
-      const targets = [...new Set(blocked.map((r) => `${r.method} ${r.url}`))].join(", ");
-      throw new Error(
-        `This test reached for the network ${blocked.length} time(s): ${targets}. ` +
-          "Mock the module that fetches (spread the real module, override the one function), " +
-          "or assign globalThis.fetch for the duration of the test.",
-      );
-    }
+    flushBlockedNetwork();
   });
 
   afterAll(async () => {

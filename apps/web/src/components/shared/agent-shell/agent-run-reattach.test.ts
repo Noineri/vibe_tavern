@@ -9,6 +9,7 @@ import { useAgentTurnStore } from "../../../stores/agent-turn-store.js";
 import { agentLiveReasoningOf, agentLiveTextOf, useAgentLiveStreamStore } from "../../../stores/agent-live-stream-store.js";
 import { AgentReviewPersistence } from "../../../lib/agent-review-persistence.js";
 import { useAgentController, type AgentController } from "./use-agent-controller.js";
+import { testFetch } from "@vibe-tavern/test-fetch";
 
 useDomEnv();
 const { act, renderHook, waitFor } = await import("@testing-library/react");
@@ -57,7 +58,7 @@ beforeEach(() => {
   useAgentTurnStore.setState(originalTurns, true);
   useAgentLiveStreamStore.setState(originalLive, true);
   runs = new Map(); requests = []; afterDiscovery = undefined; discoveryGate = undefined;
-  globalThis.fetch = (async (input, init) => {
+  globalThis.fetch = testFetch(async (input, init) => {
     const url = new URL(String(input), "http://gateway.test");
     const method = init?.method ?? "GET";
     requests.push({ method, path: url.pathname, ...(init?.body ? { body: JSON.parse(String(init.body)) } : {}) });
@@ -78,7 +79,7 @@ beforeEach(() => {
       return Response.json({ stopped: true });
     }
     return response(runs.get(id)!, Number(url.searchParams.get("after")));
-  }) as typeof fetch;
+  });
 });
 afterAll(() => {
   globalThis.fetch = originalFetch;

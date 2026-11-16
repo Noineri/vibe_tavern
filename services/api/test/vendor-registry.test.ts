@@ -162,17 +162,59 @@ describe("vendor-registry — per-vendor capability extraction", () => {
 		});
 	});
 
-	it("deepinfra reads capabilities + modality fallback", () => {
+	it("deepinfra reads metadata.tags (the current wire signal)", () => {
 		const vendor = resolveVendor("https://api.deepinfra.com/v1/openai");
-		const record: OpenAiModelRecord = {
-			modality: ["text", "image"],
-			capabilities: { reasoning: true, tool_calling: true },
+		// Captured live from GET https://api.deepinfra.com/v1/openai/models?filter=with_meta
+		// (fix-wave FW-4 probe, 2026-11-14): the vendor no longer sends the top-level
+		// `modality` field nor a `capabilities` object — capability flags live in
+		// metadata.tags ("vision", "reasoning", …). Verbatim wire record, nothing trimmed.
+		const record = {
+			id: "Qwen/Qwen3.6-27B",
+			object: "model",
+			created: 0,
+			owned_by: "deepinfra",
+			root: "Qwen/Qwen3.6-27B",
+			parent: null,
+			metadata: {
+				description: "",
+				context_length: 262144,
+				max_tokens: 262144,
+				pricing: { input_tokens: 0.32, output_tokens: 3.2 },
+				discount: null,
+				tags: ["chat", "vlm", "vision", "reasoning_effort", "reasoning"],
+				default_width: null,
+				default_height: null,
+				default_iterations: null,
+			},
 		};
-		expect(vendor.extractCapabilities(record)).toEqual({
-			vision: true,
-			reasoning: true,
-			tools: true,
-		});
+		expect(vendor.extractCapabilities(record)).toEqual({ vision: true, reasoning: true });
+	});
+
+	it("deepinfra reports no vision/reasoning when tags carry neither", () => {
+		const vendor = resolveVendor("https://api.deepinfra.com/v1/openai");
+		// Captured live (same 2026-11-14 probe): an embed-tagged record carries neither
+		// capability tag, and tags are the only DeepInfra signal — so the arm reports
+		// authoritative `false` for both instead of undefined. Verbatim wire record.
+		const record = {
+			id: "Qwen/Qwen3-Embedding-0.6B",
+			object: "model",
+			created: 0,
+			owned_by: "deepinfra",
+			root: "Qwen/Qwen3-Embedding-0.6B",
+			parent: null,
+			metadata: {
+				description: "The Qwen3 Embedding model series is the latest proprietary model of the Qwen family, specifically designed for text embedding and ranking tasks. Building upon the dense foundational models of the Qwen3 series, it provides a comprehensive range of text embeddings and reranking models in various sizes (0.6B, 4B, and 8B).",
+				context_length: 32768,
+				max_tokens: 32768,
+				pricing: { input_tokens: 0.01 },
+				discount: null,
+				tags: ["embed"],
+				default_width: null,
+				default_height: null,
+				default_iterations: null,
+			},
+		};
+		expect(vendor.extractCapabilities(record)).toEqual({ vision: false, reasoning: false });
 	});
 
 	it("chutes reads input_modalities + capabilities.tools", () => {

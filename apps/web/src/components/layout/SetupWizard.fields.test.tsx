@@ -12,6 +12,7 @@ import { createElement } from "react";
 
 import { useDomEnv } from "../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
+import { wireUiSettings } from "../../../test/wire-fixtures.js";
 import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js";
 
 useDomEnv();
@@ -55,10 +56,10 @@ function seedFirstRun() {
 			isFirstRun: true,
 			allCharacters: [],
 			promptPresets: [],
-			personas: [],
-			uiSettings: { githubStarred: true },
+			uiSettings: { ...wireUiSettings(), githubStarred: true },
+			agentKindSettings: {},
 			isArmServer: false,
-		} as never,
+		},
 		personas: null,
 		isLoading: false,
 	});

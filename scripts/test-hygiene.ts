@@ -21,29 +21,10 @@
 
 import { appendFileSync, existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
-import { createTestSuites } from "./test.js";
+import { QUARANTINE_LIST_PATH, utcToday, validateQuarantineList, writeReminderLines, type QuarantineReport } from "./test-hygiene-quarantine.js";
+export { KNOWN_SUITES, validateQuarantineList, writeReminderLines, type QuarantineViolation, type QuarantineReport } from "./test-hygiene-quarantine.js";
 
 const repoRoot = join(import.meta.dir, "..");
-
-/**
- * The quarantine list the runner reads (scripts/test-quarantine.ts,
- * TH-8 fix step 10.2). The runner fails CLOSED on a malformed list — it
- * silently degrades to an empty list rather than weakening the verdict — so a
- * malformed list is a HARD failure HERE, not a runner concern.
- */
-const QUARANTINE_LIST_PATH = join(repoRoot, "scripts", "test-quarantine.json");
-
-/**
- * The quarantine entry `suite` field keys the orchestrator's suite names
- * (scripts/test.ts `createTestSuites()`). Derived, not hand-copied — one data
- * source, and a suite rename here is the SAME rename the runner already uses.
- */
-export const KNOWN_SUITES: readonly string[] = [...new Set(createTestSuites().map((suite) => suite.name))];
-
-const KNOWN_SUITE_SET: ReadonlySet<string> = new Set(KNOWN_SUITES);
-
-/** Quarantine entries older than this many days print a reminder — never a failure. */
-const QUARANTINE_REMINDER_DAYS = 30;
 
 /**
  * RATCHET BUDGETS — snapshot of the tree on 2026-09-12.
@@ -53,47 +34,361 @@ const QUARANTINE_REMINDER_DAYS = 30;
  */
 export const BUDGETS = {
 	/** `as never` casts in test files (TS-7b class; blanket rewrite wontfix). */
-	// 1243 (2026-10-04): ratcheted to the merged tree's count after PR #51.
-	// 1246 (2026-10-11, PM-7): +3 — the restored-as-was todo describe in
-	// experience-copilot-tools.test.ts carries the same three `as never`
-	// result casts PM-6 deleted with the mechanic (deliberate growth, not
-	// drift — the restore mandate forbids rewriting the old tests).
-	// 1243 (2026-10-12, PM-7 fixup, owner ruling): those 3 casts were
-	// eliminated — the todo results are typed as the seam's exported
-	// ExperienceCopilotTodoResult — and the ratchet lowered back; the
-	// ratchet exists to go DOWN.
-	// 1246 (2026-10-12, CPF-2b): +3 — continue-fallback integration tests
-	// (live-chat-continue-fallback.test.ts): (a) the chatRuntime DI stub for
-	// the LiveChatOrchestrator constructor (ChatRuntime is nominal — private
-	// deps — the same cast the existing live-chat-continue.test.ts harness
-	// uses), (b) the ChatRuntimeDeps object for the real-ChatRuntime
-	// attribution tests (members are nominal store classes; one whole-object
-	// cast instead of a dozen), (c) one shared `UNSET` for the two
-	// required-but-unused ctor deps. Minimized from 22 raw harness casts
-	// (real RpModeStrategy instead of a stub, real executor types for the DI
-	// stub, `satisfies` for the trace literal). Lower when the nominal DI
-	// boundaries become structural.
-	// 1245 (2026-10-15, RO-5): unused casts removed; ratchet lowered to match.
-	// 1244 (2026-10-21, SC-11): one insights scene-harness stub typed — SC-11
-	// reached 1246 mid-unit, paid back to 1244 at commit (SC-10's HEAD was
-	// green at exactly 1245/1245).
-	// 1245 (2026-10-26, DR-3a): +1 — story-plan-sync.test.ts constructs
-	// ObjectiveService twice (main pair + the observer-failure case) with two
-	// unused ctor deps (SessionRuntime/ProviderProfileService — no path under
-	// test touches them); minimized to ONE shared `unusedObjectiveDeps` cast
-	// from 4 raw `null as never`s. Lower when the ctor deps become optional
-	// or the DI boundary becomes structural.
-	asNever: 1245,
+	// Full historical trail (1243 -> 29, steps 6a-15f): moved
+	// byte-identically to scripts/test-hygiene-budget-log.ts (extracted
+	// 2026-11-11 per the file-size ratchet's extract-only law). The
+	// LATEST entry stays directly below; new entries append above the
+	// value line as always.
+	// 0 (2026-11-11, step 16): −2 — the two packages survivors, wave D's
+	// FINAL batch: **WAVE D CLOSES, the as-never category EXTINCT repo-wide —
+	// ratchet 1243 → 0 (every earlier step in
+	// scripts/test-hygiene-budget-log.ts; the closing re-query prints 0 over
+	// all 1281 test files).** THE SHAPES: prompt-preset-schema.test.ts — the
+	// hostile-depth pin's cast was PURE NOISE, deleted: the withDepth
+	// literal goes straight into createPromptPresetSchema.safeParse whose
+	// parameter is `data: unknown` (zod 4.6.7 classic/schemas.d.ts:27) and
+	// the helper already took `depth: unknown`, so the cast erased nothing
+	// the compiler could have flagged; the hostile VALUES stay hostile
+	// (null / undefined / 5 / "5" flow unchanged) and the pin still
+	// rejects "5"; the member stays `.number().nullable().optional()`
+	// (prompt-preset-schema.ts:56). image-prompt-profile-store.test.ts —
+	// the JSON.parse hostile blob narrows to the REAL member type (the
+	// idiomatic specific-type cast from any): `as ImagePromptOverridesInput`
+	// — the store's own boundary input (image-prompt-profile-store.ts:27,
+	// the CreateImagePromptProfileData .overrides param at :15,
+	// serializeOverrides re-validating at :58-67); the hostile blob is
+	// byte-identical (unknown keys, a flat-string payload, qualityText 42)
+	// and the pin (store sanitizes to {}) is unchanged. The stale "stays
+	// budgeted" comment reworded with the pattern — the one non-code
+	// site. The type rides the store module's EXISTING export (inline
+	// `type` member on the import — no new builder file; the cluster's
+	// character-store.test.ts idiom). packages key-level tsc deltas EMPTY
+	// before and after (the 15e/15f method adapted; the honest BEFORE
+	// captured at the clean base commit 0d9e1efd1): the api-contracts test
+	// file rides its workspace's MAIN tsconfig, whose include carries
+	// test/** — 0 diagnostics at the base commit and after; the db test
+	// file rides packages/db/tsconfig.test.json — 193 diagnostics / 68
+	// unique keys at the base commit and after, all pre-existing
+	// branded-ID assert-seam debt, untouched; 852 keys byte-untouched. The
+	// two per-file spot runs carry identical counts before and after (25/0
+	// and 8/0, 0 fail). One commit with the budget.
+	// 2 (2026-11-11, step 15g): −27 — the stores/lib batch, the LAST apps/web
+	// batch, closes apps/web at zero: the eleven files 7/4/3/2/2/2/2/2/1/1/1
+	// (gallery-store, chat-selectors, message-meta-registry,
+	// chat-mode-registry, context-preview-store, experience-kernel-frame,
+	// experience-sdk-diag, experience-sdk-loop, trace-history-store,
+	// prompt-canvas-summary, tts/narration-cache). The repo remainder is
+	// packages 2 (step 16). THE SHAPES: gallery-store — the makeAsset fixture
+	// brands id/characterId through brandId<CharacterAssetId> /
+	// brandId<CharacterId> (character-asset.ts:13) and its createdAt cast
+	// dies (Timestamp is a plain string alias, entities.ts:80); the
+	// upload/update default mocks resolve makeAsset("uploaded") /
+	// makeAsset("updated") instead of an erased undefined — no test
+	// exercises the upload/update SUCCESS resolve paths (updateCaption's
+	// only test rejects the mock, and nothing calls upload), so nothing
+	// reads the resolved rows and the file's own single fixture is the
+	// honest default (the function declaration hoists above the
+	// module-level mock block that now references it). chat-selectors — the
+	// four snapshot slices complete through the EXISTING wireChat/wireBranch
+	// builders (wire-fixtures.ts:508/494, consumed unmodified — no new
+	// builder file; the store's activeChat/activeBranch slots and the
+	// selection predicate read .id only). message-meta-registry — the ctx()
+	// variant brands MessageVariantId/MessageId (MessageVariant is domain
+	// entities.ts:2267) and its createdAt cast dies (same Timestamp fact).
+	// chat-mode-registry — both casts PURE DELETIONS: "novel"/"group" ARE
+	// ChatMode members (platform-constants.ts:123-128) and the parameter
+	// already takes ChatMode | undefined | null (chat-mode-registry.ts:104).
+	// Both chat-api mock fallbacks brand AT THE SEAM — brandId<ChatId> (+
+	// brandId<ChatBranchId> for the preview) where the test's plain-string
+	// FetchImpl hands off to the real fetchContextPreview/fetchTraceHistory
+	// (chat-api.ts:774/757); trace-history already imported brandId,
+	// context-preview gains the import. experience-sdk-diag/loop — the four
+	// fakeWindow casts PURE DELETIONS: the literal feeds an untyped
+	// new Function("window", …) eval and nothing constrains it.
+	// prompt-canvas-summary — the dep mock returns the records array
+	// directly (SummarySourceRecord IS the dep's element type, derived from
+	// PromptCanvasSummaryLoadDeps["listChatSummaries"]). narration-cache —
+	// the indexedDB restore drops its cast (unknown slot, unknown captured
+	// value). experience-kernel-frame — the two negative pins swap the
+	// double-erased payloads for type-valid RUNTIME-REJECTED values that
+	// mirror the server suite's own fixtures: the invalid-viewer pin takes
+	// { kind: "observer", participantId: "p1" } (the viewer schema's
+	// superRefine rejects an observer carrying a participantId,
+	// interactive-schema.ts:268-274; the server fixture at
+	// experience-kernel.test.ts:313) and the illegal-action pin takes
+	// { type: "", requestId: "r1", expectedRevision: 0 } (boundedId min 1
+	// char fails safeParse while the ExperienceAction interface's bare
+	// string accepts it — interactive-schema.ts:93/297; the counter
+	// reducer's unknown-type fallthrough returns a VALID transition, so the
+	// pinned illegal_action can only come from the schema boundary — the
+	// same mechanism the erased literal hit). apps/web key-level tsc delta
+	// EMPTY before and after on the MAIN workspace config (the 15e/15f
+	// method): 0 diagnostics at the base commit and after; 852
+	// byte-untouched. The eleven per-file spot runs carry identical counts
+	// before and after (8/6/5/11/7/38/4/10/8/4/7, 0 fail). One commit with
+	// the budget.
+	// 29 (2026-11-11, step 15f): −39 — the build/experience/layout batch, the
+	// nine files 18/8/3/3/2/2/1/1/1 (ObjectiveConfig, trace-payload-view,
+	// TopBar.narrate, ScriptEditor, ExperienceAssignment, ExperienceSetupModal,
+	// CharacterForm, SceneHistoryBackfill, SetupWizard.fields). The repo
+	// remainder is apps/web 27 (a stores/lib cluster) + packages 2. THE SHAPES:
+	// ObjectiveConfig — all 17 "chat_1" props take the file's own CHAT_ID
+	// (brandId<ChatId>, already imported) and the switch-chats rerender brands
+	// its "chat_2" inline; pure value substitution, zero shape change (the
+	// prop is the branded ChatId, ObjectiveConfig.tsx:60 supervisor-verified).
+	// trace-payload-view — all 8 casts PURE DELETIONS: the fixtures already
+	// satisfy AssemblePromptResponse as written (the layer() helper returns a
+	// complete PromptLayerDto; finalPayload is Record<string, unknown> so the
+	// message rows carry no member constraint; domain api-types.ts:26).
+	// TopBar.narrate — the two createElement(TopBar, { update: null }) casts
+	// PURE DELETIONS (every TopBarProps member is optional, TopBar.tsx:27);
+	// the profile row completes through the EXISTING wireTtsProfile builder
+	// (wire-fixtures.ts:178, consumed unmodified — no new builder file) with
+	// currentData retyped to the real VoiceMapData (voice-map-data.ts:5).
+	// ScriptEditor — the three create/update/import default mocks resolve
+	// Promise<ScriptRecord>(wireScript()) instead of an erased undefined
+	// (wireScript already imported; beforeEach re-seeds all three before any
+	// test, and production reads .id off every resolved record,
+	// ScriptEditor.tsx:326/340/432, so the honest default is the safe one).
+	// ExperienceAssignment + ExperienceSetupModal — the listPersonas mocks:
+	// the two empty-array casts PURE DELETIONS (the untyped mock()'s
+	// ResolveType accepts the array), the partial {id, name} rows completed
+	// through wirePersona (wire-fixtures.ts:454) — both components read
+	// id/name only (ExperienceSetupModal.tsx:313, ExperienceAssignment.tsx:188).
+	// CharacterForm — the Harness useForm types BuildCharacterDraft and seeds
+	// the canonical EMPTY_BUILD_DRAFT (character-draft.ts:52 — the file
+	// header's own one-place seed law) spread with the alternateGreetings pin;
+	// the old 6-field literal was missing 10 required draft members.
+	// SceneHistoryBackfill — the tracker literal gains the REQUIRED
+	// rulesPrompt: "" (entities.ts:2554) and drops its cast (schema {} fits
+	// the Record SceneTrackerDsl). SetupWizard.fields — the bootstrap seed is
+	// a real BootstrapData: the NONEXISTENT personas member dropped (the
+	// 15d/15e fiction class — it lives on BootstrapState, set separately in
+	// the same seed, and the wizard reads s.personas, never data.personas),
+	// the REQUIRED agentKindSettings added, uiSettings spreads wireUiSettings
+	// and keeps the githubStarred pin the wizard's first-run banner reads
+	// (SetupWizard.tsx:43). apps/web key-level tsc delta EMPTY before and
+	// after, measured on the MAIN workspace config (the 15e method: the
+	// src/** include carries the collocated tests; tsconfig.test.json covers
+	// apps/web/test/** only): 0 diagnostics at the base commit and after, 0
+	// new keys; 852 byte-untouched. The nine per-file spot runs carry
+	// identical counts before and after (23/13/2/36/29/68/7/14/6, 0 fail).
+	// One commit with the test edits.
+	asNever: 0,
 	/** Global `screen.` usage in apps/web test files (binds at import time). */
 	// 196 (2026-10-04): ratcheted to the merged tree's count after PR #51
 	// (provider-lists unification removed the forked pickers' screen usage;
 	// 2026-10-09 regex remediation removed the rest — locked at 156).
 	// Ratcheted to the current tree's count.
-	screen: 138,
+	// 65 (2026-11-11): step 18a — the screen sweep opener. ALL 73 sites in
+	// apps/web/src/components/chat/MessageAiEditorModal.test.tsx (the single
+	// monster holder; live scanFile: 73 before, 0 after) now query through
+	// each test's own render() return (the R7 dom-env contract): 34 bare
+	// renderModal() call sites gained per-test destructures, the 10
+	// already-destructured tests stay (two gained findByText for their
+	// helper calls), the three query helpers take the caller's findByText
+	// (generateWithPrompt / switchToAnnotate / generateAnnotate, typed
+	// ModalView["findByText"]), mergeRow keeps its existing { getByText }
+	// seam, and the `screen` binding is dropped from the dynamic RTL import.
+	// Same boundary: the render-returned queries are bound to
+	// baseElement = document.body (@testing-library/react pure.js:239) —
+	// the element the modal portals to — so queries, asserts and behavior
+	// are unchanged (expect() source count 165 → 165; per-file run 45 pass /
+	// 0 fail / 169 expect() calls before and after; act warnings 44 both
+	// sides; the one remaining bare renderModal() queries nothing — it
+	// drives document.body.querySelectorAll directly). 138 → 65 = 138 − 73
+	// exactly. 12 holder files remain (RegexPresetEditor 25, AiAssistantModal
+	// 16, TtsProfileEditor 7, BoundResourcesField 5, StarPromptModal 4,
+	// TtsBaseCard 2, and the six 1-site files).
+	// 1 (2026-11-11): step 18b — the screen sweep closer: −64, and the
+	// category closes at ONE documented survivor (ratchet 138 → 65 → 1; the
+	// planned 0/0 is NOT reached, by a ruling recorded below). The eleven
+	// holder files beside the survivor are at zero (live scanFile:
+	// 25/16/7/5/4/2/1/1/1/1/1 before, 0 after).
+	// THE 52 QUERY SITES — RegexPresetEditor 25, AiAssistantModal 16,
+	// BoundResourcesField 5, StarPromptModal 4, TtsBaseCard 2 — now query
+	// through each test's own render() return (the R7 dom-env contract, the
+	// 18a shapes): 35 call sites gained per-test destructures of exactly the
+	// queries the test uses (17/12/2/4), and TtsBaseCard's two existing
+	// { unmount } destructures gained theirs; AiAssistantModal's
+	// generateWithPrompt helper takes the caller's findByText (typed
+	// ModalView["findByText"], ModalView = ReturnType<typeof renderModal>;
+	// 9 call sites); StarPromptModal's file-local openModal returns its own
+	// render result; RegexPresetEditor's in-test seg() closes over the
+	// destructured getAllByRole; the `screen` binding is dropped from the
+	// five dynamic RTL imports. Same boundary: no file passes a custom
+	// container or baseElement, so the render-returned queries bind to
+	// document.body (@testing-library/react dist/pure.js:265, :239) — the
+	// element the modals portal to — and queries, asserts and behavior are
+	// unchanged (source expect( counts identical per file; per-file runs
+	// 31/18/3/5/10 pass, 0 fail, before and after).
+	// THE OTHER 12 WERE NOT QUERY ACCESS: this scanner counts over the whole
+	// file, comments included (countMatches(content, SCREEN_DOT) in scanFile
+	// below), and the English noun closing a sentence matched — "the
+	// separate edit screen." TtsProfileEditor 7 (ALL of its sites),
+	// MasterDetailModal 1, RootErrorBoundary 1, use-image-zoom-pan 1,
+	// use-shell-surface 1, use-tts-profiles 1: twelve single comment lines
+	// reworded so the noun no longer closes its sentence — meaning preserved,
+	// no code touched (per-file runs 86/21/3/9/11/16 pass, 0 fail, before and
+	// after; TtsProfileEditor's RUNTIME expect() total is not a stable
+	// counter — its 61 waitFor calls re-run their assertions on every poll,
+	// 3469 to 3613 across five runs of which four ran identical content — the
+	// source expect( count is 365 on both sides).
+	// THE SURVIVOR — apps/web/test/harness.smoke.test.tsx:43, byte-untouched.
+	// The survivor law: a site survives only with proof that the fix is worse
+	// than the pattern. Its test (:34-44, "the global `screen` is bound to a
+	// live document") has the global binding itself as its SUBJECT — the
+	// regression pin for dom-env.ts's import discipline, added together with
+	// its fix in 0cb7ed060 (2026-08-08, "fix(test): load @testing-library
+	// only after happy-dom registers") after a @testing-library/jest-dom 6.10
+	// bump started importing @testing-library/dom, which turned a static
+	// import in dom-env.ts into a poisoned global for every DOM test file at
+	// once. THE PROOF is two binding mechanisms, read in the installed
+	// packages: @testing-library/dom 10.4.2 dist/screen.js:48-49 binds the
+	// global at MODULE EVALUATION — live queries when document.body exists,
+	// otherwise a stub whose every query throws (:54); @testing-library/react
+	// 16.3.3 dist/pure.js:265 binds render()'s returned queries to
+	// document.body at CALL time. A render-returned query therefore stays
+	// GREEN in the poisoned state: an R7 migration would leave this pin
+	// unable to fail for the reason it exists, under a title still claiming
+	// it does (and a near-twin of the file's first test). The worker
+	// escalated the conflict mid-unit (kill every site vs same-boundary
+	// rewrite only) and the campaign supervisor ruled the site stays; 1/1 is
+	// the honest record. No exemption mechanism is added to this guard — a
+	// change to enforcement tooling is an owner decision.
+	// apps/web key-level tsc delta EMPTY on BOTH programs: the MAIN workspace
+	// config (the eleven src-collocated files) 0 → 0 diagnostics;
+	// apps/web/tsconfig.test.json (apps/web/test/**, the survivor's program)
+	// 3 → 3 diagnostics / 2 → 2 keys — both pre-existing baselined jest-dom
+	// matcher typings inside the untouched survivor; 852 byte-untouched. One
+	// commit with the test edits.
+	screen: 1,
 	/** `innerHTML = ""` surgeries (TtsProfileEditor legacy block). */
-	innerHTMLEmpty: 30,
+	// 0 (2026-11-12): step 19 — the innerHTML sweep CLOSES THE CATEGORY
+	// (ratchet 30 → 0; any new site now fails the guard outright). The
+	// census split ran first (the 18b lesson): all 30 sites are CODE, zero
+	// comment mentions. The holders are exactly the packet's three TTS
+	// files (live scanFile 27/2/1 before, 0/0/0 after; repo-wide 30 → 0
+	// over 1281 test files). THE SHAPES (R6, same boundary — each wipe
+	// deleted, the sanctioned teardown it already followed stays):
+	// TtsProfileEditor 26 of 27 are the legacy trio `cleanup();
+	// innerHTML=""; await act` — 19 four-space end-of-test sites, 5
+	// six-space sites inside try-finally blocks (glue decoder twice, voices
+	// mockRestore twice, siliconflow end), and 2 mid-test phase resets
+	// immediately followed by a fresh renderEditor (:1766, :2033) — in all
+	// of them cleanup() had ALREADY produced the emptied body the wipe
+	// re-produced, and the file's own afterEach runs act+cleanup again;
+	// TtsModelPicker's beforeEach wipe became cleanup() (the sanctioned
+	// reset of the same state — every mount goes through render()), its
+	// afterEach wipe deleted above the existing cleanup();
+	// TtsBindingFields's afterEach wipe deleted above cleanup().
+	// THE JUDGMENT CALL: the one NON-teardown-imitation site — the
+	// mid-loop wipe in "applyPreset: every native roster row maps to ITS
+	// backend" (:1065, a for-loop over all 8 presets) — kills the open
+	// dropdown portal while keeping the editor mount alive; cleanup()
+	// cannot express that (it unmounts the editor, and the loop's next
+	// iteration queries view.container), so it went to the supervisor with
+	// its mechanism instead of being forced. RULING: plain deletion, on
+	// production evidence — the dropdown is the shared DropdownSelect
+	// (TtsProviderForm.tsx:237), a controlled cmdk+Radix Popover whose
+	// handleSelect runs onChange(id); setOpen(false); synchronously on
+	// every selection (DropdownSelect.tsx:139-142), so the no-open-popup
+	// state the wipe manufactures is already true at each iteration start;
+	// deleting it makes the pin strictly more honest — an auto-close
+	// regression now fails the loop loudly instead of being forcibly
+	// hidden. Binding conditions held: the waitFor re-click retry block
+	// byte-untouched; the applyPreset test green 4/4 standalone and the
+	// file green 3 times at identical counts. Per-file pass/fail identical before
+	// and after (86/7/5 pass, 0 fail; 24 and 16 expect();
+	// TtsProfileEditor's runtime expect() total stays a waitFor-poll
+	// counter — 3405 → 3618/3629/3694 across the three AFTER runs, the
+	// source expect( count is 365 on both sides). One commit with the
+	// test edits.
+	innerHTMLEmpty: 0,
 	/** Literal `await sleep/delay/wait(N)` with N > 200 in test files. */
-	longSleeps: 2,
+	// 2 (2026-11-12, step 20): closes at TWO DOCUMENTED SURVIVORS - the
+	// sweep's last budget does not move (2 -> 2); both sites stay
+	// byte-untouched by ruling on this unit's escalation (the 18b
+	// harness.smoke precedent: the fix is worse than the pattern). THE
+	// CENSUS AT START (live scanFile): exactly 2 matches repo-wide over
+	// 1281 test files, both CODE lines in scripts/test.test.ts (line 155
+	// N=400, line 174 N=300), zero comment mentions - the only holder
+	// file. Both sites feed CHILD PROCESSES through runTestSuites; the
+	// children are real OS processes whose only clock is real time, so
+	// the pinned mechanisms need genuine child lifetimes and the R5
+	// parent-side wait forms cannot reproduce them:
+	// (a) test.test.ts:155, "runs suites concurrently instead of one at a
+	// time" - each child prints Date.now() around its sleep and the
+	// parent asserts the two windows OVERLAP from the children's own
+	// stamps (test.test.ts:167-168); the second assert is the
+	// sequential-killer (a sequential pool records suite 1 before
+	// spawning suite 2, scripts/test.ts:311), and the 400ms child is the
+	// margin over node -e spawn jitter (spot-run bodies time at ~419ms /
+	// ~320ms - the sleeps are the runtimes);
+	// (b) test.test.ts:174, "keeps results in declaration order when
+	// suites finish out of order" - pins the indexed-results invariant
+	// (scripts/test.ts:300) GIVEN the first suite outlives the second
+	// (test.test.ts:172); the 300ms child is the margin that
+	// deterministically reverses completion order - shorter children
+	// make the assert pass vacuously (completion order = declaration
+	// order).
+	// ALTERNATIVES CONSIDERED, each worse than the pattern: parked
+	// promises in the parent cannot extend a child process's life
+	// (separate OS process); a never-released promise INSIDE the child
+	// hangs it and orphans the process at the suite timeout; a
+	// sibling-marker disk event turns a sequential regression into a
+	// hang + orphan instead of a fast clean fail and rides fs.watch
+	// inside `node -e` on Windows CI (a fresh flake surface); poll loops
+	// are the same sleep chopped below the scanner threshold (laundering);
+	// parent wall-clock asserts are what the test itself forbids ("Pinned
+	// on overlap, not wall clock", test.test.ts:146-148); lowering either
+	// number trades the budget for false-fail margins on a loaded CI box.
+	// Binding conditions held: spot run identical before/after (19 pass /
+	// 0 fail / 98 expect()); scripts workspace tsc 0 diagnostics before
+	// and after; scripts/test.test.ts byte-untouched (not in this
+	// commit). The four hygiene budgets close: as-never 0/0 (step 16),
+	// screen 1/1 (dom-env pin, step 18b), innerHTML 0/0 (step 19), sleeps
+	// 2/2 (these survivors).
+	// (2026-11-12, owner ruling — TQ7a-F03 scanner-gap class): the
+	// longSleeps budget now ALSO matches the promise-setTimeout sleep form
+	// `await new Promise((r) => setTimeout(r, N))`, which the original
+	// regex silently skipped (sightings: TQ4b-F03 700ms, TQ7a-F03 350ms ×2
+	// in TtsLocalServerPanel.test.tsx). Raising a ratchet budget is
+	// normally forbidden ("down, never up") — this is a deliberate
+	// owner-authorized baseline reset, NOT a cleanup. The five newly
+	// visible survivors (all >200ms in test files):
+	//   ScriptEditor.test.tsx:473 (700), AiAssistantModal.test.tsx:723
+	//   (700), TtsLocalServerPanel.test.tsx:118/:310 (350 ×2),
+	//   TtsProfileEditor.test.tsx:764 (900).
+	// Sub-200ms promise drains (0/5/10/…ms act-drains) stay invisible by
+	// the same threshold as the original form. Each survivor is fix-queue
+	// debt; every fix lowers this number again.
+	// (2026-11-12, owner ruling — TQ12-F04, «окей давай как рекомендуешь»:
+	// «(б) для этого сайта + (а) в узкой форме (ловить только \w+\s*\+\s*\d+…)»):
+	// the EXPRESSION form `setTimeout(r, CONST + n)` joins the budget — counted
+	// only when CONST resolves to a numeric literal in the same file. The
+	// launcher site the ruling targeted (ExperienceLauncher.test.tsx:745,
+	// TIMER_RESYNC_INTERVAL_MS + 150 = 2150ms) was REWRITTEN deterministically
+	// (fake timers) in the same unit, so it is NOT budgeted. The first scan
+	// under the new rule surfaced ONE pre-existing site the old regex could
+	// never see — a deliberate negative-wait of the same sanctioned class as
+	// the ScriptEditor survivor (waiting out the SDK's 750ms flush window to
+	// prove nothing arrives; in-file comment cites the CI incident):
+	//   experience-sdk-diag.test.ts:93 (DIAG_FLUSH_MS 750 + 60 = 810).
+	// Budget 7→8 accordingly — same owner-authorized-baseline-reset rule as
+	// above, surfaced for confirmation; a fix-queue rewrite lowers it again.
+	// (2026-11-12, owner ruling — «да, ставь», logged @ a3c8827e): the
+	// confirmation chose the REWRITE, not keep-sanctioned. Executed same
+	// day: experience-sdk-diag.test.ts now drives the SDK's 750ms flush
+	// cadence with jest fake timers (harness/handshake built under real
+	// timers; port delivery settled via setImmediate turns, probe-verified
+	// to deliver under fakes) — flushDiag/waitForSample and every wall-clock
+	// wait are gone. The site is budgeted NO MORE:
+	//   experience-sdk-diag.test.ts — REWRITTEN (was :93, 810ms).
+	// (2026-11-15, FW-13c / TQ7a-F03): TtsLocalServerPanel.test.tsx:118/:310
+	// (350 ×2) rewritten deterministically to waitFor on DOM mount/unmount —
+	// drops live sites 7→5; ratchet budget lowered 7→5.
+	longSleeps: 5,
 } as const;
 
 const EXCLUDED_DIRS = new Set([".git", "node_modules", "out", "data", "dist", ".cache"]);
@@ -154,6 +449,14 @@ const ALLOW_ABS_PATH_INPUTS = /hygiene:allow-abs-path-inputs\b/;
 /** The guard's own test file quotes every banned pattern deliberately — exempt it entirely. */
 const GUARD_SELF_TEST = /(?:^|\/)test-hygiene\.test\.ts$/;
 
+// (2026-11-12, owner ruling -- supervisor tooling unit): the RTL-import rule
+// guards BOTH apps/web test surfaces -- src-collocated tests AND the
+// standalone apps/web/test tree; the static-import binding hazard (screen
+// bound at module evaluation, before happy-dom registers) is identical in
+// both. Verified at the extension: zero static RTL imports live under
+// apps/web/test today -- the rule is preventive law there, not a cleanup.
+const RTL_GUARDED_PREFIXES = ["apps/web/src/", "apps/web/test/"];
+
 const DRIVE_OR_POSIX_ABSOLUTE = /["'`][A-Za-z]:[\\/]|["'`]\/(?:tmp|home|root|Users|var|mnt)\//;
 const REGISTRY_RESET_CALL = /__(?:reset)\w*Registry\w*ForTests\s*\(/;
 const REGISTRY_SNAPSHOT_OR_RESTORE = /__(?:snapshot|restore)\w*ForTests/;
@@ -162,6 +465,18 @@ const INNER_HTML_EMPTY = /innerHTML\s*=\s*(?:""|'')/g;
 const AS_NEVER = /\bas\s+never\b/g;
 const SCREEN_DOT = /\bscreen\./g;
 const LONG_SLEEP = /await\s+(?:Bun\.)?(?:sleep|delay|wait)\(\s*(\d+)\s*\)/g;
+/** The promise-setTimeout sleep form (owner ruling 2026-11-12, TQ7a-F03): a bare timing floor written as a resolved promise — same budget, same 200ms threshold. */
+const PROMISE_SETTIMEOUT_SLEEP = /new Promise\s*\(\s*\(\s*\w+\s*\)\s*=>\s*setTimeout\s*\(\s*\w+\s*,\s*(\d+)\s*\)/g;
+/**
+ * The EXPRESSION form of the same sleep (owner ruling 2026-11-12, TQ12-F04):
+ * `new Promise((r) => setTimeout(r, CONST + 150))` — the delay is a constant
+ * plus a delta, so the literal regex above cannot see it. Counted ONLY when
+ * CONST resolves to a numeric literal declared in the same file (the value is
+ * then const+delta, same 200ms threshold); an unresolvable name is skipped —
+ * an in-file numeric declaration is the proof the value is computable.
+ */
+const PROMISE_SETTIMEOUT_SLEEP_EXPR = /new Promise\s*\(\s*\(\s*\w+\s*\)\s*=>\s*setTimeout\s*\(\s*\w+\s*,\s*([A-Za-z_$][\w$]*)\s*\+\s*(\d+)\s*\)/g;
+const NUMERIC_CONST_DECL = /\bconst\s+([A-Za-z_$][\w$]*)\s*=\s*(\d+)\b/g;
 const STATIC_RTL_IMPORT = /^[ \t]*import(?!\s+type\b)\s+(?:[^;]*?\s+from\s+)?["']@testing-library\/react["'][ \t]*;/gm;
 
 /** Blank/comment lines never count as calls — incident reports are quoted in comments. */
@@ -180,7 +495,9 @@ export function scanFile(content: string, file: string): { violations: Violation
 	if (GUARD_SELF_TEST.test(file)) return { violations, metrics };
 	const pathsAllowed = ALLOW_ABS_PATH_INPUTS.test(content);
 	STATIC_RTL_IMPORT.lastIndex = 0;
-	const staticRtlImport = file.startsWith("apps/web/src/") ? STATIC_RTL_IMPORT.exec(content) : null;
+	const staticRtlImport = RTL_GUARDED_PREFIXES.some((prefix) => file.startsWith(prefix))
+		? STATIC_RTL_IMPORT.exec(content)
+		: null;
 	if (staticRtlImport) {
 		const offset = staticRtlImport.index;
 		violations.push({
@@ -217,11 +534,37 @@ export function scanFile(content: string, file: string): { violations: Violation
 		}
 	}
 
-	metrics.asNever += countMatches(content, AS_NEVER);
-	metrics.screen += countMatches(content, SCREEN_DOT);
-	metrics.innerHTMLEmpty += countMatches(content, INNER_HTML_EMPTY);
-	for (const m of content.matchAll(LONG_SLEEP)) {
-		if (Number.parseInt(m[1] ?? "0", 10) > 200) metrics.longSleeps++;
+	// (2026-11-12, owner ruling -- supervisor tooling unit): ratchet metrics
+	// count CODE lines only. Comment lines quote the banned identifiers in
+	// incident reports and budget trail entries, and a mention is not a
+	// usage -- the budgets must catch the type. Same comment boundary as the
+	// hard bans above (isCommentLine). Verified at the change: zero
+	// comment-line mentions repo-wide, so no budget moves (0/0, 1/1, 0/0, 2/2).
+	for (const line of lines) {
+		if (isCommentLine(line)) continue;
+		metrics.asNever += countMatches(line, AS_NEVER);
+		metrics.screen += countMatches(line, SCREEN_DOT);
+		metrics.innerHTMLEmpty += countMatches(line, INNER_HTML_EMPTY);
+		for (const m of line.matchAll(LONG_SLEEP)) {
+			if (Number.parseInt(m[1] ?? "0", 10) > 200) metrics.longSleeps++;
+		}
+		for (const m of line.matchAll(PROMISE_SETTIMEOUT_SLEEP)) {
+			if (Number.parseInt(m[1] ?? "0", 10) > 200) metrics.longSleeps++;
+		}
+		for (const m of line.matchAll(PROMISE_SETTIMEOUT_SLEEP_EXPR)) {
+			const constName = m[1] ?? "";
+			const delta = Number.parseInt(m[2] ?? "0", 10);
+			// Resolve CONST to a numeric literal declared anywhere in this file.
+			NUMERIC_CONST_DECL.lastIndex = 0;
+			let resolved: number | null = null;
+			for (const decl of content.matchAll(NUMERIC_CONST_DECL)) {
+				if (decl[1] === constName) {
+					resolved = Number.parseInt(decl[2] ?? "0", 10);
+					break;
+				}
+			}
+			if (resolved !== null && resolved + delta > 200) metrics.longSleeps++;
+		}
 	}
 
 	return { violations, metrics };
@@ -256,215 +599,6 @@ export function runGuard(files: readonly string[], read: (file: string) => strin
 	check("innerHTML-empty", totals.innerHTMLEmpty, BUDGETS.innerHTMLEmpty);
 	check("long-sleeps", totals.longSleeps, BUDGETS.longSleeps);
 	return { files: files.length, violations, totals, budgetBreaches };
-}
-
-export interface QuarantineViolation {
-	/** Rule id, e.g. `quarantine-unknown-suite`. */
-	readonly rule: string;
-	/** Human locator: `scripts/test-quarantine.json entry #2`, or just the file for whole-list problems. */
-	readonly location: string;
-	/** The offending value, JSON-serialized (`<missing>` for an absent field). */
-	readonly text: string;
-	readonly hint: string;
-}
-
-export interface QuarantineReport {
-	readonly violations: readonly QuarantineViolation[];
-	readonly reminders: readonly string[];
-}
-
-/** `today` as a UTC calendar date (YYYY-MM-DD). Date math below compares
- *  CALENDAR dates derived from the strings, never `Date.now()` milliseconds:
- *  a run just before/after local midnight must classify the same day. */
-function utcToday(): string {
-	return new Date().toISOString().slice(0, 10);
-}
-
-const MS_PER_DAY = 86_400_000;
-
-/** Parses a YYYY-MM-DD calendar date to a UTC-midnight epoch, or null when the
- *  string is not a real calendar date (the Date.UTC round-trip rejects
- *  impossible dates like 2026-13-40). */
-function parseCalendarDate(value: string): number | null {
-	const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
-	if (match === null) return null;
-	const year = Number(match[1]);
-	const month = Number(match[2]);
-	const day = Number(match[3]);
-	const epoch = Date.UTC(year, month - 1, day);
-	const check = new Date(epoch);
-	if (
-		check.getUTCFullYear() !== year
-		|| check.getUTCMonth() !== month - 1
-		|| check.getUTCDate() !== day
-	) return null;
-	return epoch;
-}
-
-/** Whole calendar days from `since` to `today` (both UTC-midnight epochs). */
-function daysBetween(since: number, today: number): number {
-	return Math.round((today - since) / MS_PER_DAY);
-}
-
-/** Serializes a value for a violation message, spelling an absent field. */
-function textOf(value: unknown): string {
-	if (value === undefined) return "<missing>";
-	return JSON.stringify(value) ?? String(value);
-}
-
-/**
- * The quarantine-file guard (TH-8 fix step 10.3). Reads the RAW JSON — NOT
- * `readQuarantineList()`, which filters bad entries to keep the runner safe —
- * and hard-fails on anything the runner would silently drop or misclassify:
- *
- * - the file must parse as a JSON array;
- * - every entry: known `suite`, existing repo-relative `file`, non-empty
- *   `test`, non-empty `reason`, and a real `since` date (YYYY-MM-DD, not in
- *   the future);
- * - entries older than `QUARANTINE_REMINDER_DAYS` produce a reminder line —
- *   never a violation.
- */
-export function validateQuarantineList(raw: string, root: string, today: string): QuarantineReport {
-	const location = (label: string): string =>
-		label === "" ? "scripts/test-quarantine.json" : `scripts/test-quarantine.json ${label}`;
-	const violation = (rule: string, entryLabel: string, text: string, hint: string): QuarantineViolation => ({
-		rule,
-		location: location(entryLabel),
-		text,
-		hint,
-	});
-
-	let parsed: unknown;
-	try {
-		parsed = JSON.parse(raw);
-	} catch (error: unknown) {
-		return {
-			violations: [violation(
-				"quarantine-json-unparsable",
-				"",
-				error instanceof Error ? error.message : String(error),
-				"scripts/test-quarantine.json must be a JSON array of quarantine entries; a malformed list must never silently weaken the runner.",
-			)],
-			reminders: [],
-		};
-	}
-
-	if (!Array.isArray(parsed)) {
-		return {
-			violations: [violation(
-				"quarantine-not-array",
-				"",
-				`expected an array, got ${typeof parsed}`,
-				"scripts/test-quarantine.json must be a JSON array of quarantine entries.",
-			)],
-			reminders: [],
-		};
-	}
-
-	const todayMs = parseCalendarDate(today);
-	const violations: QuarantineViolation[] = [];
-	const reminders: string[] = [];
-
-	parsed.forEach((value: unknown, index: number) => {
-		const entryLabel = `entry #${index + 1}`;
-		if (typeof value !== "object" || value === null || Array.isArray(value)) {
-			violations.push(violation(
-				"quarantine-entry-not-object",
-				entryLabel,
-				textOf(value),
-				"Every quarantine entry must be an object with suite/file/test/reason/since string fields.",
-			));
-			return;
-		}
-		const entry = value as Record<string, unknown>;
-
-		const suite = typeof entry.suite === "string" ? entry.suite : "";
-		const file = typeof entry.file === "string" ? entry.file : "";
-		const testName = typeof entry.test === "string" ? entry.test : "";
-		const reason = typeof entry.reason === "string" ? entry.reason : "";
-		const since = typeof entry.since === "string" ? entry.since : "";
-
-		if (typeof entry.suite !== "string" || !KNOWN_SUITE_SET.has(suite)) {
-			violations.push(violation(
-				"quarantine-unknown-suite",
-				entryLabel,
-				textOf(entry.suite),
-				`Known suites: ${KNOWN_SUITES.join(", ")}`,
-			));
-		}
-
-		if (typeof entry.file !== "string" || file.trim() === "" || !existsSync(join(root, file))) {
-			violations.push(violation(
-				"quarantine-missing-file",
-				entryLabel,
-				textOf(entry.file),
-				"file must be a repo-relative path to an existing test file.",
-			));
-		}
-
-		if (typeof entry.test !== "string" || testName.trim() === "") {
-			violations.push(violation(
-				"quarantine-empty-test",
-				entryLabel,
-				textOf(entry.test),
-				"test must be the full console `(fail)` name — describe path outermost-first, leaf last.",
-			));
-		}
-
-		if (typeof entry.reason !== "string" || reason.trim() === "") {
-			violations.push(violation(
-				"quarantine-empty-reason",
-				entryLabel,
-				textOf(entry.reason),
-				"reason must link the tracking report step that owns the debt.",
-			));
-		}
-
-		const sinceMs = parseCalendarDate(since);
-		if (sinceMs === null) {
-			violations.push(violation(
-				"quarantine-bad-since",
-				entryLabel,
-				textOf(entry.since),
-				"since must be a valid YYYY-MM-DD calendar date.",
-			));
-		} else if (todayMs === null) {
-			// `today` is malformed (never in production) — cannot judge age/future.
-		} else if (sinceMs > todayMs) {
-			violations.push(violation(
-				"quarantine-future-since",
-				entryLabel,
-				textOf(entry.since),
-				"since must not be in the future.",
-			));
-		} else if (
-			typeof entry.suite === "string"
-			&& KNOWN_SUITE_SET.has(suite)
-			&& typeof entry.test === "string"
-			&& testName.trim() !== ""
-		) {
-			const days = daysBetween(sinceMs, todayMs);
-			if (days > QUARANTINE_REMINDER_DAYS) {
-				reminders.push(`quarantined since ${since} (${days} days): ${suite} ${testName}`);
-			}
-		}
-	});
-
-	return { violations, reminders };
-}
-
-/**
- * Appends reminder lines to the CI job summary when `GITHUB_STEP_SUMMARY`
- * points at it. Best-effort: the summary is visibility, not the verdict, so a
- * write failure is logged and never fails the guard.
- */
-export function writeReminderLines(reminders: readonly string[], stepSummaryPath: string | undefined): void {
-	if (stepSummaryPath === undefined || stepSummaryPath.trim() === "" || reminders.length === 0) return;
-	try {
-		appendFileSync(stepSummaryPath, `${reminders.join("\n")}\n`);
-	} catch (error: unknown) {
-		console.warn(`test:hygiene: could not append quarantine reminders to GITHUB_STEP_SUMMARY (${stepSummaryPath}): ${error instanceof Error ? error.message : String(error)}`);
-	}
 }
 
 export function formatReport(report: GuardReport, quarantine: QuarantineReport = { violations: [], reminders: [] }): string {
@@ -510,3 +644,5 @@ if (import.meta.main) {
 		|| quarantine.violations.length > 0
 	) process.exit(1);
 }
+
+

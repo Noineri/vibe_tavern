@@ -25,6 +25,7 @@ import { createImageGenBackend } from "../src/domain/imagegen/imagegen-registry.
 // dispatcher; raw-binary registers chutes/hf.
 import "../src/domain/imagegen/backends/openai-images-family.js";
 import "../src/domain/imagegen/backends/raw-binary.js";
+import { testFetch } from "./test-fetch-seam.js";
 
 // ─── Test doubles (the PE-2 helpers, mirrored) ───────────────────────────────
 
@@ -38,11 +39,11 @@ function makeTransport(
   answer: (call: RecordedCall) => Response | Promise<Response>,
 ): { transport: typeof fetch; calls: RecordedCall[] } {
   const calls: RecordedCall[] = [];
-  const transport: typeof fetch = (url, init) => {
+  const transport: typeof fetch = testFetch((url, init) => {
     const call = { url: String(url), init };
     calls.push(call);
     return Promise.resolve(answer(call));
-  };
+  });
   return { transport, calls };
 }
 

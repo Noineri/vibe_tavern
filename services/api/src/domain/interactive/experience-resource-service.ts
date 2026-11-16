@@ -522,7 +522,14 @@ function checkModelGrant(session: ExperienceSessionRow): ExperienceApiError | nu
 
 // ─── Parse helpers (DB stores free-text enums; validate at the boundary) ─────
 
-function parseContextMode(value: string): ExperienceContextMode {
+/**
+ * Parse a stored `contextMode` string into the domain union, falling back to
+ * `none` for anything the vocabulary doesn't hold. The ONE derivation of this
+ * rule: the resource-config read path and the replay/session-view reads all go
+ * through it. Stored values are writer-validated, so the fallback is a
+ * corrupted-row guard, never a live path.
+ */
+export function parseContextMode(value: string): ExperienceContextMode {
   const valid = Object.values(EXPERIENCE_CONTEXT_MODE) as readonly string[];
   return (valid.includes(value) ? value : EXPERIENCE_CONTEXT_MODE.none) as ExperienceContextMode;
 }

@@ -125,13 +125,34 @@ export type ExperienceCopilotStreamAskAnswer = z.infer<typeof experienceCopilotA
  * `.strict()` member rejects them here. The `toolCallId` must point at a
  * still-awaiting permission marker row in THIS thread (thread state —
  * enforced by the stream, not the schema).
+ *
+ * DMT-11 (editable swipe permissions): an ALLOW answer may carry an optional
+ * `instruction` — the user-edited one-shot text for the swipe-permission
+ * family (`request_message_swipe`); the bound mirrors the ask family's
+ * `text`. A DENY answer carrying an `instruction` is rejected (there is
+ * nothing to approve), and an `instruction` on a prompt-read allow is
+ * meaningless by construction: which family the referenced row belongs to is
+ * THREAD STATE, so the stream's permission continuation (not this schema)
+ * refuses an instruction override for a tool whose executor does not accept
+ * one — a prompt read can never become a swipe merely because a client sends
+ * the field.
  */
 export const experienceCopilotStreamPermissionAnswerSchema = z
   .object({
     toolCallId: z.string().min(1),
     decision: z.enum(["allow", "deny"]),
+    instruction: z.string().min(1).max(50_000).optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((val, ctx) => {
+    if (val.decision === "deny" && val.instruction !== undefined) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["instruction"],
+        message: "A denied permission cannot carry an instruction.",
+      });
+    }
+  });
 export type ExperienceCopilotStreamPermissionAnswer = z.infer<
   typeof experienceCopilotStreamPermissionAnswerSchema
 >;
@@ -238,6 +259,8 @@ export const experienceCopilotStreamRequestSchema = z
     attachedVariants: z
       .array(z.object({ messageId: z.string().min(1), variantId: z.string().min(1) }).strict())
       .optional(),
+    // Identity only: the server resolves and freezes prompt text at send time.
+    promptAttachments: z.array(z.object({ presetId: z.string().min(1) }).strict()).optional(),
     reviewSnapshot: agentReviewSnapshotSchema.optional(),
     rulesSaved: z.boolean().optional(),
     visualSaved: z.boolean().optional(),
@@ -464,6 +487,11 @@ export const experienceCopilotMessageSchema = z.object({
   /** Server-owned stored shape, not send-input validation: preserve summaries,
    * visibility and provenance without a second attachment field list. */
   attachments: z.array(z.custom<Attachment>()).optional(),
+  promptAttachments: z.array(z.object({
+    presetId: z.string().min(1),
+    displayName: z.string(),
+    promptText: z.string(),
+  }).strict()).optional(),
   createdAt: z.string(),
 });
 export type ExperienceCopilotMessageWire = z.infer<typeof experienceCopilotMessageSchema>;
@@ -578,9 +606,16 @@ export const SCRIPT_AGENT_TOOL_KEYS = Object.keys(
 /**
  * Which tools a `sidechat-ooc` agent profile may toggle (SIDECHAT_PLAN,
  * Wave 1 / SC-5; widened by DIRECTOR_MODE_PLAN DR-4a + DR-4b's owner
- * ruling B). A PARTIAL record over exactly the 9 toggleable sidechat tools
- * (search_context, read_context_item, propose_objective, todo, read_plan,
- * read_message_prompt, propose_plan, propose_tracker_template, ask_user)
+ * ruling B, by DIRECTOR_MESSAGE_TOOLS_PLAN DMT-34, and by
+ * DIRECTOR_DECK_CALENDAR_PLAN DK-5a). A PARTIAL record
+ * over exactly the 13 toggleable sidechat tools (search_context,
+ * read_context_item, propose_objective, todo, read_plan,
+ * read_message_prompt, propose_plan, propose_tracker_template, ask_user,
+ * propose_message_edit, propose_message_variant, request_message_swipe,
+ * propose_deck — the three message tools ARE the DIRECTOR_MESSAGE_TOOLS
+ * wire names
+ * (director-message-tools-schema.ts; raw literals here, the file's
+ * convention for every tool-set key))
  * — the same convention as {@link copilotToolSetSchema} and
  * {@link scriptAgentToolSetSchema}: tool sets store only ENABLED keys, so a
  * tool that is not served is simply absent from every set. The keys
@@ -593,7 +628,16 @@ export const SCRIPT_AGENT_TOOL_KEYS = Object.keys(
  * seed and spreads the builder into the stream. `ask_user` (owner ruling
  * 2026-10-27, DIRECTOR_MODE_PLAN DR-4b): the shared factory
  * (`domain/agent/agent-ask-user-tool.ts`) serves it, the director seed
- * enables it, the OOC seed keeps it off. `.strict()` rejects
+ * enables it, the OOC seed keeps it off. DMT-34's three Director message
+ * tools are the TAG-1 exception that proves the pattern: their keys land
+ * TOGETHER with their finished implementations (the DMT-21 builder was
+ * complete and dormant first; DMT-34 enables the keys and turns the
+ * `builtin-director` seed's toggles on in the same unit) — the OOC seed and
+ * the kind default keep all three off. DK-5a's `propose_deck` (the
+ * story-deck proposal) follows that DMT-34 land-together pattern: the key
+ * and its finished implementation land in the same unit, on for the
+ * director seed, off for the OOC seed and the kind default. `.strict()`
+ * rejects
  * any unknown key — including the other kinds' keys — so a profile cannot
  * silently carry another kind's tools on the wire; the adapter additionally
  * re-validates against the kind's REGISTERED schema
@@ -610,6 +654,10 @@ export const sidechatOocToolSetSchema = z
     propose_plan: z.boolean().optional(),
     propose_tracker_template: z.boolean().optional(),
     ask_user: z.boolean().optional(),
+    propose_message_edit: z.boolean().optional(),
+    propose_message_variant: z.boolean().optional(),
+    request_message_swipe: z.boolean().optional(),
+    propose_deck: z.boolean().optional(),
   })
   .strict();
 

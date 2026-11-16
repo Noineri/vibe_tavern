@@ -10,6 +10,7 @@ import {
   prepareSdkMessages,
 } from "../src/infrastructure/ai/provider-executor-utils.js";
 import type { SdkMessage } from "../src/infrastructure/ai/provider-executor-utils.js";
+import { makeProviderProfileRow } from "./copilot-test-builders.js";
 
 // Capture real modules before any mock overrides (safe mock pattern — see AGENTS gotcha).
 const realAiSdkOpenai = await import("@ai-sdk/openai");
@@ -475,12 +476,11 @@ describe("resolveModel", () => {
     routeCreateOpenAIToSpy = true;
     try {
       resolveModel(
-        {
+        makeProviderProfileRow({
           providerPreset: "openai",
           endpoint: "https://custom-proxy.example.com/v1",
           apiKey: "sk-custom",
-          coauthorTransport: COAUTHOR_TRANSPORT.responses,
-        },
+        }),
         "gpt-5.2",
         COAUTHOR_TRANSPORT.responses,
         customFetch,

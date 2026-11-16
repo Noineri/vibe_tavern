@@ -8,7 +8,7 @@
  * pairs. Pure — no store; history and context come in as function input.
  */
 
-import { describe, test, expect, beforeEach } from "bun:test";
+import { describe, test, expect, beforeEach, afterAll } from "bun:test";
 import { createHash } from "node:crypto";
 import { mkdtemp, mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -90,6 +90,10 @@ function makeMessages(count: number): ExperienceCopilotHistoryMessage[] {
 beforeEach(() => {
   // Char-length heuristic so estimateTokens returns a realistic number in tests.
   setTokenCountFn((text: string) => text.length);
+});
+
+afterAll(() => {
+  setTokenCountFn(() => 0);
 });
 
 // ─── (a) Shape: system message + context-package fields + API reference ─────

@@ -62,8 +62,8 @@ describe('agent feed migration boundary characterization', () => {
     expect((await store.listMessages('t1')).map((row) => row.id)).toEqual(['a', 'b', 'z-legacy']);
   });
 
-  test('message and frozen event writes roll back together on the store transaction boundary', async () => {
-    const { db, client } = await setup();
+  test('store transaction boundary and explicit db.transaction roll back writes together', async () => {
+    const { db, client, store } = await setup();
     expect(() => db.transaction((tx) => {
       tx.insert(schema.experienceCopilotMessages).values({ id: 'm', threadId: 't1', role: 'user', createdAt: NOW }).run();
       tx.insert(schema.agentThreadContextEvents).values({ id: 'e', threadId: 't1', kind: 'rp_sync', payloadJson: '{}', createdAt: NOW }).run();
@@ -71,6 +71,34 @@ describe('agent feed migration boundary characterization', () => {
     })).toThrow('abort fixture');
     expect(client.query('SELECT id FROM experience_copilot_messages').all()).toEqual([]);
     expect(client.query('SELECT id FROM agent_thread_context_events').all()).toEqual([]);
+
+    client.exec(`CREATE TRIGGER abort_frontier_sync
+      BEFORE UPDATE OF rp_frontier_json ON experience_copilot_threads
+      WHEN NEW.id = 't2' AND NEW.rp_frontier_json LIKE '%"lastPosition":99%'
+      BEGIN SELECT RAISE(ABORT, 'abort sync'); END;`);
+    try {
+      await expect(store.applyRpSync('t2', () => ({
+        frontier: { lastPosition: 99, selected: {} },
+        events: [{ kind: 'branch_forked', payload: { at: 1 } }],
+      }))).rejects.toThrow('abort sync');
+      expect(client.query('SELECT id FROM agent_thread_context_events').all()).toEqual([]);
+      expect(client.query('SELECT rp_frontier_json, updated_at FROM experience_copilot_threads WHERE id = ?').get('t2')).toEqual({
+        rp_frontier_json: null, updated_at: NOW,
+      });
+    } finally {
+      client.exec('DROP TRIGGER IF EXISTS abort_frontier_sync');
+    }
+
+    await store.applyRpSync('t2', () => ({
+      frontier: { lastPosition: 99, selected: {} },
+      events: [{ kind: 'branch_forked', payload: { at: 1 } }],
+    }));
+    expect(client.query('SELECT kind, seq FROM agent_thread_context_events WHERE thread_id = ?').all('t2')).toEqual([
+      { kind: 'branch_forked', seq: null },
+    ]);
+    expect(client.query('SELECT rp_frontier_json FROM experience_copilot_threads WHERE id = ?').get('t2')).toEqual({
+      rp_frontier_json: '{"lastPosition":99,"selected":{}}',
+    });
   });
 
   test('repair statement splitting preserves quoted semicolons and comment text', () => {
@@ -97,7 +125,18 @@ describe('agent feed migration boundary characterization', () => {
 
 describe('AFP-8 real migration and seek structure', () => {
   let migrated: Awaited<ReturnType<typeof createDb>>;
-  beforeAll(async () => { migrated = await createDb(':memory:', undefined, { realMigrations: true }); });
+  let folder0135: string;
+  let pre0136Bytes: Uint8Array;
+  beforeAll(async () => {
+    migrated = await createDb(':memory:', undefined, { realMigrations: true });
+    folder0135 = await buildJournalCutFolder('0135_premium_plazm');
+    const work = await mkdtemp(join(tmpdir(), 'vt-feed-pre0136-'));
+    const seedPath = join(work, 'seed0135.db');
+    const seedDb = await createDb(seedPath, folder0135);
+    seedDb.$client.exec('PRAGMA wal_checkpoint(TRUNCATE); PRAGMA journal_mode = DELETE;');
+    seedDb.$client.close();
+    pre0136Bytes = new Uint8Array(await Bun.file(seedPath).arrayBuffer());
+  });
 
   test('fresh real migration installs the default epoch, six triggers and covering seek indexes', () => {
     const client = migrated.$client;
@@ -115,10 +154,10 @@ describe('AFP-8 real migration and seek structure', () => {
   });
 
   test('upgrade preserves existing bytes, seq/frontier metadata and epoch across reopening', async () => {
-    const folder = await buildJournalCutFolder('0135_premium_plazm');
     const work = await mkdtemp(join(tmpdir(), 'vt-feed-epoch-'));
     const path = join(work, 'upgrade.db');
-    let db = await createDb(path, folder);
+    await Bun.write(path, pre0136Bytes);
+    let db = await createDb(path, folder0135);
     let client = db.$client;
     client.exec(`INSERT INTO experience_copilot_threads (id, next_seq, rp_frontier_json, created_at, updated_at)
       VALUES ('t1', 42, '{"lastPosition":7,"selected":{}}', 'before', 'before')`);
@@ -126,14 +165,16 @@ describe('AFP-8 real migration and seek structure', () => {
     insertRow(client, TABLES[0], 'message', 4);
     insertRow(client, TABLES[1], 'frozen', 8);
     client.query('UPDATE agent_thread_context_events SET payload_json = ? WHERE id = ?').run('{"text":"frozen  bytes"}', 'frozen');
-    const messages = client.query('SELECT * FROM experience_copilot_messages').all();
+    const messages = client.query<Record<string, unknown>, []>('SELECT * FROM experience_copilot_messages').all();
     const events = client.query('SELECT * FROM agent_thread_context_events').all();
     expect(client.query<{ name: string }, []>('PRAGMA table_info(experience_copilot_threads)').all().some((c) => c.name === 'history_epoch')).toBe(false);
     client.close();
     db = await createDb(path);
     client = db.$client;
     expect(epoch(client)).toBe(0);
-    expect(client.query('SELECT * FROM experience_copilot_messages').all()).toEqual(messages);
+    expect(client.query('SELECT * FROM experience_copilot_messages').all()).toEqual(
+      messages.map((message) => ({ ...message, prompt_attachments_json: null })),
+    );
     expect(client.query('SELECT * FROM agent_thread_context_events').all()).toEqual(events);
     expect(client.query('SELECT next_seq, rp_frontier_json, updated_at FROM experience_copilot_threads').get()).toEqual({
       next_seq: 42, rp_frontier_json: '{"lastPosition":7,"selected":{}}', updated_at: 'before',
@@ -145,6 +186,7 @@ describe('AFP-8 real migration and seek structure', () => {
     db = await createDb(path);
     expect(epoch(db.$client)).toBe(savedEpoch);
     expect(db.$client.query("SELECT name FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'agent_feed_%'").all()).toHaveLength(6);
+    db.$client.close();
   });
 
   test('new journal watermark is strictly later; migration is additive and repair splits intact triggers', async () => {
@@ -158,19 +200,32 @@ describe('AFP-8 real migration and seek structure', () => {
     const source = await Bun.file(join(REAL_DRIZZLE_DIR, `${MIGRATION_TAG}.sql`)).text();
     expect(source).not.toMatch(/\bDROP\b|__new_/i);
     const statements = splitMigrationStatements(source);
-    expect(statements.filter((statement) => /^CREATE TRIGGER/i.test(statement))).toHaveLength(6);
-    // Actually exercise the repair executor, not just a string assertion.
-    const db = await createDb(':memory:');
-    for (const statement of statements.filter((statement) => /^CREATE TRIGGER/i.test(statement))) {
-      db.$client.exec(statement.replace(/^CREATE TRIGGER/i, 'CREATE TRIGGER IF NOT EXISTS'));
+    const triggerStatements = statements.filter((statement) => /^CREATE TRIGGER/i.test(statement));
+    expect(triggerStatements).toHaveLength(6);
+    // Drop existing triggers first so split CREATE TRIGGER SQL executes verbatim.
+    const { db, client } = await setup();
+    const existing = client.query<{ name: string }, []>(
+      "SELECT name FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'agent_feed_%'",
+    ).all();
+    for (const row of existing) {
+      client.exec(`DROP TRIGGER ${row.name}`);
     }
+    expect(client.query("SELECT name FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'agent_feed_%'").all()).toHaveLength(0);
+    for (const statement of triggerStatements) {
+      db.$client.exec(statement);
+    }
+    expect(client.query("SELECT name FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'agent_feed_%'").all()).toHaveLength(6);
+    insertRow(client, TABLES[0], 'reinstalled', 0);
+    expect(epoch(client)).toBe(0);
+    client.exec("UPDATE experience_copilot_messages SET content = 'bumped' WHERE id = 'reinstalled'");
+    expect(epoch(client)).toBe(1);
   });
 
   test('real partial-state recovery installs whole triggers after an unstamped ALTER already succeeded', async () => {
-    const folder = await buildJournalCutFolder('0135_premium_plazm');
     const work = await mkdtemp(join(tmpdir(), 'vt-feed-heal-'));
     const path = join(work, 'partial.db');
-    const before = await createDb(path, folder);
+    await Bun.write(path, pre0136Bytes);
+    const before = await createDb(path, folder0135);
     before.$client.exec('ALTER TABLE experience_copilot_threads ADD history_epoch integer DEFAULT 0 NOT NULL');
     before.$client.close();
     // createDb sees a duplicate column, then its REAL heal path splits the
@@ -184,6 +239,7 @@ describe('AFP-8 real migration and seek structure', () => {
     client.exec("DELETE FROM agent_thread_context_events WHERE id = 'e'");
     expect(epoch(client)).toBe(2);
     expect(client.query("SELECT name FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'agent_feed_%'").all()).toHaveLength(6);
+    client.close();
   });
 
   test('long fixtures use covering indexes for forward/backward seq and NULL-prefix seeks without a temp sort', async () => {
@@ -360,5 +416,7 @@ describe('AFP-8 transactional history invalidation', () => {
     insertRow(second.$client, TABLES[1], 'non-tail', null, '1900');
     expect(epoch(first.$client)).toBe(2);
     expect(first.$client.query('SELECT updated_at FROM experience_copilot_threads').get()).toEqual({ updated_at: NOW });
+    second.$client.close();
+    first.$client.close();
   });
 });

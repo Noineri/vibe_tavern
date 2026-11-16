@@ -183,8 +183,8 @@ async function seedChatAndScript(
   grants: ExperienceCapability[] = [],
   visual?: { source: string },
 ): Promise<{ chatId: string; branchId: string; visual: ExperienceVisualRow | null }> {
-  const character = await stores.characters.create({ name: "Hero" } as never);
-  const chat = await stores.chats.createChat({ characterId: character.id, title: "T" });
+  const character = await stores.characters.create({ name: "Hero" });
+  const chat = await stores.chats.createChat({ characterId: character.id, title: "T", promptPresetId: null });
   const script = await stores.scripts.create({ name: "Rules", scriptKind: "interactive", code: source });
   let visualRow: ExperienceVisualRow | null = null;
   if (visual !== undefined) {
@@ -766,7 +766,7 @@ describe("ExperienceService — branch-scoped active-session discovery (IR-70A)"
     const { chatId } = await seedChatAndScript(COUNTER_SOURCE);
     // Create a second chat and use ITS branch with the first chat's id.
     const character2 = await stores.characters.create({ name: "Other" });
-    const chat2 = await stores.chats.createChat({ characterId: character2.id, title: "Other" });
+    const chat2 = await stores.chats.createChat({ characterId: character2.id, title: "Other", promptPresetId: null });
 
     const found = await service.getActiveSessionForBranch(chatId, chat2.activeBranchId);
     expect(found.ok).toBe(false);
@@ -1203,7 +1203,7 @@ describe("ExperienceService — character-backed model seats (report item 6b)", 
       description: "Rival spy.",
       defaultScenario: "Cold war Berlin.",
       personalitySummary: "Sharp, guarded.",
-    } as never);
+    });
     const started = await service.startSession({
       chatId, branchId, settings: {},
       participants: [
@@ -1233,7 +1233,7 @@ describe("ExperienceService — character-backed model seats (report item 6b)", 
   test("deleting the source character after start leaves the frozen snapshot intact", async () => {
     const service = await setup();
     const { chatId, branchId } = await seedChatAndScript(MODEL_SEAT_SOURCE, [EXPERIENCE_CAPABILITY.model]);
-    const libChar = await stores.characters.create({ name: "Gone Soon", description: "Ephemeral." } as never);
+    const libChar = await stores.characters.create({ name: "Gone Soon", description: "Ephemeral." });
     const started = await service.startSession({
       chatId, branchId, settings: {},
       participants: [{ id: "ai", label: "AI", controller: "model" as const, providerProfileId: "pp_1", modelId: "m-1", characterId: libChar.id }],
@@ -1267,7 +1267,7 @@ describe("ExperienceService — character-backed model seats (report item 6b)", 
   test("a human seat carrying characterId is rejected at the service boundary (schema mirror)", async () => {
     const service = await setup();
     const { chatId, branchId } = await seedChatAndScript(MODEL_SEAT_SOURCE, [EXPERIENCE_CAPABILITY.model]);
-    const libChar = await stores.characters.create({ name: "X", description: "Y" } as never);
+    const libChar = await stores.characters.create({ name: "X", description: "Y" });
     const started = await service.startSession({
       chatId, branchId, settings: {},
       participants: [{ id: "p1", label: "You", controller: "human" as const, characterId: libChar.id }],

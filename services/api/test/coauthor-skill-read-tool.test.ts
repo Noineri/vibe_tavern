@@ -3,6 +3,7 @@ import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { mkdtemp, mkdir, symlink, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { ToolExecutionOptions } from "ai";
 import {
   readSkillFile,
   SkillReadError,
@@ -147,9 +148,9 @@ describe("buildReadSkillFileTool — AI-SDK wrapper", () => {
   test("execute reads via the sandbox and returns {path, content}; rejects propagate as thrown errors", async () => {
     await seedSkill(builtinRoot, "janitor-card-creator", "Creates cards.");
     const t = buildReadSkillFileTool([builtinRoot]);
-    const out = await t.execute({ path: "janitor-card-creator/SKILL.md" }, {
-      messages: [], toolCallId: "tc_1", abortSignal: undefined as never,
-    } as never);
+    // Real AI SDK tool-execution context — the tool ignores it.
+    const toolCtx: ToolExecutionOptions<unknown> = { toolCallId: "tc_1", messages: [], context: undefined };
+    const out = await t.execute({ path: "janitor-card-creator/SKILL.md" }, toolCtx);
     expect(out.path).toBe("janitor-card-creator/SKILL.md");
     expect(out.content).toContain("Creates cards.");
     await expect(

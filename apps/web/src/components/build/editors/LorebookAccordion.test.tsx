@@ -366,14 +366,14 @@ describe("LorebookAccordion book-level group scoring (LG-7)", () => {
 
   it("renders the checkbox unchecked/checked from the book record", async () => {
     const off = renderAccordion({ lorebook: { ...LOREBOOK, useGroupScoring: false } });
-    // t is identity → the label text is the i18n key; the Checkbox owns its
-    // <input>. Assert via the meta payload instead of DOM shape (below), here
-    // just pin the control renders.
-    expect(await off.findByText("lore_book_group_scoring")).toBeTruthy();
+    const offCheckbox = await off.findByRole("checkbox", { name: "lore_book_group_scoring" });
+    expect(offCheckbox.getAttribute("aria-checked")).toBe("false");
     off.unmount();
 
     const on = renderAccordion({ lorebook: { ...LOREBOOK, useGroupScoring: true } });
-    expect(await on.findByText("lore_book_group_scoring")).toBeTruthy();
+    const onCheckbox = await on.findByRole("checkbox", { name: "lore_book_group_scoring" });
+    expect(onCheckbox.getAttribute("aria-checked")).toBe("true");
+    on.unmount();
   });
 
   it("budget cap field: hidden in fixed mode, rendered in percent mode, reports onUpdateMeta (N5)", async () => {

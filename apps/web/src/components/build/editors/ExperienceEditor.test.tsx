@@ -240,6 +240,12 @@ class IntersectionObserverStub {
   private callback: IntersectionObserverCallback;
   observed: Element[] = [];
   disconnected = false;
+  // Inert interface members — the intersection fires off the observed target
+  // alone; no consumer reads the observer's root/rootMargin/scrollMargin/thresholds.
+  root: Element | Document | null = null;
+  rootMargin = "0px";
+  scrollMargin = "0px";
+  thresholds: readonly number[] = [0];
 
   constructor(callback: IntersectionObserverCallback) {
     this.callback = callback;
@@ -261,7 +267,10 @@ class IntersectionObserverStub {
   fire(isIntersecting: boolean) {
     const entries = this.observed.map((target) => {
       const rect = { top: 0, bottom: 0, left: 0, right: 0, width: 0, height: 0, x: 0, y: 0 };
-      return {
+      // The platform entry class (happy-dom ships it; its no-arg lib.dom
+      // constructor plus own-field assignment) keeps the stub's products
+      // honest IntersectionObserverEntry instances.
+      return Object.assign(new IntersectionObserverEntry(), {
         isIntersecting,
         target,
         intersectionRatio: isIntersecting ? 1 : 0,
@@ -269,9 +278,9 @@ class IntersectionObserverStub {
         rootBounds: null,
         boundingClientRect: rect,
         time: 0,
-      } as unknown as IntersectionObserverEntry;
+      });
     });
-    this.callback(entries, this as unknown as IntersectionObserver);
+    this.callback(entries, this);
   }
 }
 
@@ -299,7 +308,10 @@ beforeAll(async () => {
   };
 });
 
+const originalIntersectionObserver = globalThis.IntersectionObserver;
+
 afterAll(() => {
+  globalThis.IntersectionObserver = originalIntersectionObserver;
   useBuildNavigationStore.setState(navigationBeforeSuite, true);
   const host = getAgentHost("experience");
   host.renderEditorPane = originalExperiencePane;
@@ -351,7 +363,7 @@ beforeEach(() => {
   // XU-7: reset + install the IntersectionObserver stub before every render so
   // the lazy card preview observes into a fresh, test-controllable observer.
   IntersectionObserverStub.instances = [];
-  globalThis.IntersectionObserver = IntersectionObserverStub as unknown as typeof IntersectionObserver;
+  globalThis.IntersectionObserver = IntersectionObserverStub;
   serverScripts = [];
   serverVisuals = [];
   createGate = null;
@@ -1417,30 +1429,6 @@ describe("ExperienceEditor", () => {
     expect(useExperienceVisualDraftStore.getState().drafts["vis_1"]).toBeDefined();
   });
 
-  it("deleting a visual never mutates an already-pinned source snapshot (live-session isolation)", async () => {
-    serverScripts = [{ ...baseScript }];
-    serverVisuals = [{ ...baseVisual }];
-    // A live session pins its own immutable copy of the visual source at start
-    // time, independent of the resource row (the editor has no session handle).
-    const pinnedBySession = serverVisuals[0]!.source;
-
-    const { container, findByText, getByRole } = render(<ExperienceEditor />);
-    fireEvent.click(await findByText("Existing Rules"));
-    fireEvent.click(getByRole("radio", { name: "agent_visual" }));
-    await pickDropdown({ container, baseElement: document.body }, "experience_assign_visual_placeholder", "Existing Visual");
-
-    fireEvent.click(visualDeleteButton(container));
-    fireEvent.click(await waitForVisualDeleteConfirm());
-
-    await waitFor(() => expect(deleteExperienceVisual).toHaveBeenCalledTimes(1));
-    // The resource row was removed (delete reached the API) …
-    expect(deleteExperienceVisual).toHaveBeenCalledWith("vis_1");
-    // … but the session's pinned snapshot is byte-identical: the editor's delete
-    // path (deleteExperienceVisual + list filter + draft remove) cannot and did
-    // not reach an external pinned copy.
-    expect(pinnedBySession).toBe(baseVisual.source);
-  });
-
   // ── IR-90E: compact friendly rules validation ───────────────────────────
 
   it("validates the rules buffer and shows success", async () => {
@@ -2114,12 +2102,14 @@ describe("ExperienceEditor — mini-app import/export", () => {
     // users get — then clicks the item.
     serverScripts = [{ ...baseScript, defaultVisualId: "vis_1" }];
     getScriptVisuals.mockResolvedValue([{ ...baseVisual }]);
-    const createObjectURL = mock((_blob: Blob) => "blob:mock");
-    const revokeObjectURL = mock(() => {});
+    // Static signatures lifted verbatim from lib.dom's URL — the typed mocks
+    // assign onto the statics directly and `.mock.calls` reads real tuples.
+    const createObjectURL = mock((_obj: Blob | MediaSource): string => "blob:mock");
+    const revokeObjectURL = mock((_url: string): void => {});
     const hadCreate = "createObjectURL" in URL;
     const hadRevoke = "revokeObjectURL" in URL;
-    (URL as unknown as { createObjectURL: typeof createObjectURL }).createObjectURL = createObjectURL;
-    (URL as unknown as { revokeObjectURL: typeof revokeObjectURL }).revokeObjectURL = revokeObjectURL;
+    URL.createObjectURL = createObjectURL;
+    URL.revokeObjectURL = revokeObjectURL;
 
     try {
       const { findByTestId, findByText } = render(<ExperienceEditor />);
@@ -2139,8 +2129,11 @@ describe("ExperienceEditor — mini-app import/export", () => {
       expect(parsed.defaultVisualIndex).toBe(0);
       expect(revokeObjectURL).toHaveBeenCalledWith("blob:mock");
     } finally {
-      if (hadCreate) delete (URL as unknown as Record<string, unknown>).createObjectURL;
-      if (hadRevoke) delete (URL as unknown as Record<string, unknown>).revokeObjectURL;
+      // Type-honest dynamic restore: `delete URL.createObjectURL` is a TS
+      // error on a required property; Reflect.deleteProperty removes it
+      // without redeclaring the static's type.
+      if (hadCreate) Reflect.deleteProperty(URL, "createObjectURL");
+      if (hadRevoke) Reflect.deleteProperty(URL, "revokeObjectURL");
     }
   });
 

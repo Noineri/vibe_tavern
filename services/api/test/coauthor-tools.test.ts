@@ -2,10 +2,16 @@ import { describe, test, expect } from "bun:test";
 import { serializeProfileMd } from "@vibe-tavern/db";
 import { normalizeTrackerTemplate } from "@vibe-tavern/domain";
 import { trackerTemplateSchema } from "@vibe-tavern/api-contracts";
+import type { CoauthorLoreBundleOutput, CoauthorToolOutput, CoauthorTrackerTemplateOutput } from "@vibe-tavern/api-contracts";
 import { buildCoauthorTools } from "../src/domain/chat/coauthor-tools.js";
 import { buildCoauthorWorkingDocument } from "../src/domain/chat/coauthor-working-document.js";
 import type { LoreDelegate, LoreDelegateInput, LoreDelegateResult } from "../src/domain/coauthor/lore/lore-delegate.js";
 import type { TrackerDelegateInput } from "../src/domain/coauthor/tracker/tracker-delegate.js";
+import {
+  coauthorToolInputSchema,
+  executeTool,
+  makeToolContext,
+} from "./provider-boundary-test-builders.js";
 
 /**
  * Co-Author tools propose edits; they never write. These tests pin the
@@ -33,18 +39,21 @@ function sampleProfileMd(
   });
 }
 
-/** Shared tool-execution context stub (the tools ignore it). */
-const ctx = { messages: [], toolCallId: "t", abort: () => {} } as never;
+/** The tool-context + execution seam lives in provider-boundary-test-builders.ts
+ *  (TYPE-SAFETY wave D step 14c: promoted from this file's local helpers once a
+ *  third consumer — experience-copilot-tools — converted; ONE derivation, all
+ *  consumers import it). */
+const ctx = makeToolContext("t");
 
 describe("coauthor-tools: write_profile", () => {
   test("validates via parseProfileMd round-trip and returns the profile target", async () => {
     const tools = buildCoauthorTools();
-    const out = (await tools.write_profile.execute(
+    const out = await executeTool<CoauthorToolOutput>(
+      tools,
+      "write_profile",
       { profileMd: sampleProfileMd(), summary: "Tighten personality." },
-      {
-        messages: [], toolCallId: "t1", abort: () => {},
-      } as never,
-    )) as never;
+      makeToolContext("t1"),
+    );
 
     expect(out.target).toBe("profile");
     expect(out.greetingIndex).toBeUndefined();
@@ -58,9 +67,11 @@ describe("coauthor-tools: write_profile", () => {
   test("rejects empty profile.md", async () => {
     const tools = buildCoauthorTools();
     await expect(
-      tools.write_profile.execute(
+      executeTool(
+        tools,
+        "write_profile",
         { profileMd: "   ", summary: "x" },
-        { messages: [], toolCallId: "t2", abort: () => {} } as never,
+        makeToolContext("t2"),
       ),
     ).rejects.toThrow(/empty/);
   });
@@ -71,10 +82,12 @@ describe("coauthor-tools: write_profile", () => {
     // serialization; the only hard gate is the empty-input guard above (and the
     // lost-section guard below).
     const tools = buildCoauthorTools();
-    const out = (await tools.write_profile.execute(
+    const out = await executeTool<CoauthorToolOutput>(
+      tools,
+      "write_profile",
       { profileMd: "just some prose, no frontmatter, no headings", summary: "x" },
-      { messages: [], toolCallId: "t2b", abort: () => {} } as never,
-    )) as never;
+      makeToolContext("t2b"),
+    );
     expect(out.target).toBe("profile");
     expect(typeof out.proposed).toBe("string");
   });
@@ -96,22 +109,28 @@ describe("coauthor-tools: write_profile content-loss guard (CA-17)", () => {
       "# SCENARIO", "A forest cave.", "",
     ].join("\n");
     await expect(
-      tools.write_profile.execute(
+      executeTool(
+        tools,
+        "write_profile",
         { profileMd: malformed, summary: "Harden personality." },
-        { messages: [], toolCallId: "g1", abort: () => {} } as never,
+        makeToolContext("g1"),
       ),
     ).rejects.toThrow(/PERSONALITY/);
     // Actionable: tells the model which heading to use and that the body is dropped.
     await expect(
-      tools.write_profile.execute(
+      executeTool(
+        tools,
+        "write_profile",
         { profileMd: malformed, summary: "x" },
-        { messages: [], toolCallId: "g1b", abort: () => {} } as never,
+        makeToolContext("g1b"),
       ),
     ).rejects.toThrow(/## PERSONALITY/);
     await expect(
-      tools.write_profile.execute(
+      executeTool(
+        tools,
+        "write_profile",
         { profileMd: malformed, summary: "x" },
-        { messages: [], toolCallId: "g1c", abort: () => {} } as never,
+        makeToolContext("g1c"),
       ),
     ).rejects.toThrow(/single-hash H1/i);
   });
@@ -124,9 +143,11 @@ describe("coauthor-tools: write_profile content-loss guard (CA-17)", () => {
       "### SCENARIO", "A forest cave at dusk.", "",
     ].join("\n");
     await expect(
-      tools.write_profile.execute(
+      executeTool(
+        tools,
+        "write_profile",
         { profileMd: malformed, summary: "x" },
-        { messages: [], toolCallId: "g2", abort: () => {} } as never,
+        makeToolContext("g2"),
       ),
     ).rejects.toThrow(/SCENARIO/);
   });
@@ -138,10 +159,12 @@ describe("coauthor-tools: write_profile content-loss guard (CA-17)", () => {
       "# PERSONALITY", "Bold, direct, and a little dangerous.", "",
       "# SCENARIO", "A forest cave.", "",
     ].join("\n");
-    const out = (await tools.write_profile.execute(
+    const out = await executeTool<CoauthorToolOutput>(
+      tools,
+      "write_profile",
       { profileMd: correct, summary: "x" },
-      { messages: [], toolCallId: "g3", abort: () => {} } as never,
-    )) as never;
+      makeToolContext("g3"),
+    );
     expect(out.target).toBe("profile");
     expect(out.proposed).toContain("Bold, direct, and a little dangerous.");
   });
@@ -155,10 +178,12 @@ describe("coauthor-tools: write_profile content-loss guard (CA-17)", () => {
       "# PERSONALITY", "", "",
       "# SCENARIO", "A forest cave.", "",
     ].join("\n");
-    const out = (await tools.write_profile.execute(
+    const out = await executeTool<CoauthorToolOutput>(
+      tools,
+      "write_profile",
       { profileMd: cleared, summary: "Clear personality." },
-      { messages: [], toolCallId: "g4", abort: () => {} } as never,
-    )) as never;
+      makeToolContext("g4"),
+    );
     expect(out.target).toBe("profile");
   });
 
@@ -172,9 +197,11 @@ describe("coauthor-tools: write_profile content-loss guard (CA-17)", () => {
     ].join("\n");
     // The throw surfaces all three lost sections (the model fixes them in one re-emit).
     await expect(
-      tools.write_profile.execute(
+      executeTool(
+        tools,
+        "write_profile",
         { profileMd: malformed, summary: "x" },
-        { messages: [], toolCallId: "g5", abort: () => {} } as never,
+        makeToolContext("g5"),
       ),
     ).rejects.toThrow(/PERSONALITY.*SCENARIO.*EXAMPLES|EXAMPLES.*SCENARIO.*PERSONALITY/s);
   });
@@ -189,10 +216,12 @@ describe("coauthor-tools: write_profile content-loss guard (CA-17)", () => {
       "# PERSONALITY", "Bold and direct.", "",
       "## CUSTOM NOTES", "Some aside.", "",
     ].join("\n");
-    const out = (await tools.write_profile.execute(
+    const out = await executeTool<CoauthorToolOutput>(
+      tools,
+      "write_profile",
       { profileMd: doc, summary: "x" },
-      { messages: [], toolCallId: "g6", abort: () => {} } as never,
-    )) as never;
+      makeToolContext("g6"),
+    );
     expect(out.target).toBe("profile");
   });
 });
@@ -200,10 +229,12 @@ describe("coauthor-tools: write_profile content-loss guard (CA-17)", () => {
 describe("coauthor-tools: edit_greeting", () => {
   test("returns the greeting target with the given index", async () => {
     const tools = buildCoauthorTools();
-    const out = (await tools.edit_greeting.execute(
+    const out = await executeTool<CoauthorToolOutput>(
+      tools,
+      "edit_greeting",
       { index: 0, content: "The door slams open.", summary: "Stronger opener." },
-      { messages: [], toolCallId: "t3", abort: () => {} } as never,
-    )) as never;
+      makeToolContext("t3"),
+    );
 
     expect(out.target).toBe("greeting");
     expect(out.greetingIndex).toBe(0);
@@ -214,19 +245,23 @@ describe("coauthor-tools: edit_greeting", () => {
 
   test("accepts alternate-greeting indices (1+)", async () => {
     const tools = buildCoauthorTools();
-    const out = (await tools.edit_greeting.execute(
+    const out = await executeTool<CoauthorToolOutput>(
+      tools,
+      "edit_greeting",
       { index: 2, content: "An alt opener.", summary: "Add tension variant." },
-      { messages: [], toolCallId: "t4", abort: () => {} } as never,
-    )) as never;
+      makeToolContext("t4"),
+    );
     expect(out.greetingIndex).toBe(2);
   });
 
   test("rejects empty content", async () => {
     const tools = buildCoauthorTools();
     await expect(
-      tools.edit_greeting.execute(
+      executeTool(
+        tools,
+        "edit_greeting",
         { index: 0, content: "   ", summary: "x" },
-        { messages: [], toolCallId: "t5", abort: () => {} } as never,
+        makeToolContext("t5"),
       ),
     ).rejects.toThrow(/empty/);
   });
@@ -235,10 +270,12 @@ describe("coauthor-tools: edit_greeting", () => {
 describe("coauthor-tools: add_alt_greeting", () => {
   test("returns the greeting target flagged as an add", async () => {
     const tools = buildCoauthorTools();
-    const out = (await tools.add_alt_greeting.execute(
+    const out = await executeTool<CoauthorToolOutput>(
+      tools,
+      "add_alt_greeting",
       { content: "A new alternate opener.", summary: "New scenario entry." },
-      { messages: [], toolCallId: "t6", abort: () => {} } as never,
-    )) as never;
+      makeToolContext("t6"),
+    );
 
     expect(out.target).toBe("greeting");
     expect(out.isAdd).toBe(true);
@@ -249,9 +286,11 @@ describe("coauthor-tools: add_alt_greeting", () => {
   test("rejects empty content", async () => {
     const tools = buildCoauthorTools();
     await expect(
-      tools.add_alt_greeting.execute(
+      executeTool(
+        tools,
+        "add_alt_greeting",
         { content: "", summary: "x" },
-        { messages: [], toolCallId: "t7", abort: () => {} } as never,
+        makeToolContext("t7"),
       ),
     ).rejects.toThrow(/empty/);
   });
@@ -273,15 +312,21 @@ describe("coauthor-tools: edit_* exact SEARCH/REPLACE (CED-2)", () => {
     );
     const tools = buildCoauthorTools({ profileMd: working.profileMd });
 
-    await expect(tools.edit_personality.execute(
+    await expect(executeTool(
+      tools,
+      "edit_personality",
       { edits: [{ search: "Saved-only text.", replace: "x" }], summary: "wrong base" },
       ctx,
     )).rejects.toThrow(/not found/);
-    const personality = await tools.edit_personality.execute(
+    const personality = await executeTool<CoauthorToolOutput>(
+      tools,
+      "edit_personality",
       { edits: [{ search: "Live-only text.", replace: "Edited live text." }], summary: "edit live" },
       ctx,
     );
-    const scenario = await tools.edit_scenario.execute(
+    const scenario = await executeTool<CoauthorToolOutput>(
+      tools,
+      "edit_scenario",
       { edits: [{ search: "Live scenario.", replace: "Edited live scenario." }], summary: "compose" },
       ctx,
     );
@@ -303,7 +348,9 @@ describe("coauthor-tools: edit_* exact SEARCH/REPLACE (CED-2)", () => {
     );
     const tools = buildCoauthorTools({ profileMd: working.profileMd });
 
-    await expect(tools.edit_personality.execute(
+    await expect(executeTool(
+      tools,
+      "edit_personality",
       { edits: [{ search: "Saved personality.", replace: "x" }], summary: "must not recover" },
       ctx,
     )).rejects.toThrow(/PERSONALITY section is empty.*write_personality/);
@@ -311,10 +358,12 @@ describe("coauthor-tools: edit_* exact SEARCH/REPLACE (CED-2)", () => {
 
   test("applies a unique exact edit to PERSONALITY and preserves other sections", async () => {
     const tools = buildCoauthorTools({ profileMd: sampleProfileMd() });
-    const out = (await tools.edit_personality.execute(
+    const out = await executeTool<CoauthorToolOutput>(
+      tools,
+      "edit_personality",
       { edits: [{ search: "A test character.", replace: "A bold, sharp character." }], summary: "Harden personality." },
       ctx,
-    )) as never;
+    );
     expect(out.target).toBe("profile");
     expect(out.proposed).toContain("# PERSONALITY\nA bold, sharp character.");
     expect(out.proposed).toContain("# SCENARIO\nA scene."); // preserved
@@ -322,17 +371,21 @@ describe("coauthor-tools: edit_* exact SEARCH/REPLACE (CED-2)", () => {
 
   test("edit_scenario targets only SCENARIO and preserves PERSONALITY", async () => {
     const tools = buildCoauthorTools({ profileMd: sampleProfileMd() });
-    const out = (await tools.edit_scenario.execute(
+    const out = await executeTool<CoauthorToolOutput>(
+      tools,
+      "edit_scenario",
       { edits: [{ search: "A scene.", replace: "A darker scene." }], summary: "x" },
       ctx,
-    )) as never;
+    );
     expect(out.proposed).toContain("# SCENARIO\nA darker scene.");
     expect(out.proposed).toContain("# PERSONALITY\nA test character.");
   });
 
   test("rejects when search is not found in the current section body", async () => {
     const tools = buildCoauthorTools({ profileMd: sampleProfileMd() });
-    await expect(tools.edit_personality.execute(
+    await expect(executeTool(
+      tools,
+      "edit_personality",
       { edits: [{ search: "NONEXISTENT TEXT", replace: "x" }], summary: "x" },
       ctx,
     )).rejects.toThrow(/not found/);
@@ -340,7 +393,9 @@ describe("coauthor-tools: edit_* exact SEARCH/REPLACE (CED-2)", () => {
 
   test("rejects an ambiguous search (2+ matches)", async () => {
     const tools = buildCoauthorTools({ profileMd: sampleProfileMd({ description: "na na twice" }) });
-    await expect(tools.edit_personality.execute(
+    await expect(executeTool(
+      tools,
+      "edit_personality",
       { edits: [{ search: "na", replace: "x" }], summary: "x" },
       ctx,
     )).rejects.toThrow(/ambiguous/i);
@@ -348,7 +403,9 @@ describe("coauthor-tools: edit_* exact SEARCH/REPLACE (CED-2)", () => {
 
   test("rejects a no-op (search === replace)", async () => {
     const tools = buildCoauthorTools({ profileMd: sampleProfileMd() });
-    await expect(tools.edit_personality.execute(
+    await expect(executeTool(
+      tools,
+      "edit_personality",
       { edits: [{ search: "A test character.", replace: "A test character." }], summary: "x" },
       ctx,
     )).rejects.toThrow(/no-op/);
@@ -356,7 +413,9 @@ describe("coauthor-tools: edit_* exact SEARCH/REPLACE (CED-2)", () => {
 
   test("rejects an empty search item", async () => {
     const tools = buildCoauthorTools({ profileMd: sampleProfileMd() });
-    await expect(tools.edit_personality.execute(
+    await expect(executeTool(
+      tools,
+      "edit_personality",
       { edits: [{ search: "", replace: "x" }], summary: "x" },
       ctx,
     )).rejects.toThrow(/search must not be empty/);
@@ -364,7 +423,9 @@ describe("coauthor-tools: edit_* exact SEARCH/REPLACE (CED-2)", () => {
 
   test("rejects an empty edits batch", async () => {
     const tools = buildCoauthorTools({ profileMd: sampleProfileMd() });
-    await expect(tools.edit_personality.execute(
+    await expect(executeTool(
+      tools,
+      "edit_personality",
       { edits: [], summary: "x" },
       ctx,
     )).rejects.toThrow(/edits must not be empty/);
@@ -372,39 +433,49 @@ describe("coauthor-tools: edit_* exact SEARCH/REPLACE (CED-2)", () => {
 
   test("deletes text via an empty replace", async () => {
     const tools = buildCoauthorTools({ profileMd: sampleProfileMd({ description: "Keep this. Remove this." }) });
-    const out = (await tools.edit_personality.execute(
+    const out = await executeTool<CoauthorToolOutput>(
+      tools,
+      "edit_personality",
       { edits: [{ search: " Remove this.", replace: "" }], summary: "Trim." },
       ctx,
-    )) as never;
+    );
     expect(out.proposed).toContain("# PERSONALITY\nKeep this.");
   });
 
   test("applies an ordered multi-edit batch in array order", async () => {
     const tools = buildCoauthorTools({ profileMd: sampleProfileMd({ description: "alpha beta gamma" }) });
-    const out = (await tools.edit_personality.execute(
+    const out = await executeTool<CoauthorToolOutput>(
+      tools,
+      "edit_personality",
       { edits: [{ search: "alpha", replace: "ALPHA" }, { search: "ALPHA beta", replace: "ALPHA BETA" }], summary: "x" },
       ctx,
-    )) as never;
+    );
     expect(out.proposed).toContain("# PERSONALITY\nALPHA BETA gamma");
   });
 
   test("a batch is atomic: a later failed item rejects and changes nothing", async () => {
     const tools = buildCoauthorTools({ profileMd: sampleProfileMd({ description: "alpha beta" }) });
-    await expect(tools.edit_personality.execute(
+    await expect(executeTool(
+      tools,
+      "edit_personality",
       { edits: [{ search: "alpha", replace: "ALPHA" }, { search: "NONEXISTENT", replace: "x" }], summary: "x" },
       ctx,
     )).rejects.toThrow(/not found/);
     // Working profile untouched: a subsequent edit still sees the ORIGINAL body.
-    const out = (await tools.edit_personality.execute(
+    const out = await executeTool<CoauthorToolOutput>(
+      tools,
+      "edit_personality",
       { edits: [{ search: "alpha", replace: "CHANGED" }], summary: "x" },
       ctx,
-    )) as never;
+    );
     expect(out.proposed).toContain("# PERSONALITY\nCHANGED beta");
   });
 
   test("CA-17 guard rejects a wrong-level known heading introduced by an edit", async () => {
     const tools = buildCoauthorTools({ profileMd: sampleProfileMd() });
-    await expect(tools.edit_scenario.execute(
+    await expect(executeTool(
+      tools,
+      "edit_scenario",
       { edits: [{ search: "A scene.", replace: "## EXAMPLES\n\nleaked" }], summary: "x" },
       ctx,
     )).rejects.toThrow(/EXAMPLES/);
@@ -412,7 +483,9 @@ describe("coauthor-tools: edit_* exact SEARCH/REPLACE (CED-2)", () => {
 
   test("rejects if context profileMd is missing", async () => {
     const tools = buildCoauthorTools();
-    await expect(tools.edit_personality.execute(
+    await expect(executeTool(
+      tools,
+      "edit_personality",
       { edits: [{ search: "x", replace: "y" }], summary: "x" },
       ctx,
     )).rejects.toThrow(/missing canonical profile context/);
@@ -424,7 +497,9 @@ describe("coauthor-tools: edit_* exact SEARCH/REPLACE (CED-2)", () => {
   // section write tool so the model self-corrects instead.
   test("edit on an EMPTY section rejects and names the section write tool", async () => {
     const tools = buildCoauthorTools({ profileMd: sampleProfileMd({ mesExample: null }) });
-    await expect(tools.edit_examples.execute(
+    await expect(executeTool(
+      tools,
+      "edit_examples",
       { edits: [{ search: "# EXAMPLES", replace: "# EXAMPLES\n<START>\n{{char}}: Hi." }], summary: "x" },
       ctx,
     )).rejects.toThrow(/EXAMPLES section is empty.*write_examples/);
@@ -432,7 +507,9 @@ describe("coauthor-tools: edit_* exact SEARCH/REPLACE (CED-2)", () => {
 
   test("edit on an empty SCENARIO names write_scenario", async () => {
     const tools = buildCoauthorTools({ profileMd: sampleProfileMd({ scenario: null }) });
-    await expect(tools.edit_scenario.execute(
+    await expect(executeTool(
+      tools,
+      "edit_scenario",
       { edits: [{ search: "", replace: "A scene." }], summary: "x" },
       ctx,
     )).rejects.toThrow(/SCENARIO section is empty.*write_scenario/);
@@ -441,7 +518,12 @@ describe("coauthor-tools: edit_* exact SEARCH/REPLACE (CED-2)", () => {
   test("empty-section rejection omits the write-tool hint when the module does not enable it", async () => {
     const tools = buildCoauthorTools({ toolSet: { edit_examples: true }, profileMd: sampleProfileMd({ mesExample: null }) });
     let message = "";
-    await tools.edit_examples.execute({ edits: [{ search: "# EXAMPLES", replace: "x" }], summary: "x" }, ctx).catch((err: Error) => {
+    await executeTool(
+      tools,
+      "edit_examples",
+      { edits: [{ search: "# EXAMPLES", replace: "x" }], summary: "x" },
+      ctx,
+    ).catch((err: Error) => {
       message = err.message;
     });
     expect(message).toContain("EXAMPLES section is empty");
@@ -450,7 +532,9 @@ describe("coauthor-tools: edit_* exact SEARCH/REPLACE (CED-2)", () => {
 
   test("a search that includes the section heading on a NON-empty section explains the heading is not part of the body", async () => {
     const tools = buildCoauthorTools({ profileMd: sampleProfileMd({ mesExample: "Line one." }) });
-    await expect(tools.edit_examples.execute(
+    await expect(executeTool(
+      tools,
+      "edit_examples",
       { edits: [{ search: "# EXAMPLES\nLine one.", replace: "# EXAMPLES\nLine one.\nLine two." }], summary: "x" },
       ctx,
     )).rejects.toThrow(/heading.*not part of the section body/);
@@ -460,10 +544,12 @@ describe("coauthor-tools: edit_* exact SEARCH/REPLACE (CED-2)", () => {
 describe("coauthor-tools: write_* whole-section writes (CED-2)", () => {
   test("write_personality replaces only PERSONALITY and preserves other sections", async () => {
     const tools = buildCoauthorTools({ profileMd: sampleProfileMd() });
-    const out = (await tools.write_personality.execute(
+    const out = await executeTool<CoauthorToolOutput>(
+      tools,
+      "write_personality",
       { content: "A brand-new personality.", summary: "Rewrite personality." },
       ctx,
-    )) as never;
+    );
     expect(out.target).toBe("profile");
     expect(out.proposed).toContain("# PERSONALITY\nA brand-new personality.");
     expect(out.proposed).toContain("# SCENARIO\nA scene."); // preserved
@@ -471,10 +557,12 @@ describe("coauthor-tools: write_* whole-section writes (CED-2)", () => {
 
   test("write_examples populates an empty EXAMPLES section", async () => {
     const tools = buildCoauthorTools({ profileMd: sampleProfileMd() }); // mesExample null
-    const out = (await tools.write_examples.execute(
+    const out = await executeTool<CoauthorToolOutput>(
+      tools,
+      "write_examples",
       { content: "{{char}}: Hello there.", summary: "Add dialogue." },
       ctx,
-    )) as never;
+    );
     expect(out.proposed).toContain("# EXAMPLES\n{{char}}: Hello there.");
     expect(out.proposed).toContain("# PERSONALITY\nA test character."); // preserved
   });
@@ -482,13 +570,15 @@ describe("coauthor-tools: write_* whole-section writes (CED-2)", () => {
   test("each write_* rejects empty content", async () => {
     const tools = buildCoauthorTools({ profileMd: sampleProfileMd() });
     for (const t of ["write_personality", "write_scenario", "write_examples"] as const) {
-      await expect(tools[t].execute({ content: "   ", summary: "x" }, ctx)).rejects.toThrow(/empty/);
+      await expect(executeTool(tools, t, { content: "   ", summary: "x" }, ctx)).rejects.toThrow(/empty/);
     }
   });
 
   test("CA-17 guard runs on a write body", async () => {
     const tools = buildCoauthorTools({ profileMd: sampleProfileMd() });
-    await expect(tools.write_scenario.execute(
+    await expect(executeTool(
+      tools,
+      "write_scenario",
       { content: "### EXAMPLES\n\nleaked", summary: "x" },
       ctx,
     )).rejects.toThrow(/EXAMPLES/);
@@ -496,14 +586,19 @@ describe("coauthor-tools: write_* whole-section writes (CED-2)", () => {
 
   test("rejects if context profileMd is missing", async () => {
     const tools = buildCoauthorTools();
-    await expect(tools.write_personality.execute({ content: "x", summary: "x" }, ctx)).rejects.toThrow(
+    await expect(executeTool(tools, "write_personality", { content: "x", summary: "x" }, ctx)).rejects.toThrow(
       /missing canonical profile context/,
     );
   });
 
   test("returns the full cumulative canonical profile checkpoint", async () => {
     const tools = buildCoauthorTools({ profileMd: sampleProfileMd() });
-    const out = (await tools.write_scenario.execute({ content: "New scene.", summary: "x" }, ctx)) as never;
+    const out = await executeTool<CoauthorToolOutput>(
+      tools,
+      "write_scenario",
+      { content: "New scene.", summary: "x" },
+      ctx,
+    );
     expect(out.target).toBe("profile");
     expect(out.proposed).toMatch(/^---\nname: Test/);
     expect(out.proposed).toContain("# PERSONALITY");
@@ -515,89 +610,118 @@ describe("coauthor-tools: write_* whole-section writes (CED-2)", () => {
 describe("coauthor-tools: composition + serialized non-poisoning queue (CED-2)", () => {
   test("two different-section edits compose into the final proposal", async () => {
     const tools = buildCoauthorTools({ profileMd: sampleProfileMd() });
-    await tools.edit_personality.execute(
+    await executeTool(
+      tools,
+      "edit_personality",
       { edits: [{ search: "A test character.", replace: "Edited personality." }], summary: "p" },
       ctx,
     );
-    const out = (await tools.edit_scenario.execute(
+    const out = await executeTool<CoauthorToolOutput>(
+      tools,
+      "edit_scenario",
       { edits: [{ search: "A scene.", replace: "Edited scenario." }], summary: "s" },
       ctx,
-    )) as never;
+    );
     expect(out.proposed).toContain("# PERSONALITY\nEdited personality.");
     expect(out.proposed).toContain("# SCENARIO\nEdited scenario.");
   });
 
   test("two same-section edits compose (second searches text introduced by the first)", async () => {
     const tools = buildCoauthorTools({ profileMd: sampleProfileMd() });
-    await tools.edit_personality.execute(
+    await executeTool(
+      tools,
+      "edit_personality",
       { edits: [{ search: "A test character.", replace: "A bold character." }], summary: "1" },
       ctx,
     );
-    const out = (await tools.edit_personality.execute(
+    const out = await executeTool<CoauthorToolOutput>(
+      tools,
+      "edit_personality",
       { edits: [{ search: "A bold character.", replace: "A BOLD persona." }], summary: "2" },
       ctx,
-    )) as never;
+    );
     expect(out.proposed).toContain("# PERSONALITY\nA BOLD persona.");
   });
 
   test("edit then write on the same section composes", async () => {
     const tools = buildCoauthorTools({ profileMd: sampleProfileMd() });
-    await tools.edit_scenario.execute(
+    await executeTool(
+      tools,
+      "edit_scenario",
       { edits: [{ search: "A scene.", replace: "An interim scene." }], summary: "e" },
       ctx,
     );
-    const out = (await tools.write_scenario.execute({ content: "A wholesale new scene.", summary: "w" }, ctx)) as never;
+    const out = await executeTool<CoauthorToolOutput>(
+      tools,
+      "write_scenario",
+      { content: "A wholesale new scene.", summary: "w" },
+      ctx,
+    );
     expect(out.proposed).toContain("# SCENARIO\nA wholesale new scene.");
   });
 
   test("write then edit on the same section composes", async () => {
     const tools = buildCoauthorTools({ profileMd: sampleProfileMd({ mesExample: null }) });
-    await tools.write_examples.execute({ content: "Line one. Line two.", summary: "w" }, ctx);
-    const out = (await tools.edit_examples.execute(
+    await executeTool(tools, "write_examples", { content: "Line one. Line two.", summary: "w" }, ctx);
+    const out = await executeTool<CoauthorToolOutput>(
+      tools,
+      "edit_examples",
       { edits: [{ search: "Line two.", replace: "Second line." }], summary: "e" },
       ctx,
-    )) as never;
+    );
     expect(out.proposed).toContain("# EXAMPLES\nLine one. Second line.");
   });
 
   test("dependent edits fired without awaiting serialize deterministically (FIFO)", async () => {
     const tools = buildCoauthorTools({ profileMd: sampleProfileMd() });
-    const p1 = tools.edit_personality.execute(
+    const p1 = executeTool<CoauthorToolOutput>(
+      tools,
+      "edit_personality",
       { edits: [{ search: "A test character.", replace: "A bold character." }], summary: "1" },
       ctx,
     );
-    const p2 = tools.edit_personality.execute(
+    const p2 = executeTool<CoauthorToolOutput>(
+      tools,
+      "edit_personality",
       { edits: [{ search: "A bold character.", replace: "A BOLD persona." }], summary: "2" },
       ctx,
     );
-    const [r1, r2] = (await Promise.all([p1, p2])) as never;
+    const [r1, r2] = await Promise.all([p1, p2]);
     expect(r1.proposed).toContain("A bold character.");
     expect(r2.proposed).toContain("# PERSONALITY\nA BOLD persona.");
   });
 
   test("a failed call does not poison the queue (next call succeeds against last good state)", async () => {
     const tools = buildCoauthorTools({ profileMd: sampleProfileMd() });
-    await expect(tools.edit_personality.execute(
+    await expect(executeTool(
+      tools,
+      "edit_personality",
       { edits: [{ search: "GONE", replace: "x" }], summary: "fail" },
       ctx,
     )).rejects.toThrow(/not found/);
-    const out = (await tools.edit_personality.execute(
+    const out = await executeTool<CoauthorToolOutput>(
+      tools,
+      "edit_personality",
       { edits: [{ search: "A test character.", replace: "Recovered." }], summary: "ok" },
       ctx,
-    )) as never;
+    );
     expect(out.proposed).toContain("# PERSONALITY\nRecovered.");
   });
 
   test("each composable output carries the full cumulative proposed checkpoint", async () => {
     const tools = buildCoauthorTools({ profileMd: sampleProfileMd() });
-    const a = (await tools.edit_personality.execute(
+    const a = await executeTool<CoauthorToolOutput>(
+      tools,
+      "edit_personality",
       { edits: [{ search: "A test character.", replace: "P-new." }], summary: "a" },
       ctx,
-    )) as never;
-    const b = (await tools.edit_scenario.execute(
+    );
+    const b = await executeTool<CoauthorToolOutput>(
+      tools,
+      "edit_scenario",
       { edits: [{ search: "A scene.", replace: "S-new." }], summary: "b" },
       ctx,
-    )) as never;
+    );
     expect(a.proposed).toContain("P-new.");
     expect(a.proposed).not.toContain("S-new.");
     expect(b.proposed).toContain("P-new.");
@@ -608,31 +732,41 @@ describe("coauthor-tools: composition + serialized non-poisoning queue (CED-2)",
 describe("coauthor-tools: write_profile ordering within a turn (CED-2)", () => {
   test("write_profile first is valid; a later section edit composes on top", async () => {
     const tools = buildCoauthorTools({ profileMd: sampleProfileMd() });
-    await tools.write_profile.execute(
+    await executeTool(
+      tools,
+      "write_profile",
       { profileMd: sampleProfileMd({ description: "Wholesale base." }), summary: "base rewrite" },
       ctx,
     );
-    const out = (await tools.edit_personality.execute(
+    const out = await executeTool<CoauthorToolOutput>(
+      tools,
+      "edit_personality",
       { edits: [{ search: "Wholesale base.", replace: "Wholesale base, refined." }], summary: "refine" },
       ctx,
-    )) as never;
+    );
     expect(out.proposed).toContain("# PERSONALITY\nWholesale base, refined.");
   });
 
   test("write_profile AFTER a section mutation rejects and preserves composed state", async () => {
     const tools = buildCoauthorTools({ profileMd: sampleProfileMd() });
-    await tools.edit_personality.execute(
+    await executeTool(
+      tools,
+      "edit_personality",
       { edits: [{ search: "A test character.", replace: "Composed." }], summary: "1" },
       ctx,
     );
-    await expect(tools.write_profile.execute(
+    await expect(executeTool(
+      tools,
+      "write_profile",
       { profileMd: sampleProfileMd(), summary: "late rewrite" },
       ctx,
     )).rejects.toThrow(/FIRST profile change/);
-    const out = (await tools.edit_personality.execute(
+    const out = await executeTool<CoauthorToolOutput>(
+      tools,
+      "edit_personality",
       { edits: [{ search: "Composed.", replace: "Still composed." }], summary: "2" },
       ctx,
-    )) as never;
+    );
     expect(out.proposed).toContain("# PERSONALITY\nStill composed.");
   });
 });
@@ -640,10 +774,12 @@ describe("coauthor-tools: write_profile ordering within a turn (CED-2)", () => {
 describe("coauthor-tools: edit_alt_greeting", () => {
   test("returns target greeting with given index", async () => {
     const tools = buildCoauthorTools();
-    const out = (await tools.edit_alt_greeting.execute(
+    const out = await executeTool<CoauthorToolOutput>(
+      tools,
+      "edit_alt_greeting",
       { index: 1, content: "Replaced alt.", summary: "Swap alt." },
-      { messages: [], toolCallId: "t12", abort: () => {} } as never,
-    )) as never;
+      makeToolContext("t12"),
+    );
 
     expect(out.target).toBe("greeting");
     expect(out.greetingIndex).toBe(1);
@@ -653,7 +789,7 @@ describe("coauthor-tools: edit_alt_greeting", () => {
 
 describe("coauthor-tools: toolSet filtering", () => {
   test("filters tools by the provided toolSet config", () => {
-    const tools = buildCoauthorTools({ toolSet: { write_profile: true, edit_scenario: false } }) as unknown as Record<string, unknown>;
+    const tools = buildCoauthorTools({ toolSet: { write_profile: true, edit_scenario: false } })
     expect(tools.write_profile).toBeDefined();
     expect(tools.edit_scenario).toBeUndefined();
     expect(tools.edit_greeting).toBeUndefined();
@@ -662,7 +798,7 @@ describe("coauthor-tools: toolSet filtering", () => {
   test("filters write_* tools independently from their edit siblings (CED-2)", () => {
     const tools = buildCoauthorTools({
       toolSet: { write_personality: true, write_examples: true },
-    }) as unknown as Record<string, unknown>;
+    })
     expect(tools.write_personality).toBeDefined();
     expect(tools.write_examples).toBeDefined();
     expect(tools.write_scenario).toBeUndefined();
@@ -684,7 +820,9 @@ describe("coauthor-tools: Wave 4 lore tools (CTX-L1)", () => {
 
   test("create_lorebook returns a lore_bundle output carrying the cumulative bundle", async () => {
     const tools = buildCoauthorTools({ loreIdGen: deterministicIdGen() });
-    const out = await tools.create_lorebook.execute(
+    const out = await executeTool<CoauthorLoreBundleOutput>(
+      tools,
+      "create_lorebook",
       { name: "World Lore", summary: "Add a world lorebook." },
       ctx,
     );
@@ -697,8 +835,10 @@ describe("coauthor-tools: Wave 4 lore tools (CTX-L1)", () => {
 
   test("create_lore_entry depends on a prior create_lorebook and composes into the bundle", async () => {
     const tools = buildCoauthorTools({ loreIdGen: deterministicIdGen() });
-    await tools.create_lorebook.execute({ name: "Book", summary: "s" }, ctx);
-    const out = await tools.create_lore_entry.execute(
+    await executeTool(tools, "create_lorebook", { name: "Book", summary: "s" }, ctx);
+    const out = await executeTool<CoauthorLoreBundleOutput>(
+      tools,
+      "create_lore_entry",
       { lorebookId: "lorebook_1", title: "Castle", summary: "Add castle entry." },
       ctx,
     );
@@ -712,15 +852,17 @@ describe("coauthor-tools: Wave 4 lore tools (CTX-L1)", () => {
   test("create_lore_entry rejects a missing parent with a tool error", async () => {
     const tools = buildCoauthorTools({ loreIdGen: deterministicIdGen() });
     await expect(
-      tools.create_lore_entry.execute({ lorebookId: "ghost", summary: "s" }, ctx),
+      executeTool(tools, "create_lore_entry", { lorebookId: "ghost", summary: "s" }, ctx),
     ).rejects.toThrow(/parent lorebook 'ghost' does not exist/);
   });
 
   test("set_lore_activation flips constant and returns the cumulative bundle", async () => {
     const tools = buildCoauthorTools({ loreIdGen: deterministicIdGen() });
-    await tools.create_lorebook.execute({ name: "Book", summary: "s" }, ctx);
-    await tools.create_lore_entry.execute({ lorebookId: "lorebook_1", summary: "s" }, ctx);
-    const out = await tools.set_lore_activation.execute(
+    await executeTool(tools, "create_lorebook", { name: "Book", summary: "s" }, ctx);
+    await executeTool(tools, "create_lore_entry", { lorebookId: "lorebook_1", summary: "s" }, ctx);
+    const out = await executeTool<CoauthorLoreBundleOutput>(
+      tools,
+      "set_lore_activation",
       { entryId: "lore_entry_1", constant: true, summary: "Make constant." },
       ctx,
     );
@@ -728,7 +870,7 @@ describe("coauthor-tools: Wave 4 lore tools (CTX-L1)", () => {
   });
 
   test("lore tools are gated by toolSet like profile/greeting tools", () => {
-    const on = buildCoauthorTools({ toolSet: { create_lorebook: true, create_lore_entry: true } }) as unknown as Record<string, unknown>;
+    const on = buildCoauthorTools({ toolSet: { create_lorebook: true, create_lore_entry: true } })
     expect(on.create_lorebook).toBeDefined();
     expect(on.create_lore_entry).toBeDefined();
     expect(on.set_lore_activation).toBeUndefined();
@@ -736,7 +878,7 @@ describe("coauthor-tools: Wave 4 lore tools (CTX-L1)", () => {
   });
 
   test("without a toolSet, all lore tools are available alongside profile/greeting tools", () => {
-    const tools = buildCoauthorTools() as unknown as Record<string, unknown>;
+    const tools = buildCoauthorTools()
     expect(tools.create_lorebook).toBeDefined();
     expect(tools.create_lore_entry).toBeDefined();
     expect(tools.set_lore_activation).toBeDefined();
@@ -748,12 +890,12 @@ describe("coauthor-tools: Wave 4 lore tools (CTX-L1)", () => {
   // read_skill_file). All four seed modules enable them, but a user-created
   // module that omits them must have them excluded.
   test("search_context / read_context_item are gated by toolSet", () => {
-    const on = buildCoauthorTools({ toolSet: { search_context: true, read_context_item: true } }) as unknown as Record<string, unknown>;
+    const on = buildCoauthorTools({ toolSet: { search_context: true, read_context_item: true } })
     expect(on.search_context).toBeDefined();
     expect(on.read_context_item).toBeDefined();
     expect(on.write_profile).toBeUndefined();
 
-    const off = buildCoauthorTools({ toolSet: { write_profile: true } }) as unknown as Record<string, unknown>;
+    const off = buildCoauthorTools({ toolSet: { write_profile: true } })
     expect(off.search_context).toBeUndefined();
     expect(off.read_context_item).toBeUndefined();
     expect(off.write_profile).toBeDefined();
@@ -786,10 +928,12 @@ describe("coauthor-tools: AI-delegation lore tools (CTX-L2b)", () => {
       loreIdGen: deterministicIdGen(),
       loreDelegate: mockDelegate(captured),
     });
-    await tools.create_lorebook.execute({ name: "Bridge Crew", description: "Officers.", summary: "s" }, ctx);
-    await tools.create_lore_entry.execute({ lorebookId: "lorebook_1", title: "Vex", summary: "s" }, ctx);
+    await executeTool(tools, "create_lorebook", { name: "Bridge Crew", description: "Officers.", summary: "s" }, ctx);
+    await executeTool(tools, "create_lore_entry", { lorebookId: "lorebook_1", title: "Vex", summary: "s" }, ctx);
 
-    const out = await tools.ai_write_lore_entry.execute(
+    const out = await executeTool<CoauthorLoreBundleOutput>(
+      tools,
+      "ai_write_lore_entry",
       { entryId: "lore_entry_1", instruction: "Her command style.", summary: "Wrote Vex content." },
       ctx,
     );
@@ -810,12 +954,19 @@ describe("coauthor-tools: AI-delegation lore tools (CTX-L2b)", () => {
       loreIdGen: deterministicIdGen(),
       loreDelegate: mockDelegate(captured),
     });
-    await tools.create_lorebook.execute({ name: "LB", summary: "s" }, ctx);
-    await tools.create_lore_entry.execute({ lorebookId: "lorebook_1", title: "T", summary: "s" }, ctx);
+    await executeTool(tools, "create_lorebook", { name: "LB", summary: "s" }, ctx);
+    await executeTool(tools, "create_lore_entry", { lorebookId: "lorebook_1", title: "T", summary: "s" }, ctx);
     // CE-A2: content is delegate-only — establish it via ai_write_lore_entry first.
-    await tools.ai_write_lore_entry.execute({ entryId: "lore_entry_1", instruction: "write it", summary: "s" }, ctx);
+    await executeTool(
+      tools,
+      "ai_write_lore_entry",
+      { entryId: "lore_entry_1", instruction: "write it", summary: "s" },
+      ctx,
+    );
 
-    const out = await tools.ai_generate_lore_keys.execute(
+    const out = await executeTool<CoauthorLoreBundleOutput>(
+      tools,
+      "ai_generate_lore_keys",
       { entryId: "lore_entry_1", summary: "Generated keys." },
       ctx,
     );
@@ -836,16 +987,31 @@ describe("coauthor-tools: AI-delegation lore tools (CTX-L2b)", () => {
         if (resolvers.size === 3) resolveAllDelegates();
       }),
     });
-    await tools.create_lorebook.execute({ name: "LB", summary: "s" }, ctx);
-    await tools.create_lore_entry.execute({ lorebookId: "lorebook_1", title: "A", summary: "s" }, ctx);
-    await tools.create_lore_entry.execute({ lorebookId: "lorebook_1", title: "B", summary: "s" }, ctx);
-    await tools.create_lore_entry.execute({ lorebookId: "lorebook_1", title: "C", summary: "s" }, ctx);
+    await executeTool(tools, "create_lorebook", { name: "LB", summary: "s" }, ctx);
+    await executeTool(tools, "create_lore_entry", { lorebookId: "lorebook_1", title: "A", summary: "s" }, ctx);
+    await executeTool(tools, "create_lore_entry", { lorebookId: "lorebook_1", title: "B", summary: "s" }, ctx);
+    await executeTool(tools, "create_lore_entry", { lorebookId: "lorebook_1", title: "C", summary: "s" }, ctx);
 
     // All three expensive requests start together. Resolve C → B → A to model
     // delegates finishing opposite their tool-call order.
-    const pendingA = tools.ai_generate_lore_keys.execute({ entryId: "lore_entry_1", summary: "A" }, ctx);
-    const pendingB = tools.ai_generate_lore_keys.execute({ entryId: "lore_entry_2", summary: "B" }, ctx);
-    const pendingC = tools.ai_generate_lore_keys.execute({ entryId: "lore_entry_3", summary: "C" }, ctx);
+    const pendingA = executeTool<CoauthorLoreBundleOutput>(
+      tools,
+      "ai_generate_lore_keys",
+      { entryId: "lore_entry_1", summary: "A" },
+      ctx,
+    );
+    const pendingB = executeTool<CoauthorLoreBundleOutput>(
+      tools,
+      "ai_generate_lore_keys",
+      { entryId: "lore_entry_2", summary: "B" },
+      ctx,
+    );
+    const pendingC = executeTool<CoauthorLoreBundleOutput>(
+      tools,
+      "ai_generate_lore_keys",
+      { entryId: "lore_entry_3", summary: "C" },
+      ctx,
+    );
     await allDelegatesStarted;
 
     resolvers.get("lore_entry_3")!({ keys: ["C"] });
@@ -866,10 +1032,12 @@ describe("coauthor-tools: AI-delegation lore tools (CTX-L2b)", () => {
       loreIdGen: deterministicIdGen(),
       loreDelegate: async (input) => { captured.input = input; return { keys: ["Vex", "commander"], secondaryKeys: ["fleet"] }; },
     });
-    await tools.create_lorebook.execute({ name: "LB", summary: "s" }, ctx);
-    await tools.create_lore_entry.execute({ lorebookId: "lorebook_1", title: "T", summary: "s" }, ctx);
+    await executeTool(tools, "create_lorebook", { name: "LB", summary: "s" }, ctx);
+    await executeTool(tools, "create_lore_entry", { lorebookId: "lorebook_1", title: "T", summary: "s" }, ctx);
 
-    const out = await tools.ai_generate_lore_keys.execute(
+    const out = await executeTool<CoauthorLoreBundleOutput>(
+      tools,
+      "ai_generate_lore_keys",
       { entryId: "lore_entry_1", keyTarget: "primary", summary: "primary only" },
       ctx,
     );
@@ -885,12 +1053,19 @@ describe("coauthor-tools: AI-delegation lore tools (CTX-L2b)", () => {
       loreIdGen: deterministicIdGen(),
       loreDelegate: async () => ({ keys: ["Vex", "commander"], secondaryKeys: ["fleet"] }),
     });
-    await tools.create_lorebook.execute({ name: "LB", summary: "s" }, ctx);
-    await tools.create_lore_entry.execute({ lorebookId: "lorebook_1", title: "T", summary: "s" }, ctx);
+    await executeTool(tools, "create_lorebook", { name: "LB", summary: "s" }, ctx);
+    await executeTool(tools, "create_lore_entry", { lorebookId: "lorebook_1", title: "T", summary: "s" }, ctx);
     // CE-A2: seed existing primary keys via the delegate (keys are delegate-only now).
-    await tools.ai_generate_lore_keys.execute({ entryId: "lore_entry_1", keyTarget: "primary", summary: "seed" }, ctx);
+    await executeTool(
+      tools,
+      "ai_generate_lore_keys",
+      { entryId: "lore_entry_1", keyTarget: "primary", summary: "seed" },
+      ctx,
+    );
 
-    const out = await tools.ai_generate_lore_keys.execute(
+    const out = await executeTool<CoauthorLoreBundleOutput>(
+      tools,
+      "ai_generate_lore_keys",
       { entryId: "lore_entry_1", keyTarget: "secondary", summary: "secondary only" },
       ctx,
     );
@@ -903,14 +1078,21 @@ describe("coauthor-tools: AI-delegation lore tools (CTX-L2b)", () => {
       loreIdGen: deterministicIdGen(),
       loreDelegate: async () => ({ keys: ["Vex", "commander"], secondaryKeys: ["fleet"] }),
     });
-    await tools.create_lorebook.execute({ name: "LB", summary: "s" }, ctx);
+    await executeTool(tools, "create_lorebook", { name: "LB", summary: "s" }, ctx);
     // Seed an existing primary key overlapping a generated one ('Vex') to prove dedup.
-    await tools.create_lore_entry.execute({ lorebookId: "lorebook_1", title: "T", summary: "s" }, ctx);
+    await executeTool(tools, "create_lore_entry", { lorebookId: "lorebook_1", title: "T", summary: "s" }, ctx);
     // CE-A2: seed existing primary keys via the delegate (keys are delegate-only now),
     // then augment to prove dedup against the generated set.
-    await tools.ai_generate_lore_keys.execute({ entryId: "lore_entry_1", keyTarget: "primary", summary: "seed" }, ctx);
+    await executeTool(
+      tools,
+      "ai_generate_lore_keys",
+      { entryId: "lore_entry_1", keyTarget: "primary", summary: "seed" },
+      ctx,
+    );
 
-    const out = await tools.ai_generate_lore_keys.execute(
+    const out = await executeTool<CoauthorLoreBundleOutput>(
+      tools,
+      "ai_generate_lore_keys",
       { entryId: "lore_entry_1", appendMode: true, summary: "augment" },
       ctx,
     );
@@ -925,10 +1107,10 @@ describe("coauthor-tools: AI-delegation lore tools (CTX-L2b)", () => {
     const nullLookup = { lorebook: async () => null, entry: async () => null };
     const tools = buildCoauthorTools({ loreDelegate: mockDelegate({ input: null }), loreEntityLookup: nullLookup });
     await expect(
-      tools.ai_write_lore_entry.execute({ entryId: "ghost", instruction: "x", summary: "s" }, ctx),
+      executeTool(tools, "ai_write_lore_entry", { entryId: "ghost", instruction: "x", summary: "s" }, ctx),
     ).rejects.toThrow(/entry 'ghost' does not exist/);
     await expect(
-      tools.ai_generate_lore_keys.execute({ entryId: "ghost", summary: "s" }, ctx),
+      executeTool(tools, "ai_generate_lore_keys", { entryId: "ghost", summary: "s" }, ctx),
     ).rejects.toThrow(/entry 'ghost' does not exist/);
   });
 
@@ -937,27 +1119,27 @@ describe("coauthor-tools: AI-delegation lore tools (CTX-L2b)", () => {
     // persisted id that is not in the turn draft cannot be resolved.
     const tools = buildCoauthorTools({ loreDelegate: mockDelegate({ input: null }) });
     await expect(
-      tools.ai_write_lore_entry.execute({ entryId: "persisted_entry", instruction: "x", summary: "s" }, ctx),
+      executeTool(tools, "ai_write_lore_entry", { entryId: "persisted_entry", instruction: "x", summary: "s" }, ctx),
     ).rejects.toThrow(/no entity lookup is configured/);
   });
 
   test("delegation tools throw a clear error when no provider/delegate is configured", async () => {
     // No loreDelegate injected (the runtime omits it when no provider is set).
     const tools = buildCoauthorTools({ loreIdGen: deterministicIdGen() });
-    await tools.create_lorebook.execute({ name: "LB", summary: "s" }, ctx);
-    await tools.create_lore_entry.execute({ lorebookId: "lorebook_1", summary: "s" }, ctx);
+    await executeTool(tools, "create_lorebook", { name: "LB", summary: "s" }, ctx);
+    await executeTool(tools, "create_lore_entry", { lorebookId: "lorebook_1", summary: "s" }, ctx);
     await expect(
-      tools.ai_write_lore_entry.execute({ entryId: "lore_entry_1", instruction: "x", summary: "s" }, ctx),
+      executeTool(tools, "ai_write_lore_entry", { entryId: "lore_entry_1", instruction: "x", summary: "s" }, ctx),
     ).rejects.toThrow(/no provider is configured/);
     await expect(
-      tools.ai_generate_lore_keys.execute({ entryId: "lore_entry_1", summary: "s" }, ctx),
+      executeTool(tools, "ai_generate_lore_keys", { entryId: "lore_entry_1", summary: "s" }, ctx),
     ).rejects.toThrow(/no provider is configured/);
   });
 
   test("delegation tools are gated by toolSet alongside the other lore tools", () => {
     const on = buildCoauthorTools({
       toolSet: { create_lorebook: true, create_lore_entry: true, ai_write_lore_entry: true, ai_generate_lore_keys: true },
-    }) as unknown as Record<string, unknown>;
+    })
     expect(on.ai_write_lore_entry).toBeDefined();
     expect(on.ai_generate_lore_keys).toBeDefined();
     // set_lore_activation not enabled → absent; delegation tools only when toggled.
@@ -995,16 +1177,26 @@ describe("coauthor-tools: edit + add lore tools (CE-B1)", () => {
 
   test("edit_lore_entry on a turn-drafted entry patches fields, stays mode:create", async () => {
     const tools = buildCoauthorTools({ loreIdGen: deterministicIdGen() });
-    await tools.create_lorebook.execute({ name: "LB", summary: "s" }, ctx);
-    await tools.create_lore_entry.execute({ lorebookId: "lorebook_1", title: "T", summary: "s" }, ctx);
-    const out = await tools.edit_lore_entry.execute({ entryId: "lore_entry_1", title: "T2", logic: "and_all", summary: "s" }, ctx);
+    await executeTool(tools, "create_lorebook", { name: "LB", summary: "s" }, ctx);
+    await executeTool(tools, "create_lore_entry", { lorebookId: "lorebook_1", title: "T", summary: "s" }, ctx);
+    const out = await executeTool<CoauthorLoreBundleOutput>(
+      tools,
+      "edit_lore_entry",
+      { entryId: "lore_entry_1", title: "T2", logic: "and_all", summary: "s" },
+      ctx,
+    );
     expect(out.bundle.entries[0]).toMatchObject({ id: "lore_entry_1", title: "T2", logic: "and_all" });
     expect(out.bundle.entries[0]!.mode).toBeUndefined();
   });
 
   test("edit_lore_entry on a persisted entry imports it (mode:edit) and patches, preserving content/keys", async () => {
     const tools = buildCoauthorTools({ loreEntityLookup: lookup });
-    const out = await tools.edit_lore_entry.execute({ entryId: "le_p", title: "New", logic: "not_any", summary: "s" }, ctx);
+    const out = await executeTool<CoauthorLoreBundleOutput>(
+      tools,
+      "edit_lore_entry",
+      { entryId: "le_p", title: "New", logic: "not_any", summary: "s" },
+      ctx,
+    );
     const e = out.bundle.entries[0]!;
     expect(e).toMatchObject({ id: "le_p", title: "New", logic: "not_any", mode: "edit", parentMode: "persisted" });
     // Content + keys came from the import (edit_lore_entry does not touch them).
@@ -1014,14 +1206,24 @@ describe("coauthor-tools: edit + add lore tools (CE-B1)", () => {
 
   test("edit_lorebook on a persisted lorebook imports it and patches activation params", async () => {
     const tools = buildCoauthorTools({ loreEntityLookup: lookup });
-    const out = await tools.edit_lorebook.execute({ lorebookId: "lb_p", name: "Renamed", scanDepth: 3, summary: "s" }, ctx);
+    const out = await executeTool<CoauthorLoreBundleOutput>(
+      tools,
+      "edit_lorebook",
+      { lorebookId: "lb_p", name: "Renamed", scanDepth: 3, summary: "s" },
+      ctx,
+    );
     expect(out.bundle.lorebooks[0]).toMatchObject({ id: "lb_p", name: "Renamed", scanDepth: 3, mode: "edit" });
   });
 
   test("add_lore_entry to a turn-drafted lorebook creates a skeleton entry", async () => {
     const tools = buildCoauthorTools({ loreIdGen: deterministicIdGen() });
-    await tools.create_lorebook.execute({ name: "LB", summary: "s" }, ctx);
-    const out = await tools.add_lore_entry.execute({ lorebookId: "lorebook_1", title: "New", summary: "s" }, ctx);
+    await executeTool(tools, "create_lorebook", { name: "LB", summary: "s" }, ctx);
+    const out = await executeTool<CoauthorLoreBundleOutput>(
+      tools,
+      "add_lore_entry",
+      { lorebookId: "lorebook_1", title: "New", summary: "s" },
+      ctx,
+    );
     expect(out.bundle.entries[0]).toMatchObject({ id: "lore_entry_1", lorebookId: "lorebook_1", title: "New" });
     expect(out.bundle.entries[0]!.mode).toBeUndefined();
     expect(out.bundle.entries[0]!.content).toBe("");
@@ -1029,7 +1231,12 @@ describe("coauthor-tools: edit + add lore tools (CE-B1)", () => {
 
   test("add_lore_entry to a persisted lorebook validates the parent via the lookup", async () => {
     const tools = buildCoauthorTools({ loreIdGen: deterministicIdGen(), loreEntityLookup: lookup });
-    const out = await tools.add_lore_entry.execute({ lorebookId: "lb_p", title: "Extra", summary: "s" }, ctx);
+    const out = await executeTool<CoauthorLoreBundleOutput>(
+      tools,
+      "add_lore_entry",
+      { lorebookId: "lb_p", title: "Extra", summary: "s" },
+      ctx,
+    );
     expect(out.bundle.entries[0]).toMatchObject({ id: "lore_entry_1", lorebookId: "lb_p", title: "Extra" });
     // A create-style entry; the persisted parent is NOT imported (no edit badge)
     // and is explicitly marked as a verified external parent for review/apply.
@@ -1040,7 +1247,7 @@ describe("coauthor-tools: edit + add lore tools (CE-B1)", () => {
 
   test("add_lore_entry rejects an unknown parent", async () => {
     const tools = buildCoauthorTools({ loreEntityLookup: lookup });
-    await expect(tools.add_lore_entry.execute({ lorebookId: "ghost", summary: "s" }, ctx)).rejects.toThrow(
+    await expect(executeTool(tools, "add_lore_entry", { lorebookId: "ghost", summary: "s" }, ctx)).rejects.toThrow(
       /lorebook 'ghost' does not exist/,
     );
   });
@@ -1051,18 +1258,23 @@ describe("coauthor-tools: edit + add lore tools (CE-B1)", () => {
       loreEntityLookup: lookup,
       loreDelegate: async () => ({ keys: ["Vex"], secondaryKeys: [] }),
     });
-    const out = await tools.ai_generate_lore_keys.execute({ entryId: "le_p", summary: "s" }, ctx);
+    const out = await executeTool<CoauthorLoreBundleOutput>(
+      tools,
+      "ai_generate_lore_keys",
+      { entryId: "le_p", summary: "s" },
+      ctx,
+    );
     // The persisted entry was imported (mode:edit) then keys regenerated (replace).
     expect(out.bundle.entries[0]).toMatchObject({ id: "le_p", mode: "edit", parentMode: "persisted" });
     expect(out.bundle.entries[0]!.keys).toEqual(["Vex"]);
   });
 
   test("edit tools are gated by toolSet like the other lore tools", () => {
-    const on = buildCoauthorTools({ toolSet: { edit_lorebook: true, edit_lore_entry: true, add_lore_entry: true } }) as unknown as Record<string, unknown>;
+    const on = buildCoauthorTools({ toolSet: { edit_lorebook: true, edit_lore_entry: true, add_lore_entry: true } })
     expect(on.edit_lorebook).toBeDefined();
     expect(on.edit_lore_entry).toBeDefined();
     expect(on.add_lore_entry).toBeDefined();
-    const off = buildCoauthorTools({ toolSet: { create_lorebook: true } }) as unknown as Record<string, unknown>;
+    const off = buildCoauthorTools({ toolSet: { create_lorebook: true } })
     expect(off.edit_lorebook).toBeUndefined();
     expect(off.add_lore_entry).toBeUndefined();
   });
@@ -1090,10 +1302,7 @@ describe("coauthor-tools: set_tracker_template (CT-11)", () => {
 
   test("input schema is intent-only: { action, modeHint?, focusNotes?, summary }", () => {
     const tools = buildCoauthorTools();
-    const schema = tools.set_tracker_template.inputSchema as unknown as {
-      shape: Record<string, unknown>;
-      safeParse(value: unknown): { success: boolean };
-    };
+    const schema = coauthorToolInputSchema(tools, "set_tracker_template");
     expect(Object.keys(schema.shape).sort()).toEqual(["action", "focusNotes", "modeHint", "summary"]);
     expect(schema.safeParse({ summary: "s" }).success).toBe(false);
     expect(schema.safeParse({ action: "create", summary: "s" }).success).toBe(true);
@@ -1112,7 +1321,9 @@ describe("coauthor-tools: set_tracker_template (CT-11)", () => {
       },
     });
 
-    const out = await tools.set_tracker_template.execute(
+    const out = await executeTool<CoauthorTrackerTemplateOutput | string>(
+      tools,
+      "set_tracker_template",
       { action: "refine", modeHint: "goals", focusNotes: "Keep the chase tense.", summary: "Refined the chase tracker." },
       ctx,
     );
@@ -1136,22 +1347,27 @@ describe("coauthor-tools: set_tracker_template (CT-11)", () => {
       trackerDelegate: async () => { throw new Error("union validation failed at objective.state"); },
     });
 
-    const out = await tools.set_tracker_template.execute({ action: "create", summary: "s" }, ctx);
+    const out = await executeTool<CoauthorTrackerTemplateOutput | string>(
+      tools,
+      "set_tracker_template",
+      { action: "create", summary: "s" },
+      ctx,
+    );
 
     expect(out).toBe("set_tracker_template: tracker template generation failed: union validation failed at objective.state. Please tell the user and ask whether they want to try again.");
   });
 
   test("throws a clear configuration error when no tracker delegate is wired", async () => {
     const tools = buildCoauthorTools();
-    await expect(tools.set_tracker_template.execute({ action: "create", summary: "s" }, ctx)).rejects.toThrow(
+    await expect(executeTool(tools, "set_tracker_template", { action: "create", summary: "s" }, ctx)).rejects.toThrow(
       /tracker template generation is not configured/,
     );
   });
 
   test("gates the tool by toolSet like the other proposal tools", () => {
-    const on = buildCoauthorTools({ toolSet: { set_tracker_template: true } }) as unknown as Record<string, unknown>;
+    const on = buildCoauthorTools({ toolSet: { set_tracker_template: true } })
     expect(on.set_tracker_template).toBeDefined();
-    const off = buildCoauthorTools({ toolSet: { write_profile: true } }) as unknown as Record<string, unknown>;
+    const off = buildCoauthorTools({ toolSet: { write_profile: true } })
     expect(off.set_tracker_template).toBeUndefined();
   });
 

@@ -6,13 +6,17 @@ import { join } from "node:path";
 import { createStoreContainer, STORAGE_FOLDERS } from "@vibe-tavern/db";
 import { AssetService } from "../src/domain/asset/asset-service.js";
 import type { ProviderProfileService } from "../src/domain/providers/provider-profile-service.js";
-import { PROXY_MODE, type StoredProviderProfileRecord } from "@vibe-tavern/domain";
+import { PROXY_MODE } from "@vibe-tavern/domain";
 import {
 	resetProviderFetchFactory,
 	setProviderFetchFactory,
 	type ProviderFetch,
 } from "../src/domain/providers/provider-fetch-factory.js";
 import type { describeAttachments, resolveVisionDescribePrompt } from "../src/infrastructure/ai/vision-gate.js";
+import type { SessionRuntime } from "../src/runtime/session/session-runtime.js";
+import { makeProviderProfileRow } from "./copilot-test-builders.js";
+import { strictTestDouble } from "./strict-test-double.js";
+import { testFetch } from "./test-fetch-seam.js";
 
 const CHARS = STORAGE_FOLDERS.characters;
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
@@ -50,8 +54,7 @@ const VISION_DEPS = {
 	resolveVisionDescribePrompt: (async () => "MOCK_VISION_PROMPT") as typeof resolveVisionDescribePrompt,
 };
 
-const sentinelProviderFetch = (async () => new Response("unused")) as ProviderFetch;
-sentinelProviderFetch.preconnect = () => {};
+const sentinelProviderFetch = testFetch(async () => new Response("unused"));
 
 beforeEach(() => {
 	lastDescribeArgs = { count: 0, ids: [], visionModel: null, prompt: null, providerFetch: undefined };
@@ -65,7 +68,7 @@ afterEach(() => {
 
 // ─── Stub provider profile service ──────────────────────────────────────────
 function makeProfileService(opts: { visionModel?: string | null; active?: boolean } = {}): ProviderProfileService {
-	const profile = {
+	const profile = makeProviderProfileRow({
 		id: "prof_1",
 		name: "test",
 		providerPreset: "openai",
@@ -75,13 +78,21 @@ function makeProfileService(opts: { visionModel?: string | null; active?: boolea
 		visionModel: opts.visionModel !== undefined ? opts.visionModel : "vision-test",
 		proxyMode: PROXY_MODE.inherit,
 		proxyId: null,
-	} as unknown as StoredProviderProfileRecord;
-	return {
-		resolveActiveProviderProfile: async () => (opts.active === false ? null : profile),
-	} as unknown as ProviderProfileService;
+	});
+	return strictTestDouble<ProviderProfileService>(
+		{
+			resolveActiveProviderProfile: async () => (opts.active === false ? null : profile),
+		},
+		"ProviderProfileService (gallery-describe)",
+	);
 }
 
-const noopSession = {} as never;
+// Minimal sessionRuntime double — the describe paths don't call into it; any
+// unprovided member throws a labeled miss.
+const noopSession = strictTestDouble<SessionRuntime>(
+	{},
+	"CharacterAdapter/PersonaAdapter sessionRuntime (gallery describe)",
+);
 
 async function setup(opts: { visionModel?: string | null; active?: boolean } = {}) {
 	const { CharacterAdapter } = await import("../src/api/adapters/character-adapter.js");

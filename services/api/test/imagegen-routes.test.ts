@@ -40,6 +40,7 @@ import { ProviderExecutionError } from "../src/infrastructure/ai/provider-execut
 import type { StoredProviderProfileRecord } from "@vibe-tavern/domain";
 import { createImageGenRoutes } from "../src/api/routes/image-gen.js";
 import type { RuntimeApi } from "../src/api/contract/runtime-api.js";
+import { makeRuntimeApi } from "./routes-test-builders.js";
 import { createApp } from "../src/server/app-factory.js";
 import { openRouterImageGenFactory } from "../src/domain/imagegen/backends/openrouter.js";
 import { openAiImagesFactory } from "../src/domain/imagegen/backends/openai-images.js";
@@ -54,7 +55,10 @@ import {
   __snapshotImageGenRegistryForTests,
   registerImageGenBackend,
 } from "../src/domain/imagegen/imagegen-registry.js";
-import { PromptAssemblyService, type PromptAssemblyResolver } from "../src/domain/prompt/prompt-assembly-service.js";
+import { PromptAssemblyService } from "../src/domain/prompt/prompt-assembly-service.js";
+import { testFetch } from "./test-fetch-seam.js";
+import { makeProviderProfileRow } from "./copilot-test-builders.js";
+import { makeAssemblyResolver, makeFileStoreDouble } from "./insights-test-builders.js";
 
 // THE REGISTRY IS PROCESS-GLOBAL (mock.module gotcha applies to bun:test):
 // imagegen-registry.test.ts runs `__resetImageGenRegistryForTests()` in the
@@ -105,7 +109,12 @@ async function makeApp(
   await mkdir(assetsDir, { recursive: true });
   const stores = await createStoreContainer(join(dataRoot, "test.db"), dataRoot);
   const assetService = new AssetService(assetsDir, stores.content);
-  const adapter = new ImageGenAdapter(stores, assetService, transport, assistDeps);
+  const adapter = new ImageGenAdapter(
+    stores,
+    assetService,
+    transport === undefined ? undefined : testFetch(transport),
+    assistDeps,
+  );
   const app = createImageGenRoutes(adapter);
   // The production onError mounts in app-factory; surface the same DomainError
   // mapping here so 409 (set-name collision) / 400 (validation) pin their real
@@ -195,14 +204,17 @@ describe("image-gen routes — profile CRUD", () => {
   test("PATCH /api/image-gen/profiles/reorder requires mobile bearer auth before the route", async () => {
     let reorderCalled = false;
     const app = await createApp({
-      runtime: {
-        imageGen: {
-          reorderImageGenProfiles: async () => {
-            reorderCalled = true;
-            return [];
+      runtime: makeRuntimeApi(
+        {
+          imageGen: {
+            reorderImageGenProfiles: async () => {
+              reorderCalled = true;
+              return [];
+            },
           },
         },
-      } as unknown as RuntimeApi,
+        "RuntimeApi (imagegen-routes: auth gate)",
+      ),
       mobileAccessToken: "test-token",
       enforceMobileAuth: true,
     });
@@ -2907,7 +2919,7 @@ describe("image-gen routes — mode assembly (IG-14)", () => {
     // content and NONE of the image prompt (design: "The image prompt never
     // enters the RP prompt").
     const character = await scene.stores.characters.getById(scene.charId);
-    const resolver: PromptAssemblyResolver = {
+    const resolver = makeAssemblyResolver({
       getCharacter: async () => ({
         id: character!.id,
         name: character!.name,
@@ -2918,26 +2930,8 @@ describe("image-gen routes — mode assembly (IG-14)", () => {
         mesExample: null,
         postHistoryInstructions: null,
       }),
-      getPersona: async () => null,
-      getPromptPreset: async () => null,
-      listActiveLoreEntries: async () => ({ entries: [], overflowedLorebooks: [] }),
-      listRetrievedMemories: async () => [],
-      executeScripts: async () => ({
-        character: { personality: "", scenario: "" },
-        injectedMessages: [],
-        updatedScriptState: {},
-        errors: [],
-        scriptRuns: [],
-      }),
-      getToolInstructions: () => null,
-    };
-    const fileStore = {
-      dataRoot: "/mock",
-      resolvePath: (_folder: string, relativePath: string) => `/mock/${relativePath}`,
-      readJson: async <T>() => null as T,
-      writeJson: async () => {},
-      asyncWriteJson: async () => {},
-    };
+    });
+    const fileStore = makeFileStoreDouble();
     const assemblyService = new PromptAssemblyService(scene.stores, resolver, fileStore);
     const assembled = await assemblyService.assembleForChat({
       chatId: scene.chatId as ChatId,
@@ -2965,7 +2959,7 @@ describe("image-gen routes — mode assembly (IG-14)", () => {
     const assetId = gen.attachments[0]!.assetId;
 
     const character = await scene.stores.characters.getById(scene.charId);
-    const resolver: PromptAssemblyResolver = {
+    const resolver = makeAssemblyResolver({
       getCharacter: async () => ({
         id: character!.id,
         name: character!.name,
@@ -2976,26 +2970,8 @@ describe("image-gen routes — mode assembly (IG-14)", () => {
         mesExample: null,
         postHistoryInstructions: null,
       }),
-      getPersona: async () => null,
-      getPromptPreset: async () => null,
-      listActiveLoreEntries: async () => ({ entries: [], overflowedLorebooks: [] }),
-      listRetrievedMemories: async () => [],
-      executeScripts: async () => ({
-        character: { personality: "", scenario: "" },
-        injectedMessages: [],
-        updatedScriptState: {},
-        errors: [],
-        scriptRuns: [],
-      }),
-      getToolInstructions: () => null,
-    };
-    const fileStore = {
-      dataRoot: "/mock",
-      resolvePath: (_folder: string, relativePath: string) => `/mock/${relativePath}`,
-      readJson: async <T>() => null as T,
-      writeJson: async () => {},
-      asyncWriteJson: async () => {},
-    };
+    });
+    const fileStore = makeFileStoreDouble();
     const assemblyService = new PromptAssemblyService(scene.stores, resolver, fileStore);
     const assembleSerialized = async () =>
       JSON.stringify(
@@ -3431,7 +3407,7 @@ describe("image-gen routes — generate with ADetailer (IG-CF15/PG-4 v1)", () =>
    *  delivery shape; the bytes only need the PNG signature). */
   function txt2imgTransport(captured: { url?: string; init?: RequestInit }) {
     const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
-    return async (input: RequestInfo | URL, init?: RequestInit) => {
+    return async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
       captured.url = String(input);
       captured.init = init;
       return new Response(JSON.stringify({ images: [png.toString("base64")] }), { status: 200 });
@@ -4413,7 +4389,7 @@ describe("image-gen routes — run phases (MR-11 honest chip timeline)", () => {
   /** Full StoredProviderProfileRecord — the module-scope twin of the IG-15
    *  fixture (that one is describe-local; this block needs its own). */
   function makePhaseLlmProfile(): StoredProviderProfileRecord {
-    return {
+    return makeProviderProfileRow({
       id: "llm1",
       name: "Writer LLM",
       providerPreset: "openaiCompat",
@@ -4472,7 +4448,7 @@ describe("image-gen routes — run phases (MR-11 honest chip timeline)", () => {
       generationFormat: null,
       createdAt: "0",
       updatedAt: "0",
-    };
+    });
   }
   /** A gated transport: `dispatch` serves a call immediately; everything
    *  else parks until the test releases it by path. `waitFor` parks the

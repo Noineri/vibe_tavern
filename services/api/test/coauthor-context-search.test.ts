@@ -273,18 +273,32 @@ describe("context-search-session: skill channel (CE-D3)", () => {
   });
 
   test("skills are never scope-boosted even in active_first mode", async () => {
-    // A skill and the active character both match 'character'. The active
-    // character is boosted within its tier; the skill (global scope) is never
-    // boosted, so the active character ranks above the skill when both are in
-    // the same content tier.
-    const session = createContextSearchSession(makeStores(), defaultScope);
-    const results = await session.search("character");
+    // A skill and the active character both match 'northern' in body text (same
+    // tier). The active character is boosted within its tier; the skill stays
+    // global scope and ranks below the active character.
+    const stores = makeStores({
+      listSkills: async () => [
+        ...baseSkills(),
+        {
+          id: "fleet-craft",
+          name: "Fleet Craft",
+          description: "Author northern captain scenes.",
+          manifestPath: "fleet-craft/SKILL.md",
+          source: "builtin",
+        },
+      ],
+    });
+    const session = createContextSearchSession(stores, defaultScope);
+    const results = await session.search("northern", { scopeMode: "active_first" });
     const aria = results.find((r) => r.id === "ch_aria");
-    const skill = results.find((r) => r.type === "skill");
-    if (aria && skill) {
-      expect(results.indexOf(aria)).toBeLessThan(results.indexOf(skill));
-      expect(skill.scope).toBe("global");
+    const skill = results.find((r) => r.id === "fleet-craft");
+    expect(aria).toBeDefined();
+    expect(skill).toBeDefined();
+    if (!aria || !skill) {
+      throw new Error("Expected both active character ch_aria and skill fleet-craft in search results");
     }
+    expect(results.indexOf(aria)).toBeLessThan(results.indexOf(skill));
+    expect(skill.scope).toBe("global");
     session.dispose();
   });
 

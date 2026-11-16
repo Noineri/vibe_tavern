@@ -96,7 +96,7 @@ describe("createDb migration watermark (orphan-hash recovery)", () => {
     let db = await createDb(dbPath, first.folder);
     expect(probeExists(dbPath)).toBe(true);
     expect(maxCreatedAt(dbPath)).toBe(originalWhen);
-    (db as unknown as { $client: Database }).$client.close();
+    db.$client.close();
 
     // 2. Simulate the reconciliation: regenerate the journal with a NEW, higher
     //    `when` for the SAME migration content (identical hash). The DB still
@@ -124,7 +124,7 @@ describe("createDb migration watermark (orphan-hash recovery)", () => {
     let threw = false;
     try {
       db = await createDb(dbPath, reborn.folder);
-      (db as unknown as { $client: Database }).$client.close();
+      db.$client.close();
     } catch (e) {
       threw = true;
       console.error("[heal-wm] unexpected throw:", e);

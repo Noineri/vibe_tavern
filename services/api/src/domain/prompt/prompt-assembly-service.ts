@@ -81,6 +81,14 @@ export interface AssemblePromptForChatInput {
    * global default). This is the queue's per-job preset key (frozen at enqueue).
    */
   presetId?: PromptPresetId;
+  /** DMT-13 (director message tools): the ONE-SHOT request instruction for a
+   *  SINGLE directed regeneration (request_message_swipe Allow). Threaded
+   *  into the pipeline context for THIS assembly only — the pure pipeline
+   *  builds its budgeted `user` `in_chat` depth-1 layer from it (see
+   *  PromptAssemblyContext.requestInstruction). Request-local by
+   *  construction: an assembly input, NOT a persisted chat setting, never
+   *  inherited by a later generation. Absent/null/blank = unchanged output. */
+  requestInstruction?: string | null;
   /** LS-10: the ACTIVE provider profile's stored generation format (the
    *  format block in provider settings), threaded by the session runtime. The
    *  decision-(c) resolution applies — see resolveEffectiveGenerationFormat:
@@ -660,6 +668,11 @@ export class PromptAssemblyService {
       instructions: {
         toolInstructions: [promptPreset?.tools, this.resolver.getToolInstructions()].filter(Boolean).join("\n") || null,
       },
+      // DMT-13: the request-local one-shot instruction rides into the pure
+      // pipeline ONLY when this assembly was given one (non-blank) — the
+      // pipeline emits its depth-1 user layer from it and nothing else reads
+      // it. Absent key → byte-identical assembly to before DMT-13.
+      ...(input.requestInstruction?.trim() ? { requestInstruction: input.requestInstruction } : {}),
       config: {
         contextBudget: input.contextBudget ?? null,
         responseReserve: input.responseReserve ?? 0,

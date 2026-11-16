@@ -37,18 +37,27 @@ describe("buildLoreLayers", () => {
 
     const byId = new Map(result.layers.map((layer) => [layer.id, layer]));
     expect(byId.get("lore_lore_before_char")?.position).toBe("in_prompt");
+    expect(byId.get("lore_lore_before_char")?.subPosition).toBe(10);
+    expect(byId.get("lore_lore_after_char")?.position).toBe("in_prompt");
     expect(byId.get("lore_lore_after_char")?.subPosition).toBe(80);
+    expect(byId.get("lore_lore_top_an")?.position).toBe("in_prompt");
     expect(byId.get("lore_lore_top_an")?.subPosition).toBe(59.9);
+    expect(byId.get("lore_lore_bottom_an")?.position).toBe("in_prompt");
     expect(byId.get("lore_lore_bottom_an")?.subPosition).toBe(60.1);
+    expect(byId.get("lore_lore_before_examples")?.position).toBe("in_prompt");
     expect(byId.get("lore_lore_before_examples")?.subPosition).toBe(89.9);
+    expect(byId.get("lore_lore_after_examples")?.position).toBe("in_prompt");
     expect(byId.get("lore_lore_after_examples")?.subPosition).toBe(90.1);
     expect(byId.get("lore_lore_before_persona")?.position).toBe("in_prompt");
     expect(byId.get("lore_lore_before_persona")?.subPosition).toBe(19.9);
     expect(byId.get("lore_lore_after_persona")?.position).toBe("in_prompt");
     expect(byId.get("lore_lore_after_persona")?.subPosition).toBe(20.1);
+    expect(byId.get("lore_lore_at_depth")?.position).toBe("in_chat");
     expect(byId.get("lore_lore_at_depth")?.injectionDepth).toBe(3);
     expect(byId.get("lore_lore_outlet")?.position).toBe("hidden_system");
     expect(byId.get("lore_lore_before_prompt")?.position).toBe("before_prompt");
+    expect(byId.get("lore_lore_in_prompt")?.position).toBe("in_prompt");
+    expect(byId.get("lore_lore_in_prompt")?.subPosition).toBeUndefined();
     expect(byId.get("lore_lore_in_chat")?.position).toBe("in_chat");
     expect(byId.get("lore_lore_hidden_system")?.position).toBe("hidden_system");
   });

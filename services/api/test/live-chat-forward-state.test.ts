@@ -1,12 +1,28 @@
 import { describe, expect, it } from "bun:test";
 import { EventBus } from "@vibe-tavern/domain";
 import { LiveChatOrchestrator } from "../src/domain/chat/live-chat-orchestrator.js";
+import type { ChatApplicationService } from "../src/domain/chat/chat-application-service.js";
+import type { ProviderOrchestrator } from "../src/domain/providers/provider-orchestrator.js";
+import type { ChatRuntime } from "../src/runtime/session/session-runtime-chat.js";
+import { makeProviderProfileRow } from "./copilot-test-builders.js";
+import { strictTestDouble } from "./strict-test-double.js";
 
 function deferred() {
   let resolve: (() => void) | undefined;
   const promise = new Promise<void>((done) => { resolve = done; });
   return { promise, resolve: () => resolve?.() };
 }
+
+/** Required-but-unused orchestrator ctor deps (chatRuntime / chatApp /
+ *  providers — the forward-state join fires before any of them is touched:
+ *  the strategy throws before provider resolution and no prompt is built).
+ *  One strict double: every member access throws labeled
+ *  (objective-service-fixture.ts's unusedObjectiveDeps semantics through the
+ *  strictTestDouble seam) — the same loud failure class the old erasure
+ *  produced, with the real dep types and no cast. */
+const UNSET: ChatRuntime & ChatApplicationService & ProviderOrchestrator = strictTestDouble<
+  ChatRuntime & ChatApplicationService & ProviderOrchestrator
+>({}, "LiveChatOrchestrator unset deps (live-chat-forward-state)");
 
 describe("LiveChatOrchestrator forward-state prompt boundary", () => {
   it("joins the preceding forward-state job before resolving the provider or preparing a send", async () => {
@@ -16,9 +32,9 @@ describe("LiveChatOrchestrator forward-state prompt boundary", () => {
     let strategyCalls = 0;
 
     const orchestrator = new LiveChatOrchestrator(
-      null as never,
-      null as never,
-      null as never,
+      UNSET,
+      UNSET,
+      UNSET,
       new EventBus(),
       async () => {
         strategyCalls += 1;
@@ -35,7 +51,7 @@ describe("LiveChatOrchestrator forward-state prompt boundary", () => {
     const sending = orchestrator.sendMessage({
       chatId: "chat_1",
       content: "Next turn",
-      profile: {} as never,
+      profile: makeProviderProfileRow(),
       model: "model_1",
     });
     await Promise.resolve();
@@ -55,9 +71,9 @@ describe("LiveChatOrchestrator forward-state prompt boundary", () => {
     let strategyCalls = 0;
 
     const orchestrator = new LiveChatOrchestrator(
-      null as never,
-      null as never,
-      null as never,
+      UNSET,
+      UNSET,
+      UNSET,
       new EventBus(),
       async () => {
         strategyCalls += 1;
@@ -69,7 +85,7 @@ describe("LiveChatOrchestrator forward-state prompt boundary", () => {
     const sending = orchestrator.sendMessage({
       chatId: "chat_1",
       content: "Cancelled turn",
-      profile: {} as never,
+      profile: makeProviderProfileRow(),
       model: "model_1",
       signal: controller.signal,
     });

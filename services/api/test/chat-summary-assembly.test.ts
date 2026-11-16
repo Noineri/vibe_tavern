@@ -1,19 +1,31 @@
 import { describe, expect, it } from "bun:test";
 import type { StoreContainer } from "@vibe-tavern/db";
 import { setTokenCountFn } from "@vibe-tavern/prompt-pipeline";
-import { normalizeInsightsConfig, normalizeObjectiveState, type AssemblePromptResponse, type ChatBranchId, type ChatId } from "@vibe-tavern/domain";
-import { PromptAssemblyService, type PromptAssemblyResolver } from "../src/domain/prompt/prompt-assembly-service.js";
+import { brandId, normalizeInsightsConfig, normalizeObjectiveState, type AssemblePromptResponse, type ChatBranchId, type ChatId } from "@vibe-tavern/domain";
+import { PromptAssemblyService } from "../src/domain/prompt/prompt-assembly-service.js";
 import { ChatLifecycleRuntime, type ChatLifecycleRuntimeDeps } from "../src/runtime/session/session-runtime-chat-lifecycle.js";
 import { SessionRuntime } from "../src/runtime/session/session-runtime.js";
 import type { nonstreamingProviderExecute } from "../src/infrastructure/ai/nonstreaming-provider-executor.js";
 import { ChatSummaryService, withSummaryAttachmentsAsText, withSummaryPromptAsFinalUserMessage } from "../src/domain/chat/chat-summary-service.js";
+import type { ProviderProfileService } from "../src/domain/providers/provider-profile-service.js";
 import { resolveSummaryPrompt } from "../src/domain/prompt/summary-prompt.js";
 import { createStoreContainer } from "@vibe-tavern/db";
 import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { Attachment } from "@vibe-tavern/domain";
-import type { ProviderProfileService } from "../src/domain/providers/provider-profile-service.js";
+import { strictTestDouble } from "./strict-test-double.js";
+import {
+  makeActiveLoreEntry,
+  makeAssemblyPreset,
+  makeAssemblyResolver,
+  makeChatBranchRow,
+  makeChatRow,
+  makeChatSummaryRow,
+  makeFileStoreDouble,
+  makeMessageRow,
+} from "./insights-test-builders.js";
+import { makePersonaRow, makeProviderProfileRow, makeProviderProfilesFixture } from "./copilot-test-builders.js";
 
 let capturedPrompt: AssemblePromptResponse | null = null;
 // SUM-2: capture execute sampler overrides + ranged-assemble contextBudget
@@ -21,18 +33,38 @@ let capturedPrompt: AssemblePromptResponse | null = null;
 let capturedExecuteArgs: { overrideMaxTokens?: number; overrideTemperature?: number } | null = null;
 let capturedAssembleRangedArgs: { contextBudget?: number | null } | null = null;
 
-const chat = {
+const chat = makeChatRow({
   id: "chat_1",
   activeBranchId: "branch_1",
   insightsConfig: normalizeInsightsConfig({}),
   insightsObjectiveState: normalizeObjectiveState({}),
-};
+});
 
 function assembled(prompt: AssemblePromptResponse = {
   layers: [],
   finalPayload: { messages: [] },
-}): { branchId: ChatBranchId; prompt: AssemblePromptResponse; promptTraceDraft: never } {
-  return { branchId: "branch_1" as ChatBranchId, prompt, promptTraceDraft: undefined as never };
+}): Awaited<ReturnType<ChatLifecycleRuntimeDeps["assemblePrompt"]>> {
+  return {
+    branchId: "branch_1" as ChatBranchId,
+    prompt,
+    // The real PromptTraceDraft the assemblePrompt dep contract carries (the
+    // 14h chat-mode-strategy shape) — the summary paths read `.prompt` only.
+    promptTraceDraft: {
+      chatId: brandId<ChatId>("chat_1"),
+      branchId: brandId<ChatBranchId>("branch_1"),
+      model: "",
+      assembledLayers: [],
+      tokenAccounting: {},
+      activatedLoreEntries: [],
+      activatedLoreDetail: [],
+      scriptInjections: [],
+      retrievedMemories: [],
+      finalPayload: {},
+      latencyMs: 0,
+      presetId: null,
+      presetName: null,
+    },
+  };
 }
 
 function makeLifecycle(
@@ -40,16 +72,22 @@ function makeLifecycle(
   messages: Array<{ id: string; position: number }> = [],
   summaries: Array<{ id: string; label?: string; content: string; summarizedFrom: number; summarizedTo: number }> = [],
 ) {
-  const deps = {
-    stores: {
-      chats: { getById: async () => chat },
-      messages: { getMessages: async () => messages },
-      // SPC-3: assembleRangedSummaryPrompt now loads the preceding chain via
-      // listByChatBranch. Default empty → no priors (byte-equivalent).
-      chatSummaries: { listByChatBranch: async () => summaries },
+  const deps = strictTestDouble<ChatLifecycleRuntimeDeps>(
+    {
+      stores: strictTestDouble<StoreContainer>(
+        {
+          chats: { getById: async () => chat },
+          messages: { getMessages: async () => messages.map((m) => makeMessageRow(m)) },
+          // SPC-3: assembleRangedSummaryPrompt now loads the preceding chain via
+          // listByChatBranch. Default empty → no priors (byte-equivalent).
+          chatSummaries: { listByChatBranch: async () => summaries.map((s) => makeChatSummaryRow(s)) },
+        },
+        "ChatLifecycleRuntime stores",
+      ),
+      assemblePrompt,
     },
-    assemblePrompt,
-  } as unknown as ChatLifecycleRuntimeDeps;
+    "ChatLifecycleRuntime deps",
+  );
   return new ChatLifecycleRuntime(deps);
 }
 
@@ -329,43 +367,56 @@ describe("SessionRuntime summary assembly", () => {
 });
 
 function makeSummaryService() {
-  const lifecycle = {
-    assembleSummaryPrompt: async () => assembled(summaryPrompt),
-    assembleRangedSummaryPrompt: async (input: { contextBudget?: number | null }) => {
-      capturedAssembleRangedArgs = { contextBudget: input.contextBudget };
-      return assembled(summaryPrompt);
+  const lifecycle = strictTestDouble<ChatLifecycleRuntime>(
+    {
+      assembleSummaryPrompt: async () => assembled(summaryPrompt),
+      assembleRangedSummaryPrompt: async (input: { contextBudget?: number | null }) => {
+        capturedAssembleRangedArgs = { contextBudget: input.contextBudget };
+        return assembled(summaryPrompt);
+      },
+      updateChatSummary: async () => ({}),
     },
-    updateChatSummary: async () => ({}),
-  };
-  const stores = {
-    chatSummaries: {
-      getById: async () => null,
-      create: async (input: Record<string, unknown>) => ({ id: "summary_1", ...input }),
-      update: async () => null,
+    "ChatSummaryService chatLifecycle",
+  );
+  const stores = strictTestDouble<StoreContainer>(
+    {
+      chatSummaries: {
+        getById: async () => null,
+        create: async (input) => makeChatSummaryRow({ id: "summary_1", ...input }),
+        update: async () => makeChatSummaryRow(),
+      },
     },
-  } as unknown as StoreContainer;
-  const profiles = {
-    getProviderProfile: async () => ({
-      id: "profile_1",
-      providerPreset: "openai",
-      apiKey: "test-key",
-      defaultModel: "summary-model",
-      bindPerModel: false,
-      // SUM-2: profile carries a contextBudget that ranged summary must NOT inherit.
-      contextBudget: 1048576,
-    }),
-    getProviderModelSettings: async () => null,
-  };
-  const runtime = {
-    chatLifecycle: lifecycle,
-    buildSummaryResponse: async () => ({}),
-  } as unknown as SessionRuntime;
+    "ChatSummaryService stores",
+  );
+  const profiles = strictTestDouble<ProviderProfileService>(
+    {
+      getProviderProfile: async () =>
+        makeProviderProfileRow({
+          id: "profile_1",
+          providerPreset: "openai",
+          apiKey: "test-key",
+          defaultModel: "summary-model",
+          bindPerModel: false,
+          // SUM-2: profile carries a contextBudget that ranged summary must NOT inherit.
+          contextBudget: 1048576,
+        }),
+      getProviderModelSettings: async () => null,
+    },
+    "ChatSummaryService providerProfiles (summary reshape)",
+  );
+  const runtime = strictTestDouble<SessionRuntime>(
+    {
+      chatLifecycle: lifecycle,
+      buildSummaryResponse: async () => ({ summaries: [] }),
+    },
+    "ChatSummaryService sessionRuntime",
+  );
   const execute: typeof nonstreamingProviderExecute = async ({ prompt, overrideMaxTokens, overrideTemperature }) => {
     capturedPrompt = prompt;
     capturedExecuteArgs = { overrideMaxTokens, overrideTemperature };
     return { text: "A concise summary." } as Awaited<ReturnType<typeof nonstreamingProviderExecute>>;
   };
-  return new ChatSummaryService(stores, runtime, profiles as never, null, execute);
+  return new ChatSummaryService(stores, runtime, profiles, null, execute);
 }
 
 describe("PromptAssemblyService summary preparation", () => {
@@ -378,32 +429,50 @@ describe("PromptAssemblyService summary preparation", () => {
     ];
     let summaryLoads = 0;
     let scriptCalled = false;
-    const stores = {
-      chats: {
-        getById: async () => ({ id: "chat_1", characterId: "char_1", personaId: "persona_1", promptPresetId: "preset_1", activeBranchId: "branch_1", messageHistoryLimit: 0, insightsConfig: normalizeInsightsConfig({}), insightsObjectiveState: normalizeObjectiveState({}) }),
-        getBranches: async () => [{ id: "branch_1" }],
+    const stores = strictTestDouble<StoreContainer>(
+      {
+        chats: {
+          getById: async () => makeChatRow({ id: "chat_1", characterId: "char_1", personaId: "persona_1", promptPresetId: "preset_1", activeBranchId: "branch_1", messageHistoryLimit: 0, insightsConfig: normalizeInsightsConfig({}), insightsObjectiveState: normalizeObjectiveState({}) }),
+          getBranches: async () => [makeChatBranchRow({ id: "branch_1" })],
+        },
+        messages: { getMessages: async () => messages.map((m) => makeMessageRow(m)) },
+        personas: { listAll: async () => [makePersonaRow("persona_1", { defaultForNewChats: true })] },
+        presets: { listAll: async () => [] },
+        chatSummaries: { listByChatBranch: async () => { summaryLoads += 1; return []; } },
+        characterAssets: { listByCharacter: async () => [] },
+        diceRolls: { getRollsForMessages: async () => new Map() },
+        experiences: { getAttachmentsForMessages: async () => new Map() },
       },
-      messages: { getMessages: async () => messages },
-      personas: { listAll: async () => [{ id: "persona_1", defaultForNewChats: true }] },
-      presets: { listAll: async () => [] },
-      chatSummaries: { listByChatBranch: async () => { summaryLoads += 1; return []; } },
-      characterAssets: { listByCharacter: async () => [] },
-      diceRolls: { getRollsForMessages: async () => new Map() },
-      experiences: { getAttachmentsForMessages: async () => new Map() },
-    } as unknown as StoreContainer;
-    const resolver: PromptAssemblyResolver = {
+      "PromptAssemblyService stores (summary preparation)",
+    );
+    const resolver = makeAssemblyResolver({
       getCharacter: async () => ({ id: "char_1", name: "Nora", description: "character words that are excluded from the summary output", personality: null, scenario: null }),
       getPersona: async () => ({ id: "persona_1", name: "Alex", description: "persona words that are excluded from the summary output" }),
-      getPromptPreset: async () => ({ id: "preset_1", name: "P", text: "preset words that are excluded from the summary output", summary: "Summarize this history.", jailbreak: "jailbreak words that are excluded from the summary output", tools: "", prefill: "", authorsNote: "", authorsNoteDepth: 0 }),
-      listActiveLoreEntries: async () => ({ entries: [{ id: "lore_1", title: "Lore", content: "lore words that are excluded from the summary output", priority: 1 }], overflowedLorebooks: [] }),
-      listRetrievedMemories: async () => [],
+      getPromptPreset: async () => makeAssemblyPreset({
+        id: "preset_1",
+        name: "P",
+        text: "preset words that are excluded from the summary output",
+        summary: "Summarize this history.",
+        jailbreak: "jailbreak words that are excluded from the summary output",
+        authorsNoteDepth: 0,
+      }),
+      listActiveLoreEntries: async () => ({
+        entries: [
+          makeActiveLoreEntry({
+            title: "Lore",
+            content: "lore words that are excluded from the summary output",
+            priority: 1,
+          }),
+        ],
+        overflowedLorebooks: [],
+        outletEntries: {},
+      }),
       executeScripts: async () => {
         scriptCalled = true;
         return { personality: "", scenario: "", injectedMessages: [], errors: [], scriptRuns: [] };
       },
-      getToolInstructions: () => null,
-    };
-    const fileStore = { dataRoot: "/mock", resolvePath: () => "/mock", readJson: async <T>() => null as T, writeJson: async () => {}, asyncWriteJson: async () => {} };
+    });
+    const fileStore = makeFileStoreDouble({ resolvePath: () => "/mock" });
     setTokenCountFn((text) => text.trim() ? text.trim().split(/\s+/).length : 0);
     try {
       const service = new PromptAssemblyService(stores, resolver, fileStore);
@@ -660,10 +729,9 @@ describe("ChatSummaryService attachment text at the executor boundary (CA-1c2)",
         await stores.messages.addMessage({
           chatId: activeChat.id, branchId: activeChat.activeBranchId, role: "assistant", authorType: "character", content: "Understood",
         });
-        const profiles = {
-          getProviderProfile: async () => ({ id: "profile_1", providerPreset: "openai", defaultModel: "summary-model", bindPerModel: false }),
-          getProviderModelSettings: async () => null,
-        } as unknown as ProviderProfileService;
+        const profiles = makeProviderProfilesFixture({
+          getProviderProfile: async () => makeProviderProfileRow({ id: "profile_1", providerPreset: "openai", defaultModel: "summary-model", bindPerModel: false }),
+        });
         const calls: Array<Parameters<typeof nonstreamingProviderExecute>[0]> = [];
         const execute: typeof nonstreamingProviderExecute = async (input) => {
           calls.push(input);

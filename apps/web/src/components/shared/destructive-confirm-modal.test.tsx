@@ -16,7 +16,6 @@ import { describe, expect, mock, test } from "bun:test";
 
 import { useDomEnv } from "../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
-import type { ReactNode } from "react";
 
 useDomEnv();
 
@@ -108,7 +107,8 @@ describe("DestructiveConfirmModal characterization (destructive default)", () =>
     const onConfirm = mock();
     useCharacterStore.getState().setConfirmDestroy({
       title: "t-title",
-      body: "t-body" as unknown as ReactNode,
+      // A string IS a ReactNode — the erased cast was pure noise (the 7a drop).
+      body: "t-body",
       confirmLabel: "t-confirm",
       onConfirm: () => void onConfirm(),
     });
@@ -132,7 +132,8 @@ describe("DestructiveConfirmModal characterization (destructive default)", () =>
     const onConfirm = mock();
     useCharacterStore.getState().setConfirmDestroy({
       title: "t-title",
-      body: "t-body" as unknown as ReactNode,
+      // A string IS a ReactNode — the erased cast was pure noise (the 7a drop).
+      body: "t-body",
       confirmLabel: "t-confirm",
       onConfirm: () => void onConfirm(),
     });
@@ -175,7 +176,8 @@ describe("DestructiveConfirmModal calm tone (SC-21 fork confirm)", () => {
     const onSecondary = mock();
     useCharacterStore.getState().setConfirmDestroy({
       title: "t-title",
-      body: "t-body" as unknown as ReactNode,
+      // A string IS a ReactNode — the erased cast was pure noise (the 7a drop).
+      body: "t-body",
       confirmLabel: "t-with",
       secondaryLabel: "t-plain",
       onSecondary: () => void onSecondary(),

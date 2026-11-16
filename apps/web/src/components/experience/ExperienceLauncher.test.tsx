@@ -26,7 +26,7 @@
  * 12. endgame restart pair replaces the primary for terminal sessions (Б3);
  *     the in-session settings entry is wired only for ACTIVE matches (Б4)
  */
-import { describe, it, expect, mock, beforeEach, afterEach } from "bun:test";
+import { describe, it, expect, mock, beforeEach, afterEach, jest } from "bun:test";
 import { useDomEnv } from "../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 import { installSnapshotStoreSeam } from "../../../test/snapshot-store-seam.js";
@@ -286,11 +286,15 @@ mock.module("./ExperienceModal.js", () => ({
   },
 }));
 
-// Mock openExperienceDetachedWindow.
+// Mock openExperienceDetachedWindow while capturing the constructed descriptor.
 let detachResult: Window | null = null;
+let capturedDetachDescriptor: unknown = null;
 mock.module("./ExperienceDetachedWindow.js", () => ({
   ...realDetached,
-  openExperienceDetachedWindow: mock(() => detachResult),
+  openExperienceDetachedWindow: mock((descriptor: unknown) => {
+    capturedDetachDescriptor = descriptor;
+    return detachResult;
+  }),
 }));
 
 // ─── experience-api client mock (RM-10 realtime probe) ─────────────────────
@@ -366,6 +370,7 @@ beforeEach(() => {
   snapshotBranch = { id: BRANCH_ID };
   mobileOverride = false;
   detachResult = null;
+  capturedDetachDescriptor = null;
   modalProps = {};
   setupOnReady = null;
   roundConfigCalls.length = 0;
@@ -738,11 +743,23 @@ describe("ExperienceLauncher — LB-10 Option C: effect runner lifetime", () => 
       effects: [{ id: "eff_t", kind: "timer", status: "pending" }],
       modalOpen: false,
     });
-    render(<ExperienceLauncher />);
-    await act(async () => {
-      await new Promise((r) => setTimeout(r, TIMER_RESYNC_INTERVAL_MS + 150));
-    });
-    expect(storeMocks.rehydrate.mock.calls.length).toBeGreaterThanOrEqual(1);
+    // Deterministic clock (owner ruling 2026-11-12, TQ12-F04): the resync
+    // interval is production-paced (2s) — advancing the fake clock proves the
+    // poll fires without 2.15s of real wall clock. Real timers return in the
+    // finally (the TQ-8b shell :3052 / ExperiencePlayground :2388 idiom).
+    jest.useFakeTimers();
+    try {
+      render(<ExperienceLauncher />);
+      await act(async () => {
+        jest.advanceTimersByTime(0);
+      });
+      await act(async () => {
+        jest.advanceTimersByTime(TIMER_RESYNC_INTERVAL_MS + 150);
+      });
+      expect(storeMocks.rehydrate.mock.calls.length).toBeGreaterThanOrEqual(1);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });
 
@@ -905,9 +922,29 @@ describe("ExperienceLauncher — detach", () => {
 
   it("successful detach closes modal and marks detached", () => {
     detachResult = {} as Window;
-    setScopeState(SCOPE_KEY, { config: makeConfig(), session: makeSession(), modalOpen: true });
+    const pinnedView = { revision: 7, status: "active", state: { turn: 3 }, actions: [] };
+    setScopeState(SCOPE_KEY, {
+      config: makeConfig(),
+      session: makeSession({
+        sessionId: "sess_detach",
+        visualSource: "<div id='pinned'>hero</div>",
+        revision: 7,
+        view: pinnedView,
+        manifest: { name: "Hearts" },
+      }),
+      modalOpen: true,
+    });
     render(<ExperienceLauncher />);
     fireEvent.click(document.querySelector("[data-testid='modal-detach']")!);
+    expect(capturedDetachDescriptor).toEqual({
+      chatId: CHAT_ID,
+      branchId: BRANCH_ID,
+      sessionId: "sess_detach",
+      title: "Hearts",
+      visualSource: "<div id='pinned'>hero</div>",
+      initialRevision: 7,
+      initialView: pinnedView,
+    });
     expect(storeMocks.closeModal).toHaveBeenCalledTimes(1);
     expect(storeMocks.setDetached).toHaveBeenCalledWith(true);
   });
@@ -919,20 +956,30 @@ describe("ExperienceLauncher — branch switch", () => {
     setScopeState(SCOPE_KEY, { config: makeConfig(), session: makeSession({ sessionId: "sess_A" }) });
     const BRANCH2 = JSON.stringify([CHAT_ID, "branch_2"]);
     setScopeState(BRANCH2, { config: makeConfig(), session: makeSession({ sessionId: "sess_B" }) });
-    const { getByTestId, rerender } = render(<ExperienceLauncher />);
+    const { getByTestId, queryByTestId, rerender } = render(<ExperienceLauncher />);
     // Open the modal on branch 1.
     fireEvent.click(getByTestId("experience-launcher-pill"));
     await act(async () => {
       fireEvent.click(getByTestId("experience-launcher-primary"));
     });
     expect(storeMocks.openModal).toHaveBeenCalledTimes(1);
-    // Switch to branch 2 — local surfaces reset.
+    expect(getByTestId("modal-session-id").textContent).toBe("sess_A");
+    // Switch to branch 2 — local surfaces reset and branch 2's closed modal
+    // no longer shows branch 1's session.
     snapshotBranch = { id: "branch_2" };
     act(() => {
       rerender(<ExperienceLauncher />);
     });
     // setScope called for the new branch.
     expect(storeMocks.setScope).toHaveBeenCalledWith(CHAT_ID, "branch_2");
+    expect(queryByTestId("experience-modal")).toBeNull();
+    // Opening branch 2 renders branch 2's own session (`sess_B`), not `sess_A`.
+    fireEvent.click(getByTestId("experience-launcher-pill"));
+    await act(async () => {
+      fireEvent.click(getByTestId("experience-launcher-primary"));
+    });
+    expect(getByTestId("modal-session-id").textContent).toBe("sess_B");
+    expect(modalProps.sessionId).toBe("sess_B");
   });
 });
 

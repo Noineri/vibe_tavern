@@ -18,7 +18,7 @@
  * a per-test flippable mock.
  */
 import { describe, test, expect, beforeAll, afterEach, beforeEach, mock } from "bun:test";
-import { normalizeInsightsConfig, normalizeObjectiveState, CHAT_MODE } from "@vibe-tavern/domain";
+import { CHAT_MODE } from "@vibe-tavern/domain";
 import type { ReactNode } from "react";
 import type { AgentKindSettingsWire } from "@vibe-tavern/api-contracts";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
@@ -30,11 +30,11 @@ import {
   readPendingVariantAttachments,
   useSidechatVariantAttachmentsStore,
 } from "../../stores/sidechat-variant-attachments-store.js";
-import type { AppCharacter, AppMessage, AppSnapshot, AppPersona } from "../../api/types.js";
-import { type ChatId, type MessageVariantId } from "@vibe-tavern/domain";
+import type { AppMessage, AppSnapshot } from "../../api/types.js";
+import { type ChatId } from "@vibe-tavern/domain";
 import { useDomEnv } from "../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
-import { wireUiSettings } from "../../../test/wire-fixtures.js";
+import { wireBranch, wireChat, wireChatListItem, wireCharacter, wireMessage, wirePersona, wireUiSettings, wireVariant } from "../../../test/wire-fixtures.js";
 
 // failOnNetwork: copied from message-ai-editor-controls.test.tsx — the bubble
 // must never reach the live API port from a unit test.
@@ -104,11 +104,13 @@ let fireEvent: typeof import("@testing-library/react").fireEvent;
 beforeAll(async () => {
   if (typeof window !== "undefined") {
     if (!window.matchMedia) {
-      window.matchMedia = (q: string) => ({
+      // Member-for-member MediaQueryList literal (the 7a annotation shape) —
+      // no erasure needed: the literal satisfies the interface.
+      window.matchMedia = (q: string): MediaQueryList => ({
         matches: false, media: q, onchange: null,
         addEventListener: NOOP, removeEventListener: NOOP,
         addListener: NOOP, removeListener: NOOP, dispatchEvent: () => false,
-      }) as unknown as MediaQueryList;
+      });
     }
     if (typeof (globalThis as { ResizeObserver?: unknown }).ResizeObserver === "undefined") {
       (globalThis as { ResizeObserver?: unknown }).ResizeObserver = class {
@@ -123,52 +125,40 @@ beforeAll(async () => {
 });
 
 interface VariantSeed {
-  id: string;
   variantIndex: number;
   isSelected: boolean;
 }
 
 function makeAssistantMessage(id: string, variants: VariantSeed[], selectedVariantIndex: number): AppMessage {
-  return {
-    id,
-    branchId: "b1",
+  // The seeds' variant ids follow wireVariant's own `${messageId}-v${index}`
+  // convention, so the minted ids are the values the pins assert.
+  return wireMessage(id, {
     role: "assistant",
     content: "msg",
-    createdAt: "2026-01-01T00:00:00.000Z",
-    updatedAt: "2026-01-01T00:00:00.000Z",
-    variants: variants.map((v) => ({
-      id: v.id as MessageVariantId,
-      messageId: id,
-      variantIndex: v.variantIndex,
-      content: `variant ${v.variantIndex}`,
-      isSelected: v.isSelected,
-    })),
+    variants: variants.map((v) =>
+      wireVariant(id, v.variantIndex, { content: `variant ${v.variantIndex}`, isSelected: v.isSelected }),
+    ),
     selectedVariantIndex,
-    modelId: null,
-  } as unknown as AppMessage;
+  });
 }
 
 function makeUserMessage(id: string): AppMessage {
-  return {
-    id, branchId: "b1", role: "user", content: "msg",
-    createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z",
-    variants: [], selectedVariantIndex: null, modelId: null,
-  } as unknown as AppMessage;
+  return wireMessage(id, { role: "user", content: "msg" });
 }
 
 function seed(messages: AppMessage[], mode: "rp" | "coauthor"): AppSnapshot {
   return {
-    chats: [{ id: "chat-1", title: "Chat", characterId: "c1", mode, messageCount: messages.length, updatedAt: "2026-01-01T00:00:00.000Z" }],
+    chats: [wireChatListItem({ mode, messageCount: messages.length })],
     allCharacters: [],
-    activeChat: { id: "chat-1", title: "Chat", characterId: "c1", mode, insightsConfig: normalizeInsightsConfig({}), insightsObjectiveState: normalizeObjectiveState({}) } as unknown as AppSnapshot["activeChat"],
-    activeBranch: { id: "b1", chatId: "chat-1", label: "main" } as unknown as AppSnapshot["activeBranch"],
+    activeChat: wireChat({ mode }),
+    activeBranch: wireBranch(),
     branches: [],
     messages,
     summaries: [],
     promptTrace: null,
-    character: { id: "c1", name: "Char c1", avatarExt: null, avatarAssetId: null, avatarCropJson: null } as unknown as AppCharacter,
-    persona: { id: "p1", name: "Persona", avatarExt: null, avatarAssetId: null, avatarCropJson: null } as unknown as AppPersona,
-  } as unknown as AppSnapshot;
+    character: wireCharacter({ id: "c1", name: "Char c1" }),
+    persona: wirePersona({ id: "p1", name: "Persona" }),
+  };
 }
 
 function seedBootstrap(agentKindSettings: Record<string, AgentKindSettingsWire>): void {
@@ -202,11 +192,11 @@ function servedSettings(): Record<string, AgentKindSettingsWire> {
 
 const CHAT = "chat-1";
 const TRIGGER = '[data-testid="discuss-sidechat-trigger"]';
-const SINGLE = [{ id: "m1-v0", variantIndex: 0, isSelected: true }];
+const SINGLE = [{ variantIndex: 0, isSelected: true }];
 const TRIPLE = [
-  { id: "m1-v0", variantIndex: 0, isSelected: false },
-  { id: "m1-v1", variantIndex: 1, isSelected: true },
-  { id: "m1-v2", variantIndex: 2, isSelected: false },
+  { variantIndex: 0, isSelected: false },
+  { variantIndex: 1, isSelected: true },
+  { variantIndex: 2, isSelected: false },
 ];
 
 beforeEach(() => {

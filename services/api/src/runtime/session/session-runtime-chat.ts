@@ -614,6 +614,15 @@ export class ChatRuntime {
   async assemblePromptPreview(
     chatId: ChatId,
     options: { excludeMessageId?: MessageId; model: string; contextBudget?: number | null; responseReserve?: number; presetId?: PromptPresetId;
+      /** DMT-13: the one-shot request instruction for a SINGLE directed
+       *  regeneration (director message tools). Forwarded into the assembly
+       *  options → pure pipeline, which builds its budgeted `user` in_chat
+       *  depth-1 layer; the assembled draft (this pending trace) therefore
+       *  records the exact layer the provider payload rode. Absent/null/blank
+       *  = unchanged behavior; request-local — never persisted as chat state,
+       *  and the pending trace is consumed at append (or discarded on
+       *  failure), so no later generation inherits it. */
+      requestInstruction?: string | null;
       /** CPF-2b: create the pending prompt trace even without
        *  `excludeMessageId`. The continue-fallback assembly keeps the target
        *  message IN the history, so it passes no exclusion — yet that request
@@ -630,6 +639,7 @@ export class ChatRuntime {
       contextBudget: options.contextBudget,
       responseReserve: options.responseReserve,
       presetId: options.presetId,
+      requestInstruction: options.requestInstruction,
     });
     if (options.excludeMessageId || options.setPendingTrace) {
       this.pendingPromptTraceByChat.set(chatId, {

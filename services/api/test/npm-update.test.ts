@@ -11,6 +11,7 @@ import { installPackageVersion, isVersionPublished, packageSpec } from "../src/d
 
 const servers: Array<{ stop: (force?: boolean) => void }> = [];
 const previousBase = process.env.VT_NPM_REGISTRY_BASE;
+const previousBunConfigRegistry = process.env.BUN_CONFIG_REGISTRY;
 
 function startRegistry(handler: (req: Request) => Response | Promise<Response>): string {
 	const server = Bun.serve({ port: 0, fetch: handler });
@@ -22,7 +23,8 @@ afterEach(() => {
 	for (const server of servers.splice(0)) server.stop(true);
 	if (previousBase === undefined) delete process.env.VT_NPM_REGISTRY_BASE;
 	else process.env.VT_NPM_REGISTRY_BASE = previousBase;
-	delete process.env.BUN_CONFIG_REGISTRY;
+	if (previousBunConfigRegistry === undefined) delete process.env.BUN_CONFIG_REGISTRY;
+	else process.env.BUN_CONFIG_REGISTRY = previousBunConfigRegistry;
 });
 
 describe("packageSpec", () => {

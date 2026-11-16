@@ -8,10 +8,8 @@ import { cn } from "../../lib/cn.js";
 import { ActionSheet, type ActionSheetItem } from "../shared/ActionSheet.js";
 import { DestructiveConfirmModal } from "../shared/destructive-confirm-modal.js";
 import { Icons } from "../shared/icons.js";
-import { Modal } from "../shared/Modal.js";
-import { modalPanelCls } from "../shared/modal-helpers.js";
-import { ScrollArea } from "../shared/scroll-area.js";
 import { CustomTooltip, TooltipProvider } from "../shared/Tooltip.js";
+import { AttachmentTextViewer } from "./attachment-text-viewer.js";
 import { FileAttachmentChip } from "./file-attachment-chip.js";
 
 export interface SentFileAttachmentActions {
@@ -122,20 +120,7 @@ export function SentFileAttachment({ attachment, actions, onUpdated, onRemoved }
         </DropdownMenu.Root>
       )} />
       {isMobile && <ActionSheet open={menuOpen} onClose={() => setMenuOpen(false)} title={attachment.name} items={items.map((item) => ({ ...item, disabled: busy }))} />}
-      <Modal open={summaryOpen} onClose={() => setSummaryOpen(false)} title={attachment.name}>
-        <div className={cn(modalPanelCls, "flex max-h-[80dvh] w-[min(640px,calc(100vw-32px))] flex-col p-5")}>
-          <div className="mb-4 flex items-start gap-3">
-            <h2 className="min-w-0 flex-1 break-words font-ui text-[calc(var(--ui-fs)+2px)] font-medium text-t1">{attachment.name}</h2>
-            <button type="button" aria-label={t("close")} className="cursor-pointer text-t3 transition-colors hover:text-t1" onClick={() => setSummaryOpen(false)}><Icons.Close /></button>
-          </div>
-          {/* CNR-8l: the summary body rides the shared thin vertical lane
-              (3px rest / 5px hover) instead of the native 8px fallback —
-              the panel's max-h-[80dvh] cap still bounds the region (the
-              ScrollArea root shrinks inside the panel column), the
-              typography scrolls with the text on the content element. */}
-          <ScrollArea scrollbarSize="thin" data-testid="sent-file-summary-scroll" contentClassName="whitespace-pre-wrap break-words font-body text-[calc(var(--ui-fs))] text-t2">{attachment.description}</ScrollArea>
-        </div>
-      </Modal>
+      <AttachmentTextViewer open={summaryOpen} onClose={() => setSummaryOpen(false)} name={attachment.name} text={attachment.description} />
       {confirmDeleteOpen && <DestructiveConfirmModal title={t("attachment_delete_title")} body={t("attachment_delete_msg")} confirmLabel={t("delete")} onCancel={() => setConfirmDeleteOpen(false)} onConfirm={() => {
         setConfirmDeleteOpen(false);
         void run(async () => {

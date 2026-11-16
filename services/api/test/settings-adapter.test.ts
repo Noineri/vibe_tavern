@@ -17,7 +17,9 @@ describe("SettingsAdapter — chat impersonation draft enhancement", () => {
 	test("persists a boolean enhancement toggle and ignores non-boolean input", async () => {
 		const { adapter } = await setup();
 		expect((await adapter.updateUiSettings({ chatImpersonateEnhanceDraft: true })).chatImpersonateEnhanceDraft).toBe(true);
-		expect((await adapter.updateUiSettings({ chatImpersonateEnhanceDraft: "true" as never })).chatImpersonateEnhanceDraft).toBe(true);
+		// Hostile wire values ride updateUiSettings's own Record<string, unknown>
+		// input — no cast needed; the adapter's typeof gate is the pin.
+		expect((await adapter.updateUiSettings({ chatImpersonateEnhanceDraft: "true" })).chatImpersonateEnhanceDraft).toBe(true);
 	});
 });
 
@@ -44,8 +46,8 @@ describe("SettingsAdapter — per-context secondary-model pairs (SUM-5)", () => 
 		expect(cleared.summaryModelName).toBeNull();
 
 		const filtered = await adapter.updateUiSettings({
-			messageEditorProviderId: 42 as never,
-			messageEditorModelName: [] as never,
+			messageEditorProviderId: 42,
+			messageEditorModelName: [],
 		});
 		expect(filtered.messageEditorProviderId).toBeNull();
 		expect(filtered.messageEditorModelName).toBeNull();
@@ -82,9 +84,9 @@ describe("SettingsAdapter — coauthor binding whitelist", () => {
 		const { adapter } = await setup();
 		// Garbage types should be filtered out, not crash.
 		const result = await adapter.updateUiSettings({
-			coauthorProviderId: 123 as never,
-			coauthorLoreProviderId: [] as never,
-			coauthorLoreModelName: {} as never,
+			coauthorProviderId: 123,
+			coauthorLoreProviderId: [],
+			coauthorLoreModelName: {},
 		});
 		// Nothing was written for coauthor fields.
 		expect(result.coauthorProviderId).toBeNull();

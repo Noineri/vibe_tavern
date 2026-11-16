@@ -38,7 +38,7 @@ async function createEnv() {
 		runtime,
 		stores,
 		tmpDir,
-		cleanup: async () => { try { await rm(tmpDir, { recursive: true, force: true }); } catch {} },
+		cleanup: async () => { try { await rm(tmpDir, { recursive: true, force: true }); } catch { /* best-effort teardown: the test has finished asserting; a locked or already-removed tmp dir must not fail it */ } },
 	};
 }
 
@@ -48,7 +48,10 @@ describe("character delete → regex bindings (R-10 policy B)", () => {
 		env = await createEnv();
 	});
 
-	afterAll(async () => { if (env) await env.cleanup(); });
+	afterAll(async () => {
+		setTokenCountFn(() => 0);
+		if (env) await env.cleanup();
+	});
 
 	it("character deletion removes its regex links but keeps the presets (manual rebinding stays possible)", async () => {
 		// A character with one bound preset + one preset bound to another character.

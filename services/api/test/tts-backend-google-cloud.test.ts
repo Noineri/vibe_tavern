@@ -14,6 +14,7 @@ import {
   signServiceAccountJwt,
 } from "../src/domain/tts/backends/google-cloud-tts.js";
 import { createTtsBackend } from "../src/domain/tts/tts-registry.js";
+import { testFetch } from "./test-fetch-seam.js";
 
 // ─── Test identity: a REAL RSA keypair — the JWT signature must verify ──────
 //
@@ -451,9 +452,9 @@ describe("Google Cloud probe", () => {
 
   test("transport failure surfaces the message", async () => {
     installFetchMock();
-    globalThis.fetch = (async () => {
+    globalThis.fetch = testFetch(async () => {
       throw new Error("dns gone");
-    }) as typeof fetch;
+    });
 
     const probe = await backend().probe();
     expect(probe.ok).toBe(false);

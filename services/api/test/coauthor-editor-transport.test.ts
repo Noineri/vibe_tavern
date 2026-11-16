@@ -3,7 +3,7 @@ import { mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import type { CoauthorEditorState } from "@vibe-tavern/api-contracts";
-import { EventBus } from "@vibe-tavern/domain";
+import { brandId, EventBus, type ChatId } from "@vibe-tavern/domain";
 import { ChatAdapter } from "../src/api/adapters/chat-adapter.js";
 import type { RuntimeApi } from "../src/api/contract/runtime-api.js";
 import { LiveChatOrchestrator } from "../src/domain/chat/live-chat-orchestrator.js";
@@ -15,6 +15,7 @@ import { SessionRuntime } from "../src/runtime/session/session-runtime.js";
 import { createRuntimeStore } from "../src/runtime/session/session-runtime-store.js";
 import { createApp } from "../src/server/app-factory.js";
 import { guardModelDiscovery } from "./model-discovery-guard.js";
+import { strictTestDouble } from "./strict-test-double.js";
 
 guardModelDiscovery("coauthor.example");
 
@@ -122,9 +123,12 @@ async function makeEnvironment() {
   const orchestrator = new LiveChatOrchestrator(
     runtime.chatRuntime,
     runtime.chatApp,
-    null as unknown as import("../src/domain/providers/provider-orchestrator.js").ProviderOrchestrator,
+    // The internal provider orchestrator is never reached on these paths —
+    // the generation seam is the injected 8th argument below; a strict
+    // double turns an accidental read into a labeled miss instead of an NPE.
+    strictTestDouble<import("../src/domain/providers/provider-orchestrator.js").ProviderOrchestrator>({}, "LiveChatOrchestrator providerOrchestrator (uncalled seam)"),
     new EventBus(),
-    (chatId) => runtime.resolveChatModeStrategy(chatId),
+    (chatId) => runtime.resolveChatModeStrategy(brandId<ChatId>(chatId)),
     undefined,
     undefined,
     {
@@ -138,19 +142,23 @@ async function makeEnvironment() {
       },
     },
   );
-  const providerProfiles = {
+  // The strict double keeps the three provided members compiler-checked
+  // (the trailing plain cast let the literal past the compiler unchecked);
+  // every other service member throws a labeled miss.
+  const providerProfiles = strictTestDouble<ProviderProfileService>({
     resolveActiveProviderProfile: async () => null,
     getProviderModelSettings: async () => null,
-    getProviderProfile: async (id: string) => stores.providers.getById(id),
-  } as ProviderProfileService;
+    getProviderProfile: async (id) => stores.providers.getById(id),
+  }, "ProviderProfileService (coauthor editor transport)");
   const chat = new ChatAdapter(
     stores,
     runtime,
     orchestrator,
-    null as unknown as import("../src/domain/chat/chat-summary-service.js").ChatSummaryService,
+    strictTestDouble<import("../src/domain/chat/chat-summary-service.js").ChatSummaryService>({}, "ChatAdapter chatSummaryService (uncalled seam)"),
     providerProfiles,
-    null as unknown as import("../src/domain/asset/asset-service.js").AssetService,
-    null as unknown as import("../src/api/contract/runtime-api.js").SttRuntimeApi["transcribeSttAudio"],
+    strictTestDouble<import("../src/domain/asset/asset-service.js").AssetService>({}, "ChatAdapter assetService (uncalled seam)"),
+    // Same inert STT no-op the actions-routes harness passes; never called here.
+    async () => null,
   );
   return { app: await createApp({ runtime: { chat } as RuntimeApi }), chatId: coauthor.activeChat.id, seen, providerInputs, runtime };
 }

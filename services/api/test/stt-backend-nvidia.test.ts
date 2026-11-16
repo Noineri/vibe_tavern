@@ -12,6 +12,7 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 
 import { DEFAULT_NVIDIA_STT_MODEL, STT_BACKENDS } from "@vibe-tavern/domain";
+import type { SttProfileConfig } from "@vibe-tavern/domain";
 
 import {
   NvidiaSttConfigError,
@@ -20,6 +21,7 @@ import {
   nvidiaSttFactory,
 } from "../src/domain/stt/backends/nvidia-stt.js";
 import type { SttBackend } from "../src/domain/stt/stt-backend.js";
+import { testFetch } from "./test-fetch-seam.js";
 
 const CHAT_COMPLETIONS_URL = "https://integrate.api.nvidia.com/v1/chat/completions";
 const MODELS_URL = "https://integrate.api.nvidia.com/v1/models";
@@ -47,7 +49,7 @@ interface CapturedRequest {
 
 function captureFetch(handler: () => Response): { captured: () => CapturedRequest | null } {
   let captured: CapturedRequest | null = null;
-  globalThis.fetch = mock(async (input: FetchArgs[0], init?: FetchArgs[1]) => {
+  globalThis.fetch = testFetch(mock(async (input: FetchArgs[0], init?: FetchArgs[1]) => {
     const text = typeof init?.body === "string" ? init.body : "";
     captured = {
       url: String(input),
@@ -55,7 +57,7 @@ function captureFetch(handler: () => Response): { captured: () => CapturedReques
       body: text !== "" ? (JSON.parse(text) as Record<string, unknown>) : {},
     };
     return handler();
-  });
+  }));
   return { captured: () => captured };
 }
 
@@ -66,16 +68,20 @@ function chatReply(content: string): unknown {
 
 const AUDIO_BYTES = Buffer.from("fake-wav-bytes-16k-mono");
 
+// The factories read apiKey/model/language/emotionAnnotation off the loose
+// config bag — the ST-5a adapter boundary: production injects the key and
+// casts once at the same seam (stt-adapter.ts:419); the stored SttProfileConfig
+// union never carries the secret or the emotion toggle.
 function makeBackend(overrides: Record<string, unknown> = {}): SttBackend {
   return nvidiaSttFactory({
     model: "nvidia/omni-test",
     ...overrides,
-  } as never);
+  } as SttProfileConfig);
 }
 
 describe("nvidia-stt: config", () => {
   test("missing apiKey → NvidiaSttConfigError", () => {
-    expect(() => nvidiaSttFactory({ model: "m" } as never)).toThrow(NvidiaSttConfigError);
+    expect(() => nvidiaSttFactory({ model: "m" })).toThrow(NvidiaSttConfigError);
   });
 
   test("empty model falls back to DEFAULT_NVIDIA_STT_MODEL", async () => {
@@ -156,9 +162,9 @@ describe("nvidia-stt: errors", () => {
   });
 
   test("transport failure → NvidiaSttError (network error wrapper)", async () => {
-    globalThis.fetch = mock(async () => {
+    globalThis.fetch = testFetch(mock(async () => {
       throw new Error("ECONNREFUSED");
-    });
+    }));
     const backend = makeBackend({ apiKey: "k" });
     await expect(backend.transcribe(AUDIO_BYTES, { mime: "audio/wav" })).rejects.toMatchObject({
       name: "NvidiaSttError",
@@ -218,7 +224,8 @@ describe("nvidia-stt: no listModels (static omni roster)", () => {
 describe("nvidia-stt: registry slug", () => {
   test("module-scope registration binds the nvidia slug", async () => {
     const { createSttBackend } = await import("../src/domain/stt/stt-registry.js");
-    const backend = createSttBackend(STT_BACKENDS.Nvidia, { apiKey: "k" } as never);
+    // Same injected-key bag seam as makeBackend (ST-5a).
+    const backend = createSttBackend(STT_BACKENDS.Nvidia, { apiKey: "k" } as SttProfileConfig);
     expect(typeof backend.transcribe).toBe("function");
   });
 });

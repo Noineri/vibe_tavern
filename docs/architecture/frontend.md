@@ -341,6 +341,8 @@ Nothing here touches stored history or model context — prompt assembly, compac
 **Retained memory, stated honestly.** The mounted render set is bounded by the stable suffix + viewport overscan regardless of thread length; the initial and settle reads are bounded pages; older pages a user explicitly requests accumulate for the active session and are released on a real session/owner change (no silent eviction — AFP-19 owns any residual-growth fix after the owner's long-session check). Browser find cannot search unmounted/unloaded rows; whole-thread search and quoting stay in `SIDECHAT_SEARCH_QUOTES_PLAN`, which consumes this plan's around-message navigation seam.
 
 **Feedback chrome.** Initial loading/error/retry, older-page load/error, refresh and neighborhood errors, stale-edge revalidation, missing-range continuation and the true loaded-history start are explicit compact actions (`AgentFeedFeedback`) — never a viewport-measurement fetch loop, so hidden mobile tabs and panel resizes cannot chase all history.
+For loaded history, these controls are quiet inline content at the start of the scrolling transcript, not a fixed panel beneath the chat header.
+Virtuoso measures the core's stable header slot; loading and retries keep using the existing prepend anchor and navigation controller without adding render rows or changing inverse indexes.
 
 
 ---
@@ -398,6 +400,14 @@ LorebookEditor
 - **Tool-activity cards** — a `plan` tool call renders through the ordinary card mechanism labelled by the "Plan updated" i18n key (`agent_plan_updated`); `read_plan` cards read "Plan" (`agent_plan_title`). Raw envelopes/plan JSON never reach a card title.
 
 **Adding a new host**: one owner arm in `AgentPlanOwner` + one column mount (the panel/modal beside the host's surface) + pass `owner` and the host's `locked` flag. Nothing else changes — the chatBranch arm (the sidechat's story plan) landed exactly this way.
+
+**The story curtain** (DIRECTOR_DECK_CALENDAR_PLAN) — a `chatBranch` owner's curtain grew two more faces beside the event list, and a time axis:
+The curtain's SECOND header row is the tab strip (`StoryCurtainTabs`, events / deck / calendar with muted counts) rendered through the panel's `curtainTabs` slot; it lives in `AgentPlanSection` — the one component BOTH curtain mounts render (the chat column's strip and the mobile sidechat pane) — and the choice is remembered per chat in the plain UI store `stores/story-curtain-tab-store.ts` (default events; the events body is the pre-tabs curtain, byte-identical).
+The deck tab's data is `hooks/use-story-deck.ts`, the plan cache's twin (one GET per branch through a module cache, `save`/`play` from day one, and the `refreshStoryDeck` seam the deck-proposal acceptance re-runs — never a second fetch path); its client `api/agent-branch-deck-api.ts` turns the play route's typed 409 `story_deck_foreign_goals` into `StoryDeckForeignGoalsError` through a read-once interception, the dialog's replace-goals confirm retries with `{ replaceForeignGoals: true }`, and a successful play closes the dialog and switches the curtain back to the events tab (the panel's own current-event highlight is the signal).
+The story clock is `hooks/use-story-scene-clock.ts` — the web's ONE branch read (the latest assistant message's selected variant's record, valid against the live config's `schemaHash`; `clockOn` is the schema-marks-a-day-field gate the calendar's off state uses), mirroring the server's `readBranchStoryClock` composition.
+It is read ONCE, in `AgentPlanSection` (unconditionally, per hook rules), and threaded EXPLICITLY down as a `storyClock` prop into the shared panel and the shared editor modal — they never read the hook themselves, because a script plan can render while the active branch has a readable clock and must stay byte-identical (a script owner passes null whatever the branch reads).
+The dated-event chrome composes from one derivation, `components/shared/agent-plan/story-event-time.ts` (`PART_LABEL_KEYS`, `storyEventTimeLabel`, `storyEventTimeChipCls`): the events tab shows a muted time chip on dated rows and the "awaits its time" mark on pending not-yet-due rows — the wait decision is the domain's `isStoryEventDue`, never a hand-rolled comparison — the plan-proposal card reuses the same chip, and the editor's "When" row renders only for a `chatBranch` owner while the clock actually reads.
+Component details: [components doc](./components.md#storydeckview) and [components doc](./components.md#storycalendarview).
 
 ---
 
@@ -500,6 +510,7 @@ Reserved-but-unimplemented modes (`novel`, `group`) have no package entry and fa
 A deliberate remount detail: `MessageList` is keyed by `${chatId}|${branchId}` so message-local UI and Virtuoso's old-history cache reset at the branch boundary. `useStickToBottom` receives the same scope and establishes the native bottom position in a layout effect.
 
 The story-plan strip (`components/chat/sidechat/StoryPlanStrip.tsx`, DR-11) mounts as the FIRST child of `PlayModeChatPane` — the shared chat pane behind both the desktop chat column and the mobile «Chat» tab — so both viewports show the same row: the active branch's story plan in curtain presentation, nothing while the plan is empty, the passed-check flash after a check, and the call-director / check-now actions (component details: [components doc](./components.md#storyplanstrip)).
+Since DK-9 the strip carries the flash's second tone: when the server's clock advance (`advanceByClock` via the scene-record observer) promoted a due dated event, the refreshed plan's new current event flashes the promotion label (`story_cal_flash_promoted`) on the accent tint for ~6 s — the strip reads the branch clock through its own `useStorySceneClock` mount to gate the flash on the domain's due rule, and the two tones are mutually exclusive per change.
 
 ---
 

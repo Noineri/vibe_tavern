@@ -16,6 +16,7 @@ import {
   createSttBackend,
   registerSttBackend,
 } from "../src/domain/stt/stt-registry.js";
+import { testFetch } from "./test-fetch-seam.js";
 
 const originalFetch = globalThis.fetch;
 
@@ -39,10 +40,10 @@ interface CapturedRequest {
 
 function captureFetch(handler: () => Response): { captured: () => CapturedRequest | null } {
   let captured: CapturedRequest | null = null;
-  globalThis.fetch = mock(async (input: FetchArgs[0], init?: FetchArgs[1]) => {
+  globalThis.fetch = testFetch(mock(async (input: FetchArgs[0], init?: FetchArgs[1]) => {
     captured = { url: String(input), init: init ?? {} };
     return handler();
-  });
+  }));
   return { captured: () => captured };
 }
 
@@ -129,9 +130,9 @@ describe("OpenAI-compatible STT transcribe", () => {
   });
 
   test("network failure → OpenAiCompatSttError network error", async () => {
-    globalThis.fetch = mock(async () => {
+    globalThis.fetch = testFetch(mock(async () => {
       throw new Error("ECONNREFUSED");
-    });
+    }));
     const backend = openAiCompatSttFactory({ endpoint: "http://localhost:8000/v1" });
 
     await expect(backend.transcribe(Buffer.from([1]), { mime: "audio/mpeg" })).rejects.toThrow(
@@ -228,9 +229,9 @@ describe("OpenAI-compatible STT probe", () => {
   });
 
   test("network error → ok:false, does not throw", async () => {
-    globalThis.fetch = mock(async () => {
+    globalThis.fetch = testFetch(mock(async () => {
       throw new Error("ECONNREFUSED");
-    });
+    }));
     const backend = openAiCompatSttFactory({ endpoint: "http://localhost:8000/v1" });
 
     const result = await backend.probe();

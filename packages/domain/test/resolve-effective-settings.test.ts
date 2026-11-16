@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
+import { COAUTHOR_TRANSPORT } from "../src/coauthor-transport-capabilities.js";
 import {
+  GENERATION_MODE,
+  PROVIDER_PROFILE_GENERATION_DEFAULTS,
+  PROXY_MODE,
   resolveEffectiveSettings,
   type ModelSettingsOverlay,
   type StoredProviderProfileRecord,
@@ -13,45 +17,28 @@ import {
 describe("resolveEffectiveSettings", () => {
   function makeBase(over: Partial<StoredProviderProfileRecord> = {}): StoredProviderProfileRecord {
     return {
+      ...PROVIDER_PROFILE_GENERATION_DEFAULTS,
       id: "profile_1",
       name: "base",
       providerPreset: "openaiCompat",
+      coauthorTransport: COAUTHOR_TRANSPORT.chatCompletions,
+      generationMode: GENERATION_MODE.chat,
       endpoint: "https://api.test/v1",
       apiKey: "key",
       defaultModel: "gpt-4o",
       contextBudget: 16000,
       pinContextBudget: false,
+      tokenPadding: 0,
       bindPerModel: false,
-      maxTokens: 2000,
-      temperature: 1,
-      topP: 1,
-      topK: 0,
-      minP: 0,
-      topA: 0,
-      typicalP: 1,
-      tfsZ: 1,
-      repeatLastN: 0,
-      mirostat: 0,
-      mirostatTau: 5,
-      mirostatEta: 0.1,
-      dryMultiplier: 0,
-      dryBase: 1.75,
-      dryAllowedLength: 2,
-      drySequenceBreakers: [],
-      xtcThreshold: 0.1,
-      xtcProbability: 0,
-      frequencyPenalty: 0,
-      presencePenalty: 0,
-      repetitionPenalty: 1,
+      modelFreeOnly: false,
+      modelGroupByOwner: false,
       stopSequences: ["<end>"],
       logitBias: [{ tokenId: 1, bias: 2 }],
-      seed: null,
-      reasoningEffort: "auto",
-      showReasoning: false,
-      streamResponse: true,
-      customSamplers: false,
+      proxyMode: PROXY_MODE.inherit,
+      proxyId: null,
       isActive: true,
       visionModel: null,
+      generationFormat: null,
       createdAt: "0",
       updatedAt: "0",
       ...over,
@@ -95,9 +82,12 @@ describe("resolveEffectiveSettings", () => {
     expect(effective.logitBias).toEqual([{ tokenId: 1, bias: 2 }]); // inherited
   });
 
-  test("identity fields are NEVER overridden (overlay cannot rename/rebind profile)", () => {
+  test("identity fields keep base values under the ModelSettingsOverlay type invariant", () => {
     const base = makeBase({ name: "base", endpoint: "https://a", defaultModel: "gpt-4o" });
-    // ModelSettingsOverlay doesn't even allow these keys, but assert the result keeps base identity.
+    // Untrusted wire inputs are stripped at the api-contracts boundary
+    // (modelSettingsOverlaySchema, tested in provider-schema.test.ts);
+    // resolveEffectiveSettings itself assumes a valid ModelSettingsOverlay
+    // that omits identity keys (id/name/endpoint/defaultModel).
     const overlay: ModelSettingsOverlay = { temperature: 0.5 };
     const effective = resolveEffectiveSettings(base, overlay);
     expect(effective.name).toBe("base");
@@ -111,7 +101,7 @@ describe("resolveEffectiveSettings", () => {
     // undefined keys, so the parsed object never carries them. Simulate that
     // round-trip to lock the contract that "absent = inherit".
     const base = makeBase({ temperature: 1, topP: 0.9 });
-    const rawOverlay = { temperature: 0.7, topP: undefined } as unknown as ModelSettingsOverlay;
+    const rawOverlay: ModelSettingsOverlay = { temperature: 0.7, topP: undefined };
     const roundTripped = JSON.parse(JSON.stringify(rawOverlay)) as ModelSettingsOverlay;
     const effective = resolveEffectiveSettings(base, roundTripped);
     expect(effective.temperature).toBe(0.7); // set

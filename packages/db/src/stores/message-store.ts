@@ -2,168 +2,33 @@ import { eq, and, desc, asc, inArray } from 'drizzle-orm';
 import { messages, messageVariants, sceneBackfillRuns } from '../db-schema.js';
 import type { AppDb, DbTransaction } from '../db-connection.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
-import { extractThinkingTags, type SceneBackfillMode, type SceneBackfillRunStatus, type SceneTrackerDsl, type ScenePromptFormat } from '@vibe-tavern/domain';
+import { extractThinkingTags, type SceneBackfillMode, type SceneBackfillRunStatus } from '@vibe-tavern/domain';
+import {
+  SelectedVariantContentMismatchError,
+  SelectedVariantMismatchError,
+  type AddMessageInput,
+  type CurrentSceneTarget,
+  type Message,
+  type MessageVariant,
+  type MessageVariantSceneRecord,
+  type SceneBackfillRun,
+} from './message-store-types.js';
 
-// ─── Return types ─────────────────────────────────────────────────────────────
+// The public types (Message / MessageVariant / Scene records / backfill run),
+// the guarded-edit error classes and AddMessageInput live in
+// message-store-types.ts — extracted for the file-size ratchet (DMT-22), a
+// move not a rewrite. Re-exported here so every existing import path
+// ('./message-store.js', '@vibe-tavern/db') keeps resolving unchanged.
+export { SelectedVariantContentMismatchError, SelectedVariantMismatchError } from './message-store-types.js';
+export type {
+  AddMessageInput,
+  CurrentSceneTarget,
+  Message,
+  MessageVariant,
+  MessageVariantSceneRecord,
+  SceneBackfillRun,
+} from './message-store-types.js';
 
-/**
- * Store-level Message — domain Message projected from a DB row.
- * Uses plain `string` IDs (brands are applied at the API boundary).
- */
-export interface Message {
-  id: string;
-  chatId: string;
-  branchId: string;
-  role: string;
-  authorType: string;
-  position: number;
-  content: string;
-  state: string;
-  createdAt: string;
-  updatedAt: string;
-  attachmentsJson?: string | null;
-  toolCalls?: Array<{ id: string; name: string; args: unknown; providerOptions?: unknown }> | null;
-  toolCallId?: string | null;
-}
-
-/**
- * Store-level MessageVariant — domain MessageVariant projected from a DB row.
- */
-export interface MessageVariant {
-  id: string;
-  messageId: string;
-  variantIndex: number;
-  content: string;
-  isSelected: boolean;
-  finishReason: string | null;
-  reasoning: string | null;
-  reasoningDurationMs: number | null;
-  modelId: string | null;
-  presetName: string | null;
-  createdAt: string;
-  coauthorModuleId?: string | null;
-  coauthorSkillId?: string | null;
-  toolCalls?: Array<{ id: string; name: string; args: unknown; providerOptions?: unknown }> | null;
-  toolCallId?: string | null;
-  /** Canonical per-variant Scene record; null when the variant has none yet
-   *  (just created, or cleared on content edit). Owned by this variant's
-   *  immutable id. Parsed from scene_tracker_json at this boundary. */
-  sceneTracker: MessageVariantSceneRecord | null;
-  /** TTS narration annotation (TPE-1, AN-1): the annotated copy of this
-   *  variant's content (expressive tags inserted, text otherwise identical).
-   *  Null = not annotated — narration reads the content itself. A persisted
-   *  fact like the Scene record: content edits do NOT clear it. */
-  ttsAnnotation: string | null;
-  /** IG-18a: image-gen slot variants carry their image attachments here
-   * (raw JSON string, parsed at the DTO boundary with
-   * parseStoredAttachments). Null = this variant carries none — every text
-   * variant, and slot variant 0 for legacy slots (those fall through to the
-   * message row's attachments at the DTO merge point). */
-  attachmentsJson: string | null;
-}
-
-/**
- * Store-level Scene record — the plain-string mirror of the domain
- * SceneTrackerRecord. Brands are applied at the API boundary (like Message /
- * MessageVariant ids). One record per immutable variant, stored as JSON in
- * message_variants.scene_tracker_json.
- *
- * A record is a persisted fact: a tracker config change never hides or deletes
- * it. `schema`/`promptFormat` are the record's self-describing snapshot (absent
- * only on legacy records persisted before the snapshot contract — readers fall
- * back to the live config then). `schemaHash`/`configRevision` are identity +
- * trace, never a visibility gate; `sourceHash` is the content-drift guard.
- */
-export interface MessageVariantSceneRecord {
-  /** The immutable variant this record was generated for (ownership identity). */
-  variantId: string;
-  /** The config schemaHash captured at generation time (identity/coherence, NOT a visibility gate). */
-  schemaHash: string;
-  /** The config revision captured at generation time (pure trace). */
-  configRevision: number;
-  /** Hash of the variant source content captured at generation time. */
-  sourceHash: string;
-  /** The schema DSL (with labels) captured at generation time — self-describing snapshot. Absent on legacy records. */
-  schema?: SceneTrackerDsl;
-  /** The prompt format captured at generation time. Absent on legacy records. */
-  promptFormat?: ScenePromptFormat;
-  /** The validated scene state, matching the record's own `schema` snapshot. */
-  sceneState: Record<string, unknown>;
-  /** The model that produced this record (for trace). */
-  modelId: string | null;
-  generatedAt: string;
-}
-
-/**
- * The active branch's latest assistant message + its selected variant's raw
- * Scene record — the source for the derived current-Scene cache (SCN-6).
- * Null when the branch has no assistant message, the latest assistant has no
- * selected variant, or that variant has no record. See {@link MessageStore.getCurrentSceneTarget}.
- */
-export interface CurrentSceneTarget {
-  messageId: string;
-  variantId: string;
-  record: MessageVariantSceneRecord;
-}
-
-/**
- * Store-level Scene backfill run — durable job state for history backfill
- * (SCENE_TRACKER_PLAN Wave 7). Tracks the JOB only (ownership / frozen
- * manifest / cursor / status / per-item errors / cancel / summary); it is
- * NEVER authoritative for Scene data, which lives on message_variants.
- */
-export interface SceneBackfillRun {
-  id: string;
-  chatId: string;
-  mode: SceneBackfillMode;
-  status: SceneBackfillRunStatus;
-  manifestJson: string;
-  totalItems: number;
-  cursor: number;
-  errorsJson: string;
-  cancelRequested: boolean;
-  summaryJson: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
-
-// ─── Store ────────────────────────────────────────────────────────────────────
-
-/** Thrown when a guarded edit targets a variant that is no longer selected. */
-export class SelectedVariantMismatchError extends Error {
-  constructor(
-    readonly messageId: string,
-    readonly expectedVariantId: string,
-    readonly actualVariantId: string | null,
-  ) {
-    super(`Selected variant '${expectedVariantId}' no longer matches message '${messageId}'.`);
-    this.name = "SelectedVariantMismatchError";
-  }
-}
-
-/** Input shape for {@link MessageStore.addMessage} and {@link MessageStore.addMessageWithDiceBind}.
- *  Extracted so the dice-aware variant shares the exact insert contract (no drift). */
-export interface AddMessageInput {
-  chatId: string;
-  branchId: string;
-  role: string;
-  authorType: string;
-  content: string;
-  reasoning?: string;
-  reasoningDurationMs?: number;
-  modelId?: string | null;
-  /** Prompt preset used for THIS message. Recorded on the selected variant
-   *  (the field the message footer reads) so every reply — send, continue,
-   *  regenerate, queue — carries its preset, not only the queue/variant path. */
-  presetName?: string | null;
-  variants?: string[];
-  selectedVariantIndex?: number;
-  attachmentsJson?: string | null;
-  toolCallsJson?: string | null;
-  toolCallId?: string | null;
-  coauthorModuleId?: string | null;
-  coauthorSkillId?: string | null;
-}
 
 /**
  * Message + variant (swipe) CRUD.
@@ -580,7 +445,27 @@ export class MessageStore {
       .run();
   }
 
-  async editMessage(id: string, content: string, expectedVariantId?: string): Promise<Message> {
+  /**
+   * Guarded in-place edit of a message + its SELECTED variant.
+   *
+   * Two optional guards, both checked INSIDE the same synchronous transaction
+   * as the writes (so a racing edit cannot slip between the check and the
+   * write):
+   * - `expectedVariantId` — the pre-DMT-22 guard: the currently selected
+   *   variant must still be this id ({@link SelectedVariantMismatchError}).
+   * - `expectedBaseContent` (DMT-22) — the selected variant's stored content
+   *   must still equal the text the caller reviewed
+   *   ({@link SelectedVariantContentMismatchError}): a newer edit to the SAME
+   *   (still-selected) variant id must not be silently overwritten.
+   * Callers that pass neither guard keep the plain unguarded edit exactly as
+   * before.
+   */
+  async editMessage(
+    id: string,
+    content: string,
+    expectedVariantId?: string,
+    expectedBaseContent?: string,
+  ): Promise<Message> {
     const now = this.clock.now();
 
     // Extract thinking tags from edited content
@@ -588,9 +473,9 @@ export class MessageStore {
 
     // Synchronous callback (ASYNC_TRANSACTION_AUDIT step 1): see addMessage.
     this.db.transaction((tx) => {
-      if (expectedVariantId !== undefined) {
+      if (expectedVariantId !== undefined || expectedBaseContent !== undefined) {
         const selectedVariant = tx
-          .select({ id: messageVariants.id })
+          .select({ id: messageVariants.id, content: messageVariants.content })
           .from(messageVariants)
           .where(
             and(
@@ -599,9 +484,17 @@ export class MessageStore {
             ),
           )
           .get();
-        const actualVariantId = selectedVariant?.id ?? null;
-        if (actualVariantId !== expectedVariantId) {
-          throw new SelectedVariantMismatchError(id, expectedVariantId, actualVariantId);
+        if (expectedVariantId !== undefined) {
+          const actualVariantId = selectedVariant?.id ?? null;
+          if (actualVariantId !== expectedVariantId) {
+            throw new SelectedVariantMismatchError(id, expectedVariantId, actualVariantId);
+          }
+        }
+        if (expectedBaseContent !== undefined) {
+          const actualContent = selectedVariant?.content ?? null;
+          if (actualContent !== expectedBaseContent) {
+            throw new SelectedVariantContentMismatchError(id, expectedBaseContent, actualContent);
+          }
         }
       }
 

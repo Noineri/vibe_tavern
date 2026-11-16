@@ -24,8 +24,10 @@
  *    never a second fetch path), each row with the shared `NodeGlyph` and
  *    a new / changed / removed marker (the locale keys' RU canon), the
  *    current event's body under
- *    its row (the shared `pickCurrent` rule — `pickCurrentStoryEvent`'s
- *    web twin), the A5 replace warning, and the A6 auto-check `Toggle` row
+ *    its row (the ONE domain pick rule, `pickCurrentPlanTask` at a null
+ *    clock — DK-10), a dated row's muted time chip (mockup §6, the ONE
+ *    `storyEventTimeLabel` derivation — payload-only, no clock, no wait
+ *    mark), the A5 replace warning, and the A6 auto-check `Toggle` row
  *    (only while the tracker's auto-check frequency is 0, off by default).
  * 4. Footer button pair → the source's Accept/Reject pair verbatim
  *    (composed classes — CF13); the apply body carries
@@ -53,7 +55,7 @@
  */
 
 import { useState } from "react";
-import { brandId, type ChatId, type ObjectiveState } from "@vibe-tavern/domain";
+import { brandId, pickCurrentPlanTask, type ChatId, type ObjectiveState } from "@vibe-tavern/domain";
 import { agentPlanSchema, type AgentPlan, type AgentPlanTask, type RecordProposal } from "@vibe-tavern/api-contracts";
 import { toast } from "sonner";
 import type { RecordProposalCardProps } from "../../../lib/agent-host-registry.js";
@@ -66,7 +68,8 @@ import {
   ObjectiveProposalApiError,
 } from "../../../api/agent-thread-proposals-api.js";
 import { ingestAgentPlan, useAgentPlan } from "../../../hooks/use-agent-plan.js";
-import { NodeGlyph, pickCurrent } from "../../shared/agent-plan/AgentPlanPanel.js";
+import { NodeGlyph } from "../../shared/agent-plan/AgentPlanPanel.js";
+import { storyEventTimeChipCls, storyEventTimeLabel } from "../../shared/agent-plan/story-event-time.js";
 import { currentItems, isOpenLongTerm } from "../message-slots/objective-zone.js";
 import { Icons } from "../../shared/icons.js";
 import { Toggle } from "../../shared/Toggle.js";
@@ -263,7 +266,10 @@ export function StoryPlanProposalCard({ proposal, threadId, onResolved }: Record
   const rows = diffStoryPlanEvents(storedPlan.tasks, proposedTasks);
   const proposedIds = new Set(proposedTasks.map((task) => task.id));
   const replaceWarning = willAcceptReplaceForeignGoals(objectiveState, proposedIds, branchId, activeBranchId);
-  const currentEventId = pickCurrent(proposedTasks)?.id ?? null;
+  // The current event's body shows under its row — the ONE domain pick rule
+  // with a null clock (DK-10: the card is payload-only, it reads no tracker
+  // time, so the pick is exactly the retired local `pickCurrent` result).
+  const currentEventId = pickCurrentPlanTask(proposedTasks, null)?.id ?? null;
   const showAutoCheckRow = status === "pending" && autoCheckFrequency === 0;
 
   async function runResolve(decision: "apply" | "reject"): Promise<void> {
@@ -416,6 +422,14 @@ export function StoryPlanProposalCard({ proposal, threadId, onResolved }: Record
                       </span>
                     )}
                   </span>
+                  {/* DK-10 (mockup §6): a dated proposed event carries the
+                      SAME muted time chip as the events tab — payload-only
+                      (the card reads no clock), so no "awaits" mark here. */}
+                  {row.task.at !== undefined && (
+                    <span data-testid="story-plan-event-time" className={storyEventTimeChipCls}>
+                      {storyEventTimeLabel(row.task.at, t)}
+                    </span>
+                  )}
                   {row.marker !== null && (
                     <span data-testid={`story-plan-marker-${row.marker}`} className={markerClass(row.marker)}>
                       {row.marker === "new"

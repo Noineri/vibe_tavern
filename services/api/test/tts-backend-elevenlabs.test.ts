@@ -4,6 +4,7 @@ import { TTS_BACKEND } from "@vibe-tavern/domain";
 
 import { ElevenLabsTtsBackend, ElevenLabsTtsError, elevenLabsTtsFactory } from "../src/domain/tts/backends/elevenlabs-tts.js";
 import { createTtsBackend, registerTtsBackend } from "../src/domain/tts/tts-registry.js";
+import { testFetch } from "./test-fetch-seam.js";
 
 function backend(config: Record<string, unknown> = {}): ElevenLabsTtsBackend {
   return elevenLabsTtsFactory({ apiKey: "key_123", ...config }) as ElevenLabsTtsBackend;
@@ -248,9 +249,9 @@ describe("ElevenLabsTtsBackend.probe / dispose", () => {
 
   test("probe surfaces network errors", async () => {
     installFetchMock();
-    globalThis.fetch = (async () => {
+    globalThis.fetch = testFetch(async () => {
       throw new Error("ECONNREFUSED");
-    }) as typeof fetch;
+    });
 
     const result = await backend().probe();
     expect(result.ok).toBe(false);

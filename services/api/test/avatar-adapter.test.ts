@@ -7,15 +7,28 @@ import { createStoreContainer, STORAGE_FOLDERS, type StoreContainer } from "@vib
 import { AssetService } from "../src/domain/asset/asset-service.js";
 import { CharacterAdapter } from "../src/api/adapters/character-adapter.js";
 import { PersonaAdapter } from "../src/api/adapters/persona-adapter.js";
-import type { CharacterRuntimeApi, PersonaRuntimeApi } from "../src/api/contract/runtime-api.js";
+import type { SessionRuntime } from "../src/runtime/session/session-runtime.js";
 import { minimalPng } from "./image-bytes.js";
+import { strictTestDouble } from "./strict-test-double.js";
 
 const CHARS = STORAGE_FOLDERS.characters;
 const PERSONAS = STORAGE_FOLDERS.personas;
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
-// Minimal sessionRuntime stub — avatar methods don't call into it.
-const noopSession = {} as never;
+// Minimal sessionRuntime & providerProfileService doubles — avatar methods don't
+// call into them; any unprovided member throws a labeled miss.
+const noopSession = strictTestDouble<SessionRuntime>(
+	{},
+	"CharacterAdapter/PersonaAdapter sessionRuntime (avatar adapter)",
+);
+const noopCharacterProviderProfiles = strictTestDouble<ConstructorParameters<typeof CharacterAdapter>[3]>(
+	{},
+	"CharacterAdapter providerProfileService (avatar adapter)",
+);
+const noopPersonaProviderProfiles = strictTestDouble<ConstructorParameters<typeof PersonaAdapter>[3]>(
+	{},
+	"PersonaAdapter providerProfileService (avatar adapter)",
+);
 
 async function setup() {
 	const dataRoot = await mkdtemp(join(tmpdir(), "vt-c1-adapter-"));
@@ -26,8 +39,8 @@ async function setup() {
 		stores.content,
 		(id) => stores.characters.resolveFolderName(id),
 	);
-	const characters = new CharacterAdapter(noopSession, stores, assetService) as CharacterRuntimeApi;
-	const personas = new PersonaAdapter(noopSession, stores, assetService) as PersonaRuntimeApi;
+	const characters = new CharacterAdapter(noopSession, stores, assetService, noopCharacterProviderProfiles);
+	const personas = new PersonaAdapter(noopSession, stores, assetService, noopPersonaProviderProfiles);
 	return { dataRoot, stores, assetService, characters, personas };
 }
 

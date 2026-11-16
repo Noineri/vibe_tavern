@@ -14,30 +14,6 @@ beforeEach(() => {
   cleanup();
 });
 
-/** Open the mode dropdown (trigger currently showing `triggerText`) and pick
- *  the item whose text matches `optionLabel` — the cmdk-portal pattern from
- *  ExperienceEditor.test.tsx. Without an i18n provider, useT returns raw keys,
- *  so trigger/items show the key strings. */
-async function pickMode(view: { container: HTMLElement; baseElement: HTMLElement }, triggerText: string, optionText: string): Promise<void> {
-  const trigger = view.container.querySelector('[data-testid="tts-narration-mode-select"]');
-  if (!(trigger instanceof HTMLButtonElement)) throw new Error("mode select trigger missing");
-  if (!(trigger.textContent ?? "").includes(triggerText)) {
-    throw new Error(`trigger shows "${trigger.textContent}", expected "${triggerText}"`);
-  }
-  await act(async () => {
-    fireEvent.click(trigger);
-  });
-  await waitFor(() => expect(view.baseElement.querySelector("[cmdk-list]")).toBeTruthy());
-  const items = [...view.baseElement.querySelectorAll("[cmdk-item]")];
-  if (items.length !== 3) throw new Error(`expected 3 mode items, got ${items.length}`);
-  const item = items.find((i) => (i.textContent ?? "").includes(optionText));
-  if (!item) throw new Error(`no cmdk item containing "${optionText}"`);
-  await act(async () => {
-    fireEvent.click(item);
-  });
-  await waitFor(() => expect(view.baseElement.querySelector("[cmdk-list]")).toBeNull());
-}
-
 describe("TtsNarrationModeBlock (D26, footer-inline dropdown)", () => {
   test("inline-footer canon (MUI W7): bounded trigger, no description in the trigger line, no row ownership", async () => {
     let view: { container: HTMLElement } | null = null;

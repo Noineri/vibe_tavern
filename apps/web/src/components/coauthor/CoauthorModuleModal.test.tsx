@@ -36,17 +36,21 @@
  * i18n/context.tsx), so label assertions read as the mapped i18n key, never
  * the raw snake_case.
  */
-import { afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
 import type { ComponentProps } from "react";
+import type { DragEndEvent } from "@dnd-kit/core";
 import { useDomEnv } from "../../../test/dom-env.js";
 
 useDomEnv();
 const { act, fireEvent, render, waitFor } = await import("@testing-library/react");
+const { toast } = await import("sonner");
 import { useModalStore } from "../../stores/modal-store.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useCoauthorSkillStore } from "../../stores/coauthor-skill-store.js";
 import type { CoauthorModule, CoauthorModuleCreate, CoauthorModuleUpdate } from "@vibe-tavern/api-contracts";
 import { COAUTHOR_TOOL_KEYS } from "@vibe-tavern/api-contracts";
+import { brandId, type ChatId, type CharacterId } from "@vibe-tavern/domain";
+import { wireChat } from "../../../test/wire-fixtures.js";
 import type { TFunc } from "../../i18n/context.js";
 
 // i18n is NOT mocked. The modal renders providerless, so the real `useT`
@@ -238,13 +242,12 @@ function openModal() {
 
 function setActiveChat(coauthorModuleId: string | null) {
 	useSnapshotStore.setState({
-		activeChat: {
-			id: "chat_test",
-			characterId: "char_test",
+		activeChat: wireChat({
+			id: brandId<ChatId>("chat_test"),
+			characterId: brandId<CharacterId>("char_test"),
 			mode: "coauthor",
 			coauthorModuleId,
-			coauthorContextLinks: [],
-		} as never,
+		}),
 	});
 }
 
@@ -331,8 +334,14 @@ describe("CoauthorModuleModal (CS-25 manager)", () => {
 		await waitFor(() => expect(getByTestId("module-name-input")).toBeTruthy());
 		expect(getByTestId("module-save-btn")).toBeTruthy();
 		// Saving a blank draft triggers client-side validation — no RPC call.
-		fireEvent.click(getByTestId("module-save-btn"));
-		await waitFor(() => expect(createCoauthorModuleAction).not.toHaveBeenCalled());
+		const toastError = spyOn(toast, "error");
+		try {
+			fireEvent.click(getByTestId("module-save-btn"));
+			await waitFor(() => expect(createCoauthorModuleAction).not.toHaveBeenCalled());
+			expect(toastError).toHaveBeenCalledWith("coauthor.module.name_required");
+		} finally {
+			toastError.mockRestore();
+		}
 	});
 
 	it("delete asks for confirmation, then calls deleteCoauthorModuleAction", async () => {
@@ -551,8 +560,14 @@ describe("CoauthorModuleModal — built-in Duplicate (CTX-M3)", () => {
 		fireEvent.click(getByText("coauthor.module.duplicate"));
 		const nameInput = await waitFor(() => getByTestId("module-name-input") as HTMLInputElement);
 		fireEvent.change(nameInput, { target: { value: "" } });
-		fireEvent.click(getByTestId("module-save-btn"));
-		await waitFor(() => expect(createCoauthorModuleAction).not.toHaveBeenCalled());
+		const toastError = spyOn(toast, "error");
+		try {
+			fireEvent.click(getByTestId("module-save-btn"));
+			await waitFor(() => expect(createCoauthorModuleAction).not.toHaveBeenCalled());
+			expect(toastError).toHaveBeenCalledWith("coauthor.module.name_required");
+		} finally {
+			toastError.mockRestore();
+		}
 	});
 });
 
@@ -770,9 +785,20 @@ describe("CoauthorModuleModal — drag reorder (ML-8)", () => {
 
 	function dragEnd(activeId: string, overId: string): void {
 		expect(dndHandlers).toBeTruthy();
-		const endEvent = { active: { id: activeId }, over: { id: overId } } as unknown as Parameters<
-			NonNullable<RealDndContextProps["onDragEnd"]>
-		>[0];
+		// Member-for-member DragEndEvent (dnd-kit core): the reorder handler reads
+		// only active.id / over.id; the remaining members ride inert defaults.
+		const endEvent: DragEndEvent = {
+			activatorEvent: new Event("pointerdown"),
+			active: { id: activeId, data: { current: undefined }, rect: { current: { initial: null, translated: null } } },
+			collisions: null,
+			delta: { x: 0, y: 0 },
+			over: {
+				id: overId,
+				rect: { width: 0, height: 0, top: 0, left: 0, right: 0, bottom: 0 },
+				disabled: false,
+				data: { current: undefined },
+			},
+		};
 		act(() => {
 			dndHandlers!.onDragEnd!(endEvent);
 		});

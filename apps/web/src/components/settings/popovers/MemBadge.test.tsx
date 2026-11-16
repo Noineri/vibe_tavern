@@ -9,7 +9,7 @@
  * The store is driven via `getState()` directly — no module mock needed.
  * CustomTooltip is mocked out to isolate from radix.
  */
-import { beforeEach, describe, it, expect, mock } from "bun:test";
+import { afterAll, beforeEach, describe, it, expect, jest, mock } from "bun:test";
 
 import { act, type ReactNode } from "react";
 import { useDomEnv } from "../../../../test/dom-env.js";
@@ -30,9 +30,20 @@ const { useChatStore } = await import("../../../stores/chat-store.js");
 const { brandId } = await import("@vibe-tavern/domain");
 import type { ChatId } from "@vibe-tavern/domain";
 
+const initialNotifications = {
+	byChat: useChatNotifications.getState().byChat,
+	holdsByChat: useChatNotifications.getState().holdsByChat,
+};
+const initialActiveChatId = useChatStore.getState().activeChatId;
+
 beforeEach(() => {
 	useChatNotifications.setState({ byChat: {}, holdsByChat: {} });
 	useChatStore.getState().setActiveChatId(brandId<ChatId>("chat-1"));
+});
+
+afterAll(() => {
+	useChatNotifications.setState(initialNotifications);
+	useChatStore.getState().setActiveChatId(initialActiveChatId);
 });
 
 const flush = async () => {
@@ -67,6 +78,24 @@ describe("MemBadge — W7 lifecycle indicator", () => {
 		await flush();
 		expect(container.querySelector("polyline")).toBeNull();
 		expect(container.querySelector(".bg-success")).not.toBeNull();
+	});
+
+	it("auto-reverts a ready checkmark back to idle after 2 s without a click", async () => {
+		jest.useFakeTimers();
+		try {
+			const { container } = render(<MemBadge label="Memory" onClick={() => {}} />);
+			await act(async () => { useChatNotifications.getState().setReady("chat-1", "s-1", "T1–T10"); });
+			expect(container.querySelector("polyline")).not.toBeNull();
+
+			await act(async () => { jest.advanceTimersByTime(1999); });
+			expect(container.querySelector("polyline")).not.toBeNull();
+
+			await act(async () => { jest.advanceTimersByTime(1); });
+			expect(container.querySelector("polyline")).toBeNull();
+			expect(container.querySelector(".bg-success")).not.toBeNull();
+		} finally {
+			jest.useRealTimers();
+		}
 	});
 
 	it("opening memory during generation preserves the spinner", async () => {

@@ -29,6 +29,7 @@ async function setup() {
 	const store = new ScriptStore(db, { content: null, clock: fixedClock, idGenerator: idGen });
 	await db.run(sql`INSERT INTO characters (id, name, created_at, updated_at) VALUES ('char_1', 'C', '2026-01-01', '2026-01-01')`);
 	await db.run(sql`INSERT INTO personas (id, name, description, default_for_new_chats, has_file_on_disk, created_at, updated_at) VALUES ('persona_9', 'P', '', 0, 0, '2026-01-01', '2026-01-01')`);
+	await db.run(sql`INSERT INTO personas (id, name, description, default_for_new_chats, has_file_on_disk, created_at, updated_at) VALUES ('persona_other', 'PO', '', 0, 0, '2026-01-01', '2026-01-01')`);
 	await db.run(sql`INSERT INTO chats (id, character_id, active_branch_id, title, created_at, updated_at) VALUES ('chat_x', 'char_1', 'branch_x', 'T', '2026-01-01', '2026-01-01')`);
 	await db.run(sql`INSERT INTO characters (id, name, created_at, updated_at) VALUES ('char_other', 'CO', '2026-01-01', '2026-01-01')`);
 	return { store };
@@ -78,11 +79,18 @@ describe("ScriptStore.listParticipatingForChat («Текущие»)", () => {
 		await store.addLink(otherChar.id, "character", "char_other");
 		const otherPersona = await store.create({ name: "other-persona", scopeType: "entity", enabled: true });
 		await store.addLink(otherPersona.id, "persona", "persona_9");
+		const activePersonaScript = await store.create({ name: "active-persona", scopeType: "entity", enabled: true });
+		await store.addLink(activePersonaScript.id, "persona", "persona_other");
 
-		// The chat has no persona resolved → persona_9's script must not leak in.
-		const participating = names(await store.listParticipatingForChat("char_1", null, "chat_x"));
-		expect(participating).not.toContain("other-char");
-		expect(participating).not.toContain("other-persona");
+		// Neither persona_9 nor persona_other scripts appear when no persona is active.
+		const nullPersona = names(await store.listParticipatingForChat("char_1", null, "chat_x"));
+		expect(nullPersona).not.toContain("other-char");
+		expect(nullPersona).not.toContain("other-persona");
+		expect(nullPersona).not.toContain("active-persona");
+
+		// When a different persona is active, its script participates while persona_9's stays excluded.
+		const otherActive = names(await store.listParticipatingForChat("char_1", "persona_other", "chat_x"));
+		expect(otherActive).toEqual(["active-persona"]);
 	});
 
 	test("links are honored: a script linked to this chat's character participates, even disabled and cross-home", async () => {

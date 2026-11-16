@@ -28,6 +28,7 @@ import { describe, test, expect, beforeAll, afterEach, beforeEach, mock } from "
 import { brandId, type MessageId, type MessageVariantId } from "@vibe-tavern/domain";
 import { useMessageAiEditorStore } from "../../../stores/message-ai-editor-store.js";
 import { useDomEnv } from "../../../../test/dom-env.js";
+import { flush } from "../../../../test/flush.js";
 import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 
 useDomEnv();
@@ -44,11 +45,13 @@ let act: typeof import("@testing-library/react").act;
 beforeAll(async () => {
   if (typeof window !== "undefined") {
     if (!window.matchMedia) {
-      window.matchMedia = (q: string) => ({
+      // Member-for-member MediaQueryList literal (the 7a annotation shape) —
+      // no erasure needed: the literal satisfies the interface.
+      window.matchMedia = (q: string): MediaQueryList => ({
         matches: false, media: q, onchange: null,
         addEventListener: NOOP, removeEventListener: NOOP,
         addListener: NOOP, removeListener: NOOP, dispatchEvent: () => false,
-      }) as unknown as MediaQueryList;
+      });
     }
     if (typeof (globalThis as { ResizeObserver?: unknown }).ResizeObserver === "undefined") {
       (globalThis as { ResizeObserver?: unknown }).ResizeObserver = class {
@@ -415,7 +418,7 @@ async function waitForNode(selector: string): Promise<HTMLElement> {
   while (Date.now() < deadline) {
     const el = document.querySelector<HTMLElement>(selector);
     if (el) return el;
-    await new Promise<void>((resolve) => setTimeout(resolve, 10));
+    await flush();
   }
   throw new Error(`Timed out waiting for ${selector}`);
 }

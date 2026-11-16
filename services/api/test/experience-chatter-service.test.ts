@@ -23,6 +23,8 @@
 import { describe, expect, test } from "bun:test";
 import type { StoredProviderProfileRecord, AssemblePromptResponse, ExperienceParticipant } from "@vibe-tavern/domain";
 import type { ProviderProfileService } from "../src/domain/providers/provider-profile-service.js";
+import { strictTestDouble } from "./strict-test-double.js";
+import { execResult } from "./insights-test-builders.js";
 import { ExperienceChatterService, parseChatterMarker } from "../src/domain/interactive/experience-chatter-service.js";
 
 function makeProfile(overrides: Partial<StoredProviderProfileRecord> = {}): StoredProviderProfileRecord {
@@ -67,13 +69,16 @@ function makeService(opts: {
 	};
 	const spy: ExecuteSpy = { calls: [] };
 	const service = new ExperienceChatterService({
-		providerProfiles: providerProfiles as unknown as ProviderProfileService,
-		execute: (async (input: { profile: StoredProviderProfileRecord; model: string; prompt: AssemblePromptResponse }) => {
+		// The strict double keeps the three provided members compiler-checked;
+		// a member the chatter starts reading throws a labeled miss.
+		providerProfiles: strictTestDouble<ProviderProfileService>(providerProfiles, "ProviderProfileService (chatter)"),
+		execute: async (input) => {
 			spy.calls.push({ profile: input.profile, model: input.model, prompt: input.prompt });
 			if (opts.executeThrows) throw new Error("provider blew up");
 			const ret = opts.executeReturn;
-			return ret ? await ret() : { text: "A cosmetic line." };
-		}) as never,
+			const r = ret ? await ret() : { text: "A cosmetic line." };
+			return execResult(r.text);
+		},
 	});
 	return { service, spy };
 }
@@ -202,10 +207,17 @@ describe("ExperienceChatterService — resolveChatterFlavor", () => {
 		expect(spy.calls.length).toBe(0);
 	});
 
-	test("no active profile (legacy seat, no provider) degrades to failed", () => {
+	test("no active profile (legacy seat, no provider) degrades to failed", async () => {
 		const { service, spy } = makeService({ profile: null });
 		const legacySeat = [{ id: "ai1", label: "ai1", controller: "model" } as ExperienceParticipant];
-		service.resolveChatterFlavor("s1", VIEWER, 1, MARKER, legacySeat);
+		const first = service.resolveChatterFlavor("s1", VIEWER, 1, MARKER, legacySeat);
+		expect(first).toEqual({ status: "pending", seatId: "ai1", fallback: "…" });
+		await settle();
 		expect(spy.calls.length).toBe(0);
+		expect(service.resolveChatterFlavor("s1", VIEWER, 1, MARKER, legacySeat)).toEqual({
+			status: "failed",
+			seatId: "ai1",
+			fallback: "…",
+		});
 	});
 });

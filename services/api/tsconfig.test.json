@@ -1,0 +1,12 @@
+{
+  // Test-file typecheck config — consumed ONLY by scripts/test-type-gate.ts
+  // (`bun run typecheck` stage). bun test transpiles without checking, so test
+  // files here get no coverage from the main config (its include is src/**).
+  // Extends the workspace's OWN config (no-DOM lib pin, bun types, path
+  // aliases); `include` replaces the parent's list wholesale. The
+  // `e2e-*.test.ts.broken` shells do not match `*.ts` and stay out by design.
+  "extends": "./tsconfig.json",
+  "include": [
+    "test/**/*.ts"
+  ]
+}

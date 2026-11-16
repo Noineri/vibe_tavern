@@ -82,7 +82,7 @@ describe("createCharacterSchema", () => {
       scenario: "s",
       personalitySummary: "ps",
       mesExample: "me",
-      mesExampleMode: "depth",
+      mesExampleMode: "depth" as const,
       mesExampleDepth: 3,
       alternateGreetings: ["g1", "g2"],
       postHistoryInstructions: "phi",
@@ -95,6 +95,7 @@ describe("createCharacterSchema", () => {
     };
     const result = createCharacterSchema.safeParse(payload);
     expect(result.success).toBe(true);
+    if (result.success) expect(result.data).toEqual(payload);
   });
 
   it("rejects a payload missing the required name", () => {
@@ -158,23 +159,33 @@ describe("updateCharacterSchema", () => {
     expectReject(updateCharacterSchema.safeParse({ firstMessage: 42 }));
   });
 
-  it("treats personalitySummary, mesExample, creatorNotes, depthPrompt, depthPromptRole, postHistoryInstructions, avatarAssetId/Full/Crop as nullable+optional", () => {
-    const nullableFields = [
+  it("treats nullable optional string/number fields (personalitySummary..avatarDescription, depthPromptDepth) as three-state + rejects wrong types", () => {
+    const nullableStringFields = [
       "personalitySummary",
       "mesExample",
       "postHistoryInstructions",
       "creatorNotes",
       "depthPrompt",
-      "depthPromptDepth",
       "depthPromptRole",
       "avatarAssetId",
       "avatarFullAssetId",
       "avatarCropJson",
+      "avatarDescription",
     ] as const;
-    for (const field of nullableFields) {
-      expect(updateCharacterSchema.safeParse({ [field]: null }).success).toBe(true);
-      expect(updateCharacterSchema.safeParse({ [field]: undefined }).success).toBe(true);
+    for (const field of nullableStringFields) {
+      expect(updateCharacterSchema.parse({ [field]: null })).toEqual({ [field]: null });
+      const undefResult = updateCharacterSchema.safeParse({ [field]: undefined });
+      expect(undefResult.success).toBe(true);
+      if (undefResult.success) expect(undefResult.data[field]).toBeUndefined();
+      expect(updateCharacterSchema.parse({ [field]: "val" })).toEqual({ [field]: "val" });
+      expectReject(updateCharacterSchema.safeParse({ [field]: 42 }));
     }
+    expect(updateCharacterSchema.parse({ depthPromptDepth: null })).toEqual({ depthPromptDepth: null });
+    const depthUndef = updateCharacterSchema.safeParse({ depthPromptDepth: undefined });
+    expect(depthUndef.success).toBe(true);
+    if (depthUndef.success) expect(depthUndef.data.depthPromptDepth).toBeUndefined();
+    expect(updateCharacterSchema.parse({ depthPromptDepth: 4 })).toEqual({ depthPromptDepth: 4 });
+    expectReject(updateCharacterSchema.safeParse({ depthPromptDepth: "4" }));
   });
 
   it("rejects an unknown mesExampleMode enum member on update", () => {

@@ -11,6 +11,7 @@ import type { AgentPlan, Attachment, ImageRoute } from "@vibe-tavern/domain";
 import type { ConfigPatchResponse } from "./session-types.js";
 import type { AgentRunSubscription } from "../../domain/agent/agent-run-registry.js";
 import type { ExperienceCopilotStopRunResponse, AgentReviewEnvelope } from "@vibe-tavern/api-contracts";
+import type { SidechatProposalMessageCompanion } from "../../domain/sidechat/sidechat-objective-proposal.js";
 
 /** GET/PATCH `/context` response: the thread's last-turn metrics (null before the
  *  first turn) plus its auto-compact toggle (CM-4). */
@@ -66,13 +67,20 @@ export interface ExperienceCopilotTurnDeleteResult {
  *  the types that produce it: `plan` for story-plan resolutions and
  *  objective resolutions under a plan with events (the no-plan objective
  *  response is byte-identical to SC-11's bare `{ proposal }`), `patch` for
- *  tracker-scene resolutions. */
+ *  tracker-scene resolutions, and (DMT-22) `message` for accepted
+ *  message-edit / message-variant resolutions. */
 export interface AgentThreadProposalResolveWire {
   proposal: RecordProposal;
   /** The target branch's refreshed normalized plan (the DR-5 companion). */
   plan?: AgentPlan;
   /** The refreshed insights config patch (the tracker-scene companion). */
   patch?: ConfigPatchResponse;
+  /** The refreshed TARGET-SCOPED message companion (DMT-22) — the affected
+   *  message row + its full variant list post-write, scoped by chat/branch
+   *  so a client merges it only into the conversation it names. Never a
+   *  full-branch snapshot; absent on every other proposal type (existing
+   *  responses unchanged). */
+  message?: SidechatProposalMessageCompanion;
 }
 
 export interface ExperienceCopilotRuntimeApi {

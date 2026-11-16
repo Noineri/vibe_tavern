@@ -25,7 +25,6 @@ import { join } from "node:path";
 import {
   exportLorebookToSt,
   importStLorebookJson,
-  type StExportLoreEntry,
   type StExportLorebook,
   type StLorebookNormalized,
 } from "../src/lorebooks/st-lorebook.js";
@@ -52,15 +51,21 @@ const ST_TEMPLATE_FIELDS = [
 ] as const;
 
 describe("golden ST world-info parity probe (step 29)", () => {
-  test("the golden fixture carries every ST template field (completeness pin)", () => {
-    for (const entry of Object.values(golden.entries)) {
+  test("the golden fixture carries every ST 1.18.0 ST_TEMPLATE_FIELDS entry (local snapshot completeness pin)", () => {
+    for (const [id, entry] of Object.entries(golden.entries)) {
       for (const field of ST_TEMPLATE_FIELDS) {
-        expect(entry, `golden entry missing ST template field '${field}'`).toHaveProperty(field);
+        expect(entry, `golden entry ${id} missing ST template field '${field}'`).toHaveProperty(field);
       }
+      const allowedKeys = new Set<string>([
+        "uid",
+        ...ST_TEMPLATE_FIELDS,
+        ...(id === "0" ? ["characterFilter"] : []),
+      ]);
+      expect(new Set(Object.keys(entry))).toEqual(allowedKeys);
     }
   });
 
-  test("import maps every golden field to its VT field exactly", () => {
+  test("import maps every supported golden field on both entries to its VT field (vectorized/triggers unpersisted)", () => {
     const bundle = importStLorebookJson(JSON.stringify(golden));
     const normalized: StLorebookNormalized = bundle.normalized;
 
@@ -73,6 +78,14 @@ describe("golden ST world-info parity probe (step 29)", () => {
     expect(normalized.tokenBudgetCap).toBe(700);
     expect(normalized.recursiveScanning).toBe(true);
     expect(normalized.maxRecursionSteps).toBe(9);
+    expect(normalized.includeNames).toBe(true);
+    expect(normalized.useGroupScoring).toBe(false);
+    expect(normalized.caseSensitive).toBe(false);
+    expect(normalized.matchWholeWords).toBe(false);
+    expect(normalized.minActivations).toBe(0);
+    expect(normalized.minActivationsDepthMax).toBe(0);
+    expect(normalized.overflowAlert).toBe(false);
+    expect(normalized.characterStrategy).toBe(1);
 
     expect(bundle.warnings).toContain("Lore entry 42 has character-filter tags that Vibe Tavern cannot import.");
 
@@ -85,6 +98,7 @@ describe("golden ST world-info parity probe (step 29)", () => {
     expect(e.content).toBe("Golden probe content");
     expect(e.constant).toBe(true);
     expect(e.priority).toBe(321);
+    expect(e.sortOrder).toBe(0);
     expect(e.position).toBe("at_depth");
     expect(e.depth).toBe(9);
     expect(e.enabled).toBe(true);
@@ -125,16 +139,55 @@ describe("golden ST world-info parity probe (step 29)", () => {
     expect(e.metadata.stCharacterFilterNames).toEqual(["Golden.png"]);
     expect(e.metadata.stCharacterFilterTags).toEqual(["golden-tag"]);
 
-    // Sweep entry: disable true, selective false drops secondary keys (D4).
+    // Sweep entry: disable true, selective false drops secondary keys (D4), plus full default field sweep.
     const sweep = bundle.entries.find((entry) => entry.title === "Inactive sweep");
     expect(sweep).toBeDefined();
     const s = sweep as LoreEntry;
-    expect(s.enabled).toBe(false);
-    expect(s.secondaryKeys).toEqual([]);
-    expect(s.logic).toBe("and_any");
+    expect(s).toMatchObject({
+      title: "Inactive sweep",
+      keys: ["inactive"],
+      secondaryKeys: [],
+      logic: "and_any",
+      content: "Disable and selective sweep",
+      constant: false,
+      priority: 100,
+      sortOrder: 1,
+      position: "before_char",
+      depth: 4,
+      enabled: false,
+      ignoreBudget: false,
+      excludeRecursion: false,
+      preventRecursion: false,
+      matchSources: [LORE_MATCH_SOURCE.chatMessages],
+      delayUntilRecursion: false,
+      recursionLevel: 0,
+      probability: 100,
+      role: "system",
+      groupName: "",
+      groupWeight: 100,
+      prioritizeInclusion: false,
+      useGroupScoring: null,
+      scanDepthOverride: null,
+      caseSensitive: null,
+      matchWholeWords: null,
+      automationId: "",
+      stickyWindow: 0,
+      cooldownWindow: 0,
+      minChatMessages: 0,
+      characterFilter: [],
+      characterFilterExclude: false,
+      metadata: {
+        stUid: 7,
+        stOutletName: "",
+        stAddMemo: false,
+        stUseProbability: false,
+        stCharacterFilterNames: [],
+        stCharacterFilterTags: [],
+      },
+    });
   });
 
-  test("export restores the ST-native shape field for field", () => {
+  test("export restores the ST-native book and both entries field for field (vectorized/triggers unpersisted)", () => {
     const bundle = importStLorebookJson(JSON.stringify(golden));
     const normalized = bundle.normalized;
     const book: StExportLorebook = {
@@ -155,9 +208,22 @@ describe("golden ST world-info parity probe (step 29)", () => {
       overflowAlert: normalized.overflowAlert,
       characterStrategy: normalized.characterStrategy,
     };
-    const entries = bundle.entries as unknown as StExportLoreEntry[];
+    // The bundle's entries are domain LoreEntry[] — the export contract
+    // (st-lorebook.ts "StExportLoreEntry") was shaped to accept them directly,
+    // no caller-side cast.
+    const entries = bundle.entries;
     const exported = exportLorebookToSt(book, entries, { create_date: 0 });
     const st = exported.entries["0"] as Record<string, unknown>;
+    const st1 = (exported.entries as Record<string, Record<string, unknown>>)["1"];
+
+    expect(exported.name).toBe("Golden Probe Book");
+    expect(exported.description).toBe("Golden probe description");
+    expect(exported.scan_depth).toBe(6);
+    expect(exported.token_budget).toBe(900);
+    expect(exported.token_budget_percent).toBe(42);
+    expect(exported.token_budget_cap).toBe(700);
+    expect(exported.recursive_scanning).toBe(true);
+    expect(exported.extensions).toMatchObject({ max_recursion_steps: 9 });
 
     expect(st.uid).toBe(42);
     expect(st.key).toEqual(["golden", "aurum"]);
@@ -198,5 +264,49 @@ describe("golden ST world-info parity probe (step 29)", () => {
     expect(st.cooldown).toBe(6);
     expect(st.delay).toBe(11);
     expect(st.characterFilter).toEqual({ isExclude: true, names: ["Golden.png"], tags: ["golden-tag"] });
+    expect(Object.hasOwn(st, "vectorized")).toBe(false);
+    expect(Object.hasOwn(st, "triggers")).toBe(false);
+
+    expect(st1).toEqual({
+      uid: 7,
+      key: ["inactive"],
+      keysecondary: [],
+      comment: "Inactive sweep",
+      content: "Disable and selective sweep",
+      constant: false,
+      selective: false,
+      selectiveLogic: 0,
+      addMemo: false,
+      order: 100,
+      position: 0,
+      disable: true,
+      ignoreBudget: false,
+      excludeRecursion: false,
+      preventRecursion: false,
+      matchPersonaDescription: false,
+      matchCharacterDescription: false,
+      matchCharacterPersonality: false,
+      matchCharacterDepthPrompt: false,
+      matchScenario: false,
+      matchCreatorNotes: false,
+      delayUntilRecursion: false,
+      probability: 100,
+      useProbability: false,
+      role: 0,
+      group: "",
+      groupOverride: false,
+      groupWeight: 100,
+      scanDepth: null,
+      caseSensitive: null,
+      matchWholeWords: null,
+      useGroupScoring: null,
+      automationId: "",
+      depth: 4,
+      sticky: 0,
+      cooldown: 0,
+      delay: 0,
+      outletName: "",
+      characterFilter: { isExclude: false, names: [], tags: [] },
+    });
   });
 });

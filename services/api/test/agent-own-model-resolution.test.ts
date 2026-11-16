@@ -17,6 +17,8 @@ import {
 	streamSidechatTurn,
 	type SidechatStreamDeps,
 } from "../src/domain/sidechat/sidechat-stream.js";
+import { makeProviderProfileRow } from "./copilot-test-builders.js";
+import { makeStreamTextDouble } from "./provider-boundary-test-builders.js";
 
 /**
  * DR-2 (owner ruling M1) — the model-resolution precedence, pinned through
@@ -47,13 +49,17 @@ import {
 
 // ─── Provider fixtures (id-keyed — the dangling test needs per-id lookups) ───
 
+// Built through the standing row builder: the erased literal carried the
+// INVALID transport spelling "chatCompletions" (the union value is
+// `chat_completions`) and was silently missing the row's other required
+// columns — the erasure hid both; nothing here reads them (resolveModel is
+// stubbed, so no transport resolution ever runs).
 function makeProviderProfile(id: string, defaultModel: string): ProviderProfile {
-	return {
+	return makeProviderProfileRow({
 		id,
 		name: `Test ${id}`,
 		providerPreset: "openai",
-		coauthorTransport: "chatCompletions",
-		endpoint: "http://test",
+		endpoint: `http://${id}.test`,
 		apiKey: "key",
 		defaultModel,
 		contextBudget: null,
@@ -62,9 +68,7 @@ function makeProviderProfile(id: string, defaultModel: string): ProviderProfile 
 		maxTokens: 2000,
 		temperature: 0.3,
 		proxyMode: "inherit",
-		proxyId: null,
-		isActive: true,
-	} as unknown as ProviderProfile;
+	});
 }
 
 const REQUEST_PROVIDER = makeProviderProfile("prov_req", "req-default");
@@ -77,22 +81,12 @@ const PROVIDERS: Record<string, ProviderProfile> = {
 	// The request pair the turns below send (the client-derived kind binding).
 };
 
-function makeFakeStreamTextResult(parts: unknown[]): Record<string, unknown> {
-	async function* gen(): AsyncGenerator<unknown, void, unknown> {
-		for (const p of parts) yield p;
-	}
-	return {
-		stream: gen(),
-		finishReason: Promise.resolve("stop"),
-		usage: Promise.resolve(undefined),
-	};
-}
-
 // ─── Real-container harness ──────────────────────────────────────────────────
 
 let stores: StoreContainer;
 let deps: SidechatStreamDeps;
 let characterId: string;
+let resolvedCalls: Array<{ endpoint: string; model: string }> = [];
 
 beforeAll(async () => {
 	// Deterministic token counting for the assembly's estimates (the sibling
@@ -134,6 +128,8 @@ beforeAll(async () => {
 			experienceCopilot: stores.experienceCopilot,
 			// DR-4b: the branch-plan read for the <story_plan> section.
 			agentPlans: stores.agentPlans,
+			// DK-5b: the branch-deck read for the <story_deck> section.
+			storyDecks: stores.storyDecks,
 			presets: stores.presets,
 			assembly,
 		},
@@ -151,7 +147,10 @@ beforeAll(async () => {
 			if (!profile) throw new Error(`test fixture: unexpected provider '${id}'`);
 			return profile;
 		},
-		resolveModel: () => ({}) as LanguageModel,
+		resolveModel: (profile, model) => {
+			resolvedCalls.push({ endpoint: profile.endpoint, model });
+			return {} as LanguageModel;
+		},
 		// The REAL SC-0f chain — no settings rows exist, so every turn resolves
 		// the kind's first built-in seed unless a test pins a chat choice.
 		resolveProfileForChat: (thread) =>
@@ -161,8 +160,10 @@ beforeAll(async () => {
 		getAgentOwnModel: (profile) =>
 			stores.agentProfileModels.get(profile.agentKind, profile.id),
 		db: stores.db,
-		streamText: (() =>
-			makeFakeStreamTextResult([{ type: "text-delta", text: "ok" }])) as unknown as SidechatStreamDeps["streamText"],
+		streamText: makeStreamTextDouble(
+			() => ({ parts: [{ type: "text-delta", id: "aom-fake", text: "ok" }] }),
+			"agent-own-model streamText",
+		),
 	};
 });
 
@@ -194,9 +195,13 @@ async function makeSidechatThread(): Promise<{ threadId: string; chatId: string 
 }
 
 /** Run one turn with the REQUEST pair (the client-derived kind binding) and
- *  return the thread's persisted last-used provider/model — the effective
- *  pair the turn actually ran on. */
-async function runTurn(threadId: string): Promise<{ provider: string | null; model: string | null }> {
+ *  return BOTH what the thread persisted AND the resolved model arguments
+ *  that reached `deps.resolveModel` for provider dispatch. */
+async function runTurn(threadId: string): Promise<{
+	persisted: { provider: string | null; model: string | null };
+	resolved: Array<{ endpoint: string; model: string }>;
+}> {
+	resolvedCalls = [];
 	const chunks: Array<{ event: string; data: string }> = [];
 	for await (const chunk of streamSidechatTurn(
 		{ threadId, content: "hello", providerProfileId: REQUEST_PROVIDER.id, model: "req-model" },
@@ -207,7 +212,10 @@ async function runTurn(threadId: string): Promise<{ provider: string | null; mod
 	expect(chunks.some((chunk) => chunk.event === "finish")).toBe(true);
 	const thread = await stores.experienceCopilot.getById(threadId);
 	if (!thread) throw new Error("fixture: thread missing after turn");
-	return { provider: thread.lastProviderProfileId, model: thread.lastModel };
+	return {
+		persisted: { provider: thread.lastProviderProfileId, model: thread.lastModel },
+		resolved: resolvedCalls,
+	};
 }
 
 // ─── 1. No own model stored: exactly today's resolution ──────────────────────
@@ -215,7 +223,10 @@ async function runTurn(threadId: string): Promise<{ provider: string | null; mod
 describe("agent own model — no stored row (characterization anchor)", () => {
 	it("the turn runs on the request's pair, byte-identically", async () => {
 		const { threadId } = await makeSidechatThread();
-		expect(await runTurn(threadId)).toEqual({ provider: "prov_req", model: "req-model" });
+		expect(await runTurn(threadId)).toEqual({
+			persisted: { provider: "prov_req", model: "req-model" },
+			resolved: [{ endpoint: "http://prov_req.test", model: "req-model" }],
+		});
 	});
 });
 
@@ -228,7 +239,10 @@ describe("agent own model — precedence (M1)", () => {
 			modelName: "own-model",
 		});
 		const { threadId } = await makeSidechatThread();
-		expect(await runTurn(threadId)).toEqual({ provider: "prov_own", model: "own-model" });
+		expect(await runTurn(threadId)).toEqual({
+			persisted: { provider: "prov_own", model: "own-model" },
+			resolved: [{ endpoint: "http://prov_own.test", model: "own-model" }],
+		});
 	});
 
 	it("a null modelName means the OWN provider's default, never the request's model", async () => {
@@ -237,7 +251,10 @@ describe("agent own model — precedence (M1)", () => {
 			modelName: null,
 		});
 		const { threadId } = await makeSidechatThread();
-		expect(await runTurn(threadId)).toEqual({ provider: "prov_own", model: "own-default" });
+		expect(await runTurn(threadId)).toEqual({
+			persisted: { provider: "prov_own", model: "own-default" },
+			resolved: [{ endpoint: "http://prov_own.test", model: "own-default" }],
+		});
 	});
 });
 
@@ -250,7 +267,10 @@ describe("agent own model — dangling provider id", () => {
 			modelName: "gone-model",
 		});
 		const { threadId } = await makeSidechatThread();
-		expect(await runTurn(threadId)).toEqual({ provider: "prov_req", model: "req-model" });
+		expect(await runTurn(threadId)).toEqual({
+			persisted: { provider: "prov_req", model: "req-model" },
+			resolved: [{ endpoint: "http://prov_req.test", model: "req-model" }],
+		});
 	});
 });
 
@@ -264,7 +284,10 @@ describe("agent own model — keyed by the resolved profile", () => {
 		});
 		const { threadId, chatId } = await makeSidechatThread();
 		await stores.chatAgentSettings.patch(chatId, "sidechat-ooc", { profileId: "builtin-director" });
-		expect(await runTurn(threadId)).toEqual({ provider: "prov_req", model: "req-model" });
+		expect(await runTurn(threadId)).toEqual({
+			persisted: { provider: "prov_req", model: "req-model" },
+			resolved: [{ endpoint: "http://prov_req.test", model: "req-model" }],
+		});
 	});
 
 	it("a row on `builtin-director` applies when the chat resolves it", async () => {
@@ -274,7 +297,10 @@ describe("agent own model — keyed by the resolved profile", () => {
 		});
 		const { threadId, chatId } = await makeSidechatThread();
 		await stores.chatAgentSettings.patch(chatId, "sidechat-ooc", { profileId: "builtin-director" });
-		expect(await runTurn(threadId)).toEqual({ provider: "prov_own", model: "director-model" });
+		expect(await runTurn(threadId)).toEqual({
+			persisted: { provider: "prov_own", model: "director-model" },
+			resolved: [{ endpoint: "http://prov_own.test", model: "director-model" }],
+		});
 	});
 
 	it("a USER profile's own model applies through the chat's own choice", async () => {
@@ -290,6 +316,9 @@ describe("agent own model — keyed by the resolved profile", () => {
 		});
 		const { threadId, chatId } = await makeSidechatThread();
 		await stores.chatAgentSettings.patch(chatId, "sidechat-ooc", { profileId: profile.id });
-		expect(await runTurn(threadId)).toEqual({ provider: "prov_own", model: "custom-model" });
+		expect(await runTurn(threadId)).toEqual({
+			persisted: { provider: "prov_own", model: "custom-model" },
+			resolved: [{ endpoint: "http://prov_own.test", model: "custom-model" }],
+		});
 	});
 });

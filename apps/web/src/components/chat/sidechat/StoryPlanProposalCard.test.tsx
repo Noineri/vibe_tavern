@@ -23,10 +23,12 @@
  * module-global plan cache entries disjoint.
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { testFetch } from "@vibe-tavern/test-fetch";
+import { brandId, normalizeInsightsConfig, normalizeObjectiveState, type ChatBranchId, type ChatId, type ObjectiveState } from "@vibe-tavern/domain";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
+import { wireChat } from "../../../../test/wire-fixtures.js";
 import type { AgentPlan, AgentPlanTask, RecordProposal } from "@vibe-tavern/api-contracts";
-import type { ObjectiveState } from "@vibe-tavern/domain";
 import en from "../../../i18n/locales/en.json";
 import ru from "../../../i18n/locales/ru.json";
 
@@ -34,7 +36,6 @@ useDomEnv();
 const { fireEvent, render, renderHook, waitFor } = await import("@testing-library/react");
 import { useSnapshotStore } from "../../../stores/snapshot-store.js";
 import { useAgentPlan } from "../../../hooks/use-agent-plan.js";
-import type { AppSnapshot } from "../../../api/types.js";
 
 const mocks = {
   applyStoryPlanProposal: mock(),
@@ -111,7 +112,7 @@ const fetchCalls: string[] = [];
 beforeEach(() => {
   storedPlansByBranch.clear();
   fetchCalls.length = 0;
-  globalThis.fetch = (async (input: RequestInfo | URL): Promise<Response> => {
+  globalThis.fetch = testFetch(async (input: RequestInfo | URL): Promise<Response> => {
     const url = String(input);
     fetchCalls.push(url);
     if (url.includes("/plan")) {
@@ -122,7 +123,7 @@ beforeEach(() => {
       });
     }
     return new Response(JSON.stringify({}), { status: 200, headers: { "content-type": "application/json" } });
-  }) as unknown as typeof fetch;
+  });
   mocks.applyStoryPlanProposal.mockReset();
   mocks.rejectStoryPlanProposal.mockReset();
   mocks.fetchChatAction.mockReset();
@@ -138,8 +139,9 @@ afterAll(() => {
 });
 
 /** Seed the ACTIVE chat the card reads the tracker state and ids from (the
- *  ObjectiveProposalCard seed pattern: minimal wire double through
- *  `ingestSnapshot`). */
+ *  ObjectiveProposalCard seed pattern: the wire factory through
+ *  `ingestSnapshot`; the objective state rides the domain's persisted-column
+ *  seam, which keeps valid `goals`/`route` modes and known task statuses). */
 function seedChat(over: {
   branchId: string;
   items?: { id: string; description: string; status: string }[];
@@ -148,11 +150,11 @@ function seedChat(over: {
   autoCheckFrequency?: number;
 }) {
   useSnapshotStore.getState().ingestSnapshot({
-    activeChat: {
-      id: "c1",
-      activeBranchId: over.branchId,
-      insightsConfig: { objectiveEnabled: true, trackerEnabled: false },
-      insightsObjectiveState: {
+    activeChat: wireChat({
+      id: brandId<ChatId>("c1"),
+      activeBranchId: brandId<ChatBranchId>(over.branchId),
+      insightsConfig: normalizeInsightsConfig({ objectiveEnabled: true, trackerEnabled: false }),
+      insightsObjectiveState: normalizeObjectiveState({
         mode: over.mode ?? "goals",
         objectiveDescription: "",
         tasks: over.items ?? [],
@@ -165,9 +167,9 @@ function seedChat(over: {
         generatePrompt: "",
         checkPrompt: "",
         injectPrompt: "",
-      },
-    },
-  } as unknown as AppSnapshot);
+      }),
+    }),
+  });
 }
 
 function proposal(over: Partial<RecordProposal> & { payload?: unknown }): RecordProposal {
@@ -554,6 +556,11 @@ describe("StoryPlanProposalCard (DR-10a)", () => {
       "Goal tracker goals will be replaced by the plan's events",
     );
     expect(record["agent.story_plan_proposal.auto_check_label"]).toBe("Check completion after each reply");
+    // DK-10: the dated rows' time chip — the ONE derivation the events tab
+    // renders too, so its labels are card strings as well.
+    expect(record["story_event_at_day"]).toBe("day {day}");
+    expect(record["story_event_at_day_part"]).toBe("day {day} · {part}");
+    expect(record["story_event_awaits_time"]).toBe("awaits its time");
 
     const ruRecord = ru as Record<string, string>;
     expect(ruRecord["agent.story_plan_proposal.title"]).toBe("План сюжета");
@@ -573,6 +580,9 @@ describe("StoryPlanProposalCard (DR-10a)", () => {
     expect(ruRecord["agent.story_plan_proposal.auto_check_label"]).toBe(
       "Проверять выполнение после каждого ответа",
     );
+    expect(ruRecord["story_event_at_day"]).toBe("день {day}");
+    expect(ruRecord["story_event_at_day_part"]).toBe("день {day} · {part}");
+    expect(ruRecord["story_event_awaits_time"]).toBe("ждёт своего часа");
   });
 
   it("pins the propose_plan tool label (the profile modal's sidechat toggle)", async () => {
@@ -584,5 +594,39 @@ describe("StoryPlanProposalCard (DR-10a)", () => {
     const ruRecord = ru as Record<string, string>;
     expect(record["agent_tool_propose_plan"]).toBe("Propose a story plan");
     expect(ruRecord["agent_tool_propose_plan"]).toBe("Предлагать план сюжета");
+  });
+});
+
+// ─── DK-10 (mockup §6): the dated event's muted time chip ───────────────────
+// Payload-only: the card reads NO clock, so a dated proposed row carries the
+// chip (the ONE storyEventTimeLabel derivation) and nothing ever carries the
+// "awaits its time" mark here. Key-echo i18n: the part-bearing chip echoes
+// story_event_at_day_part, the partless one story_event_at_day — the two
+// shapes are distinguishable without a locale.
+describe("StoryPlanProposalCard — the time chip (DK-10, mockup §6)", () => {
+  it("a dated proposed event carries the chip; a partless at renders the day-only label; undated carries none", async () => {
+    const branchId = "b1-chip";
+    const proposed: AgentPlanTask[] = [
+      { id: "d1", title: "Vet visit", body: "", status: "pending", at: { day: 4, part: "evening" } },
+      { id: "d2", title: "Undated task", body: "", status: "pending" },
+      { id: "d3", title: "Day-only task", body: "", status: "pending", at: { day: 2, part: null } },
+    ];
+    storedPlansByBranch.set(branchId, planOf([]));
+    seedChat({ branchId });
+    const view = render(
+      <StoryPlanProposalCard
+        proposal={proposal({ targetId: branchId, payload: { plan: planOf(proposed) } })}
+        threadId="thread-1"
+      />,
+    );
+    await waitFor(() => expect(view.getByTestId("story-plan-proposal-events")).not.toBeNull());
+    const chips = view.getAllByTestId("story-plan-event-time");
+    expect(chips).toHaveLength(2);
+    // Row order = the proposed order: the part-bearing chip first, the
+    // day-only chip on the third row.
+    expect(chips[0]!.textContent).toBe("story_event_at_day_part");
+    expect(chips[1]!.textContent).toBe("story_event_at_day");
+    // No wait mark exists in the card at all (payload-only).
+    expect(view.queryByText("story_event_awaits_time")).toBeNull();
   });
 });

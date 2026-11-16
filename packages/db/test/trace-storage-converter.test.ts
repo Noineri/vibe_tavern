@@ -174,10 +174,12 @@ test("logical clock time releases the throttle before 500 more rows pass", async
 		yieldToEventLoop: async () => {},
 		onProgress: (converted, total) => { emissions.push({ converted, total, at: now }); },
 	});
-	// 30 rows never reach the 500-row rule, so every throttled emission (all
-	// but the final one) must have been released by the 5 s logical-time rule.
+	// 30 rows never reach the 500-row rule, so every throttled intermediate emission
+	// must be released by the 5 s logical-time rule (require >= 1 intermediate emission).
+	expect(emissions.length).toBeGreaterThan(2);
 	for (let i = 1; i < emissions.length - 1; i++) {
 		expect(emissions[i]!.at - emissions[i - 1]!.at).toBeGreaterThanOrEqual(5000);
+		expect(emissions[i]!.converted).toBeLessThan(30);
 	}
 	expect(emissions.length).toBeLessThan(30);
 	expect(emissions[0]!.converted).toBe(1);

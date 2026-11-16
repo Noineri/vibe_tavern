@@ -81,8 +81,10 @@ describe("applyRegexToChatHistory — mode isolation (RX-13)", () => {
 
 describe("applyRegexToChatHistory — placement & depth (RX-13)", () => {
   it("USER_INPUT placement applies to user messages only, AI_OUTPUT to assistant only", () => {
-    const out = applyRegexToChatHistory(history(), [makePreset({ promptOnly: true, placement: [REGEX_PLACEMENT.UserInput] })]);
-    expect(out.map((m) => m.content)).toEqual(["hello [redacted] user", "hi secret bot", "bye [redacted] user"]);
+    const userOnly = applyRegexToChatHistory(history(), [makePreset({ promptOnly: true, placement: [REGEX_PLACEMENT.UserInput] })]);
+    expect(userOnly.map((m) => m.content)).toEqual(["hello [redacted] user", "hi secret bot", "bye [redacted] user"]);
+    const aiOnly = applyRegexToChatHistory(history(), [makePreset({ promptOnly: true, placement: [REGEX_PLACEMENT.AiOutput] })]);
+    expect(aiOnly.map((m) => m.content)).toEqual(["hello secret user", "hi [redacted] bot", "bye secret user"]);
   });
 
   it("a script with both codes applies to both roles", () => {
@@ -122,8 +124,16 @@ describe("applyRegexToChatHistory — purity (RX-13)", () => {
 
   it("clones only transformed messages (untransformed keep identity)", () => {
     const msgs = history();
-    const out = applyRegexToChatHistory(msgs, [makePreset({ promptOnly: true, placement: [REGEX_PLACEMENT.UserInput] })]);
-    expect(out[0]).not.toBe(msgs[0]); // transformed user msg → clone
-    expect(out[1]).toBe(msgs[1]); // untouched assistant msg → same object
+    const userOut = applyRegexToChatHistory(msgs, [makePreset({ promptOnly: true, placement: [REGEX_PLACEMENT.UserInput] })]);
+    expect(userOut).not.toBe(msgs);
+    expect(userOut[0]).not.toBe(msgs[0]); // transformed user msg → clone
+    expect(userOut[1]).toBe(msgs[1]); // untouched assistant msg → same object
+    expect(userOut[2]).not.toBe(msgs[2]); // transformed second user msg → clone
+
+    const aiOut = applyRegexToChatHistory(msgs, [makePreset({ promptOnly: true, placement: [REGEX_PLACEMENT.AiOutput] })]);
+    expect(aiOut).not.toBe(msgs);
+    expect(aiOut[0]).toBe(msgs[0]);
+    expect(aiOut[1]).not.toBe(msgs[1]);
+    expect(aiOut[2]).toBe(msgs[2]);
   });
 });

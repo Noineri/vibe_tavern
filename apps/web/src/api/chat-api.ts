@@ -1,6 +1,6 @@
-import type { ChatId, ChatMode, ObjectiveMode, ObjectiveTaskStatus, PromptTraceRecordDto, SceneTrackerConfig, ChatBranchId, MessageVariantId } from "@vibe-tavern/domain";
+import type { ChatId, ChatMode, ObjectiveMode, ObjectiveTaskStatus, SceneTrackerConfig, ChatBranchId, MessageVariantId } from "@vibe-tavern/domain";
 import type { CoauthorApplyRequest, CoauthorCorrection, RegenerateOverride, ManualSummaryRunState, ManualSummaryStopResponse } from "@vibe-tavern/api-contracts";
-import type { AppSnapshot, ChatListItem, ChatSummaryRecord, AutoSummaryConfig, InsightsConfigPatch, InsightsCompletionPatchResponse, InsightsCompletionTarget, ScenePreviewResponse, SceneTargetResponse, SceneStatusResponse, SceneBackfillMode, SceneBackfillStatusResponse, ContextPreviewResponse, DiceMode } from "./types.js";
+import type { AppSnapshot, AppPromptTrace, ChatListItem, ChatSummaryRecord, AutoSummaryConfig, InsightsConfigPatch, InsightsCompletionPatchResponse, InsightsCompletionTarget, ScenePreviewResponse, SceneTargetResponse, SceneStatusResponse, SceneBackfillMode, SceneBackfillStatusResponse, ContextPreviewResponse, DiceMode } from "./types.js";
 import { client } from "./client.js";
 import { unwrapRpc, unwrapError, errorFromBody, type RpcErrorBody, type RpcResponse } from "./unwrap.js";
 import { markUserMessageSaved } from "./provider-stream-error.js";
@@ -757,7 +757,7 @@ export async function exportPromptTrace(traceId: string): Promise<Record<string,
 export async function fetchTraceHistory(
   chatId: ChatId,
   opts?: { messageId?: string; branchId?: string },
-): Promise<PromptTraceRecordDto[]> {
+): Promise<AppPromptTrace[]> {
   const response = await client.api.chats[":chatId"].traces.$get({
     param: { chatId },
     query: { messageId: opts?.messageId, branchId: opts?.branchId },

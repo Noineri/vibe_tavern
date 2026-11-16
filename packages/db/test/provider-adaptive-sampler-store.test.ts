@@ -153,11 +153,15 @@ describe("provider_profiles numeric-tail columns (B2)", () => {
       providerPreset: "llamacpp",
       endpoint: "http://localhost:8080/v1",
       dynatempRange: 1.5,
+      dynatempExponent: 1.4,
+      topNSigma: 0.35,
       smoothingFactor: 0.7,
       dryPenaltyLastN: 512,
     });
     const copy = await store.duplicate(profile.id);
     expect(copy.dynatempRange).toBe(1.5);
+    expect(copy.dynatempExponent).toBe(1.4);
+    expect(copy.topNSigma).toBe(0.35);
     expect(copy.smoothingFactor).toBe(0.7);
     expect(copy.dryPenaltyLastN).toBe(512);
   });
@@ -168,13 +172,29 @@ describe("provider_profiles numeric-tail columns (B2)", () => {
 // stop_sequences_json: null default (nothing stored → nothing emitted),
 // create round-trip, update, duplicate.
 describe("provider_profiles bannedStrings columns (B3)", () => {
-  test("defaults to null (empty list — nothing emitted)", async () => {
-    const profile = await store.create({
+  test("defaults to null in SQLite and decodes as empty list (and collapses [] to null)", async () => {
+    const omitted = await store.create({
       name: "kobold",
       providerPreset: "koboldcpp",
       endpoint: "http://localhost:5001",
     });
-    expect(profile.bannedStrings).toEqual([]);
+    expect(omitted.bannedStrings).toEqual([]);
+    const omittedRaw = db.$client
+      .query<{ raw: string | null }, [string]>("SELECT banned_strings_json AS raw FROM provider_profiles WHERE id = ?")
+      .get(omitted.id);
+    expect(omittedRaw?.raw).toBeNull();
+
+    const empty = await store.create({
+      name: "kobold-empty",
+      providerPreset: "koboldcpp",
+      endpoint: "http://localhost:5001",
+      bannedStrings: [],
+    });
+    expect(empty.bannedStrings).toEqual([]);
+    const emptyRaw = db.$client
+      .query<{ raw: string | null }, [string]>("SELECT banned_strings_json AS raw FROM provider_profiles WHERE id = ?")
+      .get(empty.id);
+    expect(emptyRaw?.raw).toBeNull();
   });
 
   test("create round-trips explicit bannedStrings (leading spaces preserved)", async () => {
@@ -192,7 +212,7 @@ describe("provider_profiles bannedStrings columns (B3)", () => {
     expect(fetched?.bannedStrings).toEqual([" finger", " purr", "moan"]);
   });
 
-  test("update rewrites the bannedStrings list (including clearing it)", async () => {
+  test("update rewrites the bannedStrings list (including clearing it to null)", async () => {
     const profile = await store.create({
       name: "kobold",
       providerPreset: "koboldcpp",
@@ -203,6 +223,10 @@ describe("provider_profiles bannedStrings columns (B3)", () => {
     expect(updated.bannedStrings).toEqual([" hand", " palm"]);
     const cleared = await store.update(profile.id, { bannedStrings: [] });
     expect(cleared.bannedStrings).toEqual([]);
+    const clearedRaw = db.$client
+      .query<{ raw: string | null }, [string]>("SELECT banned_strings_json AS raw FROM provider_profiles WHERE id = ?")
+      .get(profile.id);
+    expect(clearedRaw?.raw).toBeNull();
   });
 
   test("duplicate carries the bannedStrings list over", async () => {

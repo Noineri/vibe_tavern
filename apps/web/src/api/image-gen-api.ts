@@ -116,7 +116,7 @@ export async function deleteImageGenProfile(id: string): Promise<void> {
 export async function reorderImageGenProfiles(
   updates: Array<{ id: string; sortOrder: number }>,
 ): Promise<ImageGenProfileRecord[]> {
-  const response = await client.api["image-gen"].profiles.reorder.$patch({ json: { updates } as never });
+  const response = await client.api["image-gen"].profiles.reorder.$patch({ json: { updates } });
   return unwrapRpc(response);
 }
 

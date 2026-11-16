@@ -4,6 +4,7 @@ import { createApp } from "../src/server/app-factory.js";
 import { createAiAssistantFeature } from "../src/domain/ai-assistant/ai-assistant-feature.js";
 import { EventBus } from "@vibe-tavern/domain";
 import type { RuntimeApi } from "../src/api/routes/index.js";
+import { makeRuntimeApi } from "./routes-test-builders.js";
 
 const payload = { text: "network response ".repeat(256) };
 
@@ -71,19 +72,27 @@ describe("response compression", () => {
 		test(`${transport} delivers the first event while the producer is parked`, async () => {
 			const gate = Promise.withResolvers<void>();
 			let ended = false;
-			const runtime = {
-				async *streamAiAssistant() {
-					yield { type: "text", text: "first" };
-					await gate.promise;
-					ended = true;
-					yield { type: "done" };
+			// Only the aiAssistant slice is real; every other slice is an inert
+			// labeled double (createApiRouter decomposes all of them at
+			// construction) — makeRuntimeApi replaces the old whole-object erasure.
+			const runtime = makeRuntimeApi(
+				{
+					aiAssistant: {
+						async *streamAiAssistant() {
+							yield { type: "text", text: "first" };
+							await gate.promise;
+							ended = true;
+							yield { type: "done" };
+						},
+					},
 				},
-			} as unknown as RuntimeApi;
+				"RuntimeApi (response-compression)",
+			);
 			const app = await createApp({
 				runtime,
 				configureFeatures(app) {
 					if (transport === "assistant") {
-						createAiAssistantFeature(runtime).activate({ events: new EventBus(), router: app });
+						createAiAssistantFeature(runtime.aiAssistant).activate({ events: new EventBus(), router: app });
 					} else {
 						app.post("/api/ai-assistant", (c) => streamSSE(c, async (stream) => {
 							await stream.writeSSE({ data: "first" });

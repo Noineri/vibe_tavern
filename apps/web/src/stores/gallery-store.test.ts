@@ -8,7 +8,8 @@
  *  - a server failure rolls the list back AND toasts.
  */
 import { test, expect, beforeEach, mock } from "bun:test";
-import type { CharacterAsset } from "@vibe-tavern/domain";
+import { brandId } from "@vibe-tavern/domain";
+import type { CharacterAsset, CharacterAssetId, CharacterId } from "@vibe-tavern/domain";
 
 // ─── Mocked gallery-api ──────────────────────────────────────────────────
 //
@@ -17,10 +18,10 @@ import type { CharacterAsset } from "@vibe-tavern/domain";
 
 const serveCharacterAssetUrl = mock(() => "");
 const listCharacterAssets = mock((_cid: string) => Promise.resolve<CharacterAsset[]>([]));
-const uploadCharacterAsset = mock((_cid: string, _f: File) => Promise.resolve<CharacterAsset>(undefined as never));
+const uploadCharacterAsset = mock((_cid: string, _f: File) => Promise.resolve(makeAsset("uploaded")));
 const updateCharacterAsset = mock(
 	(_cid: string, _rowId: string, _patch: { caption?: string; description?: string | null }) =>
-		Promise.resolve<CharacterAsset>(undefined as never),
+		Promise.resolve(makeAsset("updated")),
 );
 const reorderCharacterAssets = mock((_cid: string, _ids: string[]) => Promise.resolve());
 const deleteCharacterAsset = mock((_cid: string, _rowId: string) => Promise.resolve());
@@ -60,8 +61,8 @@ const { useGalleryStore } = await import("./gallery-store.js");
 
 function makeAsset(id: string, caption = "", description: string | null = null): CharacterAsset {
   return {
-    id: id as never,
-    characterId: "cid" as never,
+    id: brandId<CharacterAssetId>(id),
+    characterId: brandId<CharacterId>("cid"),
     ext: "png",
     mimeType: "image/png",
     caption,
@@ -69,7 +70,7 @@ function makeAsset(id: string, caption = "", description: string | null = null):
     includeInPrompt: false,
     avatarCropJson: null,
     order: 0,
-    createdAt: "2026-01-01T00:00:00Z" as never,
+    createdAt: "2026-01-01T00:00:00Z",
   };
 }
 
@@ -87,9 +88,9 @@ beforeEach(() => {
   listCharacterAssets.mockReset();
   listCharacterAssets.mockImplementation(() => Promise.resolve([]));
   uploadCharacterAsset.mockReset();
-  uploadCharacterAsset.mockImplementation(() => Promise.resolve(undefined as never));
+  uploadCharacterAsset.mockImplementation(() => Promise.resolve(makeAsset("uploaded")));
   updateCharacterAsset.mockReset();
-  updateCharacterAsset.mockImplementation(() => Promise.resolve(undefined as never));
+  updateCharacterAsset.mockImplementation(() => Promise.resolve(makeAsset("updated")));
   reorderCharacterAssets.mockReset();
   reorderCharacterAssets.mockImplementation(() => Promise.resolve());
   deleteCharacterAsset.mockReset();
@@ -125,8 +126,14 @@ test("remove applies optimistically and persists on success", async () => {
   const b = makeAsset("a2");
   listCharacterAssets.mockImplementation(() => Promise.resolve([a, b]));
   await useGalleryStore.getState().reload("cid");
+  let resolveDelete!: () => void;
+  deleteCharacterAsset.mockImplementation(() => new Promise<void>((res) => { resolveDelete = res; }));
 
-  await useGalleryStore.getState().remove("cid", "a1");
+  const promise = useGalleryStore.getState().remove("cid", "a1");
+  expect(useGalleryStore.getState().byCharacter["cid"]).toEqual([b]);
+
+  resolveDelete();
+  await promise;
 
   expect(useGalleryStore.getState().byCharacter["cid"]).toEqual([b]);
   expect(deleteCharacterAsset).toHaveBeenCalledWith("cid", "a1");
@@ -139,9 +146,14 @@ test("remove ROLLS BACK and toasts when deleteCharacterAsset fails", async () =>
   const b = makeAsset("a2");
   listCharacterAssets.mockImplementation(() => Promise.resolve([a, b]));
   await useGalleryStore.getState().reload("cid");
-  deleteCharacterAsset.mockImplementation(() => Promise.reject(new Error("boom")));
+  let rejectDelete!: (err: Error) => void;
+  deleteCharacterAsset.mockImplementation(() => new Promise<void>((_res, rej) => { rejectDelete = rej; }));
 
-  await useGalleryStore.getState().remove("cid", "a1");
+  const promise = useGalleryStore.getState().remove("cid", "a1");
+  expect(useGalleryStore.getState().byCharacter["cid"]).toEqual([b]);
+
+  rejectDelete(new Error("boom"));
+  await promise;
 
   expect(useGalleryStore.getState().byCharacter["cid"]).toEqual([a, b]); // restored
   expect(toastError).toHaveBeenCalledWith("boom");
@@ -151,9 +163,14 @@ test("updateCaption applies optimistically and rolls back on failure", async () 
   const a = makeAsset("a1", "old");
   listCharacterAssets.mockImplementation(() => Promise.resolve([a]));
   await useGalleryStore.getState().reload("cid");
-  updateCharacterAsset.mockImplementation(() => Promise.reject(new Error("nope")));
+  let rejectUpdate!: (err: Error) => void;
+  updateCharacterAsset.mockImplementation(() => new Promise((_, rej) => { rejectUpdate = rej; }));
 
-  await useGalleryStore.getState().updateCaption("cid", "a1", "new");
+  const promise = useGalleryStore.getState().updateCaption("cid", "a1", "new");
+  expect(useGalleryStore.getState().byCharacter["cid"]).toEqual([{ ...a, caption: "new" }]);
+
+  rejectUpdate(new Error("nope"));
+  await promise;
 
   expect(useGalleryStore.getState().byCharacter["cid"]).toEqual([a]); // "old" restored
   expect(toastError).toHaveBeenCalledWith("nope");
@@ -164,9 +181,14 @@ test("reorder applies optimistically and rolls back on failure", async () => {
   const b = makeAsset("b2");
   listCharacterAssets.mockImplementation(() => Promise.resolve([a, b]));
   await useGalleryStore.getState().reload("cid");
-  reorderCharacterAssets.mockImplementation(() => Promise.reject(new Error("network")));
+  let rejectReorder!: (err: Error) => void;
+  reorderCharacterAssets.mockImplementation(() => new Promise<void>((_res, rej) => { rejectReorder = rej; }));
 
-  await useGalleryStore.getState().reorder("cid", ["b2", "a1"]);
+  const promise = useGalleryStore.getState().reorder("cid", ["b2", "a1"]);
+  expect(useGalleryStore.getState().byCharacter["cid"]).toEqual([b, a]);
+
+  rejectReorder(new Error("network"));
+  await promise;
 
   // Rolled back to original order.
   expect(useGalleryStore.getState().byCharacter["cid"]).toEqual([a, b]);

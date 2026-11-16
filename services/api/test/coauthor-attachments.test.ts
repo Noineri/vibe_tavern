@@ -18,6 +18,7 @@ import { ChatSummaryService } from "../src/domain/chat/chat-summary-service.js";
 import { AssetService } from "../src/domain/asset/asset-service.js";
 import { prepareSdkMessages, toSdkMessages } from "../src/infrastructure/ai/provider-executor-utils.js";
 import type { ProviderExecutionInput } from "../src/infrastructure/ai/provider-execution-types.js";
+import { strictTestDouble } from "./strict-test-double.js";
 
 // T1: real assembly, bundled prompts and compaction; a deterministic tokenizer
 // at its external boundary, restored between tests and after the file. Fresh
@@ -36,7 +37,9 @@ async function fixture() {
   const input: ChatModeAssembleInput = {
     chatId: brandId<ChatId>(chat.id), model: "test-model",
     // Unused by the Co-Author strategy: only RP delegates to this service.
-    promptService: null as unknown as ChatModeAssembleInput["promptService"],
+    // The strict double keeps that true loudly — a read throws a labeled
+    // miss instead of silently NPEing.
+    promptService: strictTestDouble<ChatModeAssembleInput["promptService"]>({}, "coauthor input promptService (uncalled seam)"),
     loaders: {
       getChat: async () => chat, getCharacter: async () => character, getMessages: async () => messages,
       getProfileMdText: async () => "---\nname: Attachment probe\n---\n# PERSONALITY\nA test card.\n",

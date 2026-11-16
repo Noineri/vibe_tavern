@@ -2,6 +2,7 @@ import { createContext, forwardRef, useCallback, useContext, useEffect, useLayou
 import type { ContextProp, ScrollerProps } from "react-virtuoso";
 import { MessageScrollerCore, type MessageScrollerCoreContext, type MessageScrollerCoreProps } from "../../chat/message-scroller-core.js";
 import { ScrollArea } from "../scroll-area.js";
+import { Icons } from "../icons.js";
 import { distanceFromBottom, type ScrollMetrics } from "../../../lib/stick-to-bottom.js";
 import { notifyScrollLayout } from "../../chat/scroll-layout-notification.js";
 import { useT } from "../../../i18n/context.js";
@@ -16,9 +17,9 @@ export function useAgentFeedFeedback(): UseAgentFeedResult | null {
   return useContext(FeedbackContext);
 }
 
-// Compact-action canon; the surrounding column wraps authored RU copy rather
-// than truncating it or putting an error in the no-history empty state.
-const ACTION = "flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[calc(var(--ui-fs)-3px)] text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-50";
+// Quiet text actions inside the transcript, not a second toolbar under the
+// chat header. Authored copy wraps; phone targets retain their 44px footprint.
+const ACTION = "inline-flex min-h-11 max-w-full cursor-pointer items-center justify-center gap-1.5 rounded-md bg-transparent px-2.5 py-1 text-center font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors hover:bg-s2 hover:text-t1 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent disabled:cursor-default disabled:opacity-50 sm:min-h-7";
 
 export function AgentFeedFeedback({ api }: { api?: MessageScrollerCoreApi }) {
   const feed = useAgentFeedFeedback();
@@ -82,6 +83,7 @@ function FeedFeedback({ feed, api }: { feed: UseAgentFeedResult; api?: MessageSc
   </div>;
   const oldest = feed.feed.windows[0];
   const needsRevalidation = oldest?.stale === true;
+  const canLoadOlder = oldest && (oldest.hasOlder || needsRevalidation);
   const errors = [
     { error: feed.olderError, label: "agent_feed_older_error", retry: feed.loadOlder },
     { error: feed.aroundError, label: "agent_feed_around_error", retry: () => {
@@ -91,16 +93,16 @@ function FeedFeedback({ feed, api }: { feed: UseAgentFeedResult; api?: MessageSc
     { error: feed.refreshError, label: "agent_feed_refresh_error", retry: feed.refresh },
   ] as const;
   if (!oldest && !busy && errors.every(({ error }) => error === null)) return null;
-  return <div data-testid="agent-feed-feedback" className="flex min-w-0 shrink-0 flex-col items-start gap-2 border-b border-border px-4 py-2 font-ui text-[calc(var(--ui-fs)-3px)] text-t3" aria-busy={busy}>
-    {oldest && (oldest.hasOlder || needsRevalidation) && <button type="button" className={ACTION} disabled={disabled} onClick={() => request(feed.loadOlder)}>
-      {t(needsRevalidation ? "agent_feed_revalidate" : "agent_feed_load_older")}
+  return <div data-testid="agent-feed-feedback" className="flex min-w-0 flex-col items-center justify-center gap-1 px-4 py-1 text-center font-ui text-[calc(var(--ui-fs)-3px)] text-t3" aria-busy={busy}>
+    {canLoadOlder && <button type="button" className={ACTION} disabled={disabled} aria-label={t(needsRevalidation ? "agent_feed_revalidate" : "agent_feed_load_older")} onClick={() => request(feed.loadOlder)}>
+      {feed.loadingOlder ? <span role="status">{t("agent_feed_loading_older")}</span> : <><Icons.Caret direction="u" /><span>{t(needsRevalidation ? "agent_feed_revalidate" : "agent_feed_load_older")}</span></>}
     </button>}
-    {busy && <p role="status">{t(feed.loadingOlder ? "agent_feed_loading_older" : "agent_feed_refreshing")}</p>}
-    {errors.map(({ error, label, retry }) => error === null ? null : <div key={label} className="flex min-w-0 flex-col items-start gap-1">
+    {busy && (!feed.loadingOlder || !canLoadOlder) && <p role="status">{t(feed.loadingOlder ? "agent_feed_loading_older" : "agent_feed_refreshing")}</p>}
+    {errors.map(({ error, label, retry }) => error === null ? null : <div key={label} className="flex min-w-0 flex-wrap items-center justify-center gap-x-2 gap-y-1">
       <p role="alert">{t(label)}</p>
       <button type="button" className={ACTION} disabled={disabled} onClick={() => request(retry)}>{t("agent_retry")}</button>
     </div>)}
-    {feed.feed.windows.length > 1 && <div className="flex min-w-0 flex-col items-start gap-1">
+    {feed.feed.windows.length > 1 && <div className="flex min-w-0 flex-wrap items-center justify-center gap-x-2 gap-y-1">
       <p>{t("agent_feed_gap")}</p>
       <button type="button" className={ACTION} disabled={disabled} onClick={() => request(feed.refresh)}>{t("agent_feed_fill_gap")}</button>
     </div>}
@@ -148,8 +150,8 @@ const AgentFeedViewport = forwardRef<HTMLDivElement, ScrollerProps & ContextProp
 /** Agent-only thin-lane adapter: ScrollArea and Virtuoso share one native
  * viewport; no RP stores, story-map rail or second scrolling wrapper.
  * The feed supplies its render partition, jump affordance and recovery scope. */
-export function AgentFeedScroller({ wrap, ...props }: Omit<MessageScrollerCoreProps, "scrollerComponent" | "isAtBottom" | "onViewportLayoutChange">) {
+export function AgentFeedScroller({ renderHeader, ...props }: Omit<MessageScrollerCoreProps, "scrollerComponent" | "isAtBottom" | "onViewportLayoutChange">) {
   return <MessageScrollerCore {...props} scrollerComponent={AgentFeedViewport}
     isAtBottom={isAtAgentBottom} onViewportLayoutChange={notifyLaneLayout}
-    wrap={(scroller, api) => <><AgentFeedFeedback api={api} />{wrap ? wrap(scroller, api) : scroller}</>} />;
+    renderHeader={(api) => <><AgentFeedFeedback api={api} />{renderHeader?.(api)}</>} />;
 }

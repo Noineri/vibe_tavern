@@ -82,6 +82,12 @@ export const PROMPT_LAYER_PRIORITY = {
   objectiveTask: 180,
   objectiveLongTerm: 178,
   sceneState: 175,
+  // Director message tools (DMT-12): the one-shot request-local instruction is
+  // a `user` layer at depth 1. Same-depth in_chat layers splice into the
+  // history in ASCENDING priority order, so 190 places it after the 175–180
+  // steering injections (scene state, objectives) — immediately before the
+  // reply it directs, and after every broader steering block at that depth.
+  requestInstruction: 190,
   promptPresetAuthorsNote: 170,
   postHistoryInstructions: 160,
   mesExample: 150,
@@ -121,6 +127,8 @@ export const PROMPT_LAYER_ID = {
   objectiveTask: "objective_task",
   objectiveLongTerm: "objective_long_term",
   sceneState: "scene_state",
+  // Director message tools (DMT-12) — one-shot request-local instruction.
+  requestInstruction: "request_instruction",
   insightsInstruction: "insights_instruction",
   postHistoryInstructions: "post_history_instructions",
   // Wave 6 — per-chat dynamic prompt (canvas slot chatDynamicPrompt).
@@ -151,6 +159,8 @@ export const PROMPT_LAYER_SOURCE_TYPE = {
   objectiveTask: "objective_task",
   objectiveLongTerm: "objective_long_term",
   sceneState: "scene_state",
+  // Director message tools (DMT-12) — one-shot request-local instruction.
+  requestInstruction: "request_instruction",
   insightsInstruction: "insights_instruction",
   toolProfile: "tool_profile",
   compaction: "compaction",

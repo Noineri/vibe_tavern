@@ -74,6 +74,8 @@ beforeAll(async () => {
 		// the plan stays EMPTY throughout, so the section stays null exactly
 		// as this suite's assertions always pinned).
 		agentPlans: stores.agentPlans,
+		// DK-5b: the branch-deck read for the <story_deck> section.
+		storyDecks: stores.storyDecks,
 		presets: stores.presets,
 		assembly,
 	};
@@ -408,14 +410,17 @@ describe("assembleSidechatPrompt overflow (SC-6)", () => {
 	function contextPackage(): SidechatContextPackage {
 		return {
 			staticPackage: "",
+			storyPlanSection: null,
+			storyDeckSection: null,
 			// Merged flow order (oldest first): the rp_summary row, the OOC
 			// row, the rp_message block, the turn's own user message (pushed
 			// by the loop).
 			eventMessages: [
-				{ precedingMessages: 0, content: SUMMARY_ROW },
-				{ precedingMessages: 1, content: RP_BLOCK },
+				{ precedingMessages: 0, meterSegment: "rp_summaries", content: SUMMARY_ROW },
+				{ precedingMessages: 1, meterSegment: "rp_messages", content: RP_BLOCK },
 			],
 			messageCount: 1,
+			heldLoreEntryIds: new Set(),
 		};
 	}
 

@@ -150,6 +150,30 @@ describe("MessageScrollerCore", () => {
     expect(last.scrollerElement).toBeInstanceOf(HTMLElement);
   });
 
+  it("renders a measured in-flow header before the rows and updates it without remounting", () => {
+    const content = (label: string, topSpacerHeight: number) => (
+      <MessageScrollerCore
+        resetKey="t"
+        displayIds={ids(2)}
+        topSpacerHeight={topSpacerHeight}
+        renderItem={(_index, messageId) => <div>row {messageId}</div>}
+        renderHeader={(api) => <button type="button" disabled={api.scrollerElement === null}>{label}</button>}
+      />
+    );
+    const view = render(content("Older history", 0));
+    const scroller = view.container.querySelector<HTMLElement>("[data-virtuoso-scroller]")!;
+    const header = view.getByRole("button", { name: "Older history" });
+    const row = view.getByText("row m0");
+    expect(scroller.contains(header)).toBe(true);
+    expect((header as HTMLButtonElement).disabled).toBe(false);
+    expect(header.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+    expect(view.container.querySelectorAll("[data-scroller-message-id]")).toHaveLength(2);
+    view.rerender(content("Loading history", 12));
+    expect(view.getByRole("button", { name: "Loading history" })).toBe(header);
+    expect(view.getByText("row m0")).toBe(row);
+    expect(view.container.querySelector("[data-virtuoso-scroller]")).toBe(scroller);
+  });
+
   it("firstItemIndex shifts virtualized and stable-tail indexes uniformly off array positions", async () => {
     const displayIds = ids(150); // 60 virtualized + 90 stable tail at the default partition
     const seen = new Map<string, number>();

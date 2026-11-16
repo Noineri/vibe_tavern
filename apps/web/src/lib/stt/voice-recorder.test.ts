@@ -26,17 +26,45 @@ import {
   type PcmCapture,
 } from "./voice-recorder.js";
 
+/** Member-for-member MediaStream double (step 8b): a real EventTarget base
+ *  carries the listener surface, `getTracks → stop` is the live member the
+ *  recorder drives at teardown (voice-recorder.ts:286), every other member of
+ *  the interface is an inert default. */
 function fakeMic(): { stream: MediaStream; trackStopped: () => boolean } {
   let stopped = false;
-  const stream = {
-    getTracks: () => [
-      {
-        stop() {
-          stopped = true;
-        },
-      },
-    ],
-  } as unknown as MediaStream;
+  const track: MediaStreamTrack = Object.assign(new EventTarget(), {
+    contentHint: "",
+    enabled: true,
+    id: "mic-track",
+    kind: "audio" as const,
+    label: "fake-mic",
+    muted: false,
+    readyState: "live" as const,
+    onended: null,
+    onmute: null,
+    onunmute: null,
+    applyConstraints: () => Promise.resolve(),
+    getCapabilities: () => ({}),
+    getConstraints: () => ({}),
+    getSettings: () => ({}),
+    stop() {
+      stopped = true;
+    },
+    clone: () => track,
+  });
+  const stream: MediaStream = Object.assign(new EventTarget(), {
+    active: true,
+    id: "mic-stream",
+    onaddtrack: null,
+    onremovetrack: null,
+    addTrack: (_track: MediaStreamTrack) => {},
+    removeTrack: (_track: MediaStreamTrack) => {},
+    clone: () => stream,
+    getAudioTracks: () => [track],
+    getTrackById: (trackId: string) => (trackId === "mic-track" ? track : null),
+    getTracks: () => [track],
+    getVideoTracks: () => [],
+  });
   return { stream, trackStopped: () => stopped };
 }
 
@@ -63,14 +91,166 @@ function fakePipeline(opts?: {
   };
 }
 
+// ── Member-for-member Web Audio doubles (step 8b) ──────────────────────────
+// The recorder only CONSTRUCTS the context inside the gesture and CLOSES it
+// at teardown (voice-recorder.ts:229/:237 — `audio.close().catch(…)`), so
+// every graph member below is inert. The member sets are complete: real
+// happy-dom instances where a DOM type exists (MessagePort via MessageChannel,
+// an <audio> element for the media-element node), EventTarget-based literals
+// for the audio graph, one `audioParam`/`audioNode` factory shared by the
+// node set (each node's return type is checked against the interface here).
+
+function audioParam(value = 0): AudioParam {
+  const param: AudioParam = {
+    value,
+    automationRate: "a-rate",
+    defaultValue: value,
+    minValue: value,
+    maxValue: value,
+    cancelScheduledValues: () => param,
+    cancelAndHoldAtTime: () => param,
+    exponentialRampToValueAtTime: () => param,
+    linearRampToValueAtTime: () => param,
+    setTargetAtTime: () => param,
+    setValueAtTime: () => param,
+    setValueCurveAtTime: () => param,
+  };
+  return param;
+}
+
+function audioBuffer(seconds = 0): AudioBuffer {
+  const channel = new Float32Array(0);
+  return {
+    duration: seconds,
+    length: 0,
+    numberOfChannels: 1,
+    sampleRate: 48000,
+    getChannelData: () => channel,
+    copyFromChannel: () => {},
+    copyToChannel: () => {},
+  };
+}
+
+/** The shared inert AudioNode — a real EventTarget base for the listener
+ *  surface; `connect`/`disconnect` carry their overload sets as declared
+ *  overloads (the node- and param-target variants return different types). */
+class InertAudioNode extends EventTarget {
+  context: BaseAudioContext;
+  numberOfInputs = 0;
+  numberOfOutputs = 0;
+  channelCount = 2;
+  channelCountMode: "clamped-max" | "explicit" = "clamped-max";
+  channelInterpretation: "speakers" | "discrete" = "speakers";
+  constructor(context: BaseAudioContext) {
+    super();
+    this.context = context;
+  }
+  connect(destination: AudioNode, _output?: number, _input?: number): AudioNode;
+  connect(destination: AudioParam, _output?: number): AudioParam;
+  connect(destination: AudioNode | AudioParam, _output?: number, _input?: number): AudioNode | AudioParam {
+    return destination;
+  }
+  disconnect(): void;
+  disconnect(_output: number): void;
+  disconnect(_output: number, _input: number): void;
+  disconnect(_destination: AudioNode, _output?: number, _input?: number): void;
+  disconnect(_destination: AudioParam, _output?: number): void;
+  disconnect(_a?: number | AudioNode | AudioParam, _b?: number, _c?: number): void {}
+}
+
+/** The context's endpoint node — AudioNode plus `maxChannelCount`. */
+class InertDestinationNode extends InertAudioNode {
+  override numberOfInputs = 1;
+  override numberOfOutputs = 0;
+  override channelCountMode: "explicit" = "explicit";
+  maxChannelCount = 2;
+}
+
+/** A getter member must carry the literal-type union exactly; helpers used by
+ *  the context literal below. */
+function inertListener(): AudioListener {
+  return Object.assign(new EventTarget(), {
+    positionX: audioParam(), positionY: audioParam(), positionZ: audioParam(),
+    forwardX: audioParam(), forwardY: audioParam(), forwardZ: audioParam(),
+    upX: audioParam(), upY: audioParam(), upZ: audioParam(),
+    setPosition: () => {}, setOrientation: () => {},
+  });
+}
+
+type ScheduledSourceExtras = { onended: null; start: (when?: number) => void; stop: (when?: number) => void };
+const scheduledSource: ScheduledSourceExtras = { onended: null, start: () => {}, stop: () => {} };
+
 function fakeAudio(): { ctor: () => AudioContext; closed: () => boolean } {
   let closed = false;
-  const context = {
+  let context!: AudioContext;
+  // `context` is read lazily through the InertAudioNode members below — the
+  // nodes resolve it after the assignment, never during this construction.
+  const destination: AudioDestinationNode = new InertDestinationNode(context);
+  context = Object.assign(new EventTarget(), {
+    audioWorklet: { port: new MessageChannel().port1, addModule: () => Promise.resolve() },
+    currentTime: 0,
+    listener: inertListener(),
+    onstatechange: null,
+    sampleRate: 48000,
+    state: "running" as const,
+    baseLatency: 0,
+    outputLatency: 0,
     close() {
       closed = true;
       return Promise.resolve();
     },
-  } as unknown as AudioContext;
+    resume: () => Promise.resolve(),
+    suspend: () => Promise.resolve(),
+    getOutputTimestamp: () => ({ contextTime: 0, performanceTime: 0 }),
+    destination,
+    decodeAudioData: (_data: ArrayBuffer) => Promise.resolve(audioBuffer()),
+    createBuffer: (_channels: number, _length: number, _sampleRate: number) => audioBuffer(),
+    createPeriodicWave: (_real: number[] | Float32Array, _imag: number[] | Float32Array, _constraints?: PeriodicWaveConstraints) => new EventTarget(),
+    createAnalyser: () => Object.assign(audioNodeFor(), {
+      frequency: audioParam(), detune: audioParam(), fftSize: 2048, frequencyBinCount: 1024,
+      minDecibels: -100, maxDecibels: -30, smoothingTimeConstant: 0.8,
+      getByteFrequencyData: (_array: Uint8Array) => {}, getByteTimeDomainData: (_array: Uint8Array) => {},
+      getFloatFrequencyData: (_array: Float32Array) => {}, getFloatTimeDomainData: (_array: Float32Array) => {},
+    }),
+    createBiquadFilter: () => Object.assign(audioNodeFor(), {
+      detune: audioParam(), frequency: audioParam(), gain: audioParam(), Q: audioParam(), type: "lowpass" as const,
+      getFrequencyResponse: (_frequencyHz: Float32Array, _magResponse: Float32Array, _phaseResponse: Float32Array) => {},
+    }),
+    createBufferSource: () => Object.assign(audioNodeFor(), scheduledSource, {
+      buffer: null, detune: audioParam(), loop: false, loopEnd: 0, loopStart: 0, playbackRate: audioParam(1),
+    }),
+    createChannelMerger: (_numberOfInputs?: number) => audioNodeFor(),
+    createChannelSplitter: (_numberOfOutputs?: number) => audioNodeFor(),
+    createConstantSource: () => Object.assign(audioNodeFor(), scheduledSource, { offset: audioParam(1) }),
+    createConvolver: () => Object.assign(audioNodeFor(), { buffer: null, normalize: true }),
+    createDelay: (_maxDelayTime?: number) => Object.assign(audioNodeFor(), { delayTime: audioParam() }),
+    createDynamicsCompressor: () => Object.assign(audioNodeFor(), {
+      attack: audioParam(), knee: audioParam(), ratio: audioParam(), reduction: 0, release: audioParam(), threshold: audioParam(),
+    }),
+    createGain: () => Object.assign(audioNodeFor(), { gain: audioParam(1) }),
+    createIIRFilter: (_feedforward: number[], _feedback: number[]) => Object.assign(audioNodeFor(), { getFrequencyResponse: (_freq: Float32Array, _mag: Float32Array, _phase: Float32Array) => {} }),
+    createOscillator: () => Object.assign(audioNodeFor(), scheduledSource, {
+      detune: audioParam(), frequency: audioParam(440), type: "sine" as const, setPeriodicWave: (_wave: PeriodicWave) => {},
+    }),
+    createPanner: () => Object.assign(audioNodeFor(), {
+      coneInnerAngle: 360, coneOuterAngle: 360, coneOuterGain: 0, distanceModel: "inverse" as const, maxDistance: 10000,
+      orientationX: audioParam(), orientationY: audioParam(), orientationZ: audioParam(),
+      panningModel: "HRTF" as const, positionX: audioParam(), positionY: audioParam(), positionZ: audioParam(),
+      refDistance: 1, rolloffFactor: 1, setOrientation: () => {}, setPosition: () => {},
+    }),
+    createScriptProcessor: (_bufferSize?: number, _numberOfInputChannels?: number, _numberOfOutputChannels?: number) => Object.assign(audioNodeFor(), {
+      bufferSize: 4096, onaudioprocess: null, inputBuffer: audioBuffer(), outputBuffer: audioBuffer(),
+    }),
+    createStereoPanner: () => Object.assign(audioNodeFor(), { pan: audioParam() }),
+    createWaveShaper: () => Object.assign(audioNodeFor(), { curve: null, oversample: "none" as const }),
+    createMediaStreamSource: (stream: MediaStream) => Object.assign(audioNodeFor(), { mediaStream: stream }),
+    createMediaStreamDestination: () => Object.assign(audioNodeFor(), { stream: fakeMic().stream }),
+    createMediaElementSource: (_element: HTMLMediaElement) => Object.assign(audioNodeFor(), { mediaElement: document.createElement("audio") }),
+  });
+  // One inert node per create* call, closed over the ASSIGNED context.
+  function audioNodeFor(): InertAudioNode {
+    return new InertAudioNode(context);
+  }
   return { ctor: () => context, closed: () => closed };
 }
 

@@ -4,6 +4,9 @@
  * fetch with mobile-token query (multipart audio — no RPC shape fits it).
  */
 
+import type { z } from "zod";
+import type { createSttProfileSchema } from "@vibe-tavern/api-contracts";
+import type { UpdateSttProfileInput } from "@vibe-tavern/api-contracts";
 import { client } from "./client.js";
 import { unwrapRpc, unwrapError } from "./unwrap.js";
 import { getGatewayBaseUrl } from "../gateway-client.js";
@@ -54,32 +57,23 @@ export async function getSttProfile(id: string): Promise<SttProfileRecord | null
   return unwrapRpc(response);
 }
 
-export async function createSttProfile(body: {
-  name: string;
-  backend: string;
-  config?: Record<string, unknown>;
-  /** Write-only API key (ST-1): non-empty = set, absent = none. Never
-   *  returned by a read. */
-  apiKey?: string;
-  emotionAnnotation?: boolean;
-}): Promise<SttProfileRecord> {
-  const response = await client.api.stt.profiles.$post({ json: body as never });
+/** Create-call body — the INPUT side of the create schema (`z.input`, the
+ *  CreateImageGenProfileBody precedent): the server-side `.default()` field
+ *  (emotionAnnotation) stays optional for the caller while the z.infer output
+ *  type keeps it required. One derivation — the hand-written shape copy is
+ *  retired; field docs live on the schema. */
+export type CreateSttProfileBody = z.input<typeof createSttProfileSchema>;
+
+export async function createSttProfile(body: CreateSttProfileBody): Promise<SttProfileRecord> {
+  const response = await client.api.stt.profiles.$post({ json: body });
   return unwrapRpc(response);
 }
 
 export async function updateSttProfile(
   id: string,
-  body: Partial<{
-    name: string;
-    backend: string;
-    config: Record<string, unknown>;
-    /** Write-only tri-state (ST-1): undefined = keep, "" = clear,
-     *  non-empty = set. */
-    apiKey: string;
-    emotionAnnotation: boolean;
-  }>,
+  body: UpdateSttProfileInput,
 ): Promise<SttProfileRecord> {
-  const response = await client.api.stt.profiles[":id"].$patch({ param: { id }, json: body as never });
+  const response = await client.api.stt.profiles[":id"].$patch({ param: { id }, json: body });
   return unwrapRpc(response);
 }
 
@@ -97,7 +91,7 @@ export async function setSttDefault(id: string): Promise<SttProfileRecord> {
 export async function reorderSttProfiles(
   updates: Array<{ id: string; sortOrder: number }>,
 ): Promise<SttProfileRecord[]> {
-  const response = await client.api.stt.profiles.reorder.$patch({ json: { updates } as never });
+  const response = await client.api.stt.profiles.reorder.$patch({ json: { updates } });
   return unwrapRpc(response);
 }
 

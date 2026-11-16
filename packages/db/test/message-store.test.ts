@@ -186,6 +186,128 @@ describe("MessageStore guarded edits and candidate variants (MAE-31)", () => {
   });
 });
 
+// ─── Guarded edit base-content checks (DMT-22) ────────────────────────────────
+//
+// The DMT-22 record-proposal apply runs the store's guarded edit with the
+// REVIEWED diff base: the variant id AND the base text must both still match,
+// inside ONE synchronous transaction, or nothing is written. These pins cover
+// the store boundary the handlers rely on; the registry-level behavior lives
+// in services/api/test/agent-thread-proposals.test.ts.
+
+describe("MessageStore guarded edit base-content checks (DMT-22)", () => {
+  /** Full-row snapshots of the message + its variants — the before/after
+   *  comparison that proves a refused edit wrote NOTHING. */
+  async function snapshotRows(messageId: string) {
+    return {
+      message: await db.select().from(schema.messages)
+        .where(eq(schema.messages.id, messageId)).get(),
+      variants: await db.select().from(schema.messageVariants)
+        .where(eq(schema.messageVariants.messageId, messageId))
+        .orderBy(asc(schema.messageVariants.variantIndex)).all(),
+    };
+  }
+
+  test("applies when the expected base content matches the selected variant", async () => {
+    const message = await messages.addMessage({
+      chatId: "chat_1", branchId: "brnch_1",
+      role: "assistant", authorType: "assistant", content: "first",
+      variants: ["first", "second"], selectedVariantIndex: 0,
+    });
+    const selected = (await messages.getVariants(message.id))[0];
+    if (!selected) throw new Error("expected selected test variant");
+
+    const edited = await messages.editMessage(message.id, "edited", selected.id, "first");
+
+    expect(edited.content).toBe("edited");
+    const variants = await messages.getVariants(message.id);
+    expect(variants[0]?.content).toBe("edited");
+    expect(variants[1]?.content).toBe("second");
+  });
+
+  test("a stale base on the SAME selected variant id writes nothing (same-ID content change)", async () => {
+    const message = await messages.addMessage({
+      chatId: "chat_1", branchId: "brnch_1",
+      role: "assistant", authorType: "assistant", content: "first",
+      variants: ["first", "second"], selectedVariantIndex: 0,
+    });
+    const selected = (await messages.getVariants(message.id))[0];
+    if (!selected) throw new Error("expected selected test variant");
+    // The variant id did NOT change, but a newer edit rewrote its content
+    // after the caller reviewed the old base — exactly the overwrite the
+    // DMT-22 guard exists to refuse.
+    await messages.editMessage(message.id, "a newer edit to the same swipe");
+    const before = await snapshotRows(message.id);
+
+    await expect(
+      messages.editMessage(message.id, "must not land", selected.id, "first"),
+    ).rejects.toMatchObject({
+      name: "SelectedVariantContentMismatchError",
+      messageId: message.id,
+      expectedContent: "first",
+      actualContent: "a newer edit to the same swipe",
+    });
+
+    const after = await snapshotRows(message.id);
+    expect(after).toEqual(before);
+  });
+
+  test("a base-only guard (no variant id) still refuses a stale base and writes nothing", async () => {
+    const message = await messages.addMessage({
+      chatId: "chat_1", branchId: "brnch_1",
+      role: "assistant", authorType: "assistant", content: "first",
+    });
+    const before = await snapshotRows(message.id);
+
+    await expect(
+      messages.editMessage(message.id, "must not land", undefined, "a base nobody stored"),
+    ).rejects.toMatchObject({ name: "SelectedVariantContentMismatchError" });
+
+    expect(await snapshotRows(message.id)).toEqual(before);
+  });
+
+  test("a variant-id-only guard keeps today's behavior — no content comparison for existing callers", async () => {
+    const message = await messages.addMessage({
+      chatId: "chat_1", branchId: "brnch_1",
+      role: "assistant", authorType: "assistant", content: "first",
+    });
+    const selected = (await messages.getVariants(message.id))[0];
+    if (!selected) throw new Error("expected selected test variant");
+
+    // No expectedBaseContent: the id guard alone decides, whatever the
+    // current content is (pre-DMT-22 callers unchanged).
+    const edited = await messages.editMessage(message.id, "overwritten freely", selected.id);
+    expect(edited.content).toBe("overwritten freely");
+  });
+
+  test("a matching base with a moved selection still refuses on the variant id (id check first)", async () => {
+    const message = await messages.addMessage({
+      chatId: "chat_1", branchId: "brnch_1",
+      role: "assistant", authorType: "assistant", content: "first",
+      variants: ["first", "second"], selectedVariantIndex: 1,
+    });
+    const variants = await messages.getVariants(message.id);
+    const staleVariant = variants[0];
+    const selected = variants[1];
+    if (!staleVariant || !selected) throw new Error("expected two test variants");
+    const before = await snapshotRows(message.id);
+
+    // The base text matches the CURRENT selected variant, but the guard's id
+    // names the stale one — the id refusal fires (the two checks are ordered,
+    // never merged into one "something is stale" error).
+    await expect(
+      messages.editMessage(message.id, "must not land", staleVariant.id, "second"),
+    ).rejects.toMatchObject({ name: "SelectedVariantMismatchError" });
+
+    // Even when BOTH expectedVariantId AND expectedBaseContent are stale,
+    // SelectedVariantMismatchError still fires first before base-content validation.
+    await expect(
+      messages.editMessage(message.id, "must not land", staleVariant.id, "completely wrong base"),
+    ).rejects.toMatchObject({ name: "SelectedVariantMismatchError" });
+
+    expect(await snapshotRows(message.id)).toEqual(before);
+  });
+});
+
 // ─── Scene records: immutable-variant identity ───────────────────────────────
 
 describe("MessageStore scene records (SCN-3)", () => {
@@ -358,31 +480,35 @@ describe("scene backfill runs (SCN-3)", () => {
   });
 
   test("update round-trips status, cursor, errors, cancel, and summary", async () => {
+    const errorsPayload = [{ variantId: "mvar_test_0001", error: "rate limited" }];
+    const summaryPayload = { processed: 3, succeeded: 2, failed: 1 };
     const run = await messages.createSceneBackfillRun({
       chatId: "chat_1", manifestJson: "[]", totalItems: 3,
     });
     await messages.updateSceneBackfillRun(run.id, {
       status: "running",
       cursor: 1,
-      errorsJson: JSON.stringify([{ variantId: "mvar_test_0001", error: "rate limited" }]),
+      errorsJson: JSON.stringify(errorsPayload),
       cancelRequested: true,
     });
     let reloaded = await messages.getSceneBackfillRun(run.id);
     expect(reloaded!.status).toBe("running");
     expect(reloaded!.cursor).toBe(1);
     expect(reloaded!.cancelRequested).toBe(true);
-    expect(JSON.parse(reloaded!.errorsJson)).toHaveLength(1);
+    expect(reloaded!.errorsJson).toBe(JSON.stringify(errorsPayload));
+    expect(JSON.parse(reloaded!.errorsJson)).toEqual(errorsPayload);
 
     await messages.updateSceneBackfillRun(run.id, {
       status: "completed",
       cursor: 3,
-      summaryJson: JSON.stringify({ processed: 3, succeeded: 2, failed: 1 }),
+      summaryJson: JSON.stringify(summaryPayload),
     });
     reloaded = await messages.getSceneBackfillRun(run.id);
     expect(reloaded!.status).toBe("completed");
     expect(reloaded!.cursor).toBe(3);
-    expect(reloaded!.summaryJson).not.toBeNull();
-    expect(JSON.parse(reloaded!.summaryJson!).succeeded).toBe(2);
+    expect(reloaded!.errorsJson).toBe(JSON.stringify(errorsPayload));
+    expect(reloaded!.summaryJson).toBe(JSON.stringify(summaryPayload));
+    expect(JSON.parse(reloaded!.summaryJson!)).toEqual(summaryPayload);
   });
 
   test("the run row is NOT authoritative for scene data — it never touches variant records", async () => {
@@ -409,7 +535,18 @@ describe("scene backfill runs (SCN-3)", () => {
   });
 
   test("getActiveSceneBackfillRun returns the pending/running run and null once terminal (SCN-14)", async () => {
-    // No runs yet → null.
+    // Seed a second chat as a scope control whose active run must stay intact.
+    db.insert(schema.chats).values({
+      id: "chat_2", characterId: "char_1", personaId: null,
+      activeBranchId: "brnch_2", promptPresetId: null,
+      title: "Other chat", summary: "", messageHistoryLimit: 0,
+      status: "active", createdAt: FIXED_NOW, updatedAt: FIXED_NOW,
+    }).run();
+    const otherChatRun = await messages.createSceneBackfillRun({
+      chatId: "chat_2", manifestJson: "[]", totalItems: 1,
+    });
+
+    // No runs yet for chat_1 → null.
     expect(await messages.getActiveSceneBackfillRun("chat_1")).toBeNull();
 
     // A pending run is active.
@@ -424,9 +561,24 @@ describe("scene backfill runs (SCN-3)", () => {
     expect(active!.id).toBe(run.id);
     expect(active!.status).toBe("running");
 
-    // Once terminal (completed/cancelled/failed) it is no longer active.
+    // Once terminal (completed / cancelled / failed) it is no longer active.
     await messages.updateSceneBackfillRun(run.id, { status: "completed", summaryJson: "{}" });
     expect(await messages.getActiveSceneBackfillRun("chat_1")).toBeNull();
+    expect(await messages.getActiveSceneBackfillRun("chat_2")).toEqual(otherChatRun);
+
+    const cancelledRun = await messages.createSceneBackfillRun({
+      chatId: "chat_1", manifestJson: "[]", totalItems: 1,
+    });
+    await messages.updateSceneBackfillRun(cancelledRun.id, { status: "cancelled" });
+    expect(await messages.getActiveSceneBackfillRun("chat_1")).toBeNull();
+    expect(await messages.getActiveSceneBackfillRun("chat_2")).toEqual(otherChatRun);
+
+    const failedRun = await messages.createSceneBackfillRun({
+      chatId: "chat_1", manifestJson: "[]", totalItems: 1,
+    });
+    await messages.updateSceneBackfillRun(failedRun.id, { status: "failed" });
+    expect(await messages.getActiveSceneBackfillRun("chat_1")).toBeNull();
+    expect(await messages.getActiveSceneBackfillRun("chat_2")).toEqual(otherChatRun);
   });
 });
 
@@ -461,6 +613,11 @@ describe("MessageStore TTS annotation (TPE-1)", () => {
   test("null / empty / whitespace text clears the annotation", async () => {
     const { messageId, variantId } = await makeAnnotatedVariant();
     await messages.setTtsAnnotation(variantId, null);
+    expect((await messages.getVariants(messageId))[0]!.ttsAnnotation).toBeNull();
+
+    await messages.setTtsAnnotation(variantId, "She [laugh] softly.");
+    expect((await messages.getVariants(messageId))[0]!.ttsAnnotation).toBe("She [laugh] softly.");
+    await messages.setTtsAnnotation(variantId, "");
     expect((await messages.getVariants(messageId))[0]!.ttsAnnotation).toBeNull();
 
     await messages.setTtsAnnotation(variantId, "She [laugh] softly.");

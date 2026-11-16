@@ -1,14 +1,18 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
-import type { ChatId } from "@vibe-tavern/domain";
+import { brandId } from "@vibe-tavern/domain";
+import type { ChatBranchId, ChatId, MessageVariantId } from "@vibe-tavern/domain";
 import type { AppMessage, AppSnapshot, InsightsCompletionPatchResponse, InsightsCompletionTarget, ObjectiveState } from "../../api/types.js";
+import { wireMessage, wireVariant } from "../../../test/wire-fixtures.js";
 import { useSnapshotStore } from "../snapshot-store.js";
 import { useSceneGenerationStore } from "../scene-generation-store.js";
 
+const realChatApi = await import("../../api/chat-api.js");
+// The mock wraps the REAL function so `mockResolvedValue` bodies are checked
+// against the real wire signature (the 7f PromptManagerModal idiom).
 const mocks = {
-  refreshInsightsCompletion: mock(),
+	refreshInsightsCompletion: mock(realChatApi.refreshInsightsCompletion),
 };
 
-const realChatApi = await import("../../api/chat-api.js");
 mock.module("../../api/chat-api.js", () => ({
 	...realChatApi,
 	refreshInsightsCompletion: mocks.refreshInsightsCompletion,
@@ -49,22 +53,19 @@ function objective(description: string): ObjectiveState {
   };
 }
 
+/** Wire-complete message row. `authorType` mirrors the role: the erased
+ *  literal's "character" is not a member of the production AuthorType union
+ *  (system|user|assistant|tool) — no reader in this module reads authorType,
+ *  so every asserted path is unchanged. */
 function message(target: InsightsCompletionTarget, role: "assistant" | "user" = "assistant"): AppMessage {
-  return {
-    id: target.messageId,
+  return wireMessage(target.messageId, {
     chatId,
-    branchId: target.branchId,
+    branchId: brandId<ChatBranchId>(target.branchId),
     role,
+    authorType: role,
     position: target.messageId === "msg_1" ? 1 : 2,
     content: target.messageId,
-    state: "complete",
-    authorType: role === "assistant" ? "character" : "user",
-    createdAt: "2026-01-01T00:00:00.000Z",
-    updatedAt: "2026-01-01T00:00:00.000Z",
-    variants: [],
-    selectedVariantIndex: null,
-    modelId: null,
-  } as unknown as AppMessage;
+  });
 }
 
 function seed(targets: InsightsCompletionTarget[] = [TARGET_A]): void {
@@ -89,9 +90,9 @@ function variantMessage(target: InsightsCompletionTarget, variantId: string, con
   return {
     ...base,
     content,
-    variants: [{ id: variantId, messageId: target.messageId, variantIndex: 0, content, isSelected: true } as unknown as AppMessage["variants"][number]],
+    variants: [wireVariant(target.messageId, 0, { id: brandId<MessageVariantId>(variantId), content, isSelected: true })],
     selectedVariantIndex: 0,
-  } as unknown as AppMessage;
+  };
 }
 
 function deferred<T>() {
@@ -292,11 +293,11 @@ describe("variant-aware completion refresh (SCN-10)", () => {
     const dual: AppMessage = {
       ...variantMessage(TARGET_A, VARIANT_A),
       variants: [
-        { id: VARIANT_A, messageId: "msg_1", variantIndex: 0, content: "a", isSelected: false } as unknown as AppMessage["variants"][number],
-        { id: VARIANT_B, messageId: "msg_1", variantIndex: 1, content: "b", isSelected: true } as unknown as AppMessage["variants"][number],
+        wireVariant("msg_1", 0, { id: brandId<MessageVariantId>(VARIANT_A), content: "a", isSelected: false }),
+        wireVariant("msg_1", 1, { id: brandId<MessageVariantId>(VARIANT_B), content: "b", isSelected: true }),
       ],
       selectedVariantIndex: 1,
-    } as unknown as AppMessage;
+    };
     useSnapshotStore.getState().ingestSnapshot({
       activeChat: { id: chatId, insightsConfig: { objectiveEnabled: true, trackerEnabled: true } } as NonNullable<AppSnapshot["activeChat"]>,
       messages: [dual],

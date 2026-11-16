@@ -17,7 +17,7 @@
 import { afterAll, describe, expect, it, mock } from "bun:test";
 import type { ChatId } from "@vibe-tavern/domain";
 import { brandId } from "@vibe-tavern/domain";
-import { wireCharacter } from "../../../test/wire-fixtures.js";
+import { wireChat, wireCharacter } from "../../../test/wire-fixtures.js";
 import { useDomEnv } from "../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 
@@ -58,8 +58,6 @@ const { useSnapshotStore } = await import("../../stores/snapshot-store.js");
 const { useChatStore } = await import("../../stores/chat-store.js");
 const { BuildMode } = await import("./BuildMode.js");
 
-type ActiveChat = NonNullable<ReturnType<typeof useSnapshotStore.getState>["activeChat"]>;
-
 // Store state is seeded before render and restored after the suite (the
 // snapshot/character/chat stores are process-global in the shared worker).
 const characterBefore = useCharacterStore.getState();
@@ -69,7 +67,9 @@ const chatBefore = useChatStore.getState();
 useCharacterStore.setState({ buildTab: "trace" });
 useSnapshotStore.setState({
 	character: wireCharacter(),
-	activeChat: { id: "chat-1" } as unknown as ActiveChat,
+	// The component reads only activeChat.id off this row (BuildMode.tsx:52);
+	// the complete wire chat row replaces the erased `{ id }` literal.
+	activeChat: wireChat(),
 });
 useChatStore.setState({ activeChatId: brandId<ChatId>("chat-1"), selectedTraceId: null });
 

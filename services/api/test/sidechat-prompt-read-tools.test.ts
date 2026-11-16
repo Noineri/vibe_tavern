@@ -274,3 +274,29 @@ describe("sidechatPromptReadInputSchema", () => {
 		expect(sidechatPromptReadInputSchema.safeParse({ position: 1, variant: 0 }).success).toBe(false);
 	});
 });
+
+describe("runGrantedPromptRead family contract (DMT-23)", () => {
+	it("the granted result keeps its string `prompt` field — the exact field the split-turn mechanism's specialized wire renderer dispatches on; the field stays prompt-read-only", async () => {
+		// DMT-23 generalized the mechanism's granted rendering into two arms:
+		// THIS family (a granted record carrying a string `prompt`) keeps its
+		// SC-23e specialized `{ prompt, promptTokens }` renderer; every other
+		// granted record (a swipe receipt) renders generation facts instead.
+		// This pin anchors the dispatch: if the granted result ever lost or
+		// renamed `prompt`, the renderer would silently detach from this
+		// family and the resumed model would read the generic object.
+		const { chatId, branchId, replyId } = await makeFixture("The family-contract reply.");
+		await saveLinkedTrace(chatId, branchId, replyId, await selectedVariantOf(replyId));
+		const granted = await runGrantedPromptRead(
+			deps(),
+			{ chatId, branchId, heldLoreEntryIds: new Set() },
+			{ position: 1 },
+		);
+		expect(granted.status).toBe("granted");
+		expect(typeof granted.prompt).toBe("string");
+		expect(granted.prompt.length).toBeGreaterThan(0);
+
+		const { renderWaitToolOutputWireText } = await import("../src/domain/agent/agent-split-turn.js");
+		const wire = renderWaitToolOutputWireText("read_message_prompt", granted);
+		expect(JSON.parse(wire!)).toEqual({ prompt: granted.prompt, promptTokens: granted.promptTokens });
+	});
+});

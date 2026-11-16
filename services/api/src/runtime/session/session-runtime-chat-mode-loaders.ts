@@ -49,7 +49,9 @@ export function buildChatModeLoaders(
 						if (link.targetId === chat.characterId) continue;
 						const c = await stores.characters.getById(link.targetId);
 						if (!c) continue;
-						const profile = await stores.characters.getProfileMdText(c.id as unknown as import("@vibe-tavern/domain").CharacterId);
+						// The store's profile reader takes the plain string id — no
+						// brand conversion needed at this seam.
+						const profile = await stores.characters.getProfileMdText(c.id);
 						out.push({ type: 'character', id: c.id, title: c.name, content: profile });
 					} else if (link.targetType === 'persona') {
 						const p = await stores.personas.getById(link.targetId);

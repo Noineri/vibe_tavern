@@ -1,9 +1,10 @@
-import { describe, it, expect, beforeAll, beforeEach, afterAll } from "bun:test";
+import { describe, it, expect, beforeAll, beforeEach, afterAll, spyOn } from "bun:test";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { LanguageModel } from "ai";
-import type { RecordProposal, CopilotTodoItem } from "@vibe-tavern/api-contracts";
+import type { DirectorSwipeRunOutcome, RecordProposal, CopilotTodoItem } from "@vibe-tavern/api-contracts";
+import { DIRECTOR_MESSAGE_TOOLS } from "@vibe-tavern/api-contracts";
 import {
 	createStoreContainer,
 	deleteCopilotTurn,
@@ -32,11 +33,18 @@ import { sidechatObjectiveProposalInputSchema } from "../src/domain/agent/kinds/
 import { buildContextSearchStoreReads } from "../src/domain/context/context-search-store-reads.js";
 import { SidechatOocCompactionService } from "../src/domain/sidechat/sidechat-compaction.js";
 import {
+	makeStreamTextDouble,
+	type FakeStreamTextTurn,
+	type StreamTextPart,
+} from "./provider-boundary-test-builders.js";
+import { makeProviderProfileRow } from "./copilot-test-builders.js";
+import { strictTestDouble } from "./strict-test-double.js";
+import type { GenerationResult, ProviderExecutionInput } from "../src/infrastructure/ai/provider-execution-types.js";
+import {
 	ATTACHED_VARIANT_NOT_IN_BRANCH_CODE,
 	type AttachedVariantPair,
 } from "../src/domain/sidechat/rp-branch-view.js";
 import type { ProviderProfileService } from "../src/domain/providers/provider-profile-service.js";
-import type { nonstreamingProviderExecute } from "../src/infrastructure/ai/nonstreaming-provider-executor.js";
 import { isDomainError, type DomainError } from "../src/shared/errors.js";
 import {
 	streamSidechatTurn,
@@ -91,40 +99,36 @@ let capturedTools: Record<string, { execute: (args: unknown, options?: { toolCal
 let fakeReply = REPLY_TEXT;
 /** SC-23e: scripted stream parts for split-turn turns (tool-call +
  *  tool-result chunks); null → the default single text-delta fake reply. */
-let fakeParts: unknown[] | null = null;
+let fakeParts: StreamTextPart[] | null = null;
 /** SC-23e: the stopWhen list the loop handed the SDK (the wait-tool stop
  *  conditions' wiring is asserted through it). */
 let capturedStopWhen: unknown[] = [];
 
-function makeFakeStreamTextResult(parts: unknown[]): Record<string, unknown> {
-	async function* gen(): AsyncGenerator<unknown, void, unknown> {
+/** The fake turn's parts as a lazy async iterable (the timing the erased
+ *  `stream: gen()` fake had); finish/usage ride the builder's defaults. */
+function makeFakeStreamTextResult(parts: StreamTextPart[]): FakeStreamTextTurn {
+	async function* gen(): AsyncGenerator<StreamTextPart, void, unknown> {
 		for (const p of parts) yield p;
 	}
-	return {
-		stream: gen(),
-		finishReason: Promise.resolve("stop"),
-		usage: Promise.resolve(undefined),
-	};
+	return { parts: gen() };
 }
 
 function makeProviderProfile(): ProviderProfile {
-	return {
+	// Complete stored row via the standing builder; the erased literal carried
+	// the INVALID transport spelling "chatCompletions" (runtime never read it —
+	// resolveModel is stubbed) and omitted the stored record's other columns.
+	return makeProviderProfileRow({
 		id: "prov_1",
 		name: "Test",
 		providerPreset: "openai",
-		coauthorTransport: "chatCompletions",
 		endpoint: "http://test",
 		apiKey: "key",
 		defaultModel: "test-model",
 		contextBudget: null,
 		pinContextBudget: false,
-		bindPerModel: false,
 		maxTokens: 2000,
 		temperature: 0.3,
-		proxyMode: "inherit",
-		proxyId: null,
-		isActive: true,
-	} as unknown as ProviderProfile;
+	});
 }
 
 // ─── Real-container harness ──────────────────────────────────────────────────
@@ -169,6 +173,8 @@ beforeAll(async () => {
 			experienceCopilot: stores.experienceCopilot,
 			// DR-4b: the branch-plan read for the <story_plan> section.
 			agentPlans: stores.agentPlans,
+			// DK-5b: the branch-deck read for the <story_deck> section.
+			storyDecks: stores.storyDecks,
 			presets: stores.presets,
 			assembly,
 		},
@@ -201,15 +207,15 @@ beforeAll(async () => {
 				},
 			}),
 		db: stores.db,
-		// Type-erased seam: the fake returns the partial FullStream shape the
-		// loop reads (`.stream`, `finishReason`, `usage`), not the SDK's full
-		// result.
-		streamText: ((opts: { messages: CapturedMessage[]; tools?: Record<string, { execute: (args: unknown) => Promise<unknown> }>; stopWhen?: unknown[] }) => {
-			capturedMessages = opts.messages;
+		// The typed streamText double (provider-boundary seam): the fake carries
+		// the FullStream members the loop reads (.stream, finishReason, usage),
+		// completed by the builder's inert defaults.
+		streamText: makeStreamTextDouble((opts) => {
+			capturedMessages = opts.messages ?? [];
 			capturedTools = opts.tools ?? {};
 			capturedStopWhen = opts.stopWhen ?? [];
 			return makeFakeStreamTextResult(fakeParts ?? [{ type: "text-delta", text: fakeReply }]);
-		}) as unknown as SidechatStreamDeps["streamText"],
+		}, "SidechatStreamDeps.streamText (sidechat-ooc-stream)"),
 		// SC-10: the ONE extracted store-reads mapping over the real stores, no
 		// Co-Author skill catalog — the sidechat's production wiring.
 		searchStoreReads: buildContextSearchStoreReads(stores),
@@ -266,6 +272,7 @@ async function drainTurn(
 	content: string,
 	depsOverride?: SidechatStreamDeps,
 	attachedVariants?: readonly AttachedVariantPair[],
+	promptAttachments?: { presetId: string }[],
 ): Promise<Array<{ event: string; data: string }>> {
 	const chunks: Array<{ event: string; data: string }> = [];
 	for await (const chunk of streamSidechatTurn(
@@ -274,6 +281,7 @@ async function drainTurn(
 			content,
 			providerProfileId: "prov_1",
 			...(attachedVariants !== undefined ? { attachedVariants: [...attachedVariants] } : {}),
+			...(promptAttachments !== undefined ? { promptAttachments } : {}),
 		},
 		depsOverride ?? deps,
 	)) {
@@ -349,6 +357,129 @@ const SIX_SEGMENT_KEYS = ["context", "story_plan", "rp_summaries", "rp_messages"
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
 describe("streamSidechatTurn (SC-4b)", () => {
+  it("freezes the selected preset on its user message and keeps it after edits and deletion", async () => {
+    const { threadId } = await makeSidechatThread("The tavern door opens.");
+    const preset = await stores.presets.create({
+      name: "Pinned discussion preset",
+      systemPrompt: "PINNED-PRESET-V1 Narrate the scene around {{char}}.",
+      postHistoryInstructions: "PINNED-POST-HISTORY Keep the scene open.",
+      advancedMode: true,
+      mergeConsecutiveRoles: false,
+      customInjections: [{ identifier: "audit", name: "Audit", content: "PINNED-CUSTOM Keep the atmosphere grounded.", role: "user" }],
+      promptOrder: [{ identifier: "audit", enabled: true, kind: "custom", zone: "in_chat", depth: 2, order: 0 }],
+    });
+    const links = [{ targetType: "prompt_preset" as const, targetId: preset.id }, { targetType: "character" as const, targetId: characterId }];
+    await stores.experienceCopilot.setContextLinks(threadId, links);
+    const chunks = await drainTurn(threadId, "Discuss the attached preset.", undefined, undefined, [{ presetId: preset.id }]);
+    expect(chunks.some((chunk) => chunk.event === "finish")).toBe(true);
+    const rows = await stores.experienceCopilot.listMessages(threadId);
+    const snapshot = rows.find((row) => row.content === "Discuss the attached preset.")!.promptAttachments![0]!;
+    expect(snapshot.presetId).toBe(preset.id);
+    expect(snapshot.displayName).toBe("Pinned discussion preset");
+    expect(snapshot.promptText).toContain('<rp_prompt preset="Pinned discussion preset">');
+    for (const marker of ["PINNED-PRESET-V1 Narrate the scene around Theron.", "PINNED-POST-HISTORY Keep the scene open.", "PINNED-CUSTOM Keep the atmosphere grounded."]) {
+      expect(snapshot.promptText).toContain(marker);
+      expect(occurrences(promptText(), marker)).toBe(1);
+    }
+    expect(systemMessageText()).not.toContain("PINNED-PRESET-V1");
+    expect(messageIndexContaining("Discuss the attached preset.")).toBe(messageIndexContaining("PINNED-PRESET-V1"));
+    expect(await stores.experienceCopilot.getContextLinks(threadId)).toEqual([links[1]!]);
+    await stores.presets.update(preset.id, { systemPrompt: "PINNED-PRESET-V2 Use shorter sentences." });
+    await drainTurn(threadId, "Discuss the revised preset.");
+    expect(occurrences(promptText(), "PINNED-PRESET-V1")).toBe(1);
+    expect(promptText()).not.toContain("PINNED-PRESET-V2");
+    await stores.presets.delete(preset.id);
+    await stores.experienceCopilot.setContextLinks(threadId, []);
+    await drainTurn(threadId, "The preset was removed.");
+    expect(occurrences(promptText(), "PINNED-PRESET-V1")).toBe(1);
+    expect(promptText()).toContain(snapshot.promptText);
+    expect((await stores.experienceCopilot.listMessages(threadId))[0]!.promptAttachments).toEqual([snapshot]);
+  });
+
+  it("seats copied and branch-specific snapshots only in their own branch history", async () => {
+    const { threadId, chatId, branchId } = await makeSidechatThread();
+    const opening = await stores.messages.addMessage({ chatId, branchId, role: "user", authorType: "user", content: "Opening" });
+    const shared = await stores.presets.create({ name: "Shared", systemPrompt: "SHARED-BRANCH-SNAPSHOT" });
+    const own = await stores.presets.create({ name: "Original", systemPrompt: "ORIGINAL-BRANCH-SNAPSHOT" });
+    const forkOnly = await stores.presets.create({ name: "Fork", systemPrompt: "FORK-BRANCH-SNAPSHOT" });
+    await drainTurn(threadId, "Shared message", undefined, undefined, [{ presetId: shared.id }]);
+    const fork = await stores.chats.forkBranch(chatId, opening.id, "fork");
+    const copied = await stores.experienceCopilot.forkChatThreadToBranch(threadId, fork.id, {
+      eventPayload: (_kind, payloadJson) => ({ payloadJson }),
+      frontierJson: (json) => json,
+      trailingEvent: { kind: "branch_forked", payload: { at: 0 } },
+    });
+    expect(copied).not.toBeNull();
+    await drainTurn(threadId, "Original message", undefined, undefined, [{ presetId: own.id }]);
+    await drainTurn(copied!.id, "Fork message", undefined, undefined, [{ presetId: forkOnly.id }]);
+    expect(occurrences(promptText(), "SHARED-BRANCH-SNAPSHOT")).toBe(1);
+    expect(occurrences(promptText(), "FORK-BRANCH-SNAPSHOT")).toBe(1);
+    expect(promptText()).not.toContain("ORIGINAL-BRANCH-SNAPSHOT");
+    expect(messageIndexContaining("Shared message")).toBe(messageIndexContaining("SHARED-BRANCH-SNAPSHOT"));
+    expect(messageIndexContaining("Fork message")).toBe(messageIndexContaining("FORK-BRANCH-SNAPSHOT"));
+    await drainTurn(threadId, "Original again");
+    expect(occurrences(promptText(), "SHARED-BRANCH-SNAPSHOT")).toBe(1);
+    expect(occurrences(promptText(), "ORIGINAL-BRANCH-SNAPSHOT")).toBe(1);
+    expect(promptText()).not.toContain("FORK-BRANCH-SNAPSHOT");
+    expect(messageIndexContaining("Original message")).toBe(messageIndexContaining("ORIGINAL-BRANCH-SNAPSHOT"));
+  });
+
+  it("isolates prompt snapshots between sessions of the same chat and branch", async () => {
+    const { threadId, chatId, branchId } = await makeSidechatThread();
+    const first = await stores.presets.create({ name: "First session", systemPrompt: "FIRST-SESSION-SNAPSHOT" });
+    const second = await stores.presets.create({ name: "Second session", systemPrompt: "SECOND-SESSION-SNAPSHOT" });
+    await drainTurn(threadId, "First session message", undefined, undefined, [{ presetId: first.id }]);
+    const other = await stores.experienceCopilot.startNewChatSession(chatId, branchId, "sidechat-ooc");
+    await drainTurn(other.id, "Second session message", undefined, undefined, [{ presetId: second.id }]);
+    expect(occurrences(promptText(), "SECOND-SESSION-SNAPSHOT")).toBe(1);
+    expect(promptText()).not.toContain("FIRST-SESSION-SNAPSHOT");
+    await drainTurn(threadId, "Return to first session");
+    expect(occurrences(promptText(), "FIRST-SESSION-SNAPSHOT")).toBe(1);
+    expect(promptText()).not.toContain("SECOND-SESSION-SNAPSHOT");
+  });
+
+  it("consumes an empty rendered selection without claiming an attachment", async () => {
+    const { threadId } = await makeSidechatThread();
+    const preset = await stores.presets.create({ name: "Empty render", systemPrompt: "EMPTY-RENDER-MARKER" });
+    await stores.experienceCopilot.setContextLinks(threadId, [{ targetType: "prompt_preset", targetId: preset.id }]);
+    const assembly = deps.context.assembly;
+    const original = assembly.assembleForChat.bind(assembly);
+    const spy = spyOn(assembly, "assembleForChat").mockImplementation(async (input) => {
+      const result = await original(input);
+      return { ...result, prompt: { ...result.prompt, finalPayload: { ...result.prompt.finalPayload, messages: [] } } };
+    });
+    try {
+      await drainTurn(threadId, "Empty selected", undefined, undefined, [{ presetId: preset.id }]);
+    } finally {
+      spy.mockRestore();
+    }
+    const row = (await stores.experienceCopilot.listMessages(threadId))[0]!;
+    expect(row.promptAttachments).toBeUndefined();
+    expect(promptText()).not.toContain("EMPTY-RENDER-MARKER");
+    expect(await stores.experienceCopilot.getContextLinks(threadId)).toEqual([]);
+  });
+
+  it("consumes dangling selections and a stale PATCH leaves an inert pending link", async () => {
+    const { threadId } = await makeSidechatThread();
+    const preset = await stores.presets.create({ name: "Resurrected", systemPrompt: "RESURRECTED-MARKER" });
+    const link = { targetType: "prompt_preset" as const, targetId: preset.id };
+    const dangling = { targetType: "prompt_preset" as const, targetId: "preset_deleted" };
+    await stores.experienceCopilot.setContextLinks(threadId, [link, dangling]);
+    await drainTurn(threadId, "Consume selections", undefined, undefined, [{ presetId: preset.id }, { presetId: dangling.targetId }]);
+    expect(await stores.experienceCopilot.getContextLinks(threadId)).toEqual([]);
+    const first = (await stores.experienceCopilot.listMessages(threadId))[0]!;
+    expect(first.promptAttachments).toHaveLength(1);
+    await stores.experienceCopilot.setContextLinks(threadId, [link]);
+    await drainTurn(threadId, "Pending alone is inert");
+    expect(occurrences(promptText(), "RESURRECTED-MARKER")).toBe(1);
+    expect(messageIndexContaining("RESURRECTED-MARKER")).toBe(messageIndexContaining("Consume selections"));
+    expect(await stores.experienceCopilot.getContextLinks(threadId)).toEqual([link]);
+    await drainTurn(threadId, "Send it again", undefined, undefined, [{ presetId: preset.id }]);
+    expect(occurrences(promptText(), "RESURRECTED-MARKER")).toBe(2);
+    expect(messageIndexContaining("Send it again")).toBeGreaterThan(messageIndexContaining("Consume selections"));
+    expect(await stores.experienceCopilot.getContextLinks(threadId)).toEqual([]);
+  });
+
 	it("a turn syncs the RP branch before the user message, assembles base prompt + package, and persists the reply", async () => {
 		const { threadId } = await makeSidechatThread("The tavern door swings open.");
 
@@ -515,17 +646,22 @@ describe("streamSidechatTurn (SC-4b)", () => {
 /** The sidechat compaction service over the REAL store with the provider
  *  boundary faked (injectable executor — no `mock.module`, no network). */
 function makeCompactionService(
-	execute: (input: Record<string, unknown>) => Promise<{ text: string; providerResponse: Record<string, unknown> }>,
+	// The REAL executor seam the production service injects
+	// (`(input: ProviderExecutionInput) => Promise<GenerationResult>`).
+	execute: (input: ProviderExecutionInput) => Promise<GenerationResult>,
 ): SidechatOocCompactionService {
 	const profile = makeProviderProfile();
-	const providerProfiles = {
-		getProviderProfile: async () => profile,
-		getProviderModelSettings: async () => null,
-	};
+	const providerProfiles = strictTestDouble<ProviderProfileService>(
+		{
+			getProviderProfile: async () => profile,
+			getProviderModelSettings: async () => null,
+		},
+		"makeCompactionService: providerProfiles (sidechat-ooc-stream)",
+	);
 	return new SidechatOocCompactionService(
 		stores.experienceCopilot,
-		providerProfiles as unknown as ProviderProfileService,
-		execute as unknown as typeof nonstreamingProviderExecute,
+		providerProfiles,
+		execute,
 		stores.db,
 	);
 }
@@ -564,11 +700,32 @@ describe("streamSidechatTurn after a compaction (SC-8c)", () => {
 		}
 		const service = makeCompactionService(async () => ({
 			text: "DIGEST-BODY-MARKER what was discussed",
-			providerResponse: {},
+			// The compaction path reads only .text; the trace rides its typed
+			// empty shape (the erased `{}` stub was never assignable).
+			providerResponse: { mode: "nonstream", steps: [] },
 		}));
 		await service.compact({ threadId });
 		return { threadId, chatId, branchId };
 	}
+
+	it("folds the snapshot with its message and leaves no orphan in the provider window", async () => {
+		const { threadId } = await makeSidechatThread();
+		const preset = await stores.presets.create({ name: "Compacted preset", systemPrompt: "COMPACTED-PROMPT-SNAPSHOT" });
+		await drainTurn(threadId, "Question with snapshot", undefined, undefined, [{ presetId: preset.id }]);
+		for (let turn = 2; turn <= 5; turn++) await drainTurn(threadId, `Question ${turn}`);
+		let summarizerInput = "";
+		const service = makeCompactionService(async (input) => {
+			summarizerInput = JSON.stringify(input);
+			return { text: "COMPACTION-DIGEST", providerResponse: { mode: "nonstream", steps: [] } };
+		});
+		await service.compact({ threadId });
+		expect(summarizerInput).toContain("Question with snapshot");
+		expect(summarizerInput).toContain("COMPACTED-PROMPT-SNAPSHOT");
+		await drainTurn(threadId, "After compaction");
+		expect(promptText()).toContain("COMPACTION-DIGEST");
+		expect(promptText()).not.toContain("Question with snapshot");
+		expect(promptText()).not.toContain("COMPACTED-PROMPT-SNAPSHOT");
+	});
 
 	it("a turn after compaction assembles without the guard firing (was: the SC-4d count-check throw)", async () => {
 		const { threadId, chatId, branchId } = await makeCompactedThread();
@@ -674,7 +831,7 @@ describe("streamSidechatTurn after a compaction (SC-8c)", () => {
 		let executed = 0;
 		const service = makeCompactionService(async () => {
 			executed += 1;
-			return { text: "should not run", providerResponse: {} };
+			return { text: "should not run", providerResponse: { mode: "nonstream", steps: [] } };
 		});
 		const fired: Array<{ threadId: string; discussionTokens: number; roomTokens: number }> = [];
 		service.autoCompactAfterSidechatTurn = async (firedThreadId, pressure) => {
@@ -1379,15 +1536,18 @@ async function makePromptReadThread(replyText: string): Promise<{
 }
 
 /** Drain an ANSWER-mode turn (the split-turn resume: no content, the answer
- *  body instead — the same shape the route relays). */
+ *  body instead — the same shape the route relays). DMT-23: an allow answer
+ *  may carry the user-edited `instruction`; deps are overridable so a swipe
+ *  answer can run with its injected generation delegate. */
 async function drainAnswerTurn(
 	threadId: string,
-	answer: { toolCallId: string; decision: "allow" | "deny" },
+	answer: { toolCallId: string; decision: "allow" | "deny"; instruction?: string },
+	depsOverride?: SidechatStreamDeps,
 ): Promise<Array<{ event: string; data: string }>> {
 	const chunks: Array<{ event: string; data: string }> = [];
 	for await (const chunk of streamSidechatTurn(
 		{ threadId, answer, providerProfileId: "prov_1" },
-		deps,
+		depsOverride ?? deps,
 	)) {
 		chunks.push(chunk);
 	}
@@ -1420,20 +1580,24 @@ describe("streamSidechatTurn read_message_prompt permission split-turn (SC-23e)"
 		setTokenCountFn(() => 0);
 	});
 
-	it("stopWhen = the ceiling + BOTH wait families (ask on call, permission on marker; an unknown answer does not stop)", async () => {
+	it("stopWhen = the ceiling + ALL THREE wait families (ask on call, both permission tools on marker; an unknown answer does not stop)", async () => {
 		const { threadId } = await makePromptReadThread("The studied reply.");
 		await drainTurn(threadId, "By which prompt was that written?");
 
 		// Behavior change (DR-4b, owner ruling B): was TWO entries (the ceiling
 		// + the single marker-aware permission condition — the sidechat served
-		// no ask tool) → now THREE: the SDK's isStepCount, the ask family's
-		// hasToolCall("ask_user") (every ask call awaits by construction, so
-		// the name-based default condition is correct for it), then the
+		// no ask tool) → then THREE with the ask family's hasToolCall
+		// ("ask_user", every ask call awaits by construction) + the
 		// permission family's marker-aware helper (unknown answers relay
-		// in-turn). Basis: DIRECTOR_MODE_PLAN DR-4b ruling B.
-		expect(capturedStopWhen).toHaveLength(3);
+		// in-turn). DMT-23 adds the swipe permission tool's own marker-aware
+		// entry → FOUR. Basis: DIRECTOR_MODE_PLAN DR-4b ruling B +
+		// DIRECTOR_MESSAGE_TOOLS_PLAN DMT-23.
+		expect(capturedStopWhen).toHaveLength(4);
 		const askCondition = capturedStopWhen[1] as (o: unknown) => boolean;
 		const markerCondition = capturedStopWhen[2] as (o: {
+			steps: Array<{ toolResults?: Array<{ toolName?: string; output?: unknown }> }>;
+		}) => boolean;
+		const swipeCondition = capturedStopWhen[3] as (o: {
 			steps: Array<{ toolResults?: Array<{ toolName?: string; output?: unknown }> }>;
 		}) => boolean;
 		expect(typeof askCondition).toBe("function");
@@ -1445,6 +1609,19 @@ describe("streamSidechatTurn read_message_prompt permission split-turn (SC-23e)"
 		expect(
 			markerCondition({
 				steps: [{ toolResults: [{ toolName: "read_message_prompt", output: { status: "unknown_prompt" } }] }],
+			}),
+		).toBe(false);
+		// DMT-23: the swipe tool's marker-aware condition — same marker
+		// vocabulary, its own tool name (a prompt-read marker must not stop the
+		// swipe condition and vice versa).
+		expect(
+			swipeCondition({
+				steps: [{ toolResults: [{ toolName: "request_message_swipe", output: { status: "awaiting_permission" } }] }],
+			}),
+		).toBe(true);
+		expect(
+			swipeCondition({
+				steps: [{ toolResults: [{ toolName: "read_message_prompt", output: { status: "awaiting_permission" } }] }],
 			}),
 		).toBe(false);
 	});
@@ -1465,7 +1642,7 @@ describe("streamSidechatTurn read_message_prompt permission split-turn (SC-23e)"
 
 		fakeParts = [
 			{ type: "tool-call", toolCallId: "tc_pr_1", toolName: "read_message_prompt", input: { position: 1 } },
-			{ type: "tool-result", toolCallId: "tc_pr_1", toolName: "read_message_prompt", output: marker },
+			{ type: "tool-result", toolCallId: "tc_pr_1", toolName: "read_message_prompt", input: { position: 1 }, output: marker },
 		];
 		const chunks = await drainTurn(threadId, "That one, please.");
 		// The SSE relays the call and the marker verbatim; the turn FINISHES
@@ -1488,7 +1665,7 @@ describe("streamSidechatTurn read_message_prompt permission split-turn (SC-23e)"
 		const marker = await capturedTools.read_message_prompt!.execute({ position: 1 }, { toolCallId: "tc_pr_2" });
 		fakeParts = [
 			{ type: "tool-call", toolCallId: "tc_pr_2", toolName: "read_message_prompt", input: { position: 1 } },
-			{ type: "tool-result", toolCallId: "tc_pr_2", toolName: "read_message_prompt", output: marker },
+			{ type: "tool-result", toolCallId: "tc_pr_2", toolName: "read_message_prompt", input: { position: 1 }, output: marker },
 		];
 		await drainTurn(threadId, "This one.");
 
@@ -1523,7 +1700,7 @@ describe("streamSidechatTurn read_message_prompt permission split-turn (SC-23e)"
 		const marker = await capturedTools.read_message_prompt!.execute({ position: 1 }, { toolCallId: "tc_pr_3" });
 		fakeParts = [
 			{ type: "tool-call", toolCallId: "tc_pr_3", toolName: "read_message_prompt", input: { position: 1 } },
-			{ type: "tool-result", toolCallId: "tc_pr_3", toolName: "read_message_prompt", output: marker },
+			{ type: "tool-result", toolCallId: "tc_pr_3", toolName: "read_message_prompt", input: { position: 1 }, output: marker },
 		];
 		await drainTurn(threadId, "That one.");
 		const chunks = await drainAnswerTurn(threadId, { toolCallId: "tc_pr_3", decision: "deny" });
@@ -1550,7 +1727,7 @@ describe("streamSidechatTurn read_message_prompt permission split-turn (SC-23e)"
 				input: { position: 1 },
 				providerMetadata: { google: { thoughtSignature: "sig_tc_pr_4" } },
 			},
-			{ type: "tool-result", toolCallId: "tc_pr_4", toolName: "read_message_prompt", output: marker },
+			{ type: "tool-result", toolCallId: "tc_pr_4", toolName: "read_message_prompt", input: { position: 1 }, output: marker },
 		];
 		await drainTurn(threadId, "This one.");
 		await drainAnswerTurn(threadId, { toolCallId: "tc_pr_4", decision: "allow" });
@@ -1580,6 +1757,407 @@ describe("streamSidechatTurn read_message_prompt permission split-turn (SC-23e)"
 	});
 });
 
+// ─── DMT-23: the request_message_swipe permission split-turn ────────────────
+
+describe("streamSidechatTurn request_message_swipe permission split-turn (DMT-23)", () => {
+	/** The builtin seed with ONLY the swipe request enabled — the toggle keys
+	 *  are not public until DMT-34 (a stored profile cannot carry them), so
+	 *  this override stands in for the enabled seed. */
+	async function swipeOnlyDeps(): Promise<SidechatStreamDeps> {
+		return {
+			...deps,
+			resolveProfileForChat: async () => ({
+				...(await resolveBuiltinSidechatOocProfile()),
+				toolSet: { [DIRECTOR_MESSAGE_TOOLS.requestMessageSwipe]: true },
+			}),
+		};
+	}
+
+	/** deps with a RECORDING swipe generation delegate (the DMT-23 injected
+	 *  seam; the real RP generation is DMT-24's). The fake reports the full
+	 *  `completed` outcome — the DMT-24b seam contract the executor reads. */
+	async function swipeDepsWithDelegate(
+		calls: Array<{ chatId: string; branchId: string; messageId: string; variantId: string; instruction: string; signal: AbortSignal | undefined }>,
+	): Promise<SidechatStreamDeps> {
+		return {
+			...(await swipeOnlyDeps()),
+			buildSwipeGenerationDelegate: async () => async (input) => {
+				calls.push({
+					chatId: input.chatId,
+					branchId: input.branchId,
+					messageId: input.marker.messageId,
+					variantId: input.marker.variantId,
+					instruction: input.instruction,
+					signal: input.signal,
+				});
+				return {
+					status: "completed",
+					messageId: input.marker.messageId,
+					variantId: input.marker.variantId,
+					traceId: null,
+				};
+			},
+		};
+	}
+
+	/** deps with a swipe generation delegate that resolves to the GIVEN
+	 *  outcome (DMT-24b: the absorbed provider-grade failures the real
+	 *  branch-pinned run reports). */
+	async function swipeDepsWithOutcome(outcome: DirectorSwipeRunOutcome): Promise<SidechatStreamDeps> {
+		return {
+			...(await swipeOnlyDeps()),
+			buildSwipeGenerationDelegate: async () => async () => outcome,
+		};
+	}
+
+	/** Pause the turn on a real swipe marker: run one content turn with the
+	 *  swipe profile, execute the served tool, and run the scripted marker
+	 *  turn that persists the awaiting row. Returns the marker. */
+	async function pauseOnSwipeMarker(threadId: string): Promise<Record<string, unknown>> {
+		const swipeDeps = await swipeOnlyDeps();
+		await drainTurn(threadId, "Give me another take", swipeDeps);
+		expect(Object.keys(capturedTools)).toEqual([DIRECTOR_MESSAGE_TOOLS.requestMessageSwipe]);
+		const marker = (await capturedTools[DIRECTOR_MESSAGE_TOOLS.requestMessageSwipe]!.execute(
+			{ position: 0, instruction: "DRAFT-INSTRUCTION make it rain" },
+			{ toolCallId: "tc_sw_stream" },
+		)) as Record<string, unknown>;
+		fakeParts = [
+			{
+				type: "tool-call",
+				toolCallId: "tc_sw_stream",
+				toolName: DIRECTOR_MESSAGE_TOOLS.requestMessageSwipe,
+				input: { position: 0, instruction: "DRAFT-INSTRUCTION make it rain" },
+			},
+			{
+				type: "tool-result",
+				toolCallId: "tc_sw_stream",
+				toolName: DIRECTOR_MESSAGE_TOOLS.requestMessageSwipe,
+				input: { position: 0, instruction: "DRAFT-INSTRUCTION make it rain" },
+				output: marker,
+			},
+		];
+		await drainTurn(threadId, "That one, please.", swipeDeps);
+		// Reset the scripted parts — later turns in the same test (the answer
+		// turns) must stream plain replies, never re-run this script (a stale
+		// script would persist a duplicate tool row).
+		fakeParts = null;
+		return marker;
+	}
+
+	it("the request pauses: the marker row persists with the frozen identity and the draft instruction in full", async () => {
+		const { threadId, chatId, branchId } = await makeSidechatThread("The reply to regenerate.");
+		const marker = await pauseOnSwipeMarker(threadId);
+		expect(marker.status).toBe("awaiting_permission");
+		expect(marker.instruction).toBe("DRAFT-INSTRUCTION make it rain");
+		expect(marker.replyFirstLine).toBe("The reply to regenerate.");
+		expect(marker.variantNumber).toBe(1);
+		expect(await storedToolRow(threadId, "tc_sw_stream")).toEqual({
+			toolName: DIRECTOR_MESSAGE_TOOLS.requestMessageSwipe,
+			output: marker,
+		});
+		// Nothing RP-side moved on the request itself (the DMT-21 pin at the
+		// builder; here through the real stream): the reply row is untouched.
+		const branchMessages = await stores.messages.getMessages(branchId);
+		expect(branchMessages.filter((m) => m.role === "assistant")).toHaveLength(1);
+		expect(chatId).toBeTruthy();
+	});
+
+	it("ALLOW with an edited instruction: the delegate runs ONCE with the final text and the frozen identity; the row stores the receipt with the EDITED text; no user discussion row", async () => {
+		const { threadId, chatId, branchId } = await makeSidechatThread("The edited-allow reply.");
+		await pauseOnSwipeMarker(threadId);
+		const rowsBefore = await stores.experienceCopilot.listMessages(threadId);
+		const userRowsBefore = rowsBefore.filter((m) => m.role === "user").length;
+
+		const delegateCalls: Array<{ instruction: string; messageId: string; variantId: string; signal: AbortSignal | undefined }> = [];
+		const answerChunks = await drainAnswerTurn(
+			threadId,
+			{ toolCallId: "tc_sw_stream", decision: "allow", instruction: "  EDITED make it storm  " },
+			await swipeDepsWithDelegate(delegateCalls),
+		);
+		expect(answerChunks.map((c) => c.event)).toContain("finish");
+		expect(answerChunks.map((c) => c.event)).not.toContain("error");
+
+		// The decision itself added NO user discussion row.
+		const rowsAfter = await stores.experienceCopilot.listMessages(threadId);
+		expect(rowsAfter.filter((m) => m.role === "user")).toHaveLength(userRowsBefore);
+
+		// Exactly ONE delegate call with the FINAL user-edited (trimmed) text
+		// and the frozen identity from the recorded marker — never the draft.
+		expect(delegateCalls).toHaveLength(1);
+		expect(delegateCalls[0]!.instruction).toBe("EDITED make it storm");
+		expect(delegateCalls[0]!.messageId).toBeTruthy();
+		expect(delegateCalls[0]!.variantId).toBeTruthy();
+
+		// The resolved row stores the granted receipt with the FINAL approved
+		// text (the DMT-11 receipt shape) — the draft never survives.
+		const row = await storedToolRow(threadId, "tc_sw_stream");
+		expect(row!.toolName).toBe(DIRECTOR_MESSAGE_TOOLS.requestMessageSwipe);
+		expect(row!.output.status).toBe("granted");
+		expect(row!.output.instruction).toBe("EDITED make it storm");
+		expect(row!.output.replyFirstLine).toBe("The edited-allow reply.");
+		expect(row!.output.variantNumber).toBe(1);
+
+		// The resumed model reads GENERATION FACTS through the wire object —
+		// approved + the final instruction, never the prompt-read shape and
+		// never the raw status enum.
+		const wire = lastToolWireObject();
+		expect(wire).toEqual({
+			approved: true,
+			messageId: row!.output.messageId,
+			variantId: row!.output.variantId,
+			position: 0,
+			variantNumber: 1,
+			replyFirstLine: "The edited-allow reply.",
+			instruction: "EDITED make it storm",
+		});
+		expect(JSON.stringify(wire)).not.toContain('"prompt"');
+	});
+
+	it("ALLOW without an edit uses the recorded draft; DENY never calls the delegate and stores the denied marker — neither decision adds a user row", async () => {
+		const { threadId } = await makeSidechatThread("The draft-allow reply.");
+		await pauseOnSwipeMarker(threadId);
+		const draftRows = await stores.experienceCopilot.listMessages(threadId);
+		const draftUserRows = draftRows.filter((m) => m.role === "user").length;
+
+		const allowCalls: Array<{ instruction: string }> = [];
+		const allowChunks = await drainAnswerTurn(
+			threadId,
+			{ toolCallId: "tc_sw_stream", decision: "allow" },
+			await swipeDepsWithDelegate(allowCalls),
+		);
+		expect(allowChunks.map((c) => c.event)).toContain("finish");
+		// No instruction on the answer → the recorded draft is what runs.
+		expect(allowCalls).toHaveLength(1);
+		expect(allowCalls[0]!.instruction).toBe("DRAFT-INSTRUCTION make it rain");
+		const allowRow = await storedToolRow(threadId, "tc_sw_stream");
+		expect(allowRow!.output.status).toBe("granted");
+		expect(allowRow!.output.instruction).toBe("DRAFT-INSTRUCTION make it rain");
+		expect((await stores.experienceCopilot.listMessages(threadId)).filter((m) => m.role === "user")).toHaveLength(
+			draftUserRows,
+		);
+
+		// DENY on a FRESH request: the delegate is never called (the mechanism
+		// stores the denied marker itself), the wire reads { denied: true }.
+		const denyThread = await makeSidechatThread("The denied reply.");
+		await pauseOnSwipeMarker(denyThread.threadId);
+		const denyUserRows = (await stores.experienceCopilot.listMessages(denyThread.threadId)).filter(
+			(m) => m.role === "user",
+		).length;
+		const denyCalls: Array<{ instruction: string }> = [];
+		const denyChunks = await drainAnswerTurn(
+			denyThread.threadId,
+			{ toolCallId: "tc_sw_stream", decision: "deny" },
+			await swipeDepsWithDelegate(denyCalls),
+		);
+		expect(denyChunks.map((c) => c.event)).toContain("finish");
+		expect(denyCalls).toHaveLength(0);
+		expect(await storedToolRow(denyThread.threadId, "tc_sw_stream")).toEqual({
+			toolName: DIRECTOR_MESSAGE_TOOLS.requestMessageSwipe,
+			output: { status: "denied" },
+		});
+		expect(lastToolWireObject()).toEqual({ denied: true });
+		expect(
+			(await stores.experienceCopilot.listMessages(denyThread.threadId)).filter((m) => m.role === "user"),
+		).toHaveLength(denyUserRows);
+	});
+
+	it("an approved instruction that trims to nothing is refused: the row STAYS awaiting, the delegate never runs", async () => {
+		const { threadId } = await makeSidechatThread("The empty-instruction reply.");
+		await pauseOnSwipeMarker(threadId);
+		const calls: Array<{ instruction: string }> = [];
+		let threw: unknown = null;
+		try {
+			await drainAnswerTurn(
+				threadId,
+				{ toolCallId: "tc_sw_stream", decision: "allow", instruction: "   " },
+				await swipeDepsWithDelegate(calls),
+			);
+		} catch (err) {
+			threw = err;
+		}
+		expect(threw).toBeTruthy();
+		expect(String((threw as { message?: string }).message)).toContain("instruction is empty");
+		expect(calls).toHaveLength(0);
+		// The awaiting marker is untouched — the user may retry with real text.
+		const row = await storedToolRow(threadId, "tc_sw_stream");
+		expect(row!.output.status).toBe("awaiting_permission");
+	});
+
+	it("an instruction on a PROMPT-READ allow is refused before execution: the row stays awaiting and the prompt is never read", async () => {
+		const { threadId } = await makePromptReadThread("The guarded reply.");
+		await drainTurn(threadId, "By which prompt was that written?");
+		const marker = await capturedTools.read_message_prompt!.execute({ position: 1 }, { toolCallId: "tc_pr_guard" });
+		fakeParts = [
+			{ type: "tool-call", toolCallId: "tc_pr_guard", toolName: "read_message_prompt", input: { position: 1 } },
+			{ type: "tool-result", toolCallId: "tc_pr_guard", toolName: "read_message_prompt", input: { position: 1 }, output: marker },
+		];
+		await drainTurn(threadId, "This one.");
+		const calls: Array<{ instruction: string }> = [];
+		let threw: unknown = null;
+		try {
+			await drainAnswerTurn(
+				threadId,
+				{ toolCallId: "tc_pr_guard", decision: "allow", instruction: "smuggled override" },
+				await swipeDepsWithDelegate(calls),
+			);
+		} catch (err) {
+			threw = err;
+		}
+		expect(threw).toBeTruthy();
+		expect(String((threw as { message?: string }).message)).toContain(
+			"does not accept an approved-instruction override",
+		);
+		expect(calls).toHaveLength(0);
+		// The prompt-read marker row stays awaiting — nothing was read or
+		// rewritten by the refused answer.
+		const row = await storedToolRow(threadId, "tc_pr_guard");
+		expect(row!.output.status).toBe("awaiting_permission");
+	});
+
+	it("a corrupted recorded marker is refused at the continuation — never resumed on guessed state", async () => {
+		const { threadId } = await makeSidechatThread("The corrupted-marker reply.");
+		await pauseOnSwipeMarker(threadId);
+		// Corrupt the persisted marker row directly (a producer bug or an old
+		// row): the executor must refuse instead of resuming on partial state.
+		const rows = await stores.experienceCopilot.listMessages(threadId);
+		const toolRow = rows.find((m) => m.role === "tool" && m.toolCallId === "tc_sw_stream")!;
+		await stores.experienceCopilot.setToolResultOutput(threadId, "tc_sw_stream", {
+			toolName: DIRECTOR_MESSAGE_TOOLS.requestMessageSwipe,
+			output: { status: "awaiting_permission", position: 0 },
+		});
+		void toolRow;
+		const calls: Array<{ instruction: string }> = [];
+		let threw: unknown = null;
+		try {
+			await drainAnswerTurn(
+				threadId,
+				{ toolCallId: "tc_sw_stream", decision: "allow", instruction: "valid text" },
+				await swipeDepsWithDelegate(calls),
+			);
+		} catch (err) {
+			threw = err;
+		}
+		expect(threw).toBeTruthy();
+		expect(String((threw as { message?: string }).message)).toContain("not the tool's marker shape");
+		expect(calls).toHaveLength(0);
+	});
+
+	it("no wired generation delegate: the allow is refused loudly (the DMT-14 delegate-seam pattern) and the row stays awaiting", async () => {
+		const { threadId } = await makeSidechatThread("The unwired-delegate reply.");
+		await pauseOnSwipeMarker(threadId);
+		let threw: unknown = null;
+		try {
+			await drainAnswerTurn(threadId, { toolCallId: "tc_sw_stream", decision: "allow", instruction: "valid text" });
+		} catch (err) {
+			threw = err;
+		}
+		expect(threw).toBeTruthy();
+		expect(String((threw as { message?: string }).message)).toContain("swipe generation is not configured");
+		const row = await storedToolRow(threadId, "tc_sw_stream");
+		expect(row!.output.status).toBe("awaiting_permission");
+	});
+
+	// ── DMT-24b: the absorbed run outcome rides the answer stream's tail ──
+
+	it("DMT-24b: a FAILED swipe outcome surfaces the outcome frame AND the receipt still stores AND the turn completes", async () => {
+		const { threadId } = await makeSidechatThread("The failed-generation reply.");
+		await pauseOnSwipeMarker(threadId);
+		const answerChunks = await drainAnswerTurn(
+			threadId,
+			{ toolCallId: "tc_sw_stream", decision: "allow", instruction: "doomed generation" },
+			await swipeDepsWithOutcome({ status: "failed", reason: "Provider 502: upstream exploded" }),
+		);
+		// The answer turn itself SUCCEEDS — the decision was accepted, only the
+		// generation failed. No thrown executor error, normal finish.
+		expect(answerChunks.map((c) => c.event)).toContain("finish");
+		expect(answerChunks.map((c) => c.event)).not.toContain("error");
+		// The outcome frame rides the stream as the NON-FATAL tail event (after
+		// the loop's own frames — its payload is the shared contract shape).
+		const events = answerChunks.map((c) => c.event);
+		const frameIndex = events.indexOf("swipe-run-outcome");
+		expect(frameIndex).toBeGreaterThan(events.indexOf("finish"));
+		expect(JSON.parse(answerChunks[frameIndex]!.data)).toEqual({
+			toolCallId: "tc_sw_stream",
+			outcome: { status: "failed", reason: "Provider 502: upstream exploded" },
+		});
+		// Exactly one frame — a failed swipe reports once.
+		expect(events.filter((e) => e === "swipe-run-outcome")).toHaveLength(1);
+		// The durable decision: the granted receipt stored with the final
+		// approved instruction despite the provider failure.
+		const row = await storedToolRow(threadId, "tc_sw_stream");
+		expect(row!.output.status).toBe("granted");
+		expect(row!.output.instruction).toBe("doomed generation");
+	});
+
+	it("DMT-24b: a NO_OUTPUT outcome maps to the outcome frame and the receipt still stores", async () => {
+		const { threadId } = await makeSidechatThread("The empty-generation reply.");
+		await pauseOnSwipeMarker(threadId);
+		const marker = (await storedToolRow(threadId, "tc_sw_stream"))!.output;
+		const answerChunks = await drainAnswerTurn(
+			threadId,
+			{ toolCallId: "tc_sw_stream", decision: "allow" },
+			await swipeDepsWithOutcome({ status: "no_output", messageId: String(marker.messageId) }),
+		);
+		expect(answerChunks.map((c) => c.event)).toContain("finish");
+		const frame = answerChunks.find((c) => c.event === "swipe-run-outcome");
+		expect(frame).toBeTruthy();
+		expect(JSON.parse(frame!.data)).toEqual({
+			toolCallId: "tc_sw_stream",
+			outcome: { status: "no_output", messageId: String(marker.messageId) },
+		});
+		const row = await storedToolRow(threadId, "tc_sw_stream");
+		expect(row!.output.status).toBe("granted");
+	});
+
+	it("DMT-24b: a CANCELLED outcome maps to the outcome frame and the receipt still stores (the web owns the cancel toast)", async () => {
+		const { threadId } = await makeSidechatThread("The stopped-generation reply.");
+		await pauseOnSwipeMarker(threadId);
+		const answerChunks = await drainAnswerTurn(
+			threadId,
+			{ toolCallId: "tc_sw_stream", decision: "allow" },
+			await swipeDepsWithOutcome({ status: "cancelled" }),
+		);
+		expect(answerChunks.map((c) => c.event)).toContain("finish");
+		const frame = answerChunks.find((c) => c.event === "swipe-run-outcome");
+		expect(frame).toBeTruthy();
+		expect(JSON.parse(frame!.data)).toEqual({
+			toolCallId: "tc_sw_stream",
+			outcome: { status: "cancelled" },
+		});
+		const row = await storedToolRow(threadId, "tc_sw_stream");
+		expect(row!.output.status).toBe("granted");
+	});
+
+	it("DMT-24b: a COMPLETED outcome emits NO outcome frame (the new swipe is its own surface)", async () => {
+		const { threadId } = await makeSidechatThread("The successful-generation reply.");
+		await pauseOnSwipeMarker(threadId);
+		const calls: Array<{ instruction: string }> = [];
+		const answerChunks = await drainAnswerTurn(
+			threadId,
+			{ toolCallId: "tc_sw_stream", decision: "allow" },
+			await swipeDepsWithDelegate(calls),
+		);
+		expect(answerChunks.map((c) => c.event)).toContain("finish");
+		expect(answerChunks.map((c) => c.event)).not.toContain("swipe-run-outcome");
+		const row = await storedToolRow(threadId, "tc_sw_stream");
+		expect(row!.output.status).toBe("granted");
+	});
+
+	it("DMT-24b: a content turn (no answer) and a DENY answer never emit the outcome frame", async () => {
+		const { threadId } = await makeSidechatThread("The quiet reply.");
+		const contentChunks = await drainTurn(threadId, "Just talking.");
+		expect(contentChunks.map((c) => c.event)).not.toContain("swipe-run-outcome");
+		await pauseOnSwipeMarker(threadId);
+		const denyChunks = await drainAnswerTurn(
+			threadId,
+			{ toolCallId: "tc_sw_stream", decision: "deny" },
+			await swipeDepsWithOutcome({ status: "failed", reason: "never runs — deny" }),
+		);
+		expect(denyChunks.map((c) => c.event)).toContain("finish");
+		expect(denyChunks.map((c) => c.event)).not.toContain("swipe-run-outcome");
+	});
+});
+
 // ─── AP-9: regenerate mode in a sidechat thread ─────────────────────────
 
 /** Drain a REGENERATE-mode turn (no content, no answer — the loop trims the
@@ -1599,6 +2177,24 @@ async function drainRegenerateTurn(
 }
 
 describe("streamSidechatTurn regenerate (AP-9)", () => {
+  it("regenerates a failed prompt-attached turn from its one frozen snapshot", async () => {
+    const { threadId } = await makeSidechatThread();
+    const preset = await stores.presets.create({ name: "Retry preset", systemPrompt: "RETRY-FROZEN-MARKER" });
+    const failed = await drainTurn(threadId, "Try this", { ...deps, streamText: () => { throw new Error("provider setup failed"); } }, undefined, [{ presetId: preset.id }]);
+    expect(failed.map((chunk) => chunk.event)).toContain("error");
+    const before = (await stores.experienceCopilot.listMessages(threadId)).filter((row) => row.role === "user");
+    expect(before).toHaveLength(1);
+    expect(before[0]!.promptAttachments).toHaveLength(1);
+    const snapshot = before[0]!.promptAttachments![0]!;
+    await stores.presets.update(preset.id, { systemPrompt: "CHANGED-AFTER-FAILURE" });
+    const retried = await drainRegenerateTurn(threadId);
+    expect(retried.map((chunk) => chunk.event)).toContain("finish");
+    expect(occurrences(promptText(), "RETRY-FROZEN-MARKER")).toBe(1);
+    expect(promptText()).not.toContain("CHANGED-AFTER-FAILURE");
+    const after = (await stores.experienceCopilot.listMessages(threadId)).filter((row) => row.role === "user");
+    expect(after).toHaveLength(1);
+    expect(after[0]!.promptAttachments).toEqual([snapshot]);
+  });
 	it("keeps the turn's events, replaces the last turn's rows without a new user row, and records a fresh rp_sync after the user row when the RP moved", async () => {
 		const { threadId, chatId, branchId } = await makeSidechatThread("RP-SEED the door opens.");
 		await drainTurn(threadId, "OOC question one");
@@ -1671,15 +2267,23 @@ describe("streamSidechatTurn regenerate (AP-9)", () => {
 // ─── DR-4b: the director profile at the stream ─────────────────────────────
 
 describe("streamSidechatTurn director profile (DR-4b)", () => {
-	/** The plan's DR-4 enumeration + the 2026-10-27 ruling B: the OOC six
-	 *  MINUS propose_objective PLUS the two proposal tools and ask_user. */
+	/** The plan's DR-4 enumeration + the 2026-10-27 ruling B, extended by
+	 *  DIRECTOR_MESSAGE_TOOLS_PLAN DMT-34 and DIRECTOR_DECK_CALENDAR_PLAN
+	 *  DK-5a: the OOC six MINUS propose_objective PLUS the two proposal
+	 *  tools, ask_user, the three director message tools and propose_deck.
+	 *  (Sorted — the assertion compares against the captured set's
+	 *  `.sort()`.) */
 	const DIRECTOR_SERVED_SET = [
 		"ask_user",
+		"propose_deck",
+		"propose_message_edit",
+		"propose_message_variant",
 		"propose_plan",
 		"propose_tracker_template",
 		"read_context_item",
 		"read_message_prompt",
 		"read_plan",
+		"request_message_swipe",
 		"search_context",
 		"todo",
 	];

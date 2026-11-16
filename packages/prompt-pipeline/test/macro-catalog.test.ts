@@ -1,6 +1,7 @@
 import { describe, it, expect } from "bun:test";
 import { getMacroCatalog, createFullMacroEngine } from "../src/macro-registry.ts";
 import { MacroCategory } from "../src/macro-registry.ts";
+import { buildPromptVariableContext } from "../src/prompt-variable-context.ts";
 
 /**
  * Tests for the macro catalog — the displayable metadata layer over the registry
@@ -13,13 +14,15 @@ import { MacroCategory } from "../src/macro-registry.ts";
  */
 
 describe("macro catalog", () => {
-  it("returns one entry per user-facing resolver, each well-formed", () => {
+  it("returns every cataloged resolver well-formed with valid category and aliases array", () => {
     const catalog = getMacroCatalog();
+    const validCategories = new Set(Object.values(MacroCategory));
     expect(catalog.length).toBeGreaterThan(0);
     for (const entry of catalog) {
       expect(entry.name).toBeTruthy();
       expect(entry.description.length).toBeGreaterThan(0);
-      expect(typeof entry.category).toBe("string");
+      expect(validCategories.has(entry.category)).toBe(true);
+      expect(Array.isArray(entry.aliases)).toBe(true);
     }
   });
 
@@ -39,14 +42,35 @@ describe("macro catalog", () => {
     expect(byName.get("char")!.category).toBe(MacroCategory.Identity);
   });
 
-  it("keeps aliases reachable for search but inserts the canonical name", () => {
-    const user = getMacroCatalog().find((e) => e.name === "user");
-    expect(user?.aliases).toContain("<USER>");
-    // The autocomplete inserts the canonical token, not the alias:
-    expect(`{{${user!.name}}}`).toBe("{{user}}");
+  it("exposes aliases on canonical entries without promoting aliases to top-level catalog entries", () => {
+    const catalog = getMacroCatalog();
+    const names = new Set(catalog.map((e) => e.name));
+    const withAliases = catalog.filter((e) => e.aliases.length > 0);
+    expect(withAliases.length).toBeGreaterThanOrEqual(3);
+    for (const entry of withAliases) {
+      for (const alias of entry.aliases) {
+        expect(names.has(alias)).toBe(false);
+      }
+    }
+    const byName = new Map(catalog.map((e) => [e.name, e]));
+    expect(byName.get("user")?.aliases).toEqual(["<USER>"]);
+    expect(byName.get("char")?.aliases).toEqual(["<CHAR>", "<BOT>"]);
+    expect(byName.get("idleDuration")?.aliases).toContain("idle_duration");
+
+    const engine = createFullMacroEngine();
+    const ctx = buildPromptVariableContext({ names: { userName: "Alice", charName: "Aria" } });
+    expect(engine.resolve("<USER> <CHAR> <BOT> {{lastMessage}}", ctx)).toBe(
+      engine.resolve("{{user}} {{char}} {{char}} {{lastChatMessage}}", ctx),
+    );
   });
 
-  it("hides internal resolvers (banned is collected for logit bias, never authored)", () => {
+  it("hides internal resolvers (banned executes in the engine but stays out of the catalog)", () => {
+    const engine = createFullMacroEngine();
+    const ctx = buildPromptVariableContext({});
+    // Unknown names stay literal; registered internal resolver `banned` executes and strips its tag.
+    expect(engine.resolve("{{unknown_macro}}", ctx)).toBe("{{unknown_macro}}");
+    expect(engine.resolve("keep {{banned::secret}}text", ctx)).toBe("keep text");
+
     const names = new Set(getMacroCatalog().map((e) => e.name));
     expect(names.has("banned")).toBe(false);
   });
@@ -56,7 +80,7 @@ describe("macro catalog", () => {
     const b = getMacroCatalog();
     expect(a).toBe(b); // same cached reference
     const fresh = createFullMacroEngine().catalog();
-    expect(fresh.map((e) => e.name)).toEqual(a.map((e) => e.name));
+    expect(fresh).toEqual(a);
   });
 
   it("covers every category so the autocomplete grouping is never empty", () => {

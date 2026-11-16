@@ -9,7 +9,7 @@
  * Toast wording is deliberately NOT asserted — only the i18n key and the
  * interpolation values, so translating a string never breaks a test.
  */
-import { beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
 
 import {
 	PROVIDER_QUOTA_EVENT_KIND,
@@ -22,6 +22,8 @@ import {
 } from "@vibe-tavern/domain";
 import { useDomEnv } from "../../test/dom-env.js";
 import { installI18nContextSeam } from "../../test/i18n-context-seam.js";
+import { TestEventSource } from "../../test/event-source-seam.js";
+import { wireProviderProfile } from "../../test/wire-fixtures.js";
 
 useDomEnv();
 
@@ -47,39 +49,13 @@ mock.module("sonner", () => ({
 	},
 }));
 
-type Listener = (event: MessageEvent) => void;
-
-class MockEventSource {
-	static instances: MockEventSource[] = [];
-	readonly listeners = new Map<string, Listener[]>();
-	closed = false;
-
-	constructor(readonly url: string) {
-		MockEventSource.instances.push(this);
-	}
-
-	addEventListener(type: string, listener: Listener): void {
-		const bucket = this.listeners.get(type) ?? [];
-		bucket.push(listener);
-		this.listeners.set(type, bucket);
-	}
-
-	dispatch(type: string, data: unknown): void {
-		for (const listener of this.listeners.get(type) ?? []) {
-			listener({ data: JSON.stringify(data) } as MessageEvent);
-		}
-	}
-
-	fire(type: string): void {
-		for (const listener of this.listeners.get(type) ?? []) {
-			listener({ data: "" } as MessageEvent);
-		}
-	}
-
-	close(): void {
-		this.closed = true;
-	}
-}
+// THE EventSource seam (../../test/event-source-seam.ts) — one derivation
+// shared with use-agent-run-events / use-chat-events / SummaryTab. This
+// suite's old stub's `dispatch(kind, data)` is the seam's `emit(kind, payload)`
+// (same JSON.stringify delivery — a real MessageEvent instead of a bare
+// `{ data }` object), `fire(kind)` is the seam's `fire(kind)`.
+const MockEventSource = TestEventSource;
+const originalEventSource = globalThis.EventSource;
 
 const { useQuotaStore } = await import("../stores/quota-store.js");
 const { useProviderDataStore } = await import("../stores/provider-data-store.js");
@@ -124,9 +100,15 @@ function windowReset(): ProviderQuotaWindowResetEvent {
 beforeEach(() => {
 	MockEventSource.instances = [];
 	toastCalls.length = 0;
-	globalThis.EventSource = MockEventSource as unknown as typeof EventSource;
+	globalThis.EventSource = MockEventSource;
 	useQuotaStore.getState().reset();
 	useProviderDataStore.setState({ profiles: [] });
+});
+
+// R3: the mock EventSource is installed in beforeEach — restore the original
+// after the file's last test (the use-agent-run-events form).
+afterAll(() => {
+	globalThis.EventSource = originalEventSource;
 });
 
 describe("useQuotaEvents", () => {
@@ -158,12 +140,12 @@ describe("useQuotaEvents", () => {
 
 	it("updates the store and toasts once for a low-remaining event", () => {
 		useProviderDataStore.setState({
-			profiles: [{ id: PROFILE, name: "My ZAI" }] as never,
+			profiles: [wireProviderProfile({ id: PROFILE, name: "My ZAI" })],
 		});
 		renderHook(() => useQuotaEvents());
 		const source = MockEventSource.instances[0]!;
 
-		source.dispatch(PROVIDER_QUOTA_EVENT_NAME.lowRemaining, lowRemaining());
+		source.emit(PROVIDER_QUOTA_EVENT_NAME.lowRemaining, lowRemaining());
 
 		expect(toastCalls).toHaveLength(1);
 		expect(toastCalls[0]!.level).toBe("warning");
@@ -176,13 +158,13 @@ describe("useQuotaEvents", () => {
 
 	it("falls back to the profile id when the profile is unknown", () => {
 		renderHook(() => useQuotaEvents());
-		MockEventSource.instances[0]!.dispatch(PROVIDER_QUOTA_EVENT_NAME.lowRemaining, lowRemaining());
+		MockEventSource.instances[0]!.emit(PROVIDER_QUOTA_EVENT_NAME.lowRemaining, lowRemaining());
 		expect(JSON.parse(toastCalls[0]!.payload).values.provider).toBe(PROFILE);
 	});
 
 	it("toasts a reset event with the reset key", () => {
 		renderHook(() => useQuotaEvents());
-		MockEventSource.instances[0]!.dispatch(PROVIDER_QUOTA_EVENT_NAME.windowReset, windowReset());
+		MockEventSource.instances[0]!.emit(PROVIDER_QUOTA_EVENT_NAME.windowReset, windowReset());
 
 		expect(toastCalls[0]!.level).toBe("success");
 		expect(JSON.parse(toastCalls[0]!.payload)).toEqual({
@@ -195,8 +177,8 @@ describe("useQuotaEvents", () => {
 		renderHook(() => useQuotaEvents());
 		const source = MockEventSource.instances[0]!;
 
-		source.dispatch(PROVIDER_QUOTA_EVENT_NAME.lowRemaining, lowRemaining());
-		source.dispatch(PROVIDER_QUOTA_EVENT_NAME.lowRemaining, lowRemaining());
+		source.emit(PROVIDER_QUOTA_EVENT_NAME.lowRemaining, lowRemaining());
+		source.emit(PROVIDER_QUOTA_EVENT_NAME.lowRemaining, lowRemaining());
 
 		expect(toastCalls).toHaveLength(1);
 	});
@@ -208,7 +190,7 @@ describe("useQuotaEvents", () => {
 		for (const listener of source.listeners.get(PROVIDER_QUOTA_EVENT_NAME.lowRemaining) ?? []) {
 			expect(() => listener({ data: "not json" } as MessageEvent)).not.toThrow();
 		}
-		source.dispatch(PROVIDER_QUOTA_EVENT_NAME.lowRemaining, { providerProfileId: PROFILE });
+		source.emit(PROVIDER_QUOTA_EVENT_NAME.lowRemaining, { providerProfileId: PROFILE });
 
 		expect(toastCalls).toEqual([]);
 	});

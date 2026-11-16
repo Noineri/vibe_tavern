@@ -80,7 +80,10 @@ export interface DetachWindow {
 }
 
 function defaultWindow(): DetachWindow {
-  return globalThis as unknown as DetachWindow;
+  // globalThis under the web app's DOM lib already carries the whole
+  // DetachWindow surface (open / location / opener are typed on Window) —
+  // the return IS the narrowing, no cast.
+  return globalThis;
 }
 
 /** The projected-view type the frame/host pushes. */

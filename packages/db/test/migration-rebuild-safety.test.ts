@@ -122,7 +122,7 @@ describe("createDb rebuild-migration safety", () => {
 
     expect(countLorebooks(dbPath)).toBe(1);
     expect((await store.listEntries(lb.id)).length).toBe(2);
-    (db as unknown as { $client: Database }).$client.close();
+    db.$client.close();
 
     // 2. Simulate the failure state: un-stamp the rebuild migration.
     // This is exactly what happened in production — migrate() never stamped it.
@@ -141,21 +141,88 @@ describe("createDb rebuild-migration safety", () => {
       threw = true;
     }
 
-    // 4. The invariant: lorebook rows survive.
+    // 4. Verify raw SQLite parent and child rows BEFORE any subsequent createDb call.
     expect(countLorebooks(dbPath)).toBe(1);
+    const probeBefore = new Database(dbPath, { readonly: true });
+    try {
+      const parentRows = probeBefore.query("SELECT id, name FROM lorebooks ORDER BY id").all() as Array<{
+        id: string;
+        name: string;
+      }>;
+      const entryRows = probeBefore
+        .query("SELECT title, use_group_scoring FROM lore_entries WHERE lorebook_id = ? ORDER BY title")
+        .all(lb.id) as Array<{ title: string; use_group_scoring: number | null }>;
+      expect(parentRows).toEqual([{ id: lb.id, name: "Sentinel lorebook" }]);
+      expect(entryRows).toEqual([
+        { title: "e1", use_group_scoring: 1 },
+        { title: "e2", use_group_scoring: 0 },
+      ]);
+    } finally {
+      probeBefore.close();
+    }
 
-    // Entries survive too. With the #5782 defense (FK off during migrate), the
-    // rebuild's DROP TABLE does not cascade, so children are preserved.
-    db = await createDb(dbPath, folder);
-    const afterStore = new LorebookStore(db, { clock: testClock, idGenerator: testIdGen, content: null });
-    const survivingEntries = await afterStore.listEntries(lb.id);
-    (db as unknown as { $client: Database }).$client.close();
-    expect(survivingEntries.length).toBe(2);
-    // The explicit tri-state values survive the rebuild byte-for-byte.
-    const byTitle = new Map(survivingEntries.map(e => [e.title, e.useGroupScoring]));
-    expect(byTitle.get("e1")).toBe(true);
-    expect(byTitle.get("e2")).toBe(false);
+    // Store read-side parity on reopen (skipped if the first boot already fail-stopped).
+    if (!threw) {
+      db = await createDb(dbPath, folder);
+      const afterStore = new LorebookStore(db, { clock: testClock, idGenerator: testIdGen, content: null });
+      const survivingEntries = await afterStore.listEntries(lb.id);
+      db.$client.close();
+      expect(survivingEntries.length).toBe(2);
+      const byTitle = new Map(survivingEntries.map((e) => [e.title, e.useGroupScoring]));
+      expect(byTitle.get("e1")).toBe(true);
+      expect(byTitle.get("e2")).toBe(false);
+    }
+  });
 
-    if (threw) console.log("[rebuild-safety] createDb fail-stopped (acceptable); data preserved.");
+  test("stranded __new_lorebooks triggers piecemeal-heal refusal and fails loudly without losing rows", async () => {
+    const work = await mkdtemp(join(tmpdir(), "vt-rebuild-stranded-"));
+    const dbPath = join(work, "test.db");
+    const { folder, rebuildHash } = await buildSyntheticMigrations();
+
+    const db = await createDb(dbPath, folder);
+    const store = new LorebookStore(db, { clock: testClock, idGenerator: testIdGen, content: null });
+    const lb = await store.createLorebook({ name: "Sentinel lorebook", scopeType: "global" });
+    await store.createEntry(lb.id, { title: "e1", content: "content", keys: ["k1"], useGroupScoring: true });
+    await store.createEntry(lb.id, { title: "e2", content: "content", keys: ["k2"], useGroupScoring: false });
+    db.$client.close();
+
+    // Un-stamp the rebuild AND plant a stranded __new_lorebooks table (partial rebuild debris)
+    // so migrate() fails on CREATE TABLE `__new_lorebooks` and enters healPartialMigrations.
+    const raw = new Database(dbPath);
+    try {
+      const deleted = raw.prepare("DELETE FROM __drizzle_migrations WHERE hash = ?").run(rebuildHash);
+      expect(deleted.changes).toBe(1);
+      raw.exec("CREATE TABLE `__new_lorebooks` (`id` text PRIMARY KEY NOT NULL, `name` text NOT NULL)");
+      raw.exec("INSERT INTO `__new_lorebooks` (`id`, `name`) VALUES ('stray_1', 'Decoy')");
+      raw.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+    } finally {
+      raw.close();
+    }
+
+    // Boot must fail loudly without dropping lorebooks or tampering with __new_lorebooks.
+    await expect(createDb(dbPath, folder)).rejects.toThrow();
+
+    const probe = new Database(dbPath, { readonly: true });
+    try {
+      const parentRows = probe.query("SELECT id, name FROM lorebooks ORDER BY id").all() as Array<{
+        id: string;
+        name: string;
+      }>;
+      const entryRows = probe
+        .query("SELECT title, use_group_scoring FROM lore_entries WHERE lorebook_id = ? ORDER BY title")
+        .all(lb.id) as Array<{ title: string; use_group_scoring: number | null }>;
+      const strayRows = probe.query("SELECT id, name FROM `__new_lorebooks` ORDER BY id").all() as Array<{
+        id: string;
+        name: string;
+      }>;
+      expect(parentRows).toEqual([{ id: lb.id, name: "Sentinel lorebook" }]);
+      expect(entryRows).toEqual([
+        { title: "e1", use_group_scoring: 1 },
+        { title: "e2", use_group_scoring: 0 },
+      ]);
+      expect(strayRows).toEqual([{ id: "stray_1", name: "Decoy" }]);
+    } finally {
+      probe.close();
+    }
   });
 });

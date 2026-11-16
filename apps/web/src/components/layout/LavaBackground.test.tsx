@@ -51,8 +51,11 @@ describe("lava progressive-enhancement gate", () => {
     useScriptSafetySettingsStore.setState({ suppressImportWarnings: false });
     const view = render(<><section aria-label="compact"><InterfaceSettingsBody /></section><section aria-label="phone"><InterfaceSettingsBody mobile /></section></>);
     const compact = within(view.getByRole("region", { name: "compact" }));
+    const phone = within(view.getByRole("region", { name: "phone" }));
     expect(compact.getByRole("switch", { name: "tweaks_lava_blobs" })).toBeTruthy();
-    expect(within(view.getByRole("region", { name: "phone" })).queryByRole("switch", { name: "tweaks_lava_blobs" })).toBeNull();
+    expect(phone.queryByRole("switch", { name: "tweaks_lava_blobs" })).toBeNull();
+    expect(phone.getByRole("switch", { name: /show_rail|hide_rail/ })).toBeTruthy();
+    expect(compact.queryByRole("switch", { name: /show_rail|hide_rail/ })).toBeNull();
     fireEvent.click(compact.getByRole("switch", { name: "tweaks_lava_blobs" }));
     expect(useInterfaceSettingsStore.getState().settings.lavaBlobs).toBe(false);
   });

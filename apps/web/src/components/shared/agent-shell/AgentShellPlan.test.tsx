@@ -21,6 +21,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, mock } from "bun
 import type { ReactElement, ReactNode } from "react";
 import { createInstance } from "i18next";
 import { I18nextProvider } from "react-i18next";
+import { testFetch } from "@vibe-tavern/test-fetch";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import { installRadixPopoverSeam } from "../../../../test/radix-popover-seam.js";
 import { installToggleSeam } from "../../../../test/toggle-seam.js";
@@ -227,6 +228,8 @@ const fetchRouter = mock(async (input: RequestInfo | URL, init?: RequestInit): P
 		planUrls.push(path);
 		return jsonResponse({ plan: dr7Plan });
 	}
+	if (/\/deck$/.test(path) && method === "GET") return jsonResponse({ deck: { cards: [] } });
+	if (path.endsWith("/api/agent-runs") && method === "GET") return jsonResponse([]);
 	// DR-7: the sidechat host's chat-kind routes — the active thread (canned
 	// wire), the sessions list, the messages/events reads, the profiles list
 	// (the chip's load feeds BOTH parked-choice instances), and the (chat,
@@ -279,7 +282,9 @@ function withIsolatedI18n(node: ReactNode) {
 let unsubs: Array<() => void> = [];
 
 beforeAll(async () => {
-	globalThis.fetch = fetchRouter as unknown as typeof globalThis.fetch;
+	// The typed test-fetch seam wraps the mock router (call tracking stays on
+	// the original variable; only the install is wrapped).
+	globalThis.fetch = testFetch(fetchRouter);
 	({ render, fireEvent, waitFor } = await import("@testing-library/react"));
 	({ AgentShell } = await import("./AgentShell.js"));
 	({ registerAgentHost, scriptOwnerId } = await import("../../../lib/agent-host-registry.js"));
@@ -407,7 +412,7 @@ describe("AgentShell sidechat empty state (DR-7)", () => {
 		return render(withIsolatedI18n(<AgentShell kind="sidechat-ooc" owner={ownerFor(branchId)} isMobile={mobile} />));
 	}
 
-	it("the director effective: ITS four starters + title/subtitle, no hand-off row", async () => {
+	it("the director effective: ITS five starters + title/subtitle, no hand-off row", async () => {
 		dr7ChatProfileId = "builtin-director";
 		dr7Plan = EMPTY_PLAN;
 		const { getByTestId, getByText, getAllByText, queryByTestId } = renderSidechat("director");
@@ -415,7 +420,11 @@ describe("AgentShell sidechat empty state (DR-7)", () => {
 		// (chat, kind) read + profile list land (before that the fallback
 		// renders — the composer alone is not a settle signal).
 		await waitFor(() => expect(getByTestId("agent-starter-0").textContent).toBe("agent_starter_director_plan"));
+		expect(getByTestId("agent-starter-1").textContent).toBe("agent_starter_director_character_card");
+		expect(getByTestId("agent-starter-2").textContent).toBe("agent_starter_director_scene_tracker");
 		expect(getByTestId("agent-starter-3").textContent).toBe("agent_starter_director_recap");
+		expect(getByTestId("agent-starter-4").textContent).toBe("agent_starter_director_deck");
+		expect(queryByTestId("agent-starter-5")).toBeNull();
 		// The director's localized name shows in BOTH surfaces that render it
 		// here: the empty state's title AND the header chip's label (DR-7's
 		// one-derivation name — key echo under the isolated i18n).
@@ -429,12 +438,16 @@ describe("AgentShell sidechat empty state (DR-7)", () => {
 	it("the first built-in: its four starters + the hand-off row; the click writes the chat row AND prefills the composer (never sent)", async () => {
 		dr7ChatProfileId = null;
 		dr7Plan = EMPTY_PLAN;
-		const { getByTestId } = renderSidechat("handoff");
+		const { getByTestId, queryByTestId } = renderSidechat("handoff");
 		await waitFor(() => expect(getByTestId("copilot-chat-input")).toBeDefined());
 
 		// The independent initial feed read must commit before the empty state.
 		// «Вне роли»'s own state is byte-identical plus the accent row.
 		await waitFor(() => expect(getByTestId("agent-starter-0").textContent).toBe("agent_starter_sidechat_recap"));
+		expect(getByTestId("agent-starter-1").textContent).toBe("agent_starter_sidechat_feelings");
+		expect(getByTestId("agent-starter-2").textContent).toBe("agent_starter_sidechat_twists");
+		expect(getByTestId("agent-starter-3").textContent).toBe("agent_starter_sidechat_pacing");
+		expect(queryByTestId("agent-starter-4")).toBeNull();
 		const row = getByTestId("agent-handoff-row");
 		expect(row.textContent).toBe("sidechat_director_row");
 
@@ -465,6 +478,10 @@ describe("AgentShell sidechat empty state (DR-7)", () => {
 		await waitFor(() => expect(getByTestId("agent-starter-0").textContent).toBe("agent_starter_sidechat_recap"));
 		expect(queryByTestId("agent-handoff-row")).toBeNull();
 		expect(getByTestId("agent-starter-0").textContent).toBe("agent_starter_sidechat_recap");
+		expect(getByTestId("agent-starter-1").textContent).toBe("agent_starter_sidechat_feelings");
+		expect(getByTestId("agent-starter-2").textContent).toBe("agent_starter_sidechat_twists");
+		expect(getByTestId("agent-starter-3").textContent).toBe("agent_starter_sidechat_pacing");
+		expect(queryByTestId("agent-starter-4")).toBeNull();
 	});
 
 	it("a user profile keeps the host's starters and shows the hand-off row (owner ruling 2026-11-01)", async () => {
@@ -492,10 +509,12 @@ describe("AgentShell sidechat empty state (DR-7)", () => {
 		// Terminal state: the chip proves the effective read landed (the raw
 		// wire name — a user profile never localizes, even with a source).
 		await waitFor(() => expect(getByTestId("agent-profile-chip").textContent).toContain("My director copy"));
-		// STARTERS are the one thing a duplicate inherits: the director's four.
+		// STARTERS are the one thing a duplicate inherits: the director's own
+		// list — since DK-5b FIVE chips (the twist-deck starter appended).
 		await waitFor(() => expect(getByTestId("agent-starter-0").textContent).toBe("agent_starter_director_plan"));
 		expect(getByTestId("agent-starter-3").textContent).toBe("agent_starter_director_recap");
-		expect(queryByTestId("agent-starter-4")).toBeNull();
+		expect(getByTestId("agent-starter-4").textContent).toBe("agent_starter_director_deck");
+		expect(queryByTestId("agent-starter-5")).toBeNull();
 		// The PRESENTATION stays built-in-only: the host's own title renders
 		// (the kind label — its empty-state title), never the director's
 		// localized name or its empty-state line.

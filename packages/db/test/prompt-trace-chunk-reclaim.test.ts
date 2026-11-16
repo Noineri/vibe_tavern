@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach } from "bun:test";
+import { describe, test, expect, beforeEach, spyOn } from "bun:test";
 import { createDb } from "../src/db-connection.js";
 import { sql } from "drizzle-orm";
 import * as schema from "../src/db-schema.js";
@@ -173,8 +173,20 @@ describe("PromptTraceStore — scoped chunk reclamation (step 8)", () => {
     const t1 = await store.saveTrace(makeTraceData("chat_1", "brnch_1", "msg_1", bigText("a"), bigText("b")));
     // Break the refs table so the reclaim's SQL fails mid-flight.
     db.run(sql`DROP TABLE prompt_trace_chunk_refs`);
-    // Same never-throws contract as the global sweep (the delete response is
-    // already committed; reclamation must not turn it into a 500).
-    await expect(store.reclaimChunksForTraces([t1.id])).resolves.toBeUndefined();
+    const warnCalls: unknown[][] = [];
+    const warnSpy = spyOn(console, "warn").mockImplementation((...args: unknown[]) => {
+      warnCalls.push(args);
+    });
+    try {
+      // Same never-throws contract as the global sweep (the delete response is
+      // already committed; reclamation must not turn it into a 500).
+      await expect(store.reclaimChunksForTraces([t1.id])).resolves.toBeUndefined();
+    } finally {
+      warnSpy.mockRestore();
+    }
+    expect(warnCalls).toHaveLength(1);
+    const diagnostic = warnCalls[0]!.map(String).join(" ");
+    expect(diagnostic).toContain("prompt-trace chunk reclamation skipped:");
+    expect(diagnostic).toContain("no such table: prompt_trace_chunk_refs");
   });
 });

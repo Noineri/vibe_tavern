@@ -12,6 +12,7 @@ useDomEnv();
  * Non-/api and foreign-origin calls pass through untouched.
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
+import { testFetch } from "@vibe-tavern/test-fetch";
 
 const { useSessionStore } = await import("../stores/session-store.js");
 const { saveMobileToken, clearMobileToken } = await import("../lib/mobile-token.js");
@@ -28,7 +29,10 @@ function installFetchMock(status: number): CapturedCall[] {
       headers: { "Content-Type": "application/json" },
     });
   });
-  globalThis.fetch = fake as unknown as typeof globalThis.fetch;
+  // THE step-5 fetch seam: bun's Mock is not a plain `(input, init) => Promise<Response>`
+  // (and lacks `preconnect`), so the install goes through the one cast-free
+  // derivation; call tracking stays on the `fake` variable.
+  globalThis.fetch = testFetch(fake);
   return calls;
 }
 
@@ -106,6 +110,18 @@ describe("apiFetch — the API seam", () => {
     expect(res.status).toBe(401);
     expect(useSessionStore.getState().revoked).toBe(true);
     expect(localStorage.getItem("vibe_mobile_token")).toBeNull();
+  });
+
+  test("401 from a foreign-origin or non-/api URL leaves the token and session untouched", async () => {
+    globalThis.fetch = realFetch;
+    calls = installFetchMock(401);
+    saveMobileToken("tok_keep");
+    const foreignRes = await apiFetch("https://cdn.example.com/api/whatever");
+    const assetRes = await apiFetch("/assets/logo.svg");
+    expect(foreignRes.status).toBe(401);
+    expect(assetRes.status).toBe(401);
+    expect(useSessionStore.getState().revoked).toBe(false);
+    expect(localStorage.getItem("vibe_mobile_token")).toBe("tok_keep");
   });
 
   test("200 keeps the token and the session intact", async () => {

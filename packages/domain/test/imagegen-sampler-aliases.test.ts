@@ -174,8 +174,7 @@ describe("adaptSamplerSetPayloadToTarget", () => {
       comfyTarget,
     );
     expect(payload.scheduler).toBeUndefined();
-    expect(notes[0]?.reason).toBe("missing");
-    expect(notes[0]?.field).toBe("scheduler");
+    expect(notes).toEqual([{ field: "scheduler", stored: "beta", resolved: null, reason: "missing" }]);
   });
 
   test("a set vae on a DiT target (family-fixed sidecar) is stripped + noted", () => {

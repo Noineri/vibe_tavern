@@ -1,8 +1,9 @@
 import { describe, expect, it } from "bun:test";
-import { createDb, ExperienceCopilotStore, type StoreClock, type StoreIdGenerator, type StoreContainer, type CopilotContextMetrics } from "@vibe-tavern/db";
+import { createDb, ExperienceCopilotStore, type StoreClock, type StoreIdGenerator, type StoreContainer, type CopilotContextMetrics, type AppDb, type ChatAgentSettingsStore, type ChatStore } from "@vibe-tavern/db";
 import { ExperienceCopilotAdapter } from "../src/api/adapters/experience-copilot-adapter.js";
 import { PRESET_LINK_NOT_CHAT_OWNED_CODE } from "../src/domain/sidechat/preset-link-guard.js";
 import { isDomainError, type DomainError } from "../src/shared/errors.js";
+import { strictTestDouble } from "./strict-test-double.js";
 
 // ─── Real store + adapter wiring ─────────────────────────────────────────────
 //
@@ -28,7 +29,19 @@ async function setup() {
   clockStep = 0;
   const db = await createDb(":memory:");
   const store = new ExperienceCopilotStore(db, { clock: makeClock(), idGenerator: idGen });
-  const adapter = new ExperienceCopilotAdapter({ experienceCopilot: store } as unknown as StoreContainer);
+  // The strict double carries the real store; an unprovided member throws a
+  // labeled miss. `chatAgentSettings`/`chats` are the ctor's eager
+  // construction-reference reads (6a makeCopilotStores precedent) — inert
+  // doubles; the exercised paths never call them.
+  const adapter = new ExperienceCopilotAdapter(strictTestDouble<StoreContainer>(
+    {
+      experienceCopilot: store,
+      chatAgentSettings: strictTestDouble<ChatAgentSettingsStore>({}, "chatAgentSettings (construction ref)"),
+      db: strictTestDouble<AppDb>({}, "db (construction ref)"),
+      chats: strictTestDouble<ChatStore>({}, "chats (construction ref)"),
+    },
+    "ExperienceCopilotAdapter stores (session lifecycle)",
+  ));
   return { store, adapter };
 }
 

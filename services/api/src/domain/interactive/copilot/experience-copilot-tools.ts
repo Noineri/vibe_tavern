@@ -192,6 +192,35 @@ export interface ExperienceCopilotRealtimeDigest {
   readonly errorMessage?: string;
 }
 
+/** The latest test/simulate/realtime digest the user sent back from the test
+ *  panel (ER-5) — the union the wire contract's free-form `testFeedback`
+ *  record narrows into. Defined HERE beside its members;
+ *  `experience-copilot-prompt.ts` re-exports the name for API compatibility. */
+export type ExperienceCopilotTestFeedback =
+  | ExperienceCopilotRunTestDigest
+  | ExperienceCopilotRunSimulateDigest
+  | ExperienceCopilotRealtimeDigest;
+
+/**
+ * Wire-shape guard for the test-panel digest (ER-5): `testFeedback` rides the
+ * stream request as an unvalidated record — the zod contract keeps it
+ * free-form because these digest shapes live HERE, above api-contracts' reach.
+ * Every digest member's fields are optional except `ok`, and only the
+ * realtime digest carries a `mode`, so "an object with a boolean `ok` and no
+ * conflicting `mode`" is exactly the union's structural floor: the guard
+ * narrows no further than {@link ExperienceCopilotTestFeedback} actually
+ * guarantees. Non-conforming wire input fails the guard and the turn simply
+ * omits the feedback section (previously such bytes rode verbatim into the
+ * prompt's context block).
+ */
+export function isExperienceCopilotTestFeedback(
+  value: Record<string, unknown> | null | undefined,
+): value is ExperienceCopilotTestFeedback & Record<string, unknown> {
+  if (value === null || value === undefined) return false;
+  const mode = value["mode"];
+  return typeof value["ok"] === "boolean" && (mode === undefined || mode === "realtime");
+}
+
 /** A non-binding suggestion that a visual resource be bound to the experience.
  *  Binding itself is a USER action (BE-6 endpoints); the tool only surfaces the
  *  recommendation for review. */

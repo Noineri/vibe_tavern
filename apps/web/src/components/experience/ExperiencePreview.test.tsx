@@ -13,23 +13,32 @@
  *      switcher is present, and preview actions stay DISCONNECTED (the log
  *      updates but no production handler fires).
  */
-import { describe, it, expect, afterEach } from "bun:test";
+import { describe, it, expect, afterEach, afterAll, spyOn } from "bun:test";
+import { testFetch } from "@vibe-tavern/test-fetch";
 
 import { useDomEnv } from "../../../test/dom-env.js";
 
 useDomEnv();
 
-const { render, fireEvent, act } = await import("@testing-library/react");
+const { render, fireEvent, act, waitFor } = await import("@testing-library/react");
 
 // URL spy so the embedded ExperienceFrame does not make happy-dom navigate.
 const realCreate = URL.createObjectURL;
+const realFetch = globalThis.fetch;
 function installUrlSpy() {
   URL.createObjectURL = (() => "about:blank#blob") as typeof URL.createObjectURL;
 }
 afterEach(() => {
   URL.createObjectURL = realCreate;
+  globalThis.fetch = realFetch;
+});
+afterAll(() => {
+  URL.createObjectURL = realCreate;
+  globalThis.fetch = realFetch;
 });
 
+import { BRIDGE_PROTOCOL_VERSION } from "../../lib/experience-bridge-schema.js";
+import { useExperienceStore } from "../../stores/experience-store.js";
 import { VISUAL_STARTERS, VISUAL_STARTER_SOURCES, getVisualStarter } from "./starters/index.js";
 import { ExperiencePreview, PREVIEW_PHASES } from "./ExperiencePreview.js";
 
@@ -96,12 +105,14 @@ describe("ExperiencePreview — renders every starter across every phase", () =>
   for (const starter of VISUAL_STARTERS) {
     it(`renders ${starter.label} and switches phases without throwing`, async () => {
       installUrlSpy();
-      const { getByTestId, queryByTestId } = render(<ExperiencePreview starter={starter} initialPhase="setup" />);
-      // Phase switcher present; initial phase active.
+      const { container, getByTestId, queryByTestId } = render(<ExperiencePreview starter={starter} initialPhase="setup" />);
+      // Phase switcher present; initial phase active alongside the sandboxed iframe.
       expect(getByTestId("experience-preview")).toBeTruthy();
       expect(getByTestId("experience-preview-phase-setup").getAttribute("aria-selected")).toBe("true");
-      // The frame is mounted (sandboxed).
       expect(queryByTestId("experience-preview-phase-ordinary")).not.toBeNull();
+      const iframe = container.querySelector("iframe");
+      expect(iframe).not.toBeNull();
+      expect(iframe!.getAttribute("sandbox")).toBe("allow-scripts");
 
       // Cycle through every phase without throwing.
       for (const phase of PREVIEW_PHASES) {
@@ -115,9 +126,83 @@ describe("ExperiencePreview — renders every starter across every phase", () =>
 
   it("keeps preview actions disconnected (log only, no production handler)", async () => {
     installUrlSpy();
-    const { getByTestId } = render(<ExperiencePreview starter={getVisualStarter("choice")!} initialPhase="setup" />);
-    // Before any click, the disconnected notice is shown.
-    const log = getByTestId("experience-preview-log");
-    expect(log.textContent).toContain("disconnected");
+    const starter = getVisualStarter("choice")!;
+    const store = useExperienceStore.getState();
+    const submitSpy = spyOn(store, "submitAction");
+    const endSpy = spyOn(store, "endSession");
+    const queueReportSpy = spyOn(store, "queueReport");
+    const fetchCalls: unknown[] = [];
+    globalThis.fetch = testFetch((...args: unknown[]) => {
+      fetchCalls.push(args);
+      return Promise.reject(new Error("unexpected fetch in disconnected preview"));
+    });
+
+    try {
+      const { container, getByTestId } = render(<ExperiencePreview starter={starter} initialPhase="setup" />);
+      // Before any click, the disconnected notice is shown.
+      const log = getByTestId("experience-preview-log");
+      expect(log.textContent).toContain("disconnected");
+
+      // Drive a real bridge handshake + action over the MessageChannel that
+      // ExperienceFrame opens on iframe load.
+      const iframe = container.querySelector("iframe")!;
+      expect(iframe).not.toBeNull();
+      let framePort: MessagePort | null = null;
+      Object.defineProperty(iframe, "contentWindow", {
+        configurable: true,
+        value: {
+          postMessage(msg: unknown) {
+            if (msg && typeof msg === "object" && "kind" in msg && msg.kind === "port" && "port" in msg) {
+              framePort = (msg as { port: MessagePort }).port;
+            }
+          },
+        },
+      });
+      await act(async () => {
+        fireEvent.load(iframe);
+      });
+      expect(framePort).not.toBeNull();
+
+      let helloNonce: string | null = null;
+      framePort!.onmessage = (ev: MessageEvent<unknown>) => {
+        const data = ev.data as { kind?: string; nonce?: string } | null;
+        if (data?.kind === "hello" && typeof data.nonce === "string") {
+          helloNonce = data.nonce;
+        }
+      };
+      framePort!.start?.();
+      await waitFor(() => {
+        expect(helloNonce).not.toBeNull();
+      });
+
+      framePort!.postMessage({
+        v: BRIDGE_PROTOCOL_VERSION,
+        kind: "ready",
+        nonce: helloNonce!,
+      });
+      framePort!.postMessage({
+        v: BRIDGE_PROTOCOL_VERSION,
+        kind: "action",
+        nonce: helloNonce!,
+        action: {
+          type: "pick_north",
+          requestId: "preview-req-1",
+          expectedRevision: starter.fixtures.setup.revision,
+        },
+      });
+
+      await waitFor(() => {
+        expect(log.textContent).toContain("pick_north");
+      });
+      expect(log.textContent).not.toContain("disconnected");
+      expect(submitSpy).not.toHaveBeenCalled();
+      expect(endSpy).not.toHaveBeenCalled();
+      expect(queueReportSpy).not.toHaveBeenCalled();
+      expect(fetchCalls).toHaveLength(0);
+    } finally {
+      submitSpy.mockRestore();
+      endSpy.mockRestore();
+      queueReportSpy.mockRestore();
+    }
   });
 });

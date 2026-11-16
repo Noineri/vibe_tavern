@@ -10,6 +10,7 @@ import {
   volcengineTtsFactory,
 } from "../src/domain/tts/backends/volcengine-tts.js";
 import { createTtsBackend } from "../src/domain/tts/tts-registry.js";
+import { testFetch } from "./test-fetch-seam.js";
 
 function backend(config: Record<string, unknown> = {}): VolcengineTtsBackend {
   return volcengineTtsFactory({ apiKey: "vk_key", appId: "app123", modelId: "seed-tts-2.0", ...config }) as VolcengineTtsBackend;
@@ -279,9 +280,9 @@ describe("Volcengine probe", () => {
 
   test("network errors degrade to a failed probe detail", async () => {
     installFetchMock();
-    globalThis.fetch = (async () => {
+    globalThis.fetch = testFetch(async () => {
       throw new Error("boom");
-    }) as typeof fetch;
+    });
     const result = await backend().probe();
     expect(result.ok).toBe(false);
     expect(result.detail).toContain("boom");

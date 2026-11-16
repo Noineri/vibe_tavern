@@ -152,6 +152,34 @@ export const SCENE_TONE = {
 export type SceneTone = (typeof SCENE_TONE)[keyof typeof SCENE_TONE];
 
 /**
+ * The scene clock markers (DIRECTOR_DECK_CALENDAR_PLAN DK-2): the semantic
+ * DSL marks that designate up to three top-level fields as the story clock —
+ * the day counter (`"day"`, a NUMBER node), the named part of the day
+ * (`"part"`, a STRING node), and the free-form date label (`"label"`, a
+ * STRING node).
+ *
+ * Unlike `label` / `tone` / `toneBy` (presentation-only), a marker is
+ * SEMANTIC: it changes what {@link readStoryClock} derives and what the
+ * tracking model is told, so it must NOT be stripped by the whitelist
+ * projection — it rides the canonical schema hash (two schemas that differ
+ * only in a marker are different data identities and must not share a record
+ * cache) and reaches the model through the clock hint block. Node-type and
+ * placement rules (day only on numbers, part/label only on strings, top-level
+ * only, each value at most once, part implies day) are enforced by the DSL
+ * validator (`sceneTrackerDslSchema` in `@vibe-tavern/api-contracts`).
+ */
+export const SCENE_CLOCK_MARKER = {
+  day: "day",
+  part: "part",
+  label: "label",
+} as const;
+
+export type SceneClockMarker = (typeof SCENE_CLOCK_MARKER)[keyof typeof SCENE_CLOCK_MARKER];
+
+/** Markers allowed on a STRING node (`part` and `label`; `day` is number-only). */
+export type SceneClockStringMarker = Exclude<SceneClockMarker, typeof SCENE_CLOCK_MARKER.day>;
+
+/**
  * One node of the Scene Tracker shape grammar — the user-authored DSL that
  * describes the structure the model must fill.
  *
@@ -170,10 +198,24 @@ export type SceneTone = (typeof SCENE_TONE)[keyof typeof SCENE_TONE];
  * "success" }`). Both are stripped wherever presentation metadata is removed
  * — the schema hash and the tracking-model prompt — so recoloring never dims
  * records and the model never sees them.
+ *
+ * `clock` is the opposite kind of metadata: a SEMANTIC scene clock marker
+ * ({@link SCENE_CLOCK_MARKER}) that designates the field as part of the story
+ * clock. It is kept by the whitelist projection and counts in the schema hash.
+ * `day` marks a NUMBER node (the 1-based story day counter); `part` and
+ * `label` mark STRING nodes (the named part of the day, the free-form date
+ * label). Boolean/object/array nodes and nested (non-top-level) nodes never
+ * carry a marker — the validator rejects both.
  */
 export type SceneTrackerSchemaNode =
-  | { $type: "string"; label?: string; tone?: SceneTone; toneBy?: Record<string, SceneTone> }
-  | { $type: "number"; min?: number; max?: number; label?: string; tone?: SceneTone }
+  | {
+      $type: "string";
+      label?: string;
+      tone?: SceneTone;
+      toneBy?: Record<string, SceneTone>;
+      clock?: SceneClockStringMarker;
+    }
+  | { $type: "number"; min?: number; max?: number; label?: string; tone?: SceneTone; clock?: typeof SCENE_CLOCK_MARKER.day }
   | { $type: "boolean"; label?: string; tone?: SceneTone }
   | { $type: "object"; properties: Record<string, SceneTrackerSchemaNode>; label?: string; tone?: SceneTone }
   | { $type: "array"; items: SceneTrackerSchemaNode; label?: string; tone?: SceneTone };
@@ -311,6 +353,14 @@ function sampleSceneNode(node: SceneTrackerSchemaNode, depth: number): unknown {
  * `health`, never the human "Health" nor any color semantics). A no-op when
  * no presentation fields are present, so bare schemas hash and validate
  * identically.
+ *
+ * The one exception is the SEMANTIC scene clock marker (`clock`): it is kept.
+ * The marker changes what {@link readStoryClock} derives from a record and
+ * what the model is told, so two schemas differing only in a marker are two
+ * different data identities — keeping it here makes it ride both the schema
+ * hash (no shared record cache between them) and the schema JSON the tracker
+ * model reads (the clock hint block explains its meaning). Presentation
+ * fields stay stripped; an unmarked schema projects exactly as before.
  */
 export function stripLabels(dsl: SceneTrackerDsl): SceneTrackerDsl {
   const out: SceneTrackerDsl = {};
@@ -328,13 +378,14 @@ function stripLabelsNode(node: SceneTrackerSchemaNode): SceneTrackerSchemaNode {
     case "array":
       return { $type: "array", items: stripLabelsNode(node.items) };
     case "string":
-      return { $type: "string" };
+      return node.clock !== undefined ? { $type: "string", clock: node.clock } : { $type: "string" };
     case "boolean":
       return { $type: "boolean" };
     case "number": {
-      const out: { $type: "number"; min?: number; max?: number } = { $type: "number" };
+      const out: { $type: "number"; min?: number; max?: number; clock?: typeof SCENE_CLOCK_MARKER.day } = { $type: "number" };
       if (node.min !== undefined) out.min = node.min;
       if (node.max !== undefined) out.max = node.max;
+      if (node.clock !== undefined) out.clock = node.clock;
       return out;
     }
   }

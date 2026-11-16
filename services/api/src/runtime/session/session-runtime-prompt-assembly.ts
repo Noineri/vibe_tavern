@@ -18,6 +18,12 @@ export interface SessionPromptAssemblyOptions {
   contextBudget?: number | null;
   responseReserve?: number;
   presetId?: PromptPresetId;
+  /** DMT-13: the one-shot request instruction for a SINGLE directed
+   *  regeneration (director message tools). A request-local ASSEMBLY INPUT —
+   *  the pure pipeline builds its budgeted `user` `in_chat` depth-1 layer
+   *  from it; absent/null/blank = unchanged output. Never persisted chat
+   *  state, never inherited by a later assembly. */
+  requestInstruction?: string | null;
   priorSummaries?: Array<{ id: string; label?: string; content: string }>;
   coauthorEditorState?: CoauthorEditorState;
 }
@@ -79,6 +85,7 @@ export async function assembleSessionPrompt(
     contextBudget: options?.contextBudget ?? null,
     responseReserve: options?.responseReserve,
     presetId: options?.presetId,
+    requestInstruction: options?.requestInstruction,
     priorSummaries: options?.priorSummaries,
     coauthorEditorState: options?.coauthorEditorState,
     // LS-10: the active profile's stored generation format; assembly resolves

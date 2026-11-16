@@ -5,6 +5,7 @@ import * as api from "../../../api/experience-copilot-api.js";
 import type { AgentHostTransport } from "../../../lib/agent-host-registry.js";
 import { useAgentTurnStore } from "../../../stores/agent-turn-store.js";
 import { useAgentController, type AgentController } from "./use-agent-controller.js";
+import { testFetch } from "@vibe-tavern/test-fetch";
 import { AgentReviewPersistence } from "../../../lib/agent-review-persistence.js";
 import type { AgentReviewEnvelope } from "@vibe-tavern/api-contracts";
 
@@ -17,10 +18,10 @@ beforeEach(() => {
   globalThis.fetch = originalFetch;
   useAgentTurnStore.setState(originalTurns, true);
   requests = [];
-  globalThis.fetch = (async (input, init) => {
+  globalThis.fetch = testFetch(async (input, init) => {
     requests.push({ threadId: String(input).split("/").at(-2)!, body: JSON.parse(String(init?.body)) });
     return new Response('event: finish\ndata: {"finishReason":"stop"}\n\n', { headers: { "content-type": "text/event-stream" } });
-  }) as typeof fetch;
+  });
 });
 afterAll(() => {
   globalThis.fetch = originalFetch;

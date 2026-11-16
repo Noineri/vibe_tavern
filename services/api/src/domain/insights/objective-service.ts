@@ -54,6 +54,15 @@ import {
   parseTaskList,
   selectActiveTask,
 } from "./objective-helpers.js";
+// The compose*Instruction prompt composers moved to objective-instructions.ts
+// (DK-4b arch-gate ratchet: the service file could not grow — the same remedy
+// DR-3a applied with objective-helpers.ts); pure string composition, unchanged.
+import {
+  composeCheckGoalsInstruction,
+  composeCheckInstruction,
+  composeGenerateGoalsInstruction,
+  composeGenerateInstruction,
+} from "./objective-instructions.js";
 
 // Re-exported for existing importers (the unchanged objective-service test
 // suite, tracker-service) — the helpers moved to objective-helpers.ts (DR-3a
@@ -91,24 +100,6 @@ function selectStateTarget(state: ObjectiveState): ObjectiveTask | null {
   return state.mode === OBJECTIVE_MODE.goals
     ? selectActiveTask(state.shortTermGoals)
     : selectActiveTask(state.tasks);
-}
-
-/** Compose the final instruction: override-or-default base + dynamic objective context. */
-function composeGenerateInstruction(base: string, objectiveDescription: string): string {
-  return `${base}\n\nObjective: ${objectiveDescription.trim() || "(unspecified)"}\n\nRequired output: one JSON object shaped exactly as {"tasks":[{"description":"..."}]}.`;
-}
-
-function composeCheckInstruction(base: string, objectiveDescription: string, taskDescription: string): string {
-  return `${base}\n\nObjective: ${objectiveDescription.trim() || "(unspecified)"}\nActive task: ${taskDescription}\n\nRequired output: one JSON object shaped exactly as {"completed":true} or {"completed":false}.`;
-}
-
-function composeGenerateGoalsInstruction(base: string): string {
-  return `${base}\n\nRequired output: one JSON object shaped exactly as {"longTerm":{"description":"..."},"shortTerm":[{"description":"..."}]}.`;
-}
-
-function composeCheckGoalsInstruction(base: string, longTermDescription: string | null, shortTermDescription: string): string {
-  const longTermLine = longTermDescription?.trim() ? `Long-term goal: ${longTermDescription.trim()}\n` : "";
-  return `${base}\n\n${longTermLine}Active short-term goal: ${shortTermDescription}\n\nRequired output: one JSON object shaped exactly as {"completed":true} or {"completed":false}.`;
 }
 
 export interface ObjectiveGenerateInput {
@@ -776,6 +767,8 @@ export class ObjectiveService {
    * reorder the very writes the lane exists to serialize. The observer runs
    * detached; sync throws and detached promise rejections are logged and
    * swallowed — the committed state stands regardless of observer failures.
+   * forks: 1 — the Scene record-write twin (domain/insights/tracker-service.ts
+   * `notifyRecordWritten`, DK-4b).
    */
   private notifyStateObserver(chatId: ChatId, state: ObjectiveState): void {
     const observer = this.stateObserver;

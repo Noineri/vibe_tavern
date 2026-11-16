@@ -29,7 +29,8 @@ import type {
   ImagePromptProfileDetailResponse,
   ServicePromptProfile,
 } from "@vibe-tavern/api-contracts";
-import type { RegexPresetRecord, RegexProfileRecord } from "../../api/types.js";
+import type { RegexPresetRecord, RegexProfileRecord, RegexLinkRecord, RegexProfileLinkRecord } from "../../api/types.js";
+import type { CreateRegexProfileBundleBody, RegexProfileBundleRecord } from "../../api/regex-api.js";
 import { brandId, type RegexPresetId, type RegexProfileId } from "@vibe-tavern/domain";
 import type { DraftData } from "./PromptManagerModal.js";
 import { useModalStore } from "../../stores/modal-store.js";
@@ -49,34 +50,49 @@ const realTooltip = await import("../shared/Tooltip.js");
 const realPromptCanvasLore = await import("../../lib/prompt-canvas-lore.js");
 const loadPromptCanvasLoreEntries = mock(realPromptCanvasLore.loadPromptCanvasLoreEntries);
 const realRegexApi = await import("../../api/regex-api.js");
+/** Complete RegexProfileRecord for the regex mocks' returns: the id is branded
+ *  here at the fixture edge, timestamps are ISO strings (the wire Timestamp is
+ *  a string — the erased `0` was a hidden type lie no consumer reads). */
+function regexProfileFixture(id: string, overrides: Partial<RegexProfileRecord> = {}): RegexProfileRecord {
+  return {
+    id: brandId<RegexProfileId>(id),
+    name: "Bundle",
+    disabled: false,
+    isGlobal: false,
+    sortOrder: 0,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    ...overrides,
+  };
+}
 const listAllRegexPresetsMock = mock(realRegexApi.listAllRegexPresets);
 const createRegexPresetMock = mock(realRegexApi.createRegexPreset);
-const createRegexProfileBundleMock = mock(async (body: Parameters<typeof realRegexApi.createRegexProfileBundle>[0]) => ({
-  profile: { id: "prof_bundle", name: body?.name ?? "Bundle", disabled: false, isGlobal: false, sortOrder: 0, createdAt: 0, updatedAt: 0 },
-  rules: [],
-}) as unknown as Awaited<ReturnType<typeof realRegexApi.createRegexProfileBundle>>);
-const listAllRegexProfilesMock = mock(async () => [] as unknown as Awaited<ReturnType<typeof realRegexApi.listAllRegexProfiles>>);
-const createRegexProfileMock = mock(async (body: unknown) => ({ id: "p_new", name: (body as { name?: string })?.name ?? "new", disabled: false, isGlobal: false, sortOrder: 0, createdAt: 0, updatedAt: 0 } as unknown as Awaited<ReturnType<typeof realRegexApi.createRegexProfile>>));
-const attachRegexRuleMock = mock(async (_a: unknown, _b: unknown) => null as unknown as Awaited<ReturnType<typeof realRegexApi.attachRegexRule>>);
-const detachRegexRuleMock = mock(async (_id: unknown) => null as unknown as Awaited<ReturnType<typeof realRegexApi.detachRegexRule>>);
-const getRegexLinksMock = mock(async () => [] as unknown as Awaited<ReturnType<typeof realRegexApi.getRegexLinks>>);
-const getRegexProfileLinksMock = mock(async () => [] as unknown as Awaited<ReturnType<typeof realRegexApi.getRegexProfileLinks>>);
-const updateRegexProfileMock = mock(async (id: string, body: { name?: string; disabled?: boolean; isGlobal?: boolean; sortOrder?: number }) => {
+const createRegexProfileBundleMock = mock(
+  async (body: CreateRegexProfileBundleBody): Promise<RegexProfileBundleRecord> => ({
+    profile: regexProfileFixture("prof_bundle", { name: body.name }),
+    rules: [],
+  }),
+);
+const listAllRegexProfilesMock = mock(async (): Promise<RegexProfileRecord[]> => []);
+const createRegexProfileMock = mock(async (body: { name: string; disabled?: boolean; isGlobal?: boolean; sortOrder?: number }): Promise<RegexProfileRecord> => regexProfileFixture("p_new", { name: body.name }));
+const attachRegexRuleMock = mock(async (_profileId: string, _ruleId: string): Promise<RegexPresetRecord | null> => null);
+const detachRegexRuleMock = mock(async (_ruleId: string): Promise<RegexPresetRecord | null> => null);
+const getRegexLinksMock = mock(async (): Promise<RegexLinkRecord[]> => []);
+const getRegexProfileLinksMock = mock(async (): Promise<RegexProfileLinkRecord[]> => []);
+const updateRegexProfileMock = mock(async (id: string, body: { name?: string; disabled?: boolean; isGlobal?: boolean; sortOrder?: number }): Promise<RegexProfileRecord | null> => {
   // Merge over a base record so every field stays a primitive (a naive
   // `body ?? fallback` returns the WHOLE body object when the field is
   // absent — an object then flows into state and React crashes rendering it).
   return {
-    id,
+    ...regexProfileFixture(id),
     name: typeof body?.name === "string" ? body.name : "Bundle",
     disabled: typeof body?.disabled === "boolean" ? body.disabled : false,
     isGlobal: typeof body?.isGlobal === "boolean" ? body.isGlobal : true,
     sortOrder: typeof body?.sortOrder === "number" ? body.sortOrder : 0,
-    createdAt: 0,
-    updatedAt: 0,
-  } as unknown as Awaited<ReturnType<typeof realRegexApi.updateRegexProfile>>;
+  };
 });
-const deleteRegexProfileMock = mock(async () => undefined as unknown as Awaited<ReturnType<typeof realRegexApi.deleteRegexProfile>>);
-const setRegexProfileLinksMock = mock(async () => [] as unknown as Awaited<ReturnType<typeof realRegexApi.setRegexProfileLinks>>);
+const deleteRegexProfileMock = mock(async (): Promise<void> => {});
+const setRegexProfileLinksMock = mock(async (): Promise<RegexProfileLinkRecord[]> => []);
 const realServiceApi = await import("../../api/service-prompt-api.js");
 const listServiceProfilesMock = mock(realServiceApi.listServicePromptProfiles);
 const getServiceDetailMock = mock(realServiceApi.getServicePromptProfileDetail);
@@ -179,14 +195,16 @@ afterEach(async () => {
   listAllRegexPresetsMock.mockReset();
   createRegexPresetMock.mockReset();
   createRegexProfileBundleMock.mockReset();
-  createRegexProfileBundleMock.mockImplementation(async (body: Parameters<typeof realRegexApi.createRegexProfileBundle>[0]) => ({
-    profile: { id: "prof_bundle", name: body?.name ?? "Bundle", disabled: false, isGlobal: false, sortOrder: 0, createdAt: 0, updatedAt: 0 },
-    rules: [],
-  }) as unknown as Awaited<ReturnType<typeof realRegexApi.createRegexProfileBundle>>);
+  createRegexProfileBundleMock.mockImplementation(
+    async (body: CreateRegexProfileBundleBody): Promise<RegexProfileBundleRecord> => ({
+      profile: regexProfileFixture("prof_bundle", { name: body.name }),
+      rules: [],
+    }),
+  );
   listAllRegexProfilesMock.mockReset();
   listAllRegexProfilesMock.mockResolvedValue([]);
   createRegexProfileMock.mockReset();
-  createRegexProfileMock.mockResolvedValue({ id: "p_new", name: "new", disabled: false, isGlobal: false, sortOrder: 0, createdAt: 0, updatedAt: 0 } as unknown as Awaited<ReturnType<typeof realRegexApi.createRegexProfile>>);
+  createRegexProfileMock.mockResolvedValue(regexProfileFixture("p_new", { name: "new" }));
   attachRegexRuleMock.mockReset();
   detachRegexRuleMock.mockReset();
   getRegexLinksMock.mockReset();
@@ -194,16 +212,14 @@ afterEach(async () => {
   getRegexProfileLinksMock.mockReset();
   getRegexProfileLinksMock.mockResolvedValue([]);
   updateRegexProfileMock.mockReset();
-  updateRegexProfileMock.mockImplementation(async (id: string, body: { name?: string; disabled?: boolean; isGlobal?: boolean; sortOrder?: number }) =>
+  updateRegexProfileMock.mockImplementation(async (id: string, body: { name?: string; disabled?: boolean; isGlobal?: boolean; sortOrder?: number }): Promise<RegexProfileRecord | null> =>
     ({
-      id,
+      ...regexProfileFixture(id),
       name: typeof body?.name === "string" ? body.name : "Bundle",
       disabled: typeof body?.disabled === "boolean" ? body.disabled : false,
       isGlobal: typeof body?.isGlobal === "boolean" ? body.isGlobal : true,
       sortOrder: typeof body?.sortOrder === "number" ? body.sortOrder : 0,
-      createdAt: 0,
-      updatedAt: 0,
-    }) as unknown as Awaited<ReturnType<typeof realRegexApi.updateRegexProfile>>
+    })
   );
   deleteRegexProfileMock.mockReset();
   deleteRegexProfileMock.mockResolvedValue(undefined);
@@ -927,7 +943,7 @@ describe("PromptManagerModal — regex copy & export (R-12)", () => {
     await waitFor(() => {
       expect(createRegexPresetMock).toHaveBeenCalled();
     });
-    const body = createRegexPresetMock.mock.calls[0][0] as unknown as Record<string, unknown>;
+    const body = createRegexPresetMock.mock.calls[0][0];
     // useT is mocked to return keys verbatim, so copySuffix resolves to its key.
     expect(body.name).toBe("Alpha Strip" + "promptManager.regex.copySuffix");
     expect(body).toMatchObject({
@@ -1059,7 +1075,7 @@ describe("PromptManagerModal — regex profiles (R-13b)", () => {
     fireEvent.change(input, { target: { value: "MyProf" } });
     fireEvent.keyDown(input, { key: "Enter" });
     await waitFor(() => { expect(createRegexProfileMock).toHaveBeenCalled(); });
-    expect((createRegexProfileMock.mock.calls[0][0] as unknown as { name: string }).name).toBe("MyProf");
+    expect(createRegexProfileMock.mock.calls[0][0].name).toBe("MyProf");
   });
 
   test("member rule status reflects the PROFILE gate: enabled-but-unbound profile → Unbound on both the profile row and its member (R-13b owner spec)", async () => {
@@ -1400,7 +1416,7 @@ describe("PromptManagerModal — manual rule drafts (RXU-14)", () => {
     fireEvent.click(save);
 
     await waitFor(() => expect(createRegexPresetMock).toHaveBeenCalledTimes(1));
-    const body = createRegexPresetMock.mock.calls[0][0] as unknown as Record<string, unknown>;
+    const body = createRegexPresetMock.mock.calls[0][0];
     // Fields exactly as typed in the empty-started draft; born disabled; standalone.
     expect(body).toMatchObject({
       name: "My Stripper",
@@ -1448,7 +1464,7 @@ describe("PromptManagerModal — manual rule drafts (RXU-14)", () => {
     // ONE create carrying the intended profileId — the attach endpoint is
     // never used for manual creation anymore.
     await waitFor(() => expect(createRegexPresetMock).toHaveBeenCalledTimes(1));
-    const body = createRegexPresetMock.mock.calls[0][0] as unknown as Record<string, unknown>;
+    const body = createRegexPresetMock.mock.calls[0][0];
     expect(body.name).toBe("InProf");
     expect(body.profileId).toBe("p1");
     expect(body.disabled).toBe(true);
@@ -1643,9 +1659,9 @@ describe("preset-import-flow — Regex bundle sequence (RXU-21)", () => {
   test("createPresetRegexProfile: toggle OFF → master disabled true; toggle ON → disabled false — both positions explicit", async () => {
     const rules = [importDraft("on", false), importDraft("off", true)];
     const bodies: Array<Parameters<typeof realRegexApi.createRegexProfileBundle>[0]> = [];
-    const createBundle = async (body: Parameters<typeof realRegexApi.createRegexProfileBundle>[0]) => {
+    const createBundle = async (body: Parameters<typeof realRegexApi.createRegexProfileBundle>[0]): Promise<RegexProfileBundleRecord> => {
       bodies.push(body);
-      return { profile: { id: "p1" }, rules: [] } as unknown as Awaited<ReturnType<typeof realRegexApi.createRegexProfileBundle>>;
+      return { profile: regexProfileFixture("p1"), rules: [] };
     };
 
     // Toggle OFF (the default): the master switch is disabled — source-
@@ -1667,7 +1683,7 @@ describe("preset-import-flow — Regex bundle sequence (RXU-21)", () => {
     // Import-only channels never reach the API body (membership is
     // bundle-owned; sourceScript is a preview-channel detail).
     for (const key of ["sourceScript", "profileId"] as const) {
-      expect(key in (bodies[0].rules[0] as unknown as Record<string, unknown>)).toBe(false);
+      expect(key in bodies[0].rules[0]).toBe(false);
     }
   });
 
@@ -1708,7 +1724,7 @@ describe("preset-import-flow — Regex bundle sequence (RXU-21)", () => {
   test("createPresetWithRegexProfile: preset-create failure → no bundle, no delete", async () => {
     const createPreset = mock(async () => null);
     const deletePreset = mock(async () => {});
-    const createBundle = mock(async () => ({ profile: { id: "x" }, rules: [] } as unknown as Awaited<ReturnType<typeof realRegexApi.createRegexProfileBundle>>));
+    const createBundle = mock(async (): Promise<RegexProfileBundleRecord> => ({ profile: regexProfileFixture("x"), rules: [] }));
 
     const outcome = await createPresetWithRegexProfile({
       createPreset,

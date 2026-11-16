@@ -44,6 +44,8 @@ describe("agent pending-review summary store (AP-15)", () => {
 
     const entry = useAgentPendingReviewStore.getState().summariesByThread["thread-2"];
     expect(entry).toBeDefined();
+    expect(entry!.acceptAll).toBe(acceptAll);
+    expect(entry!.open).toBe(open);
     entry!.acceptAll();
     entry!.open();
     expect(acceptAll).toHaveBeenCalledTimes(1);

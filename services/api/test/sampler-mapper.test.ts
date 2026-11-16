@@ -2,13 +2,14 @@ import { describe, it, expect } from "bun:test";
 import { buildSamplerConfig } from "../src/infrastructure/ai/sampler-mapper.js";
 import { PROVIDER_PROFILE_GENERATION_DEFAULTS } from "@vibe-tavern/domain";
 import type { StoredProviderProfileRecord } from "@vibe-tavern/domain";
+import { makeProviderProfileRow } from "./copilot-test-builders.js";
 
 /** Minimal profile factory — override only what matters for the test. */
 function profile(
   providerPreset: string,
   overrides: Partial<StoredProviderProfileRecord> = {},
 ): StoredProviderProfileRecord {
-  return {
+  return makeProviderProfileRow({
     id: "test-profile",
     name: "Test",
     providerPreset,
@@ -57,7 +58,7 @@ function profile(
     createdAt: "2025-01-01",
     updatedAt: "2025-01-01",
     ...overrides,
-  };
+  });
 }
 
 describe("buildSamplerConfig", () => {

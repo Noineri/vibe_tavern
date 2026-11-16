@@ -1,5 +1,6 @@
 import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import type { ComponentProps } from "react";
+import type { DragEndEvent, DragOverEvent, DragStartEvent } from "@dnd-kit/core";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 import { brandId, type RegexPresetId, type RegexProfileId } from "@vibe-tavern/domain";
@@ -22,6 +23,22 @@ type RealDndContextProps = ComponentProps<typeof realDndKit.DndContext>;
 type RealDragOverlayProps = ComponentProps<typeof realDndKit.DragOverlay>;
 const RealDndContext = realDndKit.DndContext;
 let dndHandlers: RealDndContextProps | null = null;
+
+// Member-for-member dnd-kit event factories (the 7d master-list shape):
+// the handlers read only active.id / over.id; the remaining members ride
+// inert defaults.
+const dragStart = (id: string): DragStartEvent => ({
+  activatorEvent: new Event("pointerdown"),
+  active: { id, data: { current: undefined }, rect: { current: { initial: null, translated: null } } },
+});
+const dragEnd = (id: string, overId: string | null): DragEndEvent => ({
+  activatorEvent: new Event("pointerdown"),
+  active: { id, data: { current: undefined }, rect: { current: { initial: null, translated: null } } },
+  collisions: null,
+  delta: { x: 0, y: 0 },
+  over: overId === null ? null : { id: overId, rect: { width: 0, height: 0, top: 0, left: 0, right: 0, bottom: 0 }, disabled: false, data: { current: undefined } },
+});
+const dragOver = (id: string, overId: string): DragOverEvent => dragEnd(id, overId);
 
 installI18nContextSeam({
   custom: {
@@ -197,8 +214,8 @@ describe("RegexPresetList", () => {
   it("renders the drag preview through the primitive overlay", () => {
     const view = render(<RegexPresetList {...baseProps()} />);
     expect(view.getAllByText("Alpha")).toHaveLength(1);
-    const start = { active: { id: "rule:r1" } } as unknown as Parameters<NonNullable<RealDndContextProps["onDragStart"]>>[0];
-    const end = { active: { id: "rule:r1" }, over: null } as unknown as Parameters<NonNullable<RealDndContextProps["onDragEnd"]>>[0];
+    const start = dragStart("rule:r1");
+    const end = dragEnd("rule:r1", null);
     act(() => { dndHandlers!.onDragStart!(start); });
     // Row + inline overlay preview (the DragOverlay mock renders inline —
     // the ML-1 rework-2 lesson: the preview must exist during a drag).
@@ -363,16 +380,14 @@ describe("RegexPresetList", () => {
 
   it("shows the standalone target only while dragging a member Rule", () => {
     const view = render(<RegexPresetList {...nestedProps()} expandedProfileIds={["p1"]} />);
-    const start = (id: string) => ({ active: { id } }) as unknown as Parameters<NonNullable<RealDndContextProps["onDragStart"]>>[0];
-    const end = (id: string) => ({ active: { id }, over: null }) as unknown as Parameters<NonNullable<RealDndContextProps["onDragEnd"]>>[0];
 
     expect(view.queryByTestId("regex-standalone-drop")).toBeNull();
-    act(() => { dndHandlers!.onDragStart!(start("rule:r1")); });
+    act(() => { dndHandlers!.onDragStart!(dragStart("rule:r1")); });
     expect(view.queryByTestId("regex-standalone-drop")).toBeNull();
-    act(() => { dndHandlers!.onDragEnd!(end("rule:r1")); });
-    act(() => { dndHandlers!.onDragStart!(start("rule:r2")); });
+    act(() => { dndHandlers!.onDragEnd!(dragEnd("rule:r1", null)); });
+    act(() => { dndHandlers!.onDragStart!(dragStart("rule:r2")); });
     expect(view.getByTestId("regex-standalone-drop")).toBeTruthy();
-    act(() => { dndHandlers!.onDragEnd!(end("rule:r2")); });
+    act(() => { dndHandlers!.onDragEnd!(dragEnd("rule:r2", null)); });
     expect(view.queryByTestId("regex-standalone-drop")).toBeNull();
   });
 
@@ -381,8 +396,7 @@ describe("RegexPresetList", () => {
     // scroll container; now: the primitive wraps each row in a key div and
     // owns the droppable wrapper — the slot content keeps its look/testid).
     const view = render(<RegexPresetList {...nestedProps()} expandedProfileIds={["p1"]} />);
-    const start = { active: { id: "rule:r2" } } as unknown as Parameters<NonNullable<RealDndContextProps["onDragStart"]>>[0];
-    act(() => { dndHandlers!.onDragStart!(start); });
+    act(() => { dndHandlers!.onDragStart!(dragStart("rule:r2")); });
 
     const target = view.getByTestId("regex-standalone-drop");
     const profileRow = view.getByText("First profile").closest("div.group") as HTMLElement;
@@ -404,9 +418,9 @@ describe("RegexPresetList", () => {
       expandedProfileIds: ["p1"],
       onDetach,
     })} />);
-    const start = { active: { id: "rule:r1" } } as unknown as Parameters<NonNullable<RealDndContextProps["onDragStart"]>>[0];
-    const over = { active: { id: "rule:r1" }, over: { id: "regex:standalone" } } as unknown as Parameters<NonNullable<RealDndContextProps["onDragOver"]>>[0];
-    const end = { active: { id: "rule:r1" }, over: { id: "regex:standalone" } } as unknown as Parameters<NonNullable<RealDndContextProps["onDragEnd"]>>[0];
+    const start = dragStart("rule:r1");
+    const over = dragOver("rule:r1", "regex:standalone");
+    const end = dragEnd("rule:r1", "regex:standalone");
 
     act(() => { dndHandlers!.onDragStart!(start); });
     const target = view.getByTestId("regex-standalone-drop");
@@ -425,7 +439,7 @@ describe("RegexPresetList", () => {
   it("preserves top-level reorder, attachment, within-Profile reorder, and invalid-drop no-op", () => {
     const topLevelReorder = mock();
     render(<RegexPresetList {...baseProps({ onReorder: topLevelReorder })} />);
-    const topLevelEnd = { active: { id: "rule:r1" }, over: { id: "rule:r2" } } as unknown as Parameters<NonNullable<RealDndContextProps["onDragEnd"]>>[0];
+    const topLevelEnd = dragEnd("rule:r1", "rule:r2");
     act(() => { dndHandlers!.onDragEnd!(topLevelEnd); });
     expect(topLevelReorder).toHaveBeenCalledWith([
       { id: "r2", sortOrder: 0 },
@@ -436,7 +450,7 @@ describe("RegexPresetList", () => {
     const onAttach = mock();
     const attachReorder = mock();
     render(<RegexPresetList {...nestedProps()} expandedProfileIds={["p1"]} onAttach={onAttach} onReorder={attachReorder} />);
-    const attachEnd = { active: { id: "rule:r1" }, over: { id: "profile:p1" } } as unknown as Parameters<NonNullable<RealDndContextProps["onDragEnd"]>>[0];
+    const attachEnd = dragEnd("rule:r1", "profile:p1");
     act(() => { dndHandlers!.onDragEnd!(attachEnd); });
     expect(onAttach).toHaveBeenCalledWith("p1", "r1");
     expect(attachReorder).toHaveBeenCalledWith([
@@ -447,7 +461,7 @@ describe("RegexPresetList", () => {
 
     const memberReorder = mock();
     render(<RegexPresetList {...nestedProps()} expandedProfileIds={["p1"]} onReorder={memberReorder} />);
-    const memberEnd = { active: { id: "rule:r2" }, over: { id: "rule:r3" } } as unknown as Parameters<NonNullable<RealDndContextProps["onDragEnd"]>>[0];
+    const memberEnd = dragEnd("rule:r2", "rule:r3");
     act(() => { dndHandlers!.onDragEnd!(memberEnd); });
     expect(memberReorder).toHaveBeenCalledWith([
       { id: "r3", sortOrder: 0 },
@@ -456,7 +470,7 @@ describe("RegexPresetList", () => {
 
     const invalidReorder = mock();
     render(<RegexPresetList {...baseProps({ onReorder: invalidReorder })} />);
-    const invalidEnd = { active: { id: "rule:r1" }, over: null } as unknown as Parameters<NonNullable<RealDndContextProps["onDragEnd"]>>[0];
+    const invalidEnd = dragEnd("rule:r1", null);
     act(() => { dndHandlers!.onDragEnd!(invalidEnd); });
     expect(invalidReorder).not.toHaveBeenCalled();
   });

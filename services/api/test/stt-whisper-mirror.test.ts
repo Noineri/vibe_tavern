@@ -18,6 +18,7 @@ import {
 } from "../src/domain/stt/whisper-mirror.js";
 import { Hono } from "hono";
 import { createSttWhisperMirrorRoutes } from "../src/api/routes/stt-whisper-mirror.js";
+import { testFetch } from "./test-fetch-seam.js";
 
 const REPO = "onnx-community/whisper-base";
 
@@ -78,7 +79,7 @@ describe("WhisperMirrorService", () => {
   /** URL-dispatching fake (P14 shape): file requests go to nextResponse,
    *  tree-listing requests to nextTreeResponse — the size oracle rides the
    *  SAME injectable fetch seam, so tests dispatch by URL. */
-  function fakeFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  function fakeFetch(input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]): Promise<Response> {
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
     fetchLog.push({ url, init });
     const isTree = url.startsWith("https://huggingface.co/api/models/") && url.includes("/tree/main");
@@ -96,7 +97,7 @@ describe("WhisperMirrorService", () => {
 
   function makeService(): WhisperMirrorService {
     return new WhisperMirrorService(dataDir, {
-      resolveFetch: async () => fakeFetch,
+      resolveFetch: async () => testFetch(fakeFetch),
     });
   }
 
@@ -311,17 +312,18 @@ describe("stt-whisper-mirror route parse", () => {
 
   function makeApp(): Hono {
     const service = new WhisperMirrorService(dataDir, {
-      resolveFetch: async () => (input: RequestInfo | URL) => {
-        const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-        fetchLog.push({ url });
-        // P14: tree-listing URLs (size oracle) get an empty listing; file
-        // URLs get the fixture body WITHOUT a Content-Length — the CDN-hop
-        // shape the oracle exists for.
-        if (url.startsWith("https://huggingface.co/api/models/") && url.includes("/tree/main")) {
-          return Promise.resolve(jsonResponse([]));
-        }
-        return Promise.resolve(new Response('{"ok":true}', { headers: { "content-type": "application/json" } }));
-      },
+      resolveFetch: async () =>
+        testFetch((input) => {
+          const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+          fetchLog.push({ url });
+          // P14: tree-listing URLs (size oracle) get an empty listing; file
+          // URLs get the fixture body WITHOUT a Content-Length — the CDN-hop
+          // shape the oracle exists for.
+          if (url.startsWith("https://huggingface.co/api/models/") && url.includes("/tree/main")) {
+            return Promise.resolve(jsonResponse([]));
+          }
+          return Promise.resolve(new Response('{"ok":true}', { headers: { "content-type": "application/json" } }));
+        }),
     });
     return new Hono().route("/", createSttWhisperMirrorRoutes(service));
   }

@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach } from "bun:test";
+import { describe, test, expect, beforeEach, spyOn } from "bun:test";
 import { eq } from "drizzle-orm";
 
 import { createDb, type AppDb } from "../src/db-connection.js";
@@ -137,10 +137,22 @@ describe("DICE-B10 atomic send binding — characterization (no-Dice unchanged)"
     const before = await dice.listPending("chat_1", "brnch_1");
     expect(before.normal.rolls.length).toBe(0);
 
-    const message = await messages.addMessage({
-      chatId: "chat_1", branchId: "brnch_1",
-      role: "user", authorType: "user", content: "hello no-dice",
-    });
+    const prepareSpy = spyOn(db.$client, "prepare");
+    let preparedSql: string[] = [];
+    let message: Awaited<ReturnType<MessageStore["addMessage"]>>;
+    try {
+      message = await messages.addMessage({
+        chatId: "chat_1", branchId: "brnch_1",
+        role: "user", authorType: "user", content: "hello no-dice",
+      });
+      preparedSql = prepareSpy.mock.calls.map(([sqlText]) => String(sqlText));
+    } finally {
+      prepareSpy.mockRestore();
+    }
+
+    expect(preparedSql.some((s) => s.includes("messages"))).toBe(true);
+    expect(preparedSql.some((s) => s.includes("message_variants"))).toBe(true);
+    expect(preparedSql.some((s) => s.includes("dice_"))).toBe(false);
 
     expect(message.role).toBe("user");
     expect(message.content).toBe("hello no-dice");

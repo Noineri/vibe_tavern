@@ -5,7 +5,7 @@ import { createDb } from "@vibe-tavern/db";
 import { ProviderStore, TtsListingSnapshotStore, TtsStore } from "@vibe-tavern/db";
 
 import { createTtsRoutes } from "../src/api/routes/tts.js";
-import type { RuntimeApi } from "../src/api/contract/runtime-api.js";
+import { makeRuntimeApi } from "./routes-test-builders.js";
 import { createApp } from "../src/server/app-factory.js";
 import { openAiCompatTtsFactory } from "../src/domain/tts/backends/openai-tts.js";
 import { __setDockerProbeRunnerForTests } from "../src/domain/tts/docker-probe.js";
@@ -18,6 +18,7 @@ import {
   registerTtsBackend,
 } from "../src/domain/tts/tts-registry.js";
 import type { TtsBackend } from "../src/domain/tts/tts-backend.js";
+import { testFetch } from "./test-fetch-seam.js";
 
 // Shared-process rule: this file resets the registry per test and leaves it
 // EMPTY at file end; without the afterAll restore below, every later test file
@@ -77,14 +78,17 @@ describe("TTS routes — CRUD", () => {
   test("PATCH /api/tts/profiles/reorder requires mobile bearer auth before the route", async () => {
     let reorderCalled = false;
     const app = await createApp({
-      runtime: {
-        tts: {
-          reorderTtsProfiles: async () => {
-            reorderCalled = true;
-            return [];
+      runtime: makeRuntimeApi(
+        {
+          tts: {
+            reorderTtsProfiles: async () => {
+              reorderCalled = true;
+              return [];
+            },
           },
         },
-      } as unknown as RuntimeApi,
+        "RuntimeApi (tts-routes reorder auth)",
+      ),
       mobileAccessToken: "test-token",
       enforceMobileAuth: true,
     });
@@ -264,8 +268,8 @@ describe("TTS routes — CRUD", () => {
     });
     const b = (await bRes.json()) as { id: string };
 
-    await store.addLink(a.id, "character" as never, "char_1");
-    await store.addLink(b.id, "persona" as never, "persona_1");
+    await store.addLink(a.id, "character", "char_1");
+    await store.addLink(b.id, "persona", "persona_1");
 
     const res = await app.request("/api/tts/links");
     expect(res.status).toBe(200);
@@ -577,21 +581,6 @@ describe("TTS routes — draft (transient, unsaved form config)", () => {
     expect(body.error).toContain("model listing not supported");
   });
 });
-
-// ─── F2b: key projection (strip-on-read), merge-on-write, draft stored-key
-// resolution, and the D8 docker probe ─────────────────────────────────────
-
-interface SeenConfig {
-  capture: Record<string, unknown> | null;
-}
-
-function capturingRegistry(seen: SeenConfig): void {
-  registerTtsBackend(TTS_BACKEND.OpenAiCompatible, (config) => {
-    seen.capture = { ...(config as Record<string, unknown>) };
-    return stubBackend();
-  });
-}
-
 
 // ─── F2b: key projection (strip-on-read), merge-on-write, draft stored-key
 // resolution, and the D8 docker probe ─────────────────────────────────────
@@ -1150,7 +1139,7 @@ describe("TTS routes — voice clone (multipart draft passthrough)", () => {
     const { app } = await makeApp();
     const calls: { method: string; url: string }[] = [];
     const originalFetch = globalThis.fetch;
-    globalThis.fetch = mock(async (input: RequestInfo | URL, init?: RequestInit) => {
+    globalThis.fetch = testFetch(mock(async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
       const url = String(input);
       const method = init?.method ?? "GET";
       calls.push({ method, url });
@@ -1168,7 +1157,7 @@ describe("TTS routes — voice clone (multipart draft passthrough)", () => {
         }),
         { status: 200 },
       );
-    });
+    }));
     try {
       const res = await app.request("/api/tts/clone", { method: "POST", body: cloneForm() });
 
@@ -1196,7 +1185,7 @@ describe("TTS routes — voice clone (multipart draft passthrough)", () => {
     registerTtsBackend(TTS_BACKEND.OpenAiCompatible, openAiCompatTtsFactory);
     const { app } = await makeApp();
     const originalFetch = globalThis.fetch;
-    globalThis.fetch = mock(async (input: RequestInfo | URL, init?: RequestInit) => {
+    globalThis.fetch = testFetch(mock(async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
       const url = String(input);
       const method = init?.method ?? "GET";
       if (url.endsWith("/audio/voices")) {
@@ -1209,7 +1198,7 @@ describe("TTS routes — voice clone (multipart draft passthrough)", () => {
         );
       }
       return new Response(JSON.stringify({ voices: [], count: 0 }), { status: 200 });
-    });
+    }));
     try {
       const res = await app.request("/api/tts/clone", { method: "POST", body: cloneForm() });
 

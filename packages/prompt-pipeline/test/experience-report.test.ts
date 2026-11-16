@@ -136,14 +136,21 @@ describe("formatExperienceMessageBlock", () => {
     expect(block.indexOf("Game A")).toBeLessThan(block.indexOf("Game B"));
   });
 
-  it("never references hidden state — the snapshot carries no hidden field", () => {
-    // Structural guarantee: snapshots carry only public metadata (including an optional
-    // participants map), never the hidden checkpoint. (The hidden checkpoint lives on the
-    // DB row's separate column and is never mapped into the snapshot — see
-    // storeAttachmentToReportSnapshot.)
-    const snapshot = makeReport();
-    const keys = Object.keys(snapshot).sort();
-    expect(keys).toEqual(["events", "kind", "sessionRevision", "summary", "title"]);
+  it("ignores unexpected/hidden fields attached at runtime (never leaks hidden keys into output)", () => {
+    // Hidden-checkpoint isolation at the DB-to-snapshot boundary lives in
+    // services/api/test/experience-service.test.ts (storeAttachmentToReportSnapshot);
+    // this pure formatter test pins that extra hidden keys on a snapshot object
+    // are never surfaced into the model-visible report block.
+    const baseline = makeReport();
+    const withHidden = Object.assign(makeReport(), {
+      hiddenState: { secretCard: "ace_of_spades" },
+      hiddenStateCheckpointJson: '{"secret":"hidden"}',
+    });
+    const block = formatExperienceMessageBlock([withHidden]);
+    expect(block).toBe(formatExperienceMessageBlock([baseline]));
+    expect(block).not.toContain("secretCard");
+    expect(block).not.toContain("ace_of_spades");
+    expect(block).not.toContain("hiddenState");
   });
 
   it("preserves event order as emitted by the reducer", () => {
@@ -156,6 +163,9 @@ describe("formatExperienceMessageBlock", () => {
     const firstIdx = block.indexOf("- first");
     const secondIdx = block.indexOf("- second");
     const thirdIdx = block.indexOf("- third");
+    expect(firstIdx).toBeGreaterThanOrEqual(0);
+    expect(secondIdx).toBeGreaterThanOrEqual(0);
+    expect(thirdIdx).toBeGreaterThanOrEqual(0);
     expect(firstIdx).toBeLessThan(secondIdx);
     expect(secondIdx).toBeLessThan(thirdIdx);
   });

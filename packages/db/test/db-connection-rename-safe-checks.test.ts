@@ -1,12 +1,14 @@
-import { describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { describe, expect, spyOn, test } from "bun:test";
+import { mkdir, mkdtemp, readdir, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { Database } from "bun:sqlite";
 import { drizzle } from "drizzle-orm/bun-sqlite";
 import { migrate } from "drizzle-orm/bun-sqlite/migrator";
 import { createDb } from "../src/db-connection.js";
+import * as dbMigrationRepair from "../src/db-migration-repair.js";
 import {
+	hasPendingMigrations,
 	normalizeDunderCheckReferences,
 	stageRenameSafeMigrationsFolder,
 } from "../src/db-migration-repair.js";
@@ -80,20 +82,67 @@ CREATE TABLE "child" ("id" text REFERENCES "x"("id"));`;
 	});
 });
 
+async function listRelativeFiles(root: string): Promise<string[]> {
+	const entries = await readdir(root, { recursive: true });
+	const files: string[] = [];
+	for (const entry of entries) {
+		if (typeof entry !== "string") continue;
+		const full = resolve(root, entry);
+		if (await stat(full).then((s) => s.isFile(), () => false)) {
+			files.push(entry.replace(/\\/g, "/"));
+		}
+	}
+	return files.sort();
+}
+
 describe("stageRenameSafeMigrationsFolder", () => {
 	test("staged .sql files are normalized; meta is verbatim; temp tree is self-contained", async () => {
 		const dir = await mkdtemp(join(tmpdir(), "vt-stage-"));
 		const folder = join(dir, "drizzle");
 		await writeFolder(folder);
+		const snapshotBody = JSON.stringify({ version: "6", tables: { provider_profiles: {} } });
+		await Bun.write(resolve(folder, "meta", "0000_snapshot.json"), snapshotBody);
+
+		const origJournal = await Bun.file(resolve(folder, "meta", "_journal.json")).text();
 		const staged = await stageRenameSafeMigrationsFolder(folder);
+		let client: Database | null = null;
 		try {
+			expect(await listRelativeFiles(staged)).toEqual([
+				"0000_init.sql",
+				"0001_rebuild.sql",
+				"meta/0000_snapshot.json",
+				"meta/_journal.json",
+			]);
+
+			expect(await Bun.file(resolve(staged, "0000_init.sql")).text()).toBe(INIT_SQL);
 			const stagedSql = await Bun.file(resolve(staged, "0001_rebuild.sql")).text();
-			expect(stagedSql).not.toContain(`"__new_provider_profiles".`);
+			expect(stagedSql).toBe(normalizeDunderCheckReferences(REBUILD_SQL));
 			// The official folder is untouched (committed migrations are immutable).
-			expect(await Bun.file(resolve(folder, "0001_rebuild.sql")).text()).toContain(`"__new_provider_profiles".`);
-			const journal = await Bun.file(resolve(staged, "meta", "_journal.json")).text();
-			expect(journal).toContain('"tag":"0001_rebuild"');
+			expect(await Bun.file(resolve(folder, "0001_rebuild.sql")).text()).toBe(REBUILD_SQL);
+			expect(await Bun.file(resolve(staged, "meta", "_journal.json")).text()).toBe(origJournal);
+			expect(await Bun.file(resolve(staged, "meta", "0000_snapshot.json")).text()).toBe(snapshotBody);
+
+			// Delete the source folder completely before migrating from `staged` to
+			// prove the staged tree is self-contained. Put the test WAL DB in a
+			// separate `vt-*` temp dir so closing it doesn't hit Windows WAL rm EBUSY
+			// when removing `staged` and `dir` in `finally`.
+			await rm(folder, { recursive: true, force: true });
+			const dbDir = await mkdtemp(join(tmpdir(), "vt-stage-run-"));
+			client = new Database(join(dbDir, "staged-only.db"));
+			client.exec("PRAGMA journal_mode = WAL");
+			migrate(drizzle(client), { migrationsFolder: staged });
+
+			const schemaSql = (client.query(
+				"SELECT sql FROM sqlite_master WHERE name = 'provider_profiles'",
+			).get() as { sql: string }).sql;
+			expect(schemaSql).not.toContain("__new_");
+			expect(schemaSql).toContain(`("proxy_mode" = 'proxy'`);
+			client.exec(`INSERT INTO provider_profiles (id, proxy_mode, proxy_id) VALUES ('a', 'proxy', 'p1')`);
+			expect(() =>
+				client!.exec(`INSERT INTO provider_profiles (id, proxy_mode, proxy_id) VALUES ('b', 'proxy', NULL)`),
+			).toThrow();
 		} finally {
+			client?.close();
 			await rm(staged, { recursive: true, force: true });
 			await rm(dir, { recursive: true, force: true });
 		}
@@ -125,17 +174,34 @@ describe("fresh boot through the staged folder", () => {
 		const folder = join(dir, "drizzle");
 		await writeFolder(folder);
 		const dbPath = join(dir, "test.db");
-		// Bring the db fully up to date OUTSIDE createDb (raw drizzle), so the
-		// subsequent createDb boot has nothing pending.
+
+		// A fresh empty DB reports pending = true.
+		const emptyClient = new Database(join(dir, "probe-empty.db"));
+		expect(await hasPendingMigrations(emptyClient, folder)).toBe(true);
+		emptyClient.close();
+
+		// Bring `test.db` fully up to date OUTSIDE createDb (raw drizzle), so
+		// hasPendingMigrations returns false on the subsequent createDb boot.
 		const client = new Database(dbPath);
 		client.exec("PRAGMA journal_mode = WAL");
 		migrate(drizzle(client), { migrationsFolder: folder });
+		expect(await hasPendingMigrations(client, folder)).toBe(false);
 		client.close();
 
-		const db = await createDb(dbPath, folder);
-		const watermark = db.$client.query(
-			"SELECT MAX(created_at) AS m FROM __drizzle_migrations",
-		).get() as { m: number };
-		expect(watermark.m).toBe(1700000001000);
+		const stageSpy = spyOn(dbMigrationRepair, "stageRenameSafeMigrationsFolder");
+		try {
+			const db = await createDb(dbPath, folder);
+			expect(stageSpy).not.toHaveBeenCalled();
+			const watermark = db.$client.query(
+				"SELECT MAX(created_at) AS m FROM __drizzle_migrations",
+			).get() as { m: number };
+			expect(watermark.m).toBe(1700000001000);
+
+			// Contrast: a pending boot invokes staging once.
+			await createDb(join(dir, "fresh.db"), folder);
+			expect(stageSpy).toHaveBeenCalledTimes(1);
+		} finally {
+			stageSpy.mockRestore();
+		}
 	});
 });

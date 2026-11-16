@@ -5,7 +5,7 @@ import { ProviderExecutionError } from "../src/infrastructure/ai/provider-execut
 import { notFound } from "../src/shared/errors.js";
 import { markUserMessageSaved } from "../src/domain/chat/user-message-saved.js";
 import { VisionNotSupportedError } from "../src/infrastructure/ai/vision-gate.js";
-import type { RuntimeApi } from "../src/api/contract/runtime-api.js";
+import { makeRuntimeApi } from "./routes-test-builders.js";
 
 /**
  * Contract tests for the global Hono error handler (app.onError in
@@ -27,7 +27,8 @@ import type { RuntimeApi } from "../src/api/contract/runtime-api.js";
 
 // createApp only needs a runtime reference for route closures; the throw route
 // never calls it, so an empty stub is sufficient (mirrors feature-routes.test.ts).
-const runtime = {} as unknown as RuntimeApi;
+// makeRuntimeApi completes the decomposition with inert labeled doubles.
+const runtime = makeRuntimeApi({}, "RuntimeApi (server-error-handler)");
 
 async function appThrowing(throwable: () => unknown) {
   return createApp({
@@ -89,13 +90,16 @@ describe("global error handler (app.onError)", () => {
 
   test("the non-stream send route's vision gate 422 carries userMessageSaved when the message was stored", async () => {
     const app = await createApp({
-      runtime: {
-        chat: {
-          sendMessage: async () => {
-            throw markUserMessageSaved(new VisionNotSupportedError(["cat.png"]));
+      runtime: makeRuntimeApi(
+        {
+          chat: {
+            sendMessage: async () => {
+              throw markUserMessageSaved(new VisionNotSupportedError(["cat.png"]));
+            },
           },
         },
-      } as unknown as RuntimeApi,
+        "RuntimeApi (server-error-handler vision gate)",
+      ),
     });
     const res = await app.request("/api/chats/chat_1/messages", {
       method: "POST",

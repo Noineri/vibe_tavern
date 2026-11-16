@@ -73,7 +73,7 @@ function TaskHarness({
 
 describe("useGenerationTask", () => {
 	it("idle → generating → cancel: signal is aborted; onError NOT called", async () => {
-		const { promise } = deferred();
+		const { promise, reject } = deferred();
 		const onGenerate = mock<(signal: AbortSignal) => Promise<void>>(() => promise);
 		const onError = mock();
 		const { getByText, getByTestId } = render(
@@ -90,6 +90,10 @@ describe("useGenerationTask", () => {
 
 		fireEvent.click(getByText("cancel"));
 		expect(signal.aborted).toBe(true);
+		await act(async () => {
+			reject(new DOMException("Aborted", "AbortError"));
+		});
+		await waitFor(() => expect(getByTestId("state").textContent).toBe("IDLE"));
 		expect(onError).not.toHaveBeenCalled();
 	});
 

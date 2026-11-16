@@ -7,6 +7,7 @@ import { createProviderProfileService } from "../src/domain/providers/provider-p
 import { CoauthorConnectionSettingsStore, ProviderStore, ProxyStore, createDb } from "@vibe-tavern/db";
 import type { StoreContainer } from "@vibe-tavern/db";
 import { httpStatusForDomainError, isDomainError } from "../src/shared/errors.js";
+import { strictTestDouble } from "./strict-test-double.js";
 
 /**
  * CG-1 route tests for the per-connection Co-Author settings endpoints
@@ -17,11 +18,13 @@ import { httpStatusForDomainError, isDomainError } from "../src/shared/errors.js
  * route → adapter → store stack.
  */
 
+// A mock runtime with each test's overrides; an unprovided member throws a
+// labeled miss instead of `undefined`.
 function mockRuntime(overrides: Partial<Pick<ProviderRuntimeApi,
   "getCoauthorConnectionSettings" |
   "upsertCoauthorConnectionSettings"
 >> = {}): ProviderRuntimeApi {
-  return { ...overrides } as unknown as ProviderRuntimeApi;
+  return strictTestDouble<ProviderRuntimeApi>(overrides, "ProviderRuntimeApi (coauthor settings routes)");
 }
 
 const RECORD: CoauthorConnectionSettingsRecord = {
@@ -156,7 +159,7 @@ describe("provider coauthor-settings via the real adapter", () => {
     const providers = new ProviderStore(db);
     const proxies = new ProxyStore(db);
     const adapter = new ProviderAdapter(
-      { coauthorSettings: new CoauthorConnectionSettingsStore(db) } as unknown as StoreContainer,
+      strictTestDouble<StoreContainer>({ coauthorSettings: new CoauthorConnectionSettingsStore(db) }, "ProviderAdapter stores (coauthor settings)"),
       createProviderProfileService(providers, proxies),
     );
 
@@ -188,7 +191,7 @@ describe("provider coauthor-settings via the real adapter", () => {
       apiKey: "sk-test",
     });
     const adapter = new ProviderAdapter(
-      { coauthorSettings: new CoauthorConnectionSettingsStore(db) } as unknown as StoreContainer,
+      strictTestDouble<StoreContainer>({ coauthorSettings: new CoauthorConnectionSettingsStore(db) }, "ProviderAdapter stores (coauthor settings)"),
       createProviderProfileService(providers, proxies),
     );
     const app = createProviderRoutes(adapter);

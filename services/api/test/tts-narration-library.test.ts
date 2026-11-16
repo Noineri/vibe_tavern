@@ -93,7 +93,7 @@ describe("narration library key validation (TPE-18c)", () => {
 
   test("non-integer / negative / oversized variantIndex rejects", () => {
     for (const bad of [-1, 1.5, 1000, "abc", "", null, undefined]) {
-      expect(() => parseNarrationLibraryKey({ ...key(), variantIndex: bad as never })).toThrow(
+      expect(() => parseNarrationLibraryKey({ ...key(), variantIndex: bad })).toThrow(
         NarrationLibraryValidationError,
       );
     }
@@ -247,7 +247,7 @@ describe("narration library routes (TPE-18c)", () => {
   test("traversal key in query rejects with 400 (never reaches the filesystem)", async () => {
     const { app, dataRoot } = await setupApp();
     try {
-      const evil = query(key({ messageId: "../escape" as never }));
+      const evil = query(key({ messageId: "../escape" }));
       // URLSearchParams encodes the dots — the route still sees the raw ".." value.
       const res = await app.request(`/api/tts/narrations/exists?${evil}`);
       expect(res.status).toBe(400);

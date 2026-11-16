@@ -1,9 +1,9 @@
 import { describe, test, expect, beforeEach, mock } from "bun:test";
-import { normalizeInsightsConfig, normalizeObjectiveState } from "@vibe-tavern/domain";
 
 import { useDomEnv } from "../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
-import type { AppCharacter, AppMessage, AppSnapshot, AppPersona } from "../../api/types.js";
+import { wireBranch, wireChat, wireChatListItem, wireCharacter, wireMessage, wirePersona } from "../../../test/wire-fixtures.js";
+import type { AppMessage, AppSnapshot } from "../../api/types.js";
 import type { ChatId } from "@vibe-tavern/domain";
 
 useDomEnv();
@@ -60,34 +60,26 @@ const { CoauthorMessageBlock } = await import("./CoauthorMessageBlock.js");
 const { CoauthorTurnShell } = await import("./CoauthorTurnShell.js");
 
 function makeAssistantMessage(id: string, content = "msg"): AppMessage {
-  return {
-    id, role: "assistant", content,
-    createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z",
-    variants: [], selectedVariantIndex: null, modelId: null,
-  } as unknown as AppMessage;
+  return wireMessage(id, { role: "assistant", authorType: "assistant", content });
 }
 
 function makeUserMessage(id: string, content = "msg"): AppMessage {
-  return {
-    id, role: "user", content,
-    createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z",
-    variants: [], selectedVariantIndex: null, modelId: null,
-  } as unknown as AppMessage;
+  return wireMessage(id, { role: "user", authorType: "user", content });
 }
 
 function seed(messages: AppMessage[], isCoauthorMode: boolean): AppSnapshot {
   return {
-    chats: [{ id: "chat-1", title: "Chat", characterId: "c1", mode: isCoauthorMode ? "coauthor" : "rp", messageCount: messages.length, updatedAt: "2026-01-01T00:00:00.000Z" }],
+    chats: [wireChatListItem({ mode: isCoauthorMode ? "coauthor" : "rp", messageCount: messages.length })],
     allCharacters: [],
-    activeChat: { id: "chat-1", title: "Chat", characterId: "c1", mode: isCoauthorMode ? "coauthor" : "rp", insightsConfig: normalizeInsightsConfig({}), insightsObjectiveState: normalizeObjectiveState({}) } as unknown as AppSnapshot["activeChat"],
-    activeBranch: { id: "b1", chatId: "chat-1", label: "main" } as unknown as AppSnapshot["activeBranch"],
+    activeChat: wireChat({ mode: isCoauthorMode ? "coauthor" : "rp" }),
+    activeBranch: wireBranch(),
     branches: [],
     messages,
     summaries: [],
     promptTrace: null,
-    character: { id: "c1", name: "Char c1", avatarExt: null, avatarAssetId: null, avatarCropJson: null } as unknown as AppCharacter,
-    persona: { id: "p1", name: "Persona", avatarExt: null, avatarAssetId: null, avatarCropJson: null } as unknown as AppPersona,
-  } as unknown as AppSnapshot;
+    character: wireCharacter({ id: "c1", name: "Char c1" }),
+    persona: wirePersona({ id: "p1", name: "Persona" }),
+  };
 }
 
 const CHAT = "chat-1";

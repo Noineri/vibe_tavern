@@ -1,7 +1,7 @@
 import { describe, it, expect } from "bun:test";
 import { PromptAssemblyService, type PromptAssemblyResolver } from "../src/domain/prompt/prompt-assembly-service.js";
-import type { StoreContainer } from "@vibe-tavern/db";
-import { normalizeInsightsConfig, normalizeObjectiveState, type ChatId } from "@vibe-tavern/domain";
+import type { ChatId } from "@vibe-tavern/domain";
+import { makeAssemblyPreset, makeAssemblyResolver, makeFileStoreDouble, makePromptAssemblyStores } from "./insights-test-builders.js";
 
 /**
  * Characterization test for the per-request PRESET OVERRIDE path (Wave Q1b).
@@ -22,7 +22,7 @@ const OVERRIDE_PRESET_TEXT = "OVERRIDE_PRESET_TEXT {{char}}";
 
 function makeResolver(): { resolver: PromptAssemblyResolver; calls: string[] } {
   const calls: string[] = [];
-  const resolver: PromptAssemblyResolver = {
+  const resolver = makeAssemblyResolver({
     getCharacter: async () => ({
       id: "char_1",
       name: "TestBot",
@@ -34,96 +34,44 @@ function makeResolver(): { resolver: PromptAssemblyResolver; calls: string[] } {
       postHistoryInstructions: null,
     }),
     getPersona: async () => ({ id: "persona_1", name: "User", description: "A user." }),
-    // Discriminate by id so the test can tell which preset was selected.
+    // Discriminate by id so unknown preset ids hit the real null branch.
     getPromptPreset: async (presetId: string) => {
       calls.push(presetId);
       if (presetId === "preset_override") {
-        return {
+        return makeAssemblyPreset({
           id: "preset_override",
           name: "Override",
           text: OVERRIDE_PRESET_TEXT,
-          jailbreak: "",
-          summary: "",
-          tools: "",
-          prefill: "",
-          authorsNote: "",
-          authorsNoteDepth: 4,
-          authorsNotePosition: "in_chat",
-          authorsNoteRole: "system",
-          nsfw: "",
-          enhanceDefinitions: "",
-          advancedMode: false,
-          customInjections: [],
-          promptOrder: [],
-        };
+        });
       }
-      return {
-        id: "preset_chat",
-        name: "ChatDefault",
-        text: CHAT_PRESET_TEXT,
-        jailbreak: "",
-        summary: "",
-        tools: "",
-        prefill: "",
-        authorsNote: "",
-        authorsNoteDepth: 4,
-        authorsNotePosition: "in_chat",
-        authorsNoteRole: "system",
-        nsfw: "",
-        enhanceDefinitions: "",
-        advancedMode: false,
-        customInjections: [],
-        promptOrder: [],
-      };
+      if (presetId === "preset_chat") {
+        return makeAssemblyPreset({
+          id: "preset_chat",
+          name: "ChatDefault",
+          text: CHAT_PRESET_TEXT,
+        });
+      }
+      return null;
     },
-    listActiveLoreEntries: async () => ({ entries: [], overflowedLorebooks: [] }),
-    listRetrievedMemories: async () => [],
-    getToolInstructions: () => null,
-    executeScripts: async (input: { characterRecord: { personality: string | null; scenario: string | null } }) => ({
+    executeScripts: async (input) => ({
       personality: input.characterRecord.personality ?? "",
       scenario: input.characterRecord.scenario ?? "",
       injectedMessages: [],
       errors: [],
       scriptRuns: [],
     }),
-  };
+  });
   return { resolver, calls };
 }
 
-const mockStores = {
-  chats: {
-    getById: async () => ({
-      id: "chat_1",
-      characterId: "char_1",
-      personaId: "persona_1",
-      promptPresetId: "preset_chat",
-      activeBranchId: "branch_1",
-      insightsConfig: normalizeInsightsConfig({}),
-      insightsObjectiveState: normalizeObjectiveState({}),
-      title: "Test",
-      summary: null,
-      createdAt: "0",
-      updatedAt: "0",
-    }),
-    getBranches: async () => [{ id: "branch_1", chatId: "chat_1", parentBranchId: null, label: "main" }],
-    getMessages: async () => [],
+const mockStores = makePromptAssemblyStores(
+  {
+    chat: { personaId: "persona_1", promptPresetId: "preset_chat", title: "Test" },
   },
-  personas: { listAll: async () => [] },
-  messages: { getMessages: async () => [] },
-  chatSummaries: { listByChatBranch: async () => [] },
-  characterAssets: { listByCharacter: async () => [] },
-  presets: { listAll: async () => [] },
-  diceRolls: { getRollsForMessages: async () => new Map() },
-  experiences: { getAttachmentsForMessages: async () => new Map() },
-} as unknown as StoreContainer;
+  "PromptAssemblyService stores (preset-override)",
+);
 
-const mockFileStore = {
-  dataRoot: "/mock",
-  resolvePath: (_f: string, r: string) => `/mock/${r}`,
-  readJson: async <T>() => null as T,
-  writeJson: async () => {},
-  asyncWriteJson: async () => {},
-};
+const mockFileStore = makeFileStoreDouble();
 
 function payloadText(result: { prompt: { finalPayload: unknown } }): string {
   const messages = (result.prompt.finalPayload as { messages?: Array<{ content: string }> }).messages ?? [];
@@ -170,13 +118,15 @@ describe("Q1b: assembleForChat preset override", () => {
     expect(calls).toEqual(["preset_override", "preset_chat"]); // override, then back to chat's
   });
 
-  it("preset override with a non-existent id → getPromptPreset returns null-ish, handled gracefully", async () => {
-    // If the override id is unknown, the resolver returns a default (chat) shape
-    // here — the assembly must not throw. Documents the no-throw contract.
-    const { resolver } = makeResolver();
+  it("preset override with a non-existent id → getPromptPreset returns null, handled gracefully", async () => {
+    // Missing preset row: resolver returns null, assembly still succeeds
+    // and leaves promptTraceDraft.presetName null.
+    const { resolver, calls } = makeResolver();
     const service = new PromptAssemblyService(mockStores, resolver, mockFileStore);
 
     const result = await service.assembleForChat({ chatId: "chat_1" as ChatId, model: "m", presetId: "unknown_preset" as ChatId });
+    expect(calls).toEqual(["unknown_preset"]);
     expect(result.prompt).toBeDefined();
+    expect(result.promptTraceDraft.presetName).toBeNull();
   });
 });

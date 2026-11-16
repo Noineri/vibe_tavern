@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "bun:test";
+import { afterAll, beforeEach, describe, expect, it } from "bun:test";
 import { assemblePrompt } from "../src/assemble.ts";
 import { findSafeCompactionBoundary, planHistoryCompaction, setTokenCountFn } from "../src/compaction.ts";
 import type { Attachment } from "@vibe-tavern/domain";
@@ -33,6 +33,10 @@ function historyLayer(result: ReturnType<typeof assemblePrompt>) {
 
 beforeEach(() => {
   setTokenCountFn((text) => text.length);
+});
+
+afterAll(() => {
+  setTokenCountFn(() => 0);
 });
 
 describe("history compaction budget", () => {
@@ -94,30 +98,43 @@ describe("history compaction budget", () => {
   });
 
   it("counts dialogue examples, character depth, and script injections before planning history", () => {
-    const withLateLayers = baseContext({
-      character: {
-        id: "char_1",
-        name: "Aria",
-        description: "A fire mage.",
-        mesExample: "Example dialogue.".repeat(20),
-        depthPrompt: "Character depth instruction.".repeat(20),
-      },
-      chat: {
-        recentMessages: history,
-        scriptInjections: [{ role: "system" as const, content: "Script instruction.".repeat(20) }],
-      },
-    });
-    const unbounded = assemblePrompt(withLateLayers);
-    const lateLayerTokens = unbounded.layers
-      .filter((layer) => ["mes_example", "character_depth_prompt", "script_injection_0"].includes(layer.id))
-      .reduce((total, layer) => total + layer.tokenCount, 0);
-    const result = assemblePrompt({
-      ...withLateLayers,
-      config: { contextBudget: unbounded.totalTokenEstimate - lateLayerTokens },
-    });
+    const scenarios = [
+      baseContext({
+        character: {
+          id: "char_1",
+          name: "Aria",
+          description: "A fire mage.",
+          mesExample: "Example dialogue.".repeat(20),
+        },
+      }),
+      baseContext({
+        character: {
+          id: "char_1",
+          name: "Aria",
+          description: "A fire mage.",
+          depthPrompt: "Character depth instruction.".repeat(20),
+        },
+      }),
+      baseContext({
+        chat: {
+          recentMessages: history,
+          scriptInjections: [{ role: "system" as const, content: "Script instruction.".repeat(20) }],
+        },
+      }),
+    ];
 
-    expect(result.compactionSummary).toBeDefined();
-    expect(historyLayer(result).text).not.toContain("Old user message.");
+    for (const ctx of scenarios) {
+      const exactFit = assemblePrompt(ctx);
+      expect(exactFit.compactionSummary).toBeNull();
+      expect(historyLayer(exactFit).text).toContain("Old user message.");
+
+      const tightlyBounded = assemblePrompt({
+        ...ctx,
+        config: { contextBudget: exactFit.totalTokenEstimate - 1 },
+      });
+      expect(tightlyBounded.compactionSummary).not.toBeNull();
+      expect(historyLayer(tightlyBounded).text).not.toContain("Old user message.");
+    }
   });
 
   it("uses formatted history token cost rather than individually tokenized messages", () => {

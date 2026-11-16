@@ -22,14 +22,15 @@
  */
 import { create } from "zustand";
 import { useCallback, useEffect, useMemo } from "react";
-import type { ChatId, PromptTraceRecordDto } from "@vibe-tavern/domain";
+import type { ChatId } from "@vibe-tavern/domain";
+import type { AppPromptTrace } from "../api/types.js";
 import { fetchTraceHistory } from "../api/chat-api.js";
 
 export type TraceHistoryStatus = "idle" | "loading" | "error" | "success";
 
 export interface TraceHistoryEntry {
   status: TraceHistoryStatus;
-  traces: PromptTraceRecordDto[];
+  traces: AppPromptTrace[];
   error: string | null;
 }
 
@@ -47,7 +48,7 @@ interface TraceHistoryState {
    * acts on an already-success entry (don't populate an unopened tab).
    * No-op if the trace is already present.
    */
-  upsertLatest: (chatId: string, branchId: string, trace: PromptTraceRecordDto) => void;
+  upsertLatest: (chatId: string, branchId: string, trace: AppPromptTrace) => void;
 }
 
 const entryKey = (chatId: string, branchId: string): string => `${chatId}::${branchId}`;
@@ -140,7 +141,7 @@ export function useTraceHistory(
   branchId: string | null,
   enabled = true,
 ): {
-  traces: PromptTraceRecordDto[];
+  traces: AppPromptTrace[];
   status: TraceHistoryStatus;
   error: string | null;
   refetch: () => void;

@@ -19,6 +19,7 @@ import { prepareSdkMessages, toSdkMessages } from "../src/infrastructure/ai/prov
 import { VisionNotSupportedError } from "../src/infrastructure/ai/vision-gate.js";
 import { VoiceTranscribeUnavailableError } from "../src/infrastructure/ai/stt-gate.js";
 import { ProviderExecutionError } from "../src/infrastructure/ai/provider-execution-types.js";
+import { strictTestDouble } from "./strict-test-double.js";
 
 // T1 characterization: only the runtime and executor constructor seams are
 // doubled. No global state, module mocks, sleeps or machine-specific paths.
@@ -38,12 +39,15 @@ describe("regenerate executor options characterization (CA-1b2)", () => {
         finalPayload: { messages: [{ role: "user", content: "Look", messageId: "user_1", ...(attachments ? { attachments } : {}) }] },
       };
       const inputs: ProviderExecutionInput[] = [];
-      const runtime = {
-        assemblePromptPreview: async () => prompt,
-        patchPendingTrace: () => {},
-        discardPendingPromptTrace: () => {},
-        appendMessageVariant: async () => ({ messages: [] }),
-      } as unknown as ChatRuntime;
+      const runtime = strictTestDouble<ChatRuntime>(
+        {
+          assemblePromptPreview: async () => prompt,
+          patchPendingTrace: () => {},
+          discardPendingPromptTrace: () => {},
+          appendMessageVariant: async () => ({ messages: [], promptTrace: null }),
+        },
+        "ChatRuntime (live-chat-reply-media)",
+      );
       const orchestrator = new LiveChatOrchestrator(
         runtime, {} as ChatApplicationService, {} as ProviderOrchestrator, new EventBus(), async () => new RpModeStrategy(),
         undefined, undefined, {

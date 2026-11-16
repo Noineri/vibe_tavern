@@ -24,6 +24,7 @@
 import { afterAll, afterEach, describe, expect, it } from "bun:test";
 import React from "react";
 import { useDomEnv } from "../../../test/dom-env.js";
+import { flush } from "../../../test/flush.js";
 
 useDomEnv();
 
@@ -46,9 +47,7 @@ const HIGHEST_OVERLAY_Z = 700;
  *  mounts. */
 async function settleToasterViewport(): Promise<HTMLElement | null> {
   for (let i = 0; i < 10; i++) {
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    });
+    await flush();
     const ol = document.querySelector("[data-sonner-toaster]");
     if (ol) return ol as HTMLElement;
   }
@@ -69,9 +68,7 @@ describe("AppToaster mounts above every modal overlay", () => {
     // Sonner's toast store is module-global: dismiss the fired toast so a
     // later file in this shared worker never sees a ghost "boom" toast.
     if (toastId !== "") toast.dismiss(toastId);
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    });
+    await flush();
   });
 
   it("the sonner viewport is a <body> child — outside #root's stacking context — and clears the highest overlay z", async () => {

@@ -8,6 +8,7 @@ import { useGenerationQueueStore } from "../../stores/generation-queue-store.js"
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { enqueueGenerateMore, useGenerationQueue } from "../../hooks/use-generation-queue.js";
 import { refreshGenerationQueue } from "../../lib/chat-generation-queue-client.js";
+import { testFetch } from "@vibe-tavern/test-fetch";
 
 useDomEnv();
 
@@ -57,14 +58,14 @@ beforeEach(() => {
   mobileViewport = false;
   globalThis.fetch = originalFetch;
   serverJobs = [];
-  globalThis.fetch = (async (_input, init) => {
+  globalThis.fetch = testFetch(async (_input, init) => {
     if (init?.method === "POST") {
       const input = JSON.parse(String(init.body));
       const job: ChatGenerationJob = { ...input, id: `server-${serverJobs.length}`, chatId: CHAT_A, enqueuedAt: 1, status: serverJobs.length ? "pending" : "running" };
       serverJobs = [...serverJobs, job]; return Response.json(job, { status: 201 });
     }
     return Response.json(serverJobs);
-  }) as typeof fetch;
+  });
   window.matchMedia = matchMedia;
   useChatStore.setState({ activeChatId: CHAT_A });
   useGenerationQueueStore.setState({ jobsByChat: {}, batchesByChat: {}, recordsByChat: {} });

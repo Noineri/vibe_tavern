@@ -1,7 +1,9 @@
 import { describe, expect, test } from 'bun:test';
+import { eq } from 'drizzle-orm';
 
 import { createDb } from '../src/db-connection.js';
-import { ImagePromptProfileStore } from '../src/stores/image-prompt-profile-store.js';
+import { imagePromptProfiles } from '../src/db-schema.js';
+import { ImagePromptProfileStore, type ImagePromptOverridesInput } from '../src/stores/image-prompt-profile-store.js';
 import { UiSettingsStore } from '../src/stores/ui-settings-store.js';
 import type { StoreClock, StoreIdGenerator } from '../src/persistence.js';
 
@@ -70,23 +72,63 @@ describe('ImagePromptProfileStore', () => {
   });
 
   test('unknown keys and wrong payloads are dropped at the store boundary', async () => {
-    const { store } = await setup();
+    const { store, db } = await setup();
     await store.ensureDefaultImagePromptProfile();
-    // Bogus input shape cast in — the store must filter it, not persist it.
-    const bogus = {
-      'not-a-mode|pony': { body: 'x' },
-      'portrait|not-a-family': { body: 'x' },
-      'portrait|prose': 'flat-string-payload',
-      'no-separator': { body: 'x' },
-      'negative|prose': { body: 'ok', qualityText: 42 as unknown as string },
-    } as never;
+    // Bogus input shape cast in beside one valid entry — the store must strip
+    // invalid entries on write while preserving valid ones.
+    const bogus = JSON.parse(`{
+      "not-a-mode|pony": { "body": "x" },
+      "portrait|not-a-family": { "body": "x" },
+      "portrait|prose": "flat-string-payload",
+      "no-separator": { "body": "x" },
+      "negative|prose": { "body": "ok", "qualityText": 42 },
+      "portrait|pony": { "body": "valid-body", "qualityText": "valid-qual" }
+    }`) as ImagePromptOverridesInput;
+    const expectedClean = {
+      'portrait|pony': { body: 'valid-body', qualityText: 'valid-qual' },
+    };
     const profile = await store.createImagePromptProfile({ name: 'Dirty', overrides: bogus });
-    expect(profile.overrides).toEqual({});
+    expect(profile.overrides).toEqual(expectedClean);
+
+    // Inspect stored SQLite JSON column directly to verify the write boundary.
+    const rawCreated = await db
+      .select({ overrides: imagePromptProfiles.overrides })
+      .from(imagePromptProfiles)
+      .where(eq(imagePromptProfiles.id, profile.id))
+      .get();
+    expect(JSON.parse(rawCreated!.overrides)).toEqual(expectedClean);
+
+    const bogusPatch = JSON.parse(`{
+      "bad-mode|flux": { "body": "bad" },
+      "scene-illustration|qwen": { "body": "kept-body" }
+    }`) as ImagePromptOverridesInput;
+    await store.updateImagePromptProfile(profile.id, { overrides: bogusPatch });
+    const rawUpdated = await db
+      .select({ overrides: imagePromptProfiles.overrides })
+      .from(imagePromptProfiles)
+      .where(eq(imagePromptProfiles.id, profile.id))
+      .get();
+    expect(JSON.parse(rawUpdated!.overrides)).toEqual({
+      'scene-illustration|qwen': { body: 'kept-body', qualityText: null },
+    });
   });
 
   test('update/delete refuse default profile', async () => {
-    const { store } = await setup();
-    await store.ensureDefaultImagePromptProfile();
+    const db = await createDb(':memory:');
+    let tick = 0;
+    const steppingClock: StoreClock = {
+      now: () => {
+        tick += 1;
+        return new Date(Date.parse('2026-09-22T00:00:00.000Z') + tick * 1_000).toISOString();
+      },
+    };
+    const store = new ImagePromptProfileStore(db, { clock: steppingClock, idGenerator: idGen });
+    const seededDefault = await store.ensureDefaultImagePromptProfile();
+
+    // Positive control: a custom profile update advances updatedAt.
+    const custom = await store.createImagePromptProfile({ name: 'Custom', overrides: {} });
+    const updatedCustom = await store.updateImagePromptProfile(custom.id, { name: 'Custom 2' });
+    expect(updatedCustom!.updatedAt > custom.updatedAt).toBe(true);
 
     const afterUpdate = await store.updateImagePromptProfile('default', {
       name: 'Hacked',
@@ -95,8 +137,8 @@ describe('ImagePromptProfileStore', () => {
     expect(afterUpdate).not.toBeNull();
     expect(afterUpdate!.name).toBe('Default');
     expect(afterUpdate!.overrides).toEqual({});
-    // Refused mutation does not bump updatedAt (row stays inert).
-    expect(afterUpdate!.updatedAt).toBe((await store.getImagePromptProfile('default'))!.updatedAt);
+    // Refused mutation does not bump updatedAt vs the pre-update timestamp.
+    expect(afterUpdate!.updatedAt).toBe(seededDefault.updatedAt);
 
     await store.deleteImagePromptProfile('default');
     expect(await store.getImagePromptProfile('default')).not.toBeNull();

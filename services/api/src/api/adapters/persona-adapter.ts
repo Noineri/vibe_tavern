@@ -229,10 +229,10 @@ export class PersonaAdapter implements PersonaRuntimeApi {
 			const key = this.avatarKeyFor(payload.persona);
 			const slice = buildStPersonaSlice(payload, key);
 			const body = mergeStSlices([{ slice, isDefault: payload.persona.defaultForNewChats }]);
-			return { body: body as unknown as Record<string, unknown>, filename: this.personaExportFilename("persona"), contentType: "application/json; charset=utf-8" };
+			return { body, filename: this.personaExportFilename("persona"), contentType: "application/json; charset=utf-8" };
 		}
 		const body = buildVtPersonaPayload(payload);
-		return { body: body as unknown as Record<string, unknown>, filename: this.personaExportFilename("persona"), contentType: "application/json; charset=utf-8" };
+		return { body, filename: this.personaExportFilename("persona"), contentType: "application/json; charset=utf-8" };
 	};
 
 	exportAllPersonas = async (format: "st" | "vt") => {

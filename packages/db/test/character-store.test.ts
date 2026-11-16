@@ -1,5 +1,5 @@
-import { describe, expect, test } from "bun:test";
-import { mkdtemp, mkdir, readdir, rm } from "node:fs/promises";
+import { describe, expect, spyOn, test } from "bun:test";
+import { mkdtemp, mkdir, readdir, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { sql, eq } from "drizzle-orm";
@@ -72,20 +72,33 @@ describe("CharacterStore folder storage (B1)", () => {
 		expect(greetingFiles).toContain("g_0000.md");
 		expect(greetingFiles).toContain("g_0001.md");
 
-		// NO new flat file {id}.json or {id}.*.json is created for new characters
-		expect(files.some((f) => f === `${char.id}.json`)).toBe(false);
-		expect(files.some((f) => f.startsWith(`${char.id}.`) && f.endsWith(".json"))).toBe(false);
+		// NO new flat file {id}.json or {id}.*.json is created in the characters root
+		const rootFiles = await listCharFiles(dataRoot, char.id);
+		expect(rootFiles).toEqual([char.id]);
+		expect(rootFiles.some((f) => f === `${char.id}.json`)).toBe(false);
+		expect(rootFiles.some((f) => f.startsWith(`${char.id}.`) && f.endsWith(".json"))).toBe(false);
 	});
 
 	test("getById returns the character and is idempotent on the file", async () => {
-		const { store } = await setup();
-		const created = await store.create({ name: "Aria" });
-		const fetched = await store.getById(created.id);
-		expect(fetched?.id).toBe(created.id);
-		expect(fetched?.name).toBe("Aria");
-		// second fetch does not throw / does not duplicate
-		const fetched2 = await store.getById(created.id);
-		expect(fetched2?.id).toBe(created.id);
+		const { dataRoot, content, store } = await setup();
+		const created = await store.create({ name: "Aria", description: "storm mage" });
+		const profileBefore = await readProfileMd(dataRoot, created.id);
+		const writeTextSpy = spyOn(content, "writeEntityTextFile");
+		const writeFileSpy = spyOn(content, "writeEntityFile");
+		try {
+			const fetched = await store.getById(created.id);
+			expect(fetched?.id).toBe(created.id);
+			expect(fetched?.name).toBe("Aria");
+			// second fetch does not rewrite disk files or alter content
+			const fetched2 = await store.getById(created.id);
+			expect(fetched2).toEqual(fetched);
+			expect(await readProfileMd(dataRoot, created.id)).toBe(profileBefore);
+			expect(writeTextSpy).not.toHaveBeenCalled();
+			expect(writeFileSpy).not.toHaveBeenCalled();
+		} finally {
+			writeTextSpy.mockRestore();
+			writeFileSpy.mockRestore();
+		}
 	});
 
 	test("update rewrites {id}/profile.md with the new content", async () => {
@@ -514,6 +527,10 @@ describe("CharacterStore — characterization (refactor safety net + coverage)",
 		// getById still works in DB-only mode (no folder override, no migration).
 		const fetched = await store.getById(copy.id);
 		expect(fetched?.name).toBe("Aria (copy)");
+		// dataRoot holds only SQLite files — no characters/ directory or flat character files created.
+		const dataEntries = (await readdir(dataRoot)).filter((name) => !name.startsWith("test.db"));
+		expect(dataEntries).toEqual([]);
+		await expect(stat(join(dataRoot, CHARS))).rejects.toThrow();
 	});
 
 	// ── Group (b): orthogonal coverage debt — pure-DB methods the refactor does not touch ──
@@ -627,9 +644,8 @@ async function setupDbOnly() {
 //      assertion below) to cover it, or TypeScript errors here.
 //  (2) Behavioural: expectContentFields() checks every fixture field survives
 //      each method, so a method that forgets to carry a field fails the test.
-// Avatar ext/asset fields are null here to avoid folder-file I/O; their column
-// survival across duplicate is covered by the dedicated tests above (avatarExt
-// L192, avatarFullExt L209).
+// Avatar ext/asset fields are also populated with non-null sentinels because
+// setupDbOnly runs with folder: null (no folder-file I/O is triggered).
 describe("CharacterStore — field-preservation drift guard (ERA-2)", () => {
 	// Distinct sentinel per field so a no-op carry (field silently left at the
 	// DB default) is caught rather than masked by an equal default value.
@@ -652,12 +668,12 @@ describe("CharacterStore — field-preservation drift guard (ERA-2)", () => {
 		extensions: { source: "test" },
 		systemPrompt: "be vivid",
 		tags: ["wizard", "storm"],
-		avatarAssetId: null,
-		avatarFullAssetId: null,
-		avatarCropJson: null,
-		avatarExt: null,
-		avatarFullExt: null,
-		avatarSourceAssetId: null,
+		avatarAssetId: "asset_thumb_1",
+		avatarFullAssetId: "asset_full_1",
+		avatarCropJson: '{"x":0.1,"y":0.2,"width":0.8,"height":0.8}',
+		avatarExt: "png",
+		avatarFullExt: "webp",
+		avatarSourceAssetId: "asset_src_1",
 		includeGalleryInPrompt: true,
 		includeAvatarInPrompt: true,
 		avatarDescription: "an electric portrait",
@@ -665,7 +681,10 @@ describe("CharacterStore — field-preservation drift guard (ERA-2)", () => {
 
 	// Every field flipped to a distinct second sentinel so the update path can
 	// detect a missing `if (data.X !== undefined)` guard — the field would stay
-	// at the pre-update value and the assertion would fail.
+	// at the pre-update value and the assertion would fail. Note:
+	// CharacterStore.update() deliberately does not map avatarSourceAssetId
+	// (the sole writer is setAvatarSourceAssetId — D8/Bug #3 salvage invariant),
+	// so only the 5 update-mapped avatar fields flip.
 	const UPDATED_CONTENT: Required<CreateCharacterData> = {
 		name: "Aria Renamed",
 		description: "fire mage",
@@ -685,12 +704,12 @@ describe("CharacterStore — field-preservation drift guard (ERA-2)", () => {
 		extensions: { source: "test2" },
 		systemPrompt: "be terse",
 		tags: ["pyromancer", "ash"],
-		avatarAssetId: null,
-		avatarFullAssetId: null,
-		avatarCropJson: null,
-		avatarExt: null,
-		avatarFullExt: null,
-		avatarSourceAssetId: null,
+		avatarAssetId: "asset_thumb_2",
+		avatarFullAssetId: "asset_full_2",
+		avatarCropJson: '{"x":0.3,"y":0.4,"width":0.5,"height":0.5}',
+		avatarExt: "jpg",
+		avatarFullExt: "png",
+		avatarSourceAssetId: "asset_src_2",
 		includeGalleryInPrompt: false,
 		includeAvatarInPrompt: false,
 		avatarDescription: "a scorched portrait",
@@ -735,9 +754,15 @@ describe("CharacterStore — field-preservation drift guard (ERA-2)", () => {
 		const { store } = await setupDbOnly();
 		const created = await store.create(FULL_CONTENT);
 		const updated = await store.update(created.id, UPDATED_CONTENT);
-		expectContentFields(updated, UPDATED_CONTENT);
+		// Deliberate contract (owner-confirmed 2026-11-16, D8/Bug #3 invariant):
+		// CharacterStore.update() intentionally does not map avatarSourceAssetId;
+		// the sole writer is setAvatarSourceAssetId.
+		const updateSkip = new Set<keyof CreateCharacterData>(["avatarSourceAssetId"]);
+		expectContentFields(updated, UPDATED_CONTENT, updateSkip);
+		expect(updated.avatarSourceAssetId).toBe(FULL_CONTENT.avatarSourceAssetId);
 		const fetched = await store.getById(created.id);
-		expectContentFields(fetched!, UPDATED_CONTENT);
+		expectContentFields(fetched!, UPDATED_CONTENT, updateSkip);
+		expect(fetched!.avatarSourceAssetId).toBe(FULL_CONTENT.avatarSourceAssetId);
 	});
 });
 
@@ -948,20 +973,23 @@ describe("CharacterStore data integrity across rename (HUMAN_READABLE_FOLDERS HR
 	});
 
 	test("concurrent renames of different characters to the same name never overwrite a peer", async () => {
-		const { store } = await setupWithRegistry();
+		const { dataRoot, store } = await setupWithRegistry();
 		const a = await store.create({ name: "Alpha", description: "a" });
 		const b = await store.create({ name: "Beta", description: "b" });
 		await Promise.all([
 			store.update(a.id, { name: "Oliver" }),
 			store.update(b.id, { name: "Oliver" }),
 		]);
-		const dirs = [
-			await store.resolveFolderName(a.id),
-			await store.resolveFolderName(b.id),
-		].sort();
-		expect(dirs).toEqual(["oliver", "oliver-2"]);
-		expect((await store.getById(a.id))?.name).toBe("Oliver");
-		expect((await store.getById(b.id))?.name).toBe("Oliver");
+		const dirA = await store.resolveFolderName(a.id);
+		const dirB = await store.resolveFolderName(b.id);
+		expect([dirA, dirB].sort()).toEqual(["oliver", "oliver-2"]);
+		expect(dirA).not.toBe(dirB);
+		const reloadedA = await store.getById(a.id);
+		const reloadedB = await store.getById(b.id);
+		expect(reloadedA).toMatchObject({ id: a.id, name: "Oliver", description: "a" });
+		expect(reloadedB).toMatchObject({ id: b.id, name: "Oliver", description: "b" });
+		expect(parseProfileMd(await Bun.file(join(dataRoot, CHARS, dirA!, "profile.md")).text()).storageId).toBe(a.id);
+		expect(parseProfileMd(await Bun.file(join(dataRoot, CHARS, dirB!, "profile.md")).text()).storageId).toBe(b.id);
 	});
 
 	test("a case-only display-name update does not churn a lowercase directory", async () => {

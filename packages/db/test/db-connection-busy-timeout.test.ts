@@ -16,13 +16,66 @@ import { createDb } from "../src/db-connection.js";
 
 const BUSY_TIMEOUT_MS = 5_000;
 
+async function waitForChildLine(stdout: ReadableStream<Uint8Array>, expected: string): Promise<void> {
+	const reader = stdout.getReader();
+	const decoder = new TextDecoder();
+	let buffer = "";
+	while (!buffer.includes(expected)) {
+		const { done, value } = await reader.read();
+		if (done) {
+			throw new Error(`Child process exited before emitting ${JSON.stringify(expected)}; got: ${buffer}`);
+		}
+		buffer += decoder.decode(value, { stream: true });
+	}
+	reader.releaseLock();
+}
+
 describe("createDb: busy_timeout", () => {
 	test("createDb connections wait instead of throwing instantly on write contention", async () => {
-		const db = await createDb(":memory:");
-		const raw = (db as unknown as { $client: Database }).$client;
-		const pragma = raw.prepare("PRAGMA busy_timeout").get() as { timeout: number };
-		expect(pragma.timeout).toBe(BUSY_TIMEOUT_MS);
-		raw.close();
+		const dir = await mkdtemp(join(tmpdir(), "vt-create-db-busy-"));
+		const dbPath = join(dir, "app.db");
+		const db = await createDb(dbPath);
+		const raw = db.$client;
+		let impatient: Database | null = null;
+		let child: Bun.Subprocess<"ignore", "pipe", "pipe"> | null = null;
+		try {
+			const pragma = raw.prepare("PRAGMA busy_timeout").get() as { timeout: number };
+			expect(pragma.timeout).toBe(BUSY_TIMEOUT_MS);
+
+			raw.exec("CREATE TABLE _busy_probe (id INTEGER PRIMARY KEY, writer TEXT NOT NULL)");
+
+			const childScript = `
+				import { Database } from "bun:sqlite";
+				const holder = new Database(process.env.LOCK_DB_PATH!);
+				holder.exec("BEGIN IMMEDIATE");
+				holder.prepare("INSERT INTO _busy_probe (writer) VALUES ('holder')").run();
+				process.stdout.write("LOCKED\\n");
+				await Bun.sleep(150);
+				holder.exec("COMMIT");
+				holder.close();
+			`;
+			child = Bun.spawn([process.execPath, "-e", childScript], {
+				env: { ...process.env, LOCK_DB_PATH: dbPath },
+				stdout: "pipe",
+				stderr: "pipe",
+			});
+			await waitForChildLine(child.stdout, "LOCKED");
+
+			// Impatient default handle (busy_timeout = 0) fails immediately on the active lock.
+			impatient = new Database(dbPath);
+			expect(() => impatient!.prepare("INSERT INTO _busy_probe (writer) VALUES ('impatient')").run()).toThrow();
+
+			// The file-backed createDb handle waits for the lock to release and succeeds.
+			raw.prepare("INSERT INTO _busy_probe (writer) VALUES (?)").run("createDb");
+			expect(await child.exited).toBe(0);
+
+			const rows = raw.query("SELECT writer FROM _busy_probe ORDER BY id ASC").all() as { writer: string }[];
+			expect(rows.map((r) => r.writer)).toEqual(["holder", "createDb"]);
+		} finally {
+			impatient?.close();
+			if (child && child.exitCode === null) child.kill();
+			raw.close();
+		}
 	});
 
 	test("mechanism: busy_timeout makes a second writer WAIT (pin of why the pragma matters)", async () => {

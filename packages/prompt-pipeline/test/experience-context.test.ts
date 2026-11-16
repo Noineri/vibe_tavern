@@ -8,7 +8,7 @@
  * invariant (only already-projected PUBLIC material in — never hidden state) is
  * expressed by the input type: there is no field for hidden state to enter.
  */
-import { beforeEach, describe, expect, it } from "bun:test";
+import { afterAll, beforeEach, describe, expect, it } from "bun:test";
 import { setTokenCountFn } from "../src/compaction.js";
 import {
 	buildExperienceContext,
@@ -20,6 +20,10 @@ import {
 beforeEach(() => {
 	// Char-length tokenizer → deterministic, easily-reasoned token counts.
 	setTokenCountFn((text) => text.length);
+});
+
+afterAll(() => {
+	setTokenCountFn(() => 0);
 });
 
 function msg(id: string, role: ExperienceContextMessage["role"], content: string): ExperienceContextMessage {
@@ -35,10 +39,10 @@ describe("buildExperienceContext — construction (no budget)", () => {
 		const summaries = [{ id: "s1", content: "Earlier recap." }];
 		const bundle = buildExperienceContext({ messages, summaries, character: CHARACTER, persona: PERSONA });
 
-		expect(bundle.messages.map((m) => m.id)).toEqual(["m1", "m2"]);
-		expect(bundle.summaries.map((s) => s.id)).toEqual(["s1"]);
-		expect(bundle.character?.id).toBe("c");
-		expect(bundle.persona?.id).toBe("p");
+		expect(bundle.messages).toEqual(messages);
+		expect(bundle.summaries).toEqual(summaries);
+		expect(bundle.character).toEqual(CHARACTER);
+		expect(bundle.persona).toEqual(PERSONA);
 		expect(bundle.droppedMessages).toEqual([]);
 		expect(bundle.compactionSummary).toBeNull();
 
@@ -92,22 +96,18 @@ describe("buildExperienceContext — budget reduction", () => {
 		expect(bundle.compactionSummary).toContain("dropped 2 oldest");
 	});
 
-	it("never splits an assistant tool-call from its tool-result", () => {
+	it("never splits an assistant/tool role pair under budget trimming", () => {
 		// contextBudget 30 → historyBudget 30 → candidate suffix [t1,u2,a2] (30)
 		// would orphan t1 (tool result with no preceding assistant). The safe
 		// boundary pulls a1 in → preserved = [a1,t1,u2,a2]; only u1 is dropped.
 		const bundle = buildExperienceContext({ messages: pairMessages, budget: { contextBudget: 30, responseReserve: 0 } });
-		const ids = bundle.messages.map((m) => m.id);
-		expect(ids).toContain("a1");
-		expect(ids).toContain("t1");
-		// t1 is never the first preserved message (never orphaned).
-		expect(ids[0]).not.toBe("t1");
-		expect(bundle.droppedMessages.map((d) => d.id)).toEqual(["u1"]);
+		expect(bundle.messages).toEqual(pairMessages.slice(1));
+		expect(bundle.droppedMessages).toEqual([{ id: "u1", reason: "context_budget" }]);
 	});
 
 	it("summaries are reserved and never trimmed, even under a tight budget", () => {
-		// Budget that fits ONLY the summaries + 2 messages → older messages drop,
-		// summaries survive intact.
+		// Summary takes 30 tokens and messages total 18; budget 42 leaves
+		// historyBudget = 12, so older m1/m2 drop while s1 and recent m3/m4 survive.
 		const summaries = [{ id: "s1", content: "A dense recap of prior events." }];
 		const messages = [
 			msg("m1", "user", "old"),
@@ -118,10 +118,16 @@ describe("buildExperienceContext — budget reduction", () => {
 		const bundle = buildExperienceContext({
 			messages,
 			summaries,
-			budget: { contextBudget: 100, responseReserve: 0 },
+			budget: { contextBudget: 42, responseReserve: 0 },
 		});
-		expect(bundle.summaries.map((s) => s.id)).toEqual(["s1"]);
+		expect(bundle.summaries).toEqual(summaries);
+		expect(bundle.messages).toEqual(messages.slice(2));
+		expect(bundle.droppedMessages).toEqual([
+			{ id: "m1", reason: "context_budget" },
+			{ id: "m2", reason: "context_budget" },
+		]);
 		expect(bundle.tokenAccounting.summaries).toBe("A dense recap of prior events.".length);
+		expect(bundle.tokenAccounting.messages).toBe("recent".length * 2);
 		// Summaries counted in reserved, not in the history budget.
 		expect(bundle.tokenAccounting.total).toBe(
 			bundle.tokenAccounting.summaries + bundle.tokenAccounting.messages,

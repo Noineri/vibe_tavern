@@ -13,7 +13,7 @@ const { TtsApiKeyField } = await import("./TtsApiKeyField.js");
 describe("TtsApiKeyField", () => {
   it("renders masked by default and passes value through", () => {
     const onChange = mock(() => {});
-    const view = render(React.createElement(TtsApiKeyField as never, { value: "sk-secret", onChange, placeholder: "sk-..." } as never));
+    const view = render(React.createElement(TtsApiKeyField, { value: "sk-secret", onChange, placeholder: "sk-..." }));
     const input = view.getByTestId("tts-field-api-key") as HTMLInputElement;
     expect(input.getAttribute("type")).toBe("password");
     expect(input.value).toBe("sk-secret");
@@ -23,7 +23,7 @@ describe("TtsApiKeyField", () => {
 
   it("typing calls onChange with the new value", () => {
     const onChange = mock(() => {});
-    const view = render(React.createElement(TtsApiKeyField as never, { value: "", onChange } as never));
+    const view = render(React.createElement(TtsApiKeyField, { value: "", onChange }));
     const input = view.getByTestId("tts-field-api-key") as HTMLInputElement;
     fireEvent.change(input, { target: { value: "new-key" } });
     expect(onChange).toHaveBeenCalled();
@@ -33,7 +33,7 @@ describe("TtsApiKeyField", () => {
 
   it("clicking the toggle flips between password and text", async () => {
     const onChange = mock(() => {});
-    const view = render(React.createElement(TtsApiKeyField as never, { value: "k", onChange } as never));
+    const view = render(React.createElement(TtsApiKeyField, { value: "k", onChange }));
     const input = view.getByTestId("tts-field-api-key") as HTMLInputElement;
     const toggle = view.getByTestId("tts-field-api-key-toggle") as HTMLButtonElement;
 
@@ -55,7 +55,7 @@ describe("TtsApiKeyField", () => {
   });
 
   it("toggle button is focusable and has type button", () => {
-    const view = render(React.createElement(TtsApiKeyField as never, { value: "", onChange: mock(() => {}) } as never));
+    const view = render(React.createElement(TtsApiKeyField, { value: "", onChange: mock(() => {}) }));
     const toggle = view.getByTestId("tts-field-api-key-toggle") as HTMLButtonElement;
     expect(toggle.getAttribute("type")).toBe("button");
     // tabIndex not -1 — focusable by default

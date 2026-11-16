@@ -4,6 +4,7 @@ import type { ChatId } from "@vibe-tavern/domain";
 import type { ChatSummaryRecord } from "../../api/types.js";
 import type { ManualSummaryRunState } from "@vibe-tavern/api-contracts";
 import { useDomEnv } from "../../../test/dom-env.js";
+import { TestEventSource } from "../../../test/event-source-seam.js";
 
 useDomEnv();
 const { act, fireEvent, render: rtlRender, waitFor } = await import("@testing-library/react");
@@ -47,17 +48,12 @@ function parkedResponse() {
   releases.push(() => gate.resolve(Response.json(null)));
   return gate;
 }
-class NetworkEvents {
-  static instances: NetworkEvents[] = [];
-  listeners = new Map<string, EventListener>();
-  closed = false;
-  constructor(readonly url: string) { NetworkEvents.instances.push(this); }
-  addEventListener(kind: string, listener: EventListener) { this.listeners.set(kind, listener); }
-  close() { this.closed = true; }
-  emit(kind: string, payload: Record<string, unknown> = {}) {
-    this.listeners.get(kind)?.(new MessageEvent(kind, { data: JSON.stringify(payload) }));
-  }
-}
+// THE EventSource seam (../../../test/event-source-seam.ts) — this file's 7e
+// inline stand-in became the shared derivation in step 8b (the three hooks
+// suites joined the same boundary), so the class lives there now. Same
+// member-for-member shape: assignable to `typeof EventSource`, real
+// MessageEvent delivery, per-instance addEventListener call tracking.
+const NetworkEvents = TestEventSource;
 function summary(id = "old", chatId = "chat"): ChatSummaryRecord {
   return {
     id, chatId, branchId: "branch", label: id, content: `${id} memory`,
@@ -126,7 +122,7 @@ beforeEach(() => {
   listResponse = null;
   stopStatus = 200;
   globalThis.fetch = Object.assign(network, { preconnect: originalFetch.preconnect });
-  globalThis.EventSource = NetworkEvents as unknown as typeof EventSource;
+  globalThis.EventSource = NetworkEvents;
 });
 afterEach(async () => { await act(async () => { for (const release of releases.splice(0)) release(); }); });
 afterAll(() => {

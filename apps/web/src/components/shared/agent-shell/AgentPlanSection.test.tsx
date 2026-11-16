@@ -15,6 +15,7 @@
  * later one).
  */
 import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { testFetch } from "@vibe-tavern/test-fetch";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import type { AgentPlan } from "@vibe-tavern/api-contracts";
 
@@ -53,6 +54,9 @@ const fetchRouter = mock(async (input: RequestInfo | URL, init?: RequestInit): P
     putBody = JSON.parse(String(init?.body ?? "{}"));
     return jsonResponse({ plan: (putBody as { plan: AgentPlan }).plan });
   }
+  if (/\/deck$/.test(path) && method === "GET") {
+    return jsonResponse({ deck: { cards: [] } });
+  }
   if (/\/api\/scripts\/[^/]+\/agent-plan$/.test(path) && method === "GET") {
     lastPath = path;
     return jsonResponse({ plan: PLAN });
@@ -64,7 +68,7 @@ beforeEach(() => {
   putBody = null;
   lastPath = "";
   fetchRouter.mockClear();
-  globalThis.fetch = fetchRouter as unknown as typeof fetch;
+  globalThis.fetch = testFetch(fetchRouter);
 });
 
 afterAll(() => {

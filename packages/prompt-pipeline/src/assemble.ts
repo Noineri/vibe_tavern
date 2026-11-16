@@ -2,10 +2,9 @@ import type {
   PromptAssemblyContext,
   PromptAssemblyResult,
   PromptLayer,
-  PromptLayerPosition,
   RecentMessage,
 } from "./types.js";
-import { estimateTokens, planHistoryCompaction } from "./compaction.js";
+import { planHistoryCompaction } from "./compaction.js";
 import { countHistoryTokens, formatRecentMessages } from "./history-token-count.js";
 import { createFullMacroEngine, type MacroEngine } from "./macro-registry.js";
 import { formatSceneHistory } from "./scene-injection.js";
@@ -16,7 +15,6 @@ import { DEFAULT_PROMPT_ORDER, tag } from "@vibe-tavern/domain";
 import { createResolver, type PositionResolver } from "./resolvers/position-resolver.js";
 import { buildLoreLayers } from "./build-lore-layers.js";
 import {
-  DEFAULT_PROMPT_LAYER_PRIORITY,
   PROMPT_FORMAT,
   PROMPT_LAYER_ID,
   PROMPT_LAYER_POSITION_RANK,
@@ -29,6 +27,12 @@ import {
   createRetrievalMemoryLayerId,
   createSummaryMemoryLayerId,
 } from "./prompt-layer-constants.js";
+import { buildRequestInstructionLayer, joinNonEmpty, makeLayer } from "./layer-factory.js";
+
+// The generic layer factory (joinNonEmpty/makeLayer) moved to layer-factory.ts
+// (arch-gate file-size ratchet); re-exported so the existing import path from
+// ../assemble.js keeps working for seam consumers.
+export { joinNonEmpty, makeLayer } from "./layer-factory.js";
 
 // Prompt assembly runs on every message send, and the layer dump (one line per
 // layer, often 30+) is only useful when debugging prompt composition. Routed
@@ -51,49 +55,6 @@ const SUMMARY_LAYER_IDS: Set<string> = new Set([
   PROMPT_LAYER_ID.mesExample,
   PROMPT_LAYER_ID.recentHistory,
 ]);
-
-export function joinNonEmpty(parts: Array<string | null | undefined>, separator = "\n"): string {
-  return parts.map((part) => part?.trim() ?? "").filter(Boolean).join(separator);
-}
-
-/**
- * Factory for creating a {@link PromptLayer} with sensible defaults.
- *
- * - `position` defaults to `"in_prompt"` when not specified.
- * - `priority` defaults to {@link DEFAULT_PROMPT_LAYER_PRIORITY} (0).
- */
-export function makeLayer(input: {
-  id: string;
-  sourceType: string;
-  sourceId: string;
-  sourceName?: string;
-  position?: PromptLayerPosition;
-  priority?: number;
-  enabled?: boolean;
-  reason?: string;
-  role?: string;
-  subPosition?: number;
-  insertionOrder?: number;
-  text: string;
-  /** Pre-computed cost for this layer's text — skips the estimate call (`??`, so a passed 0 counts). */
-  readonly tokenCount?: number;
-}): PromptLayer {
-  return {
-    id: input.id,
-    sourceType: input.sourceType,
-    sourceId: input.sourceId,
-    sourceName: input.sourceName ?? input.sourceType,
-    position: input.position ?? "in_prompt",
-    priority: input.priority ?? DEFAULT_PROMPT_LAYER_PRIORITY,
-    enabled: input.enabled ?? true,
-    reason: input.reason ?? PROMPT_LAYER_REASON.included,
-    tokenCount: input.tokenCount ?? estimateTokens(input.text),
-    text: input.text.trim(),
-    ...(input.role ? { role: input.role as "system" | "user" | "assistant" } : {}),
-    ...(input.subPosition != null ? { subPosition: input.subPosition } : {}),
-    ...(input.insertionOrder != null ? { insertionOrder: input.insertionOrder } : {}),
-  };
-}
 
 function buildAuthorsNoteLayer(
   preset: NonNullable<PromptAssemblyContext["preset"]>,
@@ -339,6 +300,12 @@ function applyMacrosToContext(context: PromptAssemblyContext): PromptAssemblyCon
     instructions: context.instructions ? {
       toolInstructions: context.instructions.toolInstructions != null ? applyMacros(context.instructions.toolInstructions, variableContext, macroEngine) : context.instructions.toolInstructions,
     } : context.instructions,
+    // DMT-12: the request instruction gets the SAME macro pass as every other
+    // user-authored text field (history messages, script injections, the
+    // insights and editor instructions) — `{{char}}` behaves here exactly as it
+    // would in an ordinary chat message. The approved text is otherwise
+    // passed through untouched.
+    requestInstruction: context.requestInstruction != null ? applyMacros(context.requestInstruction, variableContext, macroEngine) : context.requestInstruction,
     aiAssistant: context.aiAssistant ? {
       ...context.aiAssistant,
       systemPrompt: applyMacros(context.aiAssistant.systemPrompt, variableContext, macroEngine),
@@ -1021,6 +988,13 @@ function buildLayers(
     layer.injectionDepth = 0;
     layers.push(layer);
   }
+
+  // Request-local one-shot instruction (director message tools DMT-12) — the
+  // build rule lives in layer-factory.ts. Pushed BEFORE the compaction planner
+  // below so its tokens are budgeted, traced, and depth-interleaved like every
+  // ordinary layer.
+  const requestInstructionLayer = buildRequestInstructionLayer(context);
+  if (requestInstructionLayer) layers.push(requestInstructionLayer);
 
   // All non-history layers must exist before planning. The planner measures the
   // exact formatted history suffix, including role labels and separators.

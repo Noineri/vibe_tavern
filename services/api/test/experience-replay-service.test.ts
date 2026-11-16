@@ -14,6 +14,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { createStoreContainer, type StoreContainer } from "@vibe-tavern/db";
+import type { ExperienceCapability } from "@vibe-tavern/domain";
 
 import { ExperienceResourceService } from "../src/domain/interactive/experience-resource-service.js";
 import { ExperienceService } from "../src/domain/interactive/experience-service.js";
@@ -104,11 +105,11 @@ beforeEach(async () => {
   replay = new ExperienceReplayService(stores, resources);
 });
 
-async function playSession(source: string, actions: { type: string; participantId?: string }[], grants: string[] = []) {
-  const character = await stores.characters.create({ name: "Hero" } as never);
-  const chat = await stores.chats.createChat({ characterId: character.id, title: "T" });
+async function playSession(source: string, actions: { type: string; participantId?: string }[], grants: ExperienceCapability[] = []) {
+  const character = await stores.characters.create({ name: "Hero" });
+  const chat = await stores.chats.createChat({ characterId: character.id, title: "T", promptPresetId: null });
   const script = await stores.scripts.create({ name: "Rules", scriptKind: "interactive", code: source });
-  await resources.updateConfig(chat.id, { enabled: true, scriptId: script.id, capabilityGrants: grants as never });
+  await resources.updateConfig(chat.id, { enabled: true, scriptId: script.id, capabilityGrants: grants });
   const started = await service.startSession({ chatId: chat.id, branchId: chat.activeBranchId, settings: {}, participants: [] });
   if (!started.ok) throw new Error("start failed");
   const sid = started.data.sessionId;
@@ -143,11 +144,11 @@ describe("ExperienceReplayService — deterministic replay", () => {
   test("replay of a session with deterministic_random reproduces the same cursor", async () => {
     // A fixed-seed service so the persisted seed is known.
     const fixedService = new ExperienceService(stores, resources, { generateSeed: () => "replay-seed-1" });
-    const character = await stores.characters.create({ name: "H" } as never);
-    const chat = await stores.chats.createChat({ characterId: character.id, title: "T" });
+    const character = await stores.characters.create({ name: "H" });
+    const chat = await stores.chats.createChat({ characterId: character.id, title: "T", promptPresetId: null });
     const dicey = `context.experience.register({ apiVersion:1, manifest:{id:"dicey",name:"Dicey"}, capabilities:[{capability:"deterministic_random",reason:"rolls"}], create(){return {rolls:[]};}, project(c){return {rolls:c.state.rolls};}, actions(){return [{type:"roll"}];}, reduce(c){const f=c.random.die(6);return {state:{rolls:[...c.state.rolls,f]},status:"active",events:[]};} });`;
     const script = await stores.scripts.create({ name: "D", scriptKind: "interactive", code: dicey });
-    await resources.updateConfig(chat.id, { enabled: true, scriptId: script.id, capabilityGrants: ["deterministic_random"] as never });
+    await resources.updateConfig(chat.id, { enabled: true, scriptId: script.id, capabilityGrants: ["deterministic_random"] });
     const started = await fixedService.startSession({ chatId: chat.id, branchId: chat.activeBranchId, settings: {}, participants: [] });
     if (!started.ok) return;
     const sid = started.data.sessionId;

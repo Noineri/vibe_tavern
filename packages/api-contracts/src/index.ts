@@ -7,3 +7,4 @@ export * from "./coauthor-review.js";
 export * from "./chat-generation-context.js";
 export * from "./chat-generation-job.js";
 export * from "./agent-feed-policy.js";
+export * from "./agent-permission-state.js";

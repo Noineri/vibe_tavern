@@ -81,7 +81,7 @@ export function AgentEmptyState({ kind, title, sub, icon, starterKeys, handoffRo
 
   // AP-2 pattern: resolve once per kind; an unknown kind renders the bare
   // empty state (no starters), never a throw. DR-7: a profile-provided
-  // starter tuple wins over the host's (the sidechat director's four).
+  // starter list wins over the host's (the sidechat director's own list).
   const resolvedStarterKeys = useMemo<readonly AgentI18nKey[]>(() => {
     if (starterKeys !== undefined) return starterKeys;
     try {

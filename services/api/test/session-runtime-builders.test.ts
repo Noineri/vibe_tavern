@@ -24,11 +24,31 @@ import { createRuntimeStore } from "../src/runtime/session/session-runtime-store
 import { SessionRuntime } from "../src/runtime/session/session-runtime.js";
 import { ChatAdapter } from "../src/api/adapters/chat-adapter.js";
 import { countTokensDefault } from "../src/infrastructure/ai/tokenizer-service.js";
-import type { ChatRuntimeApi } from "../src/api/contract/runtime-api.js";
 import type { ChatId, MessageId } from "@vibe-tavern/domain";
+import type { LiveChatOrchestrator } from "../src/domain/chat/live-chat-orchestrator.js";
+import type { ChatSummaryService } from "../src/domain/chat/chat-summary-service.js";
+import type { ProviderProfileService } from "../src/domain/providers/provider-profile-service.js";
+import type { AssetService } from "../src/domain/asset/asset-service.js";
+import { strictTestDouble } from "./strict-test-double.js";
 
-/** Unused-dep stub for ChatAdapter construction in narrow wiring tests. Mirror of attachment-delete.test.ts. */
-const noop = {} as never;
+/** Unused ChatAdapter ctor deps for the narrow wiring test — each a strict
+ *  double (one per ctor slot); any access throws a labeled miss. */
+const noopOrchestrator = strictTestDouble<LiveChatOrchestrator>(
+	{},
+	"ChatAdapter unused liveChatOrchestrator (session-runtime-builders)",
+);
+const noopSummaries = strictTestDouble<ChatSummaryService>(
+	{},
+	"ChatAdapter unused chatSummaryService (session-runtime-builders)",
+);
+const noopProfiles = strictTestDouble<ProviderProfileService>(
+	{},
+	"ChatAdapter unused providerProfileService (session-runtime-builders)",
+);
+const noopAssets = strictTestDouble<AssetService>(
+	{},
+	"ChatAdapter unused assetService (session-runtime-builders)",
+);
 
 /** Spins up a real SessionRuntime against an isolated temp DB and seeds one chat. */
 async function createTestRuntime(): Promise<{
@@ -56,7 +76,7 @@ async function createTestRuntime(): Promise<{
 		chatId: created.activeChatId,
 		stores,
 		cleanup: async () => {
-			try { await rm(tmpDir, { recursive: true, force: true }); } catch {}
+			try { await rm(tmpDir, { recursive: true, force: true }); } catch { /* best-effort teardown: the test has finished asserting; a locked or already-removed tmp dir must not fail it */ }
 		},
 	};
 }
@@ -507,7 +527,20 @@ describe("Wave B1.1 — per-endpoint response builder shapes", () => {
 		const fresh = await runtime.character.createFromScratch({
 			name: "MemBot", description: "d", firstMessage: "hi",
 		});
-		const adapter = new ChatAdapter(stores, runtime, noop, noop, noop, noop) as unknown as ChatRuntimeApi;
+		// ChatAdapter IMPLEMENTS ChatRuntimeApi (chat-adapter.ts:32) — the erased
+		// cast was pure noise (6d precedent); the ctor's required STT seam gets
+		// the inert thrower (updateMemorySettings never reaches it).
+		const adapter = new ChatAdapter(
+			stores,
+			runtime,
+			noopOrchestrator,
+			noopSummaries,
+			noopProfiles,
+			noopAssets,
+			async () => {
+				throw new Error("transcribeSttAudio is not wired in the session-runtime-builders fixture");
+			},
+		);
 		const r = await adapter.updateMemorySettings(fresh.activeChatId, {
 			messageHistoryLimit: 42,
 			autoSummaryConfig: { enabled: true, everyN: 5 },

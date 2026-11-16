@@ -17,11 +17,13 @@
  * 4. The asset pin (S2-0a style — pins cover ASSEMBLY, real assets must
  *    load): `agent-sidechat/ooc.md` loads non-empty through the registry map.
  *
- * The tool toggles (SC-5): the wire contract's five sidechat keys landed
- * BEFORE their tools (Wave 3 lands each tool and flips its toggle on) — all
- * five are known keys, all five have now landed (SC-10 the search pair,
- * SC-11 propose_objective, SC-12 todo + read_plan), and foreign keys stay
- * rejected.
+ * The tool toggles (SC-5): the wire contract's sidechat keys landed
+ * BEFORE their tools (Wave 3 lands each tool and flips its toggle on) —
+ * all nine TAG-1 keys have landed (SC-10 the search pair, SC-11
+ * propose_objective, SC-12 todo + read_plan, SC-23e read_message_prompt,
+ * DR-4a the director pair, DR-4b ask_user), and DMT-34 appended the three
+ * director message tools TOGETHER with their finished implementation.
+ * Foreign keys stay rejected.
  *
  * 5. The skill roots (SC-5): the built-in root resolves through the asset
  *    ladder to the shipped `agent-sidechat/skills` directory and scans the
@@ -122,13 +124,20 @@ describe("the sidechat-ooc agent kind (SC-4a)", () => {
     expect(kindServesChatMode(kind, CHAT_MODE.coauthor)).toBe(false);
   });
 
-  test("the nine toggles are known keys; the six landed OOC tools are on, the two director keys and ask_user are known-but-off in the default", () => {
+  test("the thirteen toggles are known keys; the six landed OOC tools are on, the director keys, ask_user, the three message tools and propose_deck are known-but-off in the default", () => {
     const kind = getAgentKind("sidechat-ooc");
     // The toggle names are the plan's settled contract, carried by the wire
     // schema (the single source of truth, re-exported for consumers).
     // Behavior change (DR-4b): was 8 keys → now 9, `ask_user` appended
     // (owner ruling 2026-10-27, DIRECTOR_MODE_PLAN DR-4b ruling B) — off in
     // the OOC default, on in the `builtin-director` seed.
+    // Behavior change (DMT-34): was 9 keys → now 12, the three director
+    // message tools appended (DIRECTOR_MESSAGE_TOOLS_PLAN DMT-34) — on in
+    // the `builtin-director` seed, off in the OOC default and first seed.
+    // Behavior change (DK-5a): was 12 keys → now 13, `propose_deck`
+    // appended (DIRECTOR_DECK_CALENDAR_PLAN DK-5a, the DMT-34 land-together
+    // pattern) — on in the `builtin-director` seed, off in the OOC default
+    // and first seed.
     expect(SIDECHAT_OOC_TOOL_KEYS).toEqual([
       "search_context",
       "read_context_item",
@@ -139,6 +148,10 @@ describe("the sidechat-ooc agent kind (SC-4a)", () => {
       "propose_plan",
       "propose_tracker_template",
       "ask_user",
+      "propose_message_edit",
+      "propose_message_variant",
+      "request_message_swipe",
+      "propose_deck",
     ]);
     // The schema accepts each of the keys (either boolean) and the all-off
     // `{}` — tool sets store only enabled keys, so `{}` IS “all nine
@@ -156,9 +169,10 @@ describe("the sidechat-ooc agent kind (SC-4a)", () => {
     // SC-10 flipped the search pair, SC-11 `propose_objective`, SC-12
     // `todo` + `read_plan`, SC-23e `read_message_prompt` (each unit flips
     // its own keys) — all six OOC tools have landed and the DEFAULT set
-    // carries them all; the two director keys and `ask_user` stay OFF in
-    // the kind default and the first seed (DR-4b's `builtin-director` seed
-    // enables them).
+    // carries them all; the two director keys, `ask_user` and DMT-34's
+    // three message-tool keys stay OFF in the kind default and the first
+    // seed (the exact-equality pin asserts their absence; DR-4b's
+    // `builtin-director` seed enables them).
     expect(kind.defaultToolSet).toEqual({
       search_context: true,
       read_context_item: true,
@@ -185,7 +199,9 @@ describe("resolveBuiltinCopilotProfile('sidechat-ooc') — the builtin seed", ()
     expect(seed.basePrompt).toBe(assetText);
     // SC-10 flipped the search pair, SC-11 `propose_objective`, SC-12 `todo`
     // + `read_plan`, SC-23e `read_message_prompt` — the seed carries every
-    // landed tool.
+    // landed OOC tool, and still none of the director-family keys
+    // (DMT-34's three message tools included — the exact-equality pin
+    // asserts their absence).
     expect(seed.toolSet).toEqual({
       search_context: true,
       read_context_item: true,
@@ -217,7 +233,7 @@ describe("resolveBuiltinCopilotProfile('sidechat-ooc') — the builtin seed", ()
     expect(seed.basePrompt).toBe("CUSTOM SIDECHAT OOC BASE");
   });
 
-  test("the `builtin-director` seed carries the director asset with its own toggles (DR-4b)", async () => {
+  test("the `builtin-director` seed carries the director asset with its own toggles (DR-4b + DMT-34 + DK-5a)", async () => {
     const director = await resolveBuiltinSidechatOocProfile(undefined, "builtin-director");
     expect(director.id).toBe("builtin-director");
     expect(director.name).toBe("Director");
@@ -229,8 +245,11 @@ describe("resolveBuiltinCopilotProfile('sidechat-ooc') — the builtin seed", ()
     const oocText = await loadPromptAsset(getServicePromptAssetFile("sidechat_ooc_base"));
     expect(director.basePrompt).toBe(assetText);
     expect(director.basePrompt).not.toBe(oocText);
-    // The OOC six MINUS propose_objective, PLUS the two DR-4a proposal tools
-    // and ask_user (owner ruling 2026-10-27) — the plan's DR-4 enumeration.
+    // The OOC six MINUS propose_objective, PLUS the two DR-4a proposal tools,
+    // ask_user (owner ruling 2026-10-27), DMT-34's three message tools and
+    // DK-5a's `propose_deck` — the plan's DR-4 enumeration extended by
+    // DIRECTOR_MESSAGE_TOOLS_PLAN DMT-34 and DIRECTOR_DECK_CALENDAR_PLAN
+    // DK-5a.
     expect(director.toolSet).toEqual({
       search_context: true,
       read_context_item: true,
@@ -240,6 +259,10 @@ describe("resolveBuiltinCopilotProfile('sidechat-ooc') — the builtin seed", ()
       propose_plan: true,
       propose_tracker_template: true,
       ask_user: true,
+      propose_message_edit: true,
+      propose_message_variant: true,
+      request_message_swipe: true,
+      propose_deck: true,
     });
     expect(copilotProfileSchema.safeParse(director).success).toBe(true);
     // The dispatch reaches the sidechat species' resolver for this seed too.
@@ -284,7 +307,7 @@ describe("the sidechat_ooc_base asset — SC-4a pin", () => {
   });
 });
 
-// ─── The director asset pin (DR-4b — DIRECTOR_MODE_PLAN's Asset contract) ───
+// ─── The director asset pin (DR-4b + DMT-34 — the plans' Asset contract) ───
 
 /** Slice one `# Heading` section (heading line up to the next heading) out of
  *  a markdown asset — the verbatim-block pin's helper. */
@@ -350,6 +373,78 @@ describe("the sidechat_director_base asset — DR-4b pin", () => {
     const tracker = mdSection(text, "Scene tracker");
     expect(tracker).toContain("propose the setup with `propose_tracker_template`");
     expect(tracker).toContain("«Сохранить как заготовку персонажа»");
+  });
+
+  // DMT-34: the asset teaches the three finished message tools — the
+  // plan's required content (three-way choice, mechanical-edit scope,
+  // seen-source grounding, preview/permission, the editable one-shot
+  // instruction, deny handling, honest outcomes).
+  test("teaches the three Director message tools (DMT-34)", async () => {
+    const text = await loadPromptAsset(getServicePromptAssetFile("sidechat_director_base"));
+    const fixing = mdSection(text, "Fixing a reply");
+    // The three-way choice: edit delegates to the editor, the variant is
+    // the Director's own complete text, the swipe regenerates through the
+    // RP model.
+    expect(fixing).toContain(
+      "`propose_message_edit` delegates a mechanical correction to the ordinary message editor",
+    );
+    expect(fixing).toContain(
+      "`propose_message_variant` is your own alternative reply: you write the COMPLETE text yourself",
+    );
+    expect(fixing).toContain(
+      "`request_message_swipe` proposes a one-shot regeneration through the normal roleplay model",
+    );
+    // Mechanical-edit scope: new content direction is a variant, never an edit.
+    expect(fixing).toContain("New content direction is never an edit; that is a variant.");
+    // Seen-source grounding: only shown or discussed replies, never guessed.
+    expect(fixing).toContain("Only target replies the user has shown or discussed in this sidechat");
+    expect(fixing).toContain("Never guess at content you have not seen");
+    // Preview/permission: review cards the user acts on; nothing applies itself.
+    expect(fixing).toContain("review cards the user must Apply or Save");
+    expect(fixing).toContain("Nothing changes until the user acts — never assume a proposal was applied.");
+    // The editable one-shot instruction: complete and self-contained.
+    expect(fixing).toContain("write it complete and self-contained, because the user may allow it verbatim.");
+    // Deny handling + honest outcomes.
+    expect(fixing).toContain("A denied swipe does nothing — no retry, no variant; accept the denial and move on.");
+    expect(fixing).toContain("a granted swipe means the run was SENT");
+    expect(fixing).toContain("Never claim a variant was saved when it was not.");
+  });
+
+  // DK-5b: the asset teaches the twist deck (the five suits, what a card is,
+  // the propose_deck flow) and the story calendar (dated beats only, the
+  // withClock ask, the tracker moves time). The context-side twins are the
+  // `<story_deck>` section and the `Story time:` line.
+  test("teaches the twist deck and the story calendar (DK-5b)", async () => {
+    const text = await loadPromptAsset(getServicePromptAssetFile("sidechat_director_base"));
+    const deck = mdSection(text, "The twist deck");
+    // The `<story_deck>` context block is named, and each of the five suits
+    // carries its own one-line meaning the model can choose by.
+    expect(deck).toContain("the `<story_deck>` block lists the cards the branch holds.");
+    for (const suit of ["threat", "encounter", "discovery", "mystery", "change"]) {
+      expect(deck).toContain(`- ${suit} — `);
+    }
+    // A card body is a direction for the RP model, exactly like an event body.
+    expect(deck).toContain("A card body is a direction for the roleplay model, exactly like an event body.");
+    // A HANDFUL of cards that fit the premise and the story rules — never
+    // cards that resolve the story.
+    expect(deck).toContain("Propose a handful of cards that fit the premise and the story rules, with `propose_deck`.");
+    expect(deck).toContain("the story stays open.");
+    // Add when asked or when the user wonders; the cards land as a review
+    // proposal the user adds — never the director directly.
+    expect(deck).toContain("Add cards when the user asks for them, or when the user wonders what could happen.");
+    expect(deck).toContain("The cards land as a review proposal — the user adds them to the deck, never you directly.");
+
+    const calendar = mdSection(text, "The story calendar");
+    // The `Story time:` context line is named.
+    expect(calendar).toContain("The `Story time:` line in the context");
+    // Date ONLY timed beats — never every event; undated events keep today's order.
+    expect(calendar).toContain("Date an event only when the story has a timed beat");
+    expect(calendar).toContain("never date every event.");
+    expect(calendar).toContain("Undated events keep today's order.");
+    // The withClock ask on the tracker template proposal; the tracker moves
+    // time itself — no model call.
+    expect(calendar).toContain("propose the setup with `propose_tracker_template` and ask for the clock with `withClock`");
+    expect(calendar).toContain("you never need a model call for it.");
   });
 
   test("the OOC asset's RP-sync rules are copied in VERBATIM (the whole Reading the RP material section)", async () => {

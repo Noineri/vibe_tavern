@@ -154,8 +154,9 @@ export async function applyCoauthorDraft(
 	// common profile/greeting-only Apply path is unchanged).
 	let lore: { lorebookIds: string[]; entryIds: string[] } | undefined;
 	if (body.loreBundle && (body.loreBundle.lorebooks.length > 0 || body.loreBundle.entries.length > 0)) {
+		// The store reads raw strings; the branded id assigns directly.
 		lore = await deps.stores.lorebooks.applyCoauthorLoreDraft(
-			characterId as unknown as string,
+			characterId,
 			body.loreBundle,
 		);
 	}

@@ -14,6 +14,7 @@ import {
   registerTtsBackend,
 } from "../src/domain/tts/tts-registry.js";
 import type { TtsBackend } from "../src/domain/tts/tts-backend.js";
+import { testFetch } from "./test-fetch-seam.js";
 
 const INTERACTIONS_URL =
   "https://generativelanguage.googleapis.com/v1beta/interactions";
@@ -46,10 +47,10 @@ interface CapturedRequest {
 
 function captureFetch(handler: () => Response): { captured: () => CapturedRequest | null } {
   let captured: CapturedRequest | null = null;
-  globalThis.fetch = mock(async (input: FetchArgs[0], init?: FetchArgs[1]) => {
+  globalThis.fetch = testFetch(mock(async (input: FetchArgs[0], init?: FetchArgs[1]) => {
     captured = { url: String(input), init: init ?? {} };
     return handler();
-  });
+  }));
   return { captured: () => captured };
 }
 

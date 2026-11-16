@@ -14,6 +14,7 @@ import {
   type SttBackendType,
 } from "@vibe-tavern/domain";
 import { useT } from "../i18n/context.js";
+import { sttProfileConfigSchema } from "@vibe-tavern/api-contracts";
 import {
   createSttProfile,
   deleteSttProfile,
@@ -330,11 +331,21 @@ export function useSttProfiles(): {
       // backends (the server force-offs again; belt and braces).
       const apiKeyPayload = form.apiKey.trim() === "" ? undefined : form.apiKey.trim();
       const emotionPayload = STT_BACKEND_EMOTION_CAPABILITY[form.backend] && form.emotionAnnotation;
+      // The form's config is a loose editing bag (`Record<string, unknown>` by
+      // design — the per-backend fields are dynamic); the wire takes the closed
+      // per-backend union (sttProfileConfigSchema). Narrow at this ONE send
+      // seam: a bag the server would 422 now fails with the same error surface,
+      // valid bags send byte-identical JSON.
+      const config = sttProfileConfigSchema.safeParse(form.config);
+      if (!config.success) {
+        setError(config.error.issues[0]?.message ?? "Invalid STT config");
+        return;
+      }
       if (form.id === null) {
         saved = await createSttProfile({
           name: trimmedName,
           backend: form.backend,
-          config: form.config,
+          config: config.data,
           apiKey: apiKeyPayload,
           emotionAnnotation: emotionPayload,
         });
@@ -342,7 +353,7 @@ export function useSttProfiles(): {
         saved = await updateSttProfile(form.id, {
           name: trimmedName,
           backend: form.backend,
-          config: form.config,
+          config: config.data,
           apiKey: apiKeyPayload,
           emotionAnnotation: emotionPayload,
         });

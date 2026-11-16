@@ -56,21 +56,24 @@ function setViewportWidth(value: number): void {
 let realMatchMedia: typeof window.matchMedia | undefined;
 let hadMatchMedia = false;
 function stubMatchMedia(reduced: boolean): void {
-  window.matchMedia = ((query: string) =>
-    ({
-      matches: query === REDUCED_QUERY ? reduced : false,
-      media: query,
-      onchange: null,
-      addEventListener: () => {},
-      removeEventListener: () => {},
-      addListener: () => {},
-      removeListener: () => {},
-      dispatchEvent: () => false,
-    }) as unknown as MediaQueryList) as unknown as typeof window.matchMedia;
+  // Member-for-member MediaQueryList literal (the 7a annotation shape) —
+  // the literal satisfies the interface; no erasure.
+  window.matchMedia = (query: string): MediaQueryList => ({
+    matches: query === REDUCED_QUERY ? reduced : false,
+    media: query,
+    onchange: null,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    addListener: () => {},
+    removeListener: () => {},
+    dispatchEvent: () => false,
+  });
 }
 function restoreMatchMedia(): void {
   if (hadMatchMedia && realMatchMedia !== undefined) window.matchMedia = realMatchMedia;
-  else delete (window as unknown as { matchMedia?: unknown }).matchMedia;
+  // Removing the member lib.dom types as always-present needs the reflective
+  // form (the BottomSheet.test.tsx precedent) — no cast.
+  else Reflect.deleteProperty(window, "matchMedia");
 }
 
 let render: typeof import("@testing-library/react").render;

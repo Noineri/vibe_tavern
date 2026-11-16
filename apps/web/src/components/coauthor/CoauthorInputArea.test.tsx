@@ -28,8 +28,8 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
 import { useDomEnv } from "../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
-import { wireCharacter, wireProviderProfile, wireUiSettings } from "../../../test/wire-fixtures.js";
-import { brandId, type Attachment, type MessageId, type ChatId, type ChatBranchId } from "@vibe-tavern/domain";
+import { wireCharacter, wireChat, wireProviderProfile, wireUiSettings } from "../../../test/wire-fixtures.js";
+import { brandId, type Attachment, type MessageId, type ChatId, type ChatBranchId, type CharacterId } from "@vibe-tavern/domain";
 import type { AppMessage } from "../../api/types.js";
 
 useDomEnv();
@@ -154,32 +154,27 @@ beforeAll(async () => {
  * The provider-data-store cache carries the two test models (gpt-4o tool-capable,
  * gpt-3.5 not) so the REAL useToolCapableModels hook filters without a fetch. */
 function seedStores() {
-	useChatStore.setState({ activeChatId: "chat1", draft: "" } as never);
+	useChatStore.setState({ activeChatId: brandId<ChatId>("chat1"), draft: "" });
 	useProviderStore.setState({
 		connection: { ...useProviderStore.getState().connection, status: "connected", model: "gpt-4o" },
 	});
 	useSnapshotStore.setState({
-		activeChat: {
-			id: "chat1",
-			characterId: "char1",
-			mode: "coauthor",
-			coauthorModuleId: null,
-			coauthorContextLinks: [],
-		} as never,
+		activeChat: wireChat({ id: brandId<ChatId>("chat1"), characterId: brandId<CharacterId>("char1"), mode: "coauthor" }),
 	});
 	// Cache two models on profile p1: gpt-4o advertises tools, gpt-3.5 does not.
 	// The hook reads profile.cachedModels.models and keeps only tool-capable ones.
 	useProviderDataStore.setState({
 		profiles: [
-			{
+			wireProviderProfile({
 				id: "p1",
 				cachedModels: {
 					models: [
 						{ id: "gpt-4o", label: "GPT-4o", contextLength: 128000, capabilities: { tools: true } },
 						{ id: "gpt-3.5", label: "GPT-3.5 (no tools)", contextLength: 16000, capabilities: { tools: false } },
 					],
+					cachedAt: "2026-01-01",
 				},
-			} as never,
+			}),
 		],
 	});
 }

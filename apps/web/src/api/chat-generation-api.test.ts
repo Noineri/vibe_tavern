@@ -2,6 +2,7 @@ import { afterAll, beforeEach, expect, test } from "bun:test";
 import { isChatGenerationRunning, subscribeChatGeneration, stopChatGeneration } from "./chat-generation-api.js";
 import { streamChatEndpoint } from "./stream.js";
 import { ProviderStreamError } from "./provider-stream-error.js";
+import { testFetch } from "@vibe-tavern/test-fetch";
 
 const originalFetch = globalThis.fetch;
 let requests: Array<{ url: URL; init?: RequestInit }>;
@@ -10,10 +11,10 @@ beforeEach(() => {
   globalThis.fetch = originalFetch;
   requests = [];
   response = () => Response.json([]);
-  globalThis.fetch = (async (input, init) => {
+  globalThis.fetch = testFetch(async (input, init) => {
     requests.push({ url: new URL(String(input), "http://gateway.test"), init });
     return response();
-  }) as typeof fetch;
+  });
 });
 afterAll(() => { globalThis.fetch = originalFetch; });
 
@@ -62,6 +63,8 @@ test("Stop keeps observing until EOF instead of treating the immediate ack or ab
     expect(await stopChatGeneration("chat")).toEqual({ stopped: true });
     writer.enqueue(encoder.encode(frame(1, "abort", { partialLength: 4 })));
     await observedAbort;
+    // Yield a macrotask so an erroneous abort-finalizing implementation settles before we sample `settled`.
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
     expect(settled).toBe(false);
     writer.close();
     closed = true;

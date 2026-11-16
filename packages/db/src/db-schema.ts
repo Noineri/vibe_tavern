@@ -2067,6 +2067,8 @@ export const experienceCopilotMessages = sqliteTable('experience_copilot_message
   // CA-4a2: stored Attachment[] JSON (images/files), shared across agent kinds.
   // NULL = no attachments; read through parseStoredAttachments, like RP rows.
   attachmentsJson: text('attachments_json'),
+  // Frozen prompt snapshots belong to this message; legacy rows remain NULL.
+  promptAttachmentsJson: text('prompt_attachments_json'),
   // Frozen-context seq (SIDECHAT_PLAN SC-1): allocated from the owning
   // thread's next_seq inside the append transaction on CHAT-OWNED threads, so
   // messages interleave with agent_thread_context_events rows on the merged
@@ -2149,6 +2151,23 @@ export const agentBranchPlans = sqliteTable('agent_branch_plans', {
   updatedAt: text('updated_at').notNull(),
 }, (table) => ({
   chatBranchUnique: uniqueIndex('idx_agent_branch_plans_chat_branch').on(table.chatId, table.branchId),
+}));
+
+// ─── storyBranchDecks (DIRECTOR_DECK_CALENDAR_PLAN DK-3) ─────────────────────
+// One persisted story deck belongs to each (chat, branch) pair — the
+// deck-storage twin of agent_branch_plans above. Both columns are HARD FKs
+// with CASCADE (a branch's deck must not outlive the branch, the same
+// convention as every chat-owned table here); the unique index makes it one
+// row per pair; the deck JSON lives in content_json.
+export const storyBranchDecks = sqliteTable('story_branch_decks', {
+  id: text('id').primaryKey(),
+  chatId: text('chat_id').notNull().references(() => chats.id, { onDelete: 'cascade' }),
+  branchId: text('branch_id').notNull().references(() => chatBranches.id, { onDelete: 'cascade' }),
+  contentJson: text('content_json').notNull(),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+}, (table) => ({
+  chatBranchUnique: uniqueIndex('idx_story_branch_decks_chat_branch').on(table.chatId, table.branchId),
 }));
 
 // ─── agentKindSettings (SIDECHAT_PLAN SC-0d) ────────────────────────────────

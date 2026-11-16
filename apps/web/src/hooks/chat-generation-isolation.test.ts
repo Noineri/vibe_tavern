@@ -1,8 +1,9 @@
 /** BR-0: real controller -> HTTP/SSE -> snapshot stores, with only fetch doubled. */
 import { afterAll, afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { brandId, type ChatId } from "@vibe-tavern/domain";
+import { brandId, normalizeInsightsConfig, type CharacterId, type ChatBranchId, type ChatId } from "@vibe-tavern/domain";
 import type { AppSnapshot, ProviderProfileRecord } from "../api/types.js";
 import { useDomEnv } from "../../test/dom-env.js";
+import { wireBranch, wireCharacter, wireChat, wireMessage } from "../../test/wire-fixtures.js";
 
 useDomEnv();
 const { act, renderHook, waitFor } = await import("@testing-library/react");
@@ -27,17 +28,24 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
-/** Fields unrelated to snapshot ingestion are deliberately absent on this wire fixture. */
+/** Fields unrelated to snapshot ingestion are deliberately absent — AppSnapshot
+ *  fields are Partial, and each present field is a complete wire row. */
 function snapshot(chatId: ChatId, content: string, insights = false): AppSnapshot {
   return {
-    activeChat: { id: chatId, characterId: `character-${chatId}`, mode: "rp", insightsConfig: { objectiveEnabled: insights, trackerEnabled: false } },
-    character: { id: `character-${chatId}`, name: `Character ${chatId}` },
-    activeBranch: { id: `branch-${chatId}`, chatId },
-    messages: [{
-      id: `reply-${chatId}`, chatId, branchId: `branch-${chatId}`, role: "assistant",
-      content, variants: [], selectedVariantIndex: null,
-    }],
-  } as unknown as AppSnapshot;
+    activeChat: wireChat({
+      id: chatId,
+      characterId: brandId<CharacterId>(`character-${chatId}`),
+      mode: "rp",
+      insightsConfig: normalizeInsightsConfig({ objectiveEnabled: insights, trackerEnabled: false }),
+    }),
+    character: wireCharacter({ id: `character-${chatId}`, name: `Character ${chatId}` }),
+    activeBranch: wireBranch({ id: brandId<ChatBranchId>(`branch-${chatId}`), chatId }),
+    messages: [wireMessage(`reply-${chatId}`, {
+      chatId,
+      branchId: brandId<ChatBranchId>(`branch-${chatId}`),
+      content,
+    })],
+  };
 }
 
 let snapshots: Record<string, AppSnapshot>;

@@ -37,7 +37,6 @@ import type {
 	ChatId,
 	MessageId,
 	MessageVariantId,
-	SceneBackfillErrorEntry,
 	SceneBackfillSummary,
 	ScenePromptFormat,
 	SceneTrackerConfig,
@@ -45,7 +44,7 @@ import type {
 	SceneTrackerRecord,
 	Timestamp,
 } from "@vibe-tavern/domain";
-import { brandId, computeSceneSourceHash, normalizeSceneTrackerConfig, stripLabels, SCENE_BACKFILL_MODE } from "@vibe-tavern/domain";
+import { brandId, computeSceneSourceHash, normalizeSceneTrackerConfig, SCENE_BACKFILL_MODE } from "@vibe-tavern/domain";
 import type { SceneBackfillMode } from "@vibe-tavern/domain";
 import type { SceneBackfillStatus } from "@vibe-tavern/api-contracts";
 import type { SceneBackfillRun } from "@vibe-tavern/db";
@@ -56,7 +55,6 @@ import { buildSceneDataSchema, validateSceneData } from "@vibe-tavern/api-contra
 import { nonstreamingProviderExecute } from "../../infrastructure/ai/nonstreaming-provider-executor.js";
 import type { ProviderExecutionInput } from "../../infrastructure/ai/provider-execution-types.js";
 import { INSIGHTS_FIELD_MAP, resolveInsightsPrompt } from "./insights-prompts.js";
-import { collectLabelHints, composeToneVocabularyBlock } from "./scene-instruction-hints.js";
 import { resolveServicePromptText } from "../service-prompts/service-prompt-resolver.js";
 import { insightsAssemblyToPromptResponse } from "./objective-service.js";
 import type { SessionRuntime } from "../../runtime/session/session-runtime.js";
@@ -83,27 +81,23 @@ export interface SceneAutoGenerateTrigger {
 	messageId: string;
 }
 
-/** One prior valid selected-variant record fed to the model as continuity input. */
-export interface SceneContinuityRecord {
-	variantId: MessageVariantId;
-	sceneState: Record<string, unknown>;
-}
+/** DK-4b — the post-write record observer seam: the observer type and the
+ *  fire-and-forget invocation live in scene-record-observer.ts (extracted —
+ *  DK-4b arch-gate ratchet, the service file could not grow); re-exported so
+ *  the module's public surface is unchanged. */
+export type { SceneRecordWrittenObserver } from "./scene-record-observer.js";
 
-/** One frozen manifest item in a Scene history-backfill run (SCN-14): a selected
- *  assistant variant captured oldest-to-newest at run start, with its then-
- *  current source/schema/config fingerprint so resume/retry can revalidate the
- *  item is still generatable before spending an LLM call on it. Plain-string ids
- *  — this is serialized to JSON in the run row, not a branded domain record. */
-export interface SceneBackfillManifestItem {
-	/** Position in the frozen manifest (0 = oldest). */
-	index: number;
-	branchId: string;
-	messageId: string;
-	variantId: string;
-	sourceHash: string;
-	schemaHash: string;
-	configRevision: number;
-}
+import { composeSceneInstruction, type SceneContinuityRecord } from "./scene-instruction.js";
+/** Instruction composition + the continuity record type moved to scene-instruction.ts
+ *  (file-size ratchet extraction, DK-2); re-exported so the module's public surface is unchanged. */
+export { composeSceneInstruction };
+export type { SceneContinuityRecord };
+import { notifyRecordWritten, type SceneRecordWrittenObserver } from "./scene-record-observer.js";
+import { parseBackfillErrors, range, uniqueSorted, type SceneBackfillManifestItem } from "./scene-backfill.js";
+/** Backfill vocabulary (the frozen manifest item) moved to scene-backfill.ts
+ *  (file-size ratchet extraction, DK-4b); re-exported so the module's public
+ *  surface is unchanged. */
+export type { SceneBackfillManifestItem };
 
 export type { SceneBackfillStatus };
 
@@ -156,39 +150,6 @@ export class SceneTargetGoneError extends Error {
 	}
 }
 
-/**
- * Compose the final Scene instruction: override-or-default base + the bounded
- * schema descriptor (so the model knows exactly which fields to fill) + the
- * continuity window (prior states to evolve from). The base is `scene-generate.md`
- * unless a per-chat override is set; this function only appends dynamic context.
- */
-export function composeSceneInstruction(
-	base: string,
-	schema: SceneTrackerDsl,
-	continuity: readonly SceneContinuityRecord[],
-	rulesPrompt = "",
-): string {
-	const schemaJson = JSON.stringify(stripLabels(schema));
-	const continuityJson =
-		continuity.length > 0 ? JSON.stringify(continuity.map((record) => record.sceneState)) : "[]";
-	const labelHints = collectLabelHints(schema);
-	const labelBlock = labelHints.length > 0
-		? `\n\nField labels (human names for the schema keys; they do NOT add, rename, or remove any field — output the machine keys exactly as in the schema): ${JSON.stringify(labelHints)}`
-		: "";
-	const trimmedRules = rulesPrompt.trim();
-	const rulesBlock = trimmedRules.length > 0
-		? `\n\nScene tracker rules for this chat (author-specified; these OVERRIDE the base defaults — obey the formulas, per-turn deltas, bounds/gates, and starting values below):\n${trimmedRules}`
-		: "";
-	return (
-		`${base}${rulesBlock}\n\n` +
-		`Scene schema (produce one JSON object with exactly these fields, no extras): ${schemaJson}\n\n` +
-		`Recent scene continuity (prior states — evolve them to match the current scene): ${continuityJson}` +
-		labelBlock +
-		composeToneVocabularyBlock(schema) +
-		`\n\nRequired output: one JSON object matching the schema exactly.`
-	);
-}
-
 /** Forward an external AbortSignal onto a service-owned controller (one-shot). */
 function linkAbort(external: AbortSignal | undefined, controller: AbortController): void {
 	if (!external) return;
@@ -203,29 +164,7 @@ function linkAbort(external: AbortSignal | undefined, controller: AbortControlle
 	);
 }
 
-// ─── SCN-14 backfill helpers (module-level, pure) ───────────────────────────
-
-/** Inclusive-start, exclusive-end integer range (empty when start >= end). */
-function range(start: number, end: number): number[] {
-	const out: number[] = [];
-	for (let i = start; i < end; i += 1) out.push(i);
-	return out;
-}
-
-/** Unique integers sorted ascending (for the retry-index union). */
-function uniqueSorted(values: number[]): number[] {
-	return [...new Set(values)].sort((a, b) => a - b);
-}
-
-/** Parse a run row's errorsJson defensively; an unparseable/corrupt blob → []. */
-function parseBackfillErrors(json: string): SceneBackfillErrorEntry[] {
-	try {
-		const parsed = JSON.parse(json);
-		return Array.isArray(parsed) ? (parsed as SceneBackfillErrorEntry[]) : [];
-	} catch {
-		return [];
-	}
-}
+// ─── SCN-14 backfill helpers moved to scene-backfill.ts (DK-4b ratchet) ─────
 
 /** Stable error-message extraction for recorded per-item errors. */
 function errorMessage(error: unknown): string {
@@ -283,17 +222,30 @@ export class SceneTrackerService {
 	private readonly llmCoordinator = new TrackerKeyedCoordinator();
 	/** Short lane: every record read-modify-write commit is atomic per target. */
 	private readonly commitCoordinator = new TrackerKeyedCoordinator();
+	/** DK-4b — optional post-write record observer (null = today's behavior, no notification). */
+	private recordWrittenObserver: SceneRecordWrittenObserver | null = null;
 
-	constructor(
-		private readonly stores: StoreContainer,
-		// sessionRuntime is used by the Wave 4 auto-start path (SCN-8) to build
-		// the pipeline context; the SCN-5 core is exercised with `null as never`,
-		// mirroring how `ObjectiveService` is tested.
-		private readonly sessionRuntime: SessionRuntime,
-		private readonly providerProfiles: ProviderProfileService,
-		private readonly execute: Execute = nonstreamingProviderExecute,
-		private readonly resolvePrompt: ResolvePrompt = resolveInsightsPrompt,
-	) {}
+		constructor(
+			private readonly stores: StoreContainer,
+			// sessionRuntime is used by the Wave 4 auto-start path (SCN-8) to build
+			// the pipeline context; the SCN-5 core is exercised with `null as never`,
+			// mirroring how `ObjectiveService` is tested.
+			private readonly sessionRuntime: SessionRuntime,
+			private readonly providerProfiles: ProviderProfileService,
+			private readonly execute: Execute = nonstreamingProviderExecute,
+			private readonly resolvePrompt: ResolvePrompt = resolveInsightsPrompt,
+		) {}
+
+		/** DK-4b: register the post-write record observer (see
+		 *  {@link SceneRecordWrittenObserver}). Registration happens at wiring
+		 *  (server-runtime.ts), after both this service and the observer's owner
+		 *  (StoryPlanSync) exist — the same late-bound shape as
+		 *  ObjectiveService.registerStateObserver, which is why it is a
+		 *  registration and not a constructor param; there is no unregister —
+		 *  the observer lives as long as the process. */
+		registerRecordWrittenObserver(observer: SceneRecordWrittenObserver): void {
+			this.recordWrittenObserver = observer;
+		}
 
 	/** Load the chat's Scene config (normalized to fixed defaults when absent). */
 	async getConfig(chatId: ChatId): Promise<SceneTrackerConfig> {
@@ -426,6 +378,9 @@ export class SceneTrackerService {
 			};
 			await this.stores.messages.setSceneRecord(target.variantId, record);
 			if (rebuildCache) await this.rebuildCache(target.chatId);
+			// DK-4b: the write stood (cache rebuild failures are already swallowed
+			// above) — fire the observer detached, never awaited in this lane.
+			notifyRecordWritten(this.recordWrittenObserver, target.chatId, target.branchId);
 			return record;
 		});
 	}
@@ -463,6 +418,8 @@ export class SceneTrackerService {
 			};
 			await this.stores.messages.setSceneRecord(target.variantId, record);
 			await this.rebuildCache(target.chatId);
+			// DK-4b: the write stood — fire the observer detached, never awaited.
+			notifyRecordWritten(this.recordWrittenObserver, target.chatId, target.branchId);
 			return record;
 		});
 	}

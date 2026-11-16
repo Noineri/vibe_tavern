@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import type { PromptAssemblyContext } from "../src/types.ts";
 import { AI_ASSISTANT_ASSEMBLERS } from "../src/ai-assistant/ai-assistant-assemblers.ts";
 import { SUMMARY_STRATEGIES, getSummaryStrategy } from "../src/summary/summary-strategies.ts";
+import { DefaultSummaryStrategy } from "../src/summary/summary-strategy.ts";
 import { RESOLVER_ID, RESOLVERS, getResolverId } from "../src/resolvers/resolver-registry.ts";
 
 describe("prompt assembly registries", () => {
@@ -24,8 +25,10 @@ describe("prompt assembly registries", () => {
   });
 
   it("resolves the default pure summary strategy", () => {
-    expect(SUMMARY_STRATEGIES.default).toBe(getSummaryStrategy());
-    expect(typeof getSummaryStrategy().assemble).toBe("function");
+    expect(Object.keys(SUMMARY_STRATEGIES)).toEqual(["default"]);
+    expect(getSummaryStrategy()).toBe(DefaultSummaryStrategy);
+    expect(SUMMARY_STRATEGIES.default).toBe(DefaultSummaryStrategy);
+    expect(typeof DefaultSummaryStrategy.assemble).toBe("function");
   });
 
   it("selects the RP resolver registry from the preset's canvas state", () => {

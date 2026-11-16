@@ -43,6 +43,7 @@ test("an avatar badge follows its character's chat lifecycle without visible tex
   act(() => useChatRunActivityStore.getState().setRunning("one", true));
   const badge = view.getByRole("status");
   expect(badge.getAttribute("aria-label")).toBe("chat_writing_badge");
+  expect(badge.getAttribute("title")).toBeNull();
   expect(badge.textContent).toBe("");
   expect(badge.classList.contains("absolute")).toBe(true);
   expect(badge.classList.contains("-bottom-0.5")).toBe(true);
@@ -92,7 +93,9 @@ test("ready uses a static check, and a character's other writing chat has priori
   act(() => useChatRunActivityStore.getState().setRunning("two", true));
   expect(view.getByRole("status").getAttribute("aria-label")).toBe("chat_writing_badge");
   act(() => useChatRunActivityStore.getState().setRunning("two", false));
-  expect(view.getByRole("status").getAttribute("aria-label")).toBe("chat_ready_badge");
+  const readyBadge = view.getByRole("status");
+  expect(readyBadge.getAttribute("aria-label")).toBe("chat_ready_badge");
+  expect(readyBadge.getAttribute("title")).toBeNull();
   act(() => useChatRunActivityStore.getState().markRead("one"));
   expect(view.queryByRole("status")).toBeNull();
 });

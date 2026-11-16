@@ -1,8 +1,11 @@
 import { describe, test, expect, beforeEach, afterAll } from "bun:test";
 import { Profiler, type ProfilerOnRenderCallback } from "react";
-import type { AppMessage, AppSnapshot } from "../api/types.js";
+import { brandId } from "@vibe-tavern/domain";
+import type { MessageVariantId } from "@vibe-tavern/domain";
+import type { AppSnapshot } from "../api/types.js";
 
 import { useDomEnv } from "../../test/dom-env.js";
+import { wireMessage, wireVariant } from "../../test/wire-fixtures.js";
 import {
   useGenerationQueueStore,
   useQueueCount,
@@ -20,7 +23,7 @@ const originalSnapshotState = useSnapshotStore.getState();
 const originalQueueState = useGenerationQueueStore.getState();
 afterAll(() => { useSnapshotStore.setState(originalSnapshotState, true); useGenerationQueueStore.setState(originalQueueState, true); });
 
-const { render, act } = await import("@testing-library/react");
+const { render, act, renderHook } = await import("@testing-library/react");
 
 /**
  * State-machine + narrow-selector tests for the generation queue store (Q3).
@@ -47,7 +50,11 @@ function enq(chatId: string, messageId: string, model: string) {
 function setVisibleTarget(variantIds: string[]): void {
   useSnapshotStore.setState({
     messageOrder: ["m1"],
-    messagesById: { m1: { id: "m1", variants: variantIds.map((id, variantIndex) => ({ id, variantIndex })) } } as unknown as Record<string, AppMessage>,
+    messagesById: {
+      m1: wireMessage("m1", {
+        variants: variantIds.map((id, variantIndex) => wireVariant("m1", variantIndex, { id: brandId<MessageVariantId>(id) })),
+      }),
+    },
   });
 }
 
@@ -172,14 +179,47 @@ describe("Q3 store: sequential state machine", () => {
   });
 
   test("useHasActiveQueue / useQueueForMessage reflect state", () => {
-    // These are selector hooks — exercised via getState projections here.
-    enq("c1", "m1", "a");
-    enq("c1", "m2", "b");
-    const s = useGenerationQueueStore.getState();
-    const c1 = s.jobsByChat["c1"]!;
-    expect(c1.some((j) => j.status === "pending" || j.status === "running")).toBe(true);
-    expect(c1.filter((j) => j.messageId === "m1").length).toBe(1);
-    expect(c1.filter((j) => j.messageId === "m2").length).toBe(1);
+    const activeHook = renderHook(({ chatId }: { chatId: string | null }) => useHasActiveQueue(chatId), {
+      initialProps: { chatId: "c1" as string | null },
+    });
+    const m1Hook = renderHook(({ messageId }: { messageId: string | null }) => useQueueForMessage(messageId), {
+      initialProps: { messageId: "m1" as string | null },
+    });
+    const m2Hook = renderHook(({ messageId }: { messageId: string | null }) => useQueueForMessage(messageId), {
+      initialProps: { messageId: "m2" as string | null },
+    });
+    try {
+      expect(activeHook.result.current).toBe(false);
+      expect(m1Hook.result.current).toEqual([]);
+      expect(m2Hook.result.current).toEqual([]);
+
+      let idA = "";
+      let idB = "";
+      act(() => {
+        idA = enq("c1", "m1", "a");
+        idB = enq("c1", "m2", "b");
+      });
+
+      expect(activeHook.result.current).toBe(true);
+      expect(m1Hook.result.current.map((j) => j.id)).toEqual([idA]);
+      expect(m2Hook.result.current.map((j) => j.id)).toEqual([idB]);
+
+      act(() => {
+        useGenerationQueueStore.getState().markRunning(idA);
+        useGenerationQueueStore.getState().markDone(idA);
+        useGenerationQueueStore.getState().markDone(idB);
+      });
+      expect(activeHook.result.current).toBe(false);
+
+      activeHook.rerender({ chatId: null });
+      m1Hook.rerender({ messageId: null });
+      expect(activeHook.result.current).toBe(false);
+      expect(m1Hook.result.current).toEqual([]);
+    } finally {
+      activeHook.unmount();
+      m1Hook.unmount();
+      m2Hook.unmount();
+    }
   });
 });
 

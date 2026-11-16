@@ -1,8 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { createApp } from "../src/server/app-factory.js";
-import { DiceBindError } from "@vibe-tavern/db";
+import { DiceBindError, type StoreContainer } from "@vibe-tavern/db";
+import { CHAT_MODE } from "@vibe-tavern/domain";
 import type { RuntimeApi } from "../src/api/contract/runtime-api.js";
 import { ChatGenerationRunAdapter } from "../src/api/adapters/chat-generation-run-adapter.js";
+import { makeCharacterRow } from "./copilot-test-builders.js";
+import { makeChatRow } from "./insights-test-builders.js";
+import { makeRuntimeApi } from "./routes-test-builders.js";
+import { strictTestDouble } from "./strict-test-double.js";
 
 /**
  * DICE-B11 send-path gap — HTTP/SSE-level contract for dice commit conflicts.
@@ -32,11 +37,25 @@ const SEND_BODY = { content: "roll for me", diceMode: "normal", pendingRevision:
 // RuntimeApi is decomposed per-feature by createApiRouter (createChatRoutes
 // (runtime.chat)), so the stub nests the send methods under `chat`.
 function runtimeWithSend(send: { sendMessage?: RuntimeApi["chat"]["sendMessage"]; sendMessageStream?: RuntimeApi["chat"]["sendMessageStream"] }): RuntimeApi {
-  const runs = new ChatGenerationRunAdapter({
-    chats: { getById: async () => ({ id: "chat_1", characterId: "char_1", activeBranchId: "branch_1", mode: "rp", title: "Dice" }) },
-    characters: { getById: async () => ({ name: "Dice" }) },
-  } as unknown as ConstructorParameters<typeof ChatGenerationRunAdapter>[0]);
-  return { chat: { ...send, startChatGeneration: runs.startChatGeneration } } as unknown as RuntimeApi;
+  // The strict double keeps the two provided store members compiler-checked;
+  // the rows are completed through the standing builders (the erased
+  // fragments were missing the rows' other required columns).
+  const runs = new ChatGenerationRunAdapter(strictTestDouble<StoreContainer>(
+    {
+      chats: { getById: async () => makeChatRow({ id: "chat_1", characterId: "char_1", activeBranchId: "branch_1", mode: CHAT_MODE.rp, title: "Dice" }) },
+      characters: { getById: async () => makeCharacterRow("char_1", { name: "Dice" }) },
+    },
+    "ChatGenerationRunAdapter stores (dice send)",
+  ));
+  // RuntimeApi is decomposed per-feature by createApiRouter: router
+  // construction reads EVERY slice (each route factory stores its slice), so
+  // the runtime comes through makeRuntimeApi — `chat` wired for real, every
+  // other slice an inert strict double that throws a labeled miss if a route
+  // on these paths ever reaches it.
+  return makeRuntimeApi(
+    { chat: { ...send, startChatGeneration: runs.startChatGeneration } },
+    "RuntimeApi (dice send)",
+  );
 }
 
 function postJson(url: string): RequestInit {

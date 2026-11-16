@@ -42,8 +42,6 @@ export const useAgentStreamingStore = create<AgentStreamingState>((set) => ({
 
 // Debug helper — mirrors the window.__ exposure pattern used by the other
 // ephemeral stores (a live Playwright / dev-console session can inspect who
-// is streaming to diagnose a stuck disable).
-if (typeof window !== "undefined") {
-  (window as unknown as { __useAgentStreamingStore?: unknown }).__useAgentStreamingStore =
-    useAgentStreamingStore;
-}
+// is streaming to diagnose a stuck disable). The member's type lives in
+// lib/debug-globals.d.ts (the debug-window surface's single source).
+if (typeof window !== "undefined") window.__useAgentStreamingStore = useAgentStreamingStore;

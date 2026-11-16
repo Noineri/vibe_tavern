@@ -24,8 +24,13 @@
  *    proposal to the recordType's registry handler — the objective handler
  *    reuses the insights services verbatim (SC-11), the story-plan and
  *    tracker-scene handlers (DR-5) delegate to `StoryPlanSync` and the
- *    insights adapter's shared template tail. The services are injected
- *    (never re-implemented here, never altered in the insights area).
+ *    insights adapter's shared template tail, the message-edit /
+ *    message-variant handlers (DMT-22) run the ordinary chat edit /
+ *    add-variant services over the thread's own branch, and the story-deck
+ *    handler (DK-5a) appends the proposed cards to the branch deck with
+ *    fresh ids (the pair check 404s a foreign branch first). The services are
+ *    injected (never re-implemented here, never altered in the insights
+ *    area).
  * 5. the WRITE: the status rides back into the SAME tool row through
  *    `setToolResultOutput`, preserving the row's parseable
  *    `{ toolName, output }` wrapper and every proposal field (only `status`
@@ -42,9 +47,10 @@
  * Both decisions also return the refreshed companion data the review card
  * needs ({@link SidechatProposalCompanion}): the target branch's plan for
  * plan-touching types, the insights config patch for the tracker-scene
- * type. The objective handler under NO plan returns no companion — today's
- * `{ proposal }` response, byte-identical (the SC-11 suite is
- * characterization).
+ * type, and (DMT-22) the target-scoped message view for the message-edit /
+ * message-variant types. The objective handler under NO plan returns no
+ * companion — today's `{ proposal }` response, byte-identical (the SC-11
+ * suite is characterization).
  *
  * CONCURRENCY: the pending-check and the writes are serialized per
  * (thread, toolCallId) by an in-process FIFO — the single-process server
@@ -55,27 +61,35 @@
 
 import {
   EMPTY_AGENT_PLAN,
+  EMPTY_STORY_DECK,
   OBJECTIVE_MODE,
+  withStoryClockFields,
   type AgentPlan,
   type AgentPlanOwner,
+  type StoryDeck,
   type TrackerTemplate,
 } from "@vibe-tavern/domain";
-import type { Chat, ExperienceCopilotMessage, ExperienceCopilotThread } from "@vibe-tavern/db";
+import type { Chat, ChatBranch, ExperienceCopilotMessage, ExperienceCopilotThread, Message, MessageVariant } from "@vibe-tavern/db";
 import type {
   AgentThreadProposalApplyRequest,
   RecordProposal,
 } from "@vibe-tavern/api-contracts";
 import { conflict, notFound, unprocessable } from "../../shared/errors.js";
+import { requireChatBranch } from "../chat/chat-branch-ownership.js";
 import {
   OBJECTIVE_RECORD_TYPE,
   SIDECHAT_OBJECTIVE_TOOL_NAME,
 } from "../agent/kinds/sidechat/sidechat-objective-tools.js";
 import {
+  SIDECHAT_PROPOSE_DECK_TOOL_NAME,
   SIDECHAT_PROPOSE_PLAN_TOOL_NAME,
   SIDECHAT_PROPOSE_TRACKER_TEMPLATE_TOOL_NAME,
+  STORY_DECK_RECORD_TYPE,
   STORY_PLAN_RECORD_TYPE,
   TRACKER_SCENE_RECORD_TYPE,
+  sidechatDeckProposalInputSchema,
 } from "../agent/kinds/sidechat/sidechat-director-tools.js";
+import { DIRECTOR_MESSAGE_PROPOSAL_ENTRIES } from "../director/director-message-proposals.js";
 
 /** Typed 409 code for a tracker that is off at Accept time (the plan's own
  *  spelling — lowercase, the `not_an_rp_chat` family). */
@@ -106,7 +120,17 @@ export type SidechatRecordProposalDecision = "apply" | "reject";
  *  `updateObjectiveConfig` is `ObjectiveService.updateObjectiveConfig` (A6's
  *  auto-check switch), `applyTrackerScene` is the insights adapter's shared
  *  template tail (`applyTrackerSceneTemplate`), and `readInsightsPatch` is
- *  the read-only config patch a reject returns. */
+ *  the read-only config patch a reject returns. DMT-22 adds the message
+ *  seams: `messages` is the plain store read trio the message handlers'
+ *  ownership revalidation + companion run through, `editMessage` is
+ *  `ChatApplicationService.editMessage` WITH the expected base content (the
+ *  store-transactional selected-variant + same-id content guards), and
+ *  `addEditorVariant` is `ChatApplicationService.addEditorVariant` (source
+ *  existence checks; no provenance input on the Director save). DK-5a adds
+ *  the deck seams: `chats` widens to the shared pair-check lookup
+ *  (`getBranches` — `requireChatBranch`'s structural type, satisfied by the
+ *  store as-is), and `storyDecks` is the plain get/save pair of the real
+ *  `StoryDeckStore` the story-deck handler appends through. */
 export interface SidechatRecordProposalDeps {
   readonly store: {
     getById(threadId: string): Promise<ExperienceCopilotThread | null>;
@@ -119,9 +143,18 @@ export interface SidechatRecordProposalDeps {
   };
   readonly chats: {
     getById(chatId: string): Promise<Chat | null>;
+    /** The shared (chat, branch) pair check's other half (`ChatBranchLookup`). */
+    getBranches(chatId: string): Promise<ChatBranch[]>;
   };
   readonly agentPlans: {
     get(owner: AgentPlanOwner): Promise<AgentPlan | null>;
+  };
+  /** DK-5a: the branch deck's get/save pair — the real `StoryDeckStore`'s
+   *  members (the `messages` precedent: a structural store Pick, satisfied
+   *  by the container's member without an adapter). */
+  readonly storyDecks: {
+    get(chatId: string, branchId: string): Promise<StoryDeck | null>;
+    save(chatId: string, branchId: string, deck: StoryDeck): Promise<void>;
   };
   readonly addObjectiveTask: (chatId: string, body: { description: string }) => Promise<unknown>;
   readonly addShortTermGoal: (chatId: string, description: string) => Promise<unknown>;
@@ -140,6 +173,29 @@ export interface SidechatRecordProposalDeps {
     scene: NonNullable<TrackerTemplate["scene"]>,
   ) => Promise<unknown>;
   readonly readInsightsPatch: (chatId: string) => Promise<unknown>;
+  /** The narrow RP-message reads (DMT-22) — a structural Pick of the real
+   *  `MessageStore`, satisfied by the container's `messages` member. */
+  readonly messages: {
+    getMessages(branchId: string): Promise<Message[]>;
+    getMessageById(id: string): Promise<Message | null>;
+    getVariants(messageId: string): Promise<MessageVariant[]>;
+  };
+  /** The ordinary guarded edit WITH the reviewed base content (DMT-22) —
+   *  throws the 409-class conflict when the selected variant id or its
+   *  content no longer matches. */
+  readonly editMessage: (
+    messageId: string,
+    content: string,
+    expectedVariantId?: string,
+    expectedBaseContent?: string,
+  ) => Promise<unknown>;
+  /** The ordinary add-editor-variant path (DMT-22) — validates the source
+   *  variant ids exist on the message; provenance stays unset for a
+   *  Director-authored save. */
+  readonly addEditorVariant: (
+    messageId: string,
+    input: { readonly content: string; readonly sourceVariantIds: readonly string[] },
+  ) => Promise<unknown>;
 }
 
 /** The refreshed data a resolution returns beyond the proposal itself (the
@@ -156,6 +212,34 @@ export interface SidechatProposalCompanion {
   readonly plan?: AgentPlan;
   /** The refreshed insights config patch — the tracker-scene companion. */
   readonly patch?: unknown;
+  /** The refreshed TARGET-SCOPED message view (DMT-22) — the message-edit /
+   *  message-variant companion on an accepted resolution. */
+  readonly message?: SidechatProposalMessageCompanion;
+}
+
+/** The DMT-22 message companion — ONLY the affected message, never a
+ *  branch/chat snapshot a client could merge over a different open chat.
+ *  `chatId`/`branchId` scope it (the client refuses to ingest it when its
+ *  open conversation differs); `message` is the row post-write; `variants`
+ *  is the message's FULL variant list post-write (a Save appends + selects,
+ *  an Apply rewrites the selected variant's text). */
+export interface SidechatProposalMessageCompanion {
+  readonly chatId: string;
+  readonly branchId: string;
+  readonly message: {
+    readonly id: string;
+    readonly position: number;
+    readonly content: string;
+    readonly updatedAt: string;
+  };
+  readonly variants: readonly {
+    readonly id: string;
+    readonly variantIndex: number;
+    readonly content: string;
+    readonly isSelected: boolean;
+    readonly modelId: string | null;
+    readonly presetName: string | null;
+  }[];
 }
 
 /** Everything one recordType's handlers resolve against. */
@@ -163,6 +247,11 @@ export interface SidechatProposalHandlerContext {
   readonly deps: SidechatRecordProposalDeps;
   /** The owning thread's chat (chat-owned by step 1). */
   readonly chatId: string;
+  /** The owning thread's OWN branch — the message handlers'
+   *  ownership-revalidation scope (DMT-22). Null on corrupt rows (a
+   *  chat-owned sidechat thread always carries one); the message handlers
+   *  refuse the same 404 then. The other handlers ignore it. */
+  readonly branchId: string | null;
   readonly proposal: RecordProposal;
   /** The apply request body (`.enableAutoCheck` — only the story-plan
    *  handler reads it; reject ignores it). */
@@ -279,6 +368,16 @@ async function objectivePlanCompanion(
  *    in the apply body also sets the tracker's auto-check frequency to 1 (A6).
  *  - `tracker-scene` — the insights adapter's shared template tail with
  *    `{ scene, objective: null }` (scene only — goals come from the plan, A9).
+ *    DK-5a: a `withClock: true` payload adds the canonical story clock
+ *    fields to the scene being applied (`withStoryClockFields`, idempotent).
+ *  - `story-deck` (DK-5a) — the `propose_deck` tool's proposal: the branch
+ *    deck (`proposal.targetId`) gains the payload's cards with FRESH ids
+ *    (the `card_` + uuid twin of the plan event's `task_` convention);
+ *    reject writes the status only.
+ *  - `message-edit` / `message-variant` (DMT-22) — defined in
+ *    `director/director-message-proposals.ts` and spread in here: the
+ *    ordinary guarded chat edit / add-variant services over the thread's own
+ *    branch, with the transactional selected-variant + reviewed-base guards.
  */
 export const SIDECHAT_RECORD_PROPOSAL_REGISTRY: Readonly<
   Record<string, SidechatRecordProposalEntry>
@@ -371,16 +470,68 @@ export const SIDECHAT_RECORD_PROPOSAL_REGISTRY: Readonly<
       proposal.op === "update" &&
       typeof proposal.payload === "object" &&
       proposal.payload !== null &&
-      isSceneTemplateShape((proposal.payload as { scene?: unknown }).scene),
+      isTrackerScenePayloadShape(proposal.payload),
     apply: async ({ deps, chatId, proposal }) => {
-      const patch = await deps.applyTrackerScene(
-        chatId,
-        (proposal.payload as { scene: NonNullable<TrackerTemplate["scene"]> }).scene,
-      );
+      const payload = proposal.payload as {
+        scene: NonNullable<TrackerTemplate["scene"]>;
+        withClock?: boolean;
+      };
+      // DK-5a: the proposal's `withClock` ask adds the canonical story clock
+      // fields to the scene being applied — through the domain's ONE
+      // idempotent adder (`withStoryClockFields`), so a field already
+      // carrying a clock marker (or occupying a canonical key) is never
+      // duplicated or overwritten. Without the flag the scene passes
+      // through byte-identical (the pre-DK-5a behavior, pinned).
+      const scene = payload.withClock === true ? withClockScene(payload.scene) : payload.scene;
+      const patch = await deps.applyTrackerScene(chatId, scene);
       return { patch };
     },
     reject: async ({ deps, chatId }) => ({ patch: await deps.readInsightsPatch(chatId) }),
   },
+
+  // DK-5a: the deck proposal — append the proposed twist cards to the
+  // branch deck with FRESH ids on Accept; reject changes only the status.
+  [STORY_DECK_RECORD_TYPE]: {
+    toolName: SIDECHAT_PROPOSE_DECK_TOOL_NAME,
+    matches: (proposal) =>
+      proposal.op === "update" &&
+      typeof proposal.targetId === "string" &&
+      typeof proposal.payload === "object" &&
+      proposal.payload !== null &&
+      sidechatDeckProposalInputSchema.safeParse(proposal.payload).success,
+    apply: async ({ deps, chatId, proposal }) => {
+      // The payload-branch is the proposal's targetId — the branch the
+      // director's tool recorded when proposing (the story-plan entry's
+      // rule); the shared pair check 404s a foreign/vanished branch BEFORE
+      // any write (requireChatBranch, never a re-implemented comparison).
+      const branchId = proposal.targetId as string;
+      await requireChatBranch(deps.chats, chatId, branchId);
+      const payload = sidechatDeckProposalInputSchema.parse(proposal.payload);
+      const deck = (await deps.storyDecks.get(chatId, branchId)) ?? EMPTY_STORY_DECK;
+      // Fresh ids only — the deck twin of the plan event's `task_` + uuid
+      // convention (StoryPlanSync.insertNextEvent): the model's proposed ids
+      // are NEVER reused. Cards keep suit/title/body verbatim.
+      const freshCards = payload.cards.map((card) => ({
+        id: `card_${crypto.randomUUID()}`,
+        suit: card.suit,
+        title: card.title,
+        body: card.body,
+      }));
+      await deps.storyDecks.save(chatId, branchId, { cards: [...deck.cards, ...freshCards] });
+      // No companion — the bare `{ proposal }` response (the objective
+      // handler's no-plan convention; the deck has no wire companion slot).
+      return undefined;
+    },
+    // Reject: NO domain write — the DMT-22 message entries' convention (the
+    // pipeline's status write is the only effect).
+    reject: async () => ({}),
+  },
+
+  // DMT-22: the Director's two reviewable message tools resolve through the
+  // SAME pipeline — the entries (recognition via the DMT-11 payload schemas,
+  // the ordinary guarded edit / add-variant services, the target-scoped
+  // message companion) live in the handlers' own module.
+  ...DIRECTOR_MESSAGE_PROPOSAL_ENTRIES,
 };
 
 /** Structural check for a scene template half (the tracker-scene payload):
@@ -395,6 +546,37 @@ function isSceneTemplateShape(value: unknown): value is NonNullable<TrackerTempl
     typeof candidate.config === "object" &&
     candidate.config !== null
   );
+}
+
+/** Structural check for the WHOLE tracker-scene payload (DK-5a): the scene
+ *  half (isSceneTemplateShape) plus the optional `withClock` ask — present
+ *  only as a boolean (anything else is a corrupt row → the parse-gate 404;
+ *  the apply reads the flag only under this gate). Rows written before
+ *  DK-5a carry no flag and match exactly as before. */
+function isTrackerScenePayloadShape(
+  value: unknown,
+): value is { scene: NonNullable<TrackerTemplate["scene"]>; withClock?: boolean } {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as { scene?: unknown; withClock?: unknown };
+  if (candidate.withClock !== undefined && typeof candidate.withClock !== "boolean") return false;
+  return isSceneTemplateShape(candidate.scene);
+}
+
+/** The scene half with the canonical story clock fields added (DK-5a) — the
+ *  domain's ONE idempotent adder over the scene's DSL (a corrupt schema-less
+ *  config degrades to an empty DSL rather than a 5xx; the apply tail's
+ *  normalizer owns the rest). */
+function withClockScene(
+  scene: NonNullable<TrackerTemplate["scene"]>,
+): NonNullable<TrackerTemplate["scene"]> {
+  const dsl = scene.config.schema;
+  return {
+    ...scene,
+    config: {
+      ...scene.config,
+      schema: withStoryClockFields(typeof dsl === "object" && dsl !== null ? dsl : {}),
+    },
+  };
 }
 
 /** Parse the proposal out of a persisted tool row and resolve its registry
@@ -520,6 +702,10 @@ export async function resolveSidechatRecordProposal(
     const ctx: SidechatProposalHandlerContext = {
       deps,
       chatId: thread.chatId,
+      // The thread row's OWN branch — the DMT-22 message handlers'
+      // ownership scope (never request-supplied). Null on corrupt rows;
+      // the handlers that need it refuse the same 404 then.
+      branchId: thread.branchId,
       proposal,
       body,
     };

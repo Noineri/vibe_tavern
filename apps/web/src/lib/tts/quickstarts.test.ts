@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
+import en from "../../i18n/locales/en.json";
+import ru from "../../i18n/locales/ru.json";
 import {
   detectTtsOsKind,
   diagnosticI18nKey,
@@ -144,6 +146,8 @@ describe("quickstarts (setup reference, TE2-17)", () => {
       for (const key of keys) {
         expect(typeof key).toBe("string");
         expect(key.length).toBeGreaterThan(0);
+        expect(Object.hasOwn(en, key)).toBe(true);
+        expect(Object.hasOwn(ru, key)).toBe(true);
       }
     }
   });

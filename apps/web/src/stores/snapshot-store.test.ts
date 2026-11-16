@@ -1,8 +1,9 @@
 import { afterAll, beforeEach, describe, expect, mock, test } from "bun:test";
-import { wireCharacter } from "../../test/wire-fixtures.js";
-import type { Attachment, ChatId, ChatBranchId, MessageVariantId, Timestamp } from "@vibe-tavern/domain";
+import { brandId } from "@vibe-tavern/domain";
+import { wireBranch, wireChat, wireChatListItem, wireCharacter, wireMessage, wireVariant } from "../../test/wire-fixtures.js";
+import type { Attachment, ChatId, ChatBranchId, MessageId, MessageVariantId, Timestamp } from "@vibe-tavern/domain";
 import { useSnapshotStore } from "./snapshot-store.js";
-import type { AppCharacter, AppMessage, AppSnapshot, InsightsCompletionPatchResponse, SceneTargetResponse } from "../api/types.js";
+import type { AppCharacter, AppMessage, AppSnapshot } from "../api/types.js";
 import { countTokens, getTokenizer, resetTokenCountCacheForTests } from "../utils/tokenizer.js";
 import { replaceUiMacros } from "../lib/macros.js";
 
@@ -56,32 +57,23 @@ function makeCharacter(id: string, name = `Char ${id}`): AppCharacter {
 }
 
 function makeMessage(id: string, content = `msg ${id}`): AppMessage {
-  return {
-    id,
-    role: "assistant",
-    content,
-    createdAt: "2026-01-01T00:00:00.000Z",
-    updatedAt: "2026-01-01T00:00:00.000Z",
-    variants: [],
-    selectedVariantIndex: null,
-    modelId: null,
-  } as unknown as AppMessage;
+  return wireMessage(id, { content });
 }
 
 /** A full snapshot seeding the store with a known character + messages. */
 function fullSeed(): AppSnapshot {
   return {
-    chats: [{ id: "chat-1", title: "Chat 1", characterId: "c1", characterName: "Char c1", subtitle: "", activeBranchLabel: "main", mode: "rp", messageCount: 2, updatedAt: "2026-01-01T00:00:00.000Z" }],
+    chats: [wireChatListItem({ title: "Chat 1", characterName: "Char c1", messageCount: 2 })],
     allCharacters: [],
-    activeChat: { id: "chat-1", title: "Chat 1", characterId: "c1" } as unknown as AppSnapshot["activeChat"],
-    activeBranch: { id: "b1", chatId: "chat-1", label: "main" } as unknown as AppSnapshot["activeBranch"],
+    activeChat: wireChat({ title: "Chat 1" }),
+    activeBranch: wireBranch(),
     branches: [],
     messages: [makeMessage("m1"), makeMessage("m2")],
     summaries: [],
     promptTrace: null,
     character: makeCharacter("c1"),
     persona: null,
-  } as unknown as AppSnapshot;
+  };
 }
 
 beforeEach(() => {
@@ -217,7 +209,9 @@ describe("ingestSnapshot — dedup / reference stability (Wave B2)", () => {
   test("a nested change (object field + array content) yields a new reference", () => {
     type Rich = AppMessage & { meta: { note: string; tags: string[] } };
     const rich = (note: string, tags: string[]): Rich =>
-      ({ ...makeMessage("r1"), content: "same", meta: { note, tags } }) as unknown as Rich;
+      // makeMessage now returns a real AppMessage, so the spread IS the
+      // Rich intersection — no cast.
+      ({ ...makeMessage("r1"), content: "same", meta: { note, tags } });
 
     useSnapshotStore.getState().ingestSnapshot({ messages: [rich("a", ["x"])] } as AppSnapshot);
     const before = useSnapshotStore.getState().messagesById["r1"];
@@ -241,10 +235,11 @@ describe("ingestSnapshot — dedup / reference stability (Wave B2)", () => {
     useSnapshotStore.getState().ingestSnapshot(fullSeed());
     const chatBefore = useSnapshotStore.getState().chatsById["chat-1"];
 
-    const sameChat = {
-      id: "chat-1", title: "Chat 1", characterId: "c1", characterName: "Char c1",
-      subtitle: "", activeBranchLabel: "main", mode: "rp", messageCount: 2, updatedAt: "2026-01-01T00:00:00.000Z",
-    };
+    // The re-sent row IS the seeded row (same wire factory, same values) —
+    // the dedup comparator compares member-for-member, so a partial literal
+    // missing `lastMessageAt` would read as a CHANGE, not an identical
+    // re-send (the erased cast hid that gap on both sides).
+    const sameChat = wireChatListItem({ title: "Chat 1", characterName: "Char c1", messageCount: 2 });
     useSnapshotStore.getState().ingestSnapshot({ chats: [sameChat] } as AppSnapshot);
     expect(useSnapshotStore.getState().chatsById["chat-1"]).toBe(chatBefore); // SAME ref
 
@@ -321,20 +316,18 @@ describe("selectVariant — Scene swap (SCN-4)", () => {
   test("selecting a variant swaps the active Scene record locally without a fetch", () => {
     const sceneA: NonNullable<AppMessage["sceneTracker"]> = { variantId: asVariantId("var_0"), schemaHash: "h0", configRevision: 1, sourceHash: "s0", sceneState: { mood: "calm" }, modelId: null, generatedAt: asTimestamp("2026-01-01T00:00:00.000Z") };
     const sceneB: NonNullable<AppMessage["sceneTracker"]> = { variantId: asVariantId("var_1"), schemaHash: "h1", configRevision: 1, sourceHash: "s1", sceneState: { mood: "tense" }, modelId: null, generatedAt: asTimestamp("2026-01-01T00:00:00.000Z") };
-    const message = {
-      id: "m1",
-      role: "assistant",
+    const message = wireMessage("m1", {
       content: "Reply A",
-      createdAt: "2026-01-01T00:00:00.000Z",
-      updatedAt: "2026-01-01T00:00:00.000Z",
-      variants: [
-        { id: "var_0", messageId: "m1", variantIndex: 0, content: "Reply A", isSelected: true, finishReason: null, createdAt: "2026-01-01T00:00:00.000Z", sceneTracker: sceneA },
-        { id: "var_1", messageId: "m1", variantIndex: 1, content: "Reply B", isSelected: false, finishReason: null, createdAt: "2026-01-01T00:00:00.000Z", sceneTracker: sceneB },
-      ],
       selectedVariantIndex: 0,
-      modelId: null,
       sceneTracker: sceneA,
-    } as unknown as AppMessage;
+      variants: [
+        // Variant ids stay "var_0"/"var_1" so the Scene records' `variantId`
+        // fields keep pointing at their own variants (the store swaps by index;
+        // the fixture stays server-coherent).
+        wireVariant("m1", 0, { id: asVariantId("var_0"), content: "Reply A", isSelected: true, sceneTracker: sceneA }),
+        wireVariant("m1", 1, { id: asVariantId("var_1"), content: "Reply B", sceneTracker: sceneB }),
+      ],
+    });
 
     useSnapshotStore.getState().ingestSnapshot({ messages: [message] } as AppSnapshot);
 
@@ -377,21 +370,29 @@ const ROW_ATTS: Attachment[] = [slotAttachment("att-row", "asset-row")];
 const V1_ATTS: Attachment[] = [slotAttachment("att-v1", "asset-v1")];
 
 function makeSlotMessage(): AppMessage {
-  return {
-    id: "slot-1",
-    role: "assistant",
-    content: "",
-    createdAt: "2026-01-01T00:00:00.000Z",
-    updatedAt: "2026-01-01T00:00:00.000Z",
+  return wireMessage("slot-1", {
     attachments: ROW_ATTS,
-    variants: [
-      { id: "var_0", messageId: "slot-1", variantIndex: 0, content: "", isSelected: true, finishReason: null, createdAt: "2026-01-01T00:00:00.000Z", attachmentsJson: null },
-      { id: "var_1", messageId: "slot-1", variantIndex: 1, content: "", isSelected: false, finishReason: null, createdAt: "2026-01-01T00:00:00.000Z", attachmentsJson: JSON.stringify(V1_ATTS) },
-    ],
     selectedVariantIndex: 0,
-    modelId: null,
-    sceneTracker: null,
-  } as unknown as AppMessage;
+    variants: [
+      wireVariant("slot-1", 0, { isSelected: true, attachmentsJson: null }),
+      wireVariant("slot-1", 1, { isSelected: false, attachmentsJson: JSON.stringify(V1_ATTS) }),
+    ],
+  });
+}
+
+/** The post-regen wire shape: the server lands with variant 1 selected and its
+ *  own attachment set on the row (the shadow, when present, rides
+ *  `messageLevelAttachments`). All three CF10 round-trip fixtures share it. */
+function makeLandedOnV1(messageLevelAttachments?: Attachment[]): AppMessage {
+  return wireMessage("slot-1", {
+    attachments: V1_ATTS,
+    selectedVariantIndex: 1,
+    ...(messageLevelAttachments ? { messageLevelAttachments } : {}),
+    variants: [
+      wireVariant("slot-1", 0, { isSelected: false, attachmentsJson: null }),
+      wireVariant("slot-1", 1, { isSelected: true, attachmentsJson: JSON.stringify(V1_ATTS) }),
+    ],
+  });
 }
 
 describe("selectVariant — slot attachment swap (IG-CF10)", () => {
@@ -428,15 +429,7 @@ describe("selectVariant — slot attachment swap (IG-CF10)", () => {
     // the wire merge shows ITS set and the row set is unknowable from this
     // snapshot — the previously captured shadow must survive the wholesale
     // replacement.
-    const postRegen = {
-      ...makeSlotMessage(),
-      attachments: V1_ATTS,
-      selectedVariantIndex: 1,
-      variants: [
-        { id: "var_0", messageId: "slot-1", variantIndex: 0, content: "", isSelected: false, finishReason: null, createdAt: "2026-01-01T00:00:00.000Z", attachmentsJson: null },
-        { id: "var_1", messageId: "slot-1", variantIndex: 1, content: "", isSelected: true, finishReason: null, createdAt: "2026-01-01T00:00:00.000Z", attachmentsJson: JSON.stringify(V1_ATTS) },
-      ],
-    } as unknown as AppMessage;
+    const postRegen = makeLandedOnV1();
     useSnapshotStore.getState().ingestSnapshot({ messages: [postRegen] } as AppSnapshot);
     expect(useSnapshotStore.getState().messagesById["slot-1"]!.attachments).toEqual(V1_ATTS);
     // Swiping back to the legacy variant still resolves the original row set.
@@ -449,15 +442,7 @@ describe("selectVariant — slot attachment swap (IG-CF10)", () => {
     // wire (no explicit field, no prior shadow): the client cannot invent
     // it, so swiping to the null variant keeps the current set instead of
     // overwriting it with a guess.
-    const landedOnV1 = {
-      ...makeSlotMessage(),
-      attachments: V1_ATTS,
-      selectedVariantIndex: 1,
-      variants: [
-        { id: "var_0", messageId: "slot-1", variantIndex: 0, content: "", isSelected: false, finishReason: null, createdAt: "2026-01-01T00:00:00.000Z", attachmentsJson: null },
-        { id: "var_1", messageId: "slot-1", variantIndex: 1, content: "", isSelected: true, finishReason: null, createdAt: "2026-01-01T00:00:00.000Z", attachmentsJson: JSON.stringify(V1_ATTS) },
-      ],
-    } as unknown as AppMessage;
+    const landedOnV1 = makeLandedOnV1();
     useSnapshotStore.getState().ingestSnapshot({ messages: [landedOnV1] } as AppSnapshot);
     useSnapshotStore.getState().selectVariant("slot-1", 0, -1);
     expect(useSnapshotStore.getState().messagesById["slot-1"]!.attachments).toEqual(V1_ATTS);
@@ -469,16 +454,7 @@ describe("selectVariant — slot attachment swap (IG-CF10)", () => {
     // back to the base variant must show the ROW image — previously this
     // corner kept the previous variant's image on screen, which read as
     // "identical content on swipes 1 and 2".
-    const withExplicitRowSet = {
-      ...makeSlotMessage(),
-      attachments: V1_ATTS,
-      messageLevelAttachments: ROW_ATTS,
-      selectedVariantIndex: 1,
-      variants: [
-        { id: "var_0", messageId: "slot-1", variantIndex: 0, content: "", isSelected: false, finishReason: null, createdAt: "2026-01-01T00:00:00.000Z", attachmentsJson: null },
-        { id: "var_1", messageId: "slot-1", variantIndex: 1, content: "", isSelected: true, finishReason: null, createdAt: "2026-01-01T00:00:00.000Z", attachmentsJson: JSON.stringify(V1_ATTS) },
-      ],
-    } as unknown as AppMessage;
+    const withExplicitRowSet = makeLandedOnV1(ROW_ATTS);
     useSnapshotStore.getState().ingestSnapshot({ messages: [withExplicitRowSet] } as AppSnapshot);
     // Loaded state: the selected variant's set.
     expect(useSnapshotStore.getState().messagesById["slot-1"]!.attachments).toEqual(V1_ATTS);
@@ -521,11 +497,14 @@ describe("ingestSnapshot — known token counts from server DTOs (TC-5)", () => 
     resetTokenCountCacheForTests();
   });
 
-  /** Server-shaped row: content + every variant carry their wire tokenCount. */
+  /** Server-shaped row: content + every variant carry their wire tokenCount.
+   *  Ids are minted through brandId at this fixture edge (the sanctioned
+   *  boundary); the underscore variant-id convention is what the patch
+   *  targets below pin (`scene-1_v1`). */
   function makeServerMessage(id: string, content: string, variantContents: string[] = []): AppMessage {
     const variants = variantContents.map((variantContent, index) => ({
-      id: `${id}_v${index}`,
-      messageId: id,
+      id: brandId<MessageVariantId>(`${id}_v${index}`),
+      messageId: brandId<MessageId>(id),
       variantIndex: index,
       content: variantContent,
       isSelected: index === 0,
@@ -534,9 +513,9 @@ describe("ingestSnapshot — known token counts from server DTOs (TC-5)", () => 
       tokenCount: realEncode(variantContent).length,
     }));
     return {
-      id,
-      chatId: "chat-tc5",
-      branchId: "branch-tc5",
+      id: brandId<MessageId>(id),
+      chatId: brandId<ChatId>("chat-tc5"),
+      branchId: brandId<ChatBranchId>("branch-tc5"),
       role: "assistant",
       authorType: "assistant",
       position: 1,
@@ -549,7 +528,7 @@ describe("ingestSnapshot — known token counts from server DTOs (TC-5)", () => 
       selectedVariantIndex: variants.length > 0 ? 0 : null,
       modelId: null,
       sceneTracker: null,
-    } as unknown as AppMessage;
+    };
   }
 
   test("a 600-message snapshot with variants: full pass over every message and variant encodes 0 times", () => {
@@ -655,14 +634,17 @@ describe("ingestSnapshot — known token counts from server DTOs (TC-5)", () => 
   test("applyInsightsCompletionPatch seeds the patched server message's counts", () => {
     encodedTexts.length = 0;
     useSnapshotStore.getState().ingestSnapshot({
-      activeChat: { id: "chat-tc5", mode: "rp" } as unknown as AppSnapshot["activeChat"],
+      activeChat: wireChat({ id: brandId<ChatId>("chat-tc5") }),
       messages: [makeServerMessage("insights-1", "original insights body")],
     } as AppSnapshot);
     const patched = makeServerMessage("insights-1", "regenerated insights body");
+    // The `variantId: null` the erased cast carried is DROPPED, not completed:
+    // the wire target's `variantId` is optional-and-absent (null was never a
+    // member); the store's `target.variantId &&` guard reads both identically.
     const applied = useSnapshotStore.getState().applyInsightsCompletionPatch({
-      target: { chatId: "chat-tc5", branchId: "branch-tc5", messageId: "insights-1", variantId: null },
+      target: { chatId: "chat-tc5", branchId: "branch-tc5", messageId: "insights-1" },
       patch: { message: patched },
-    } as unknown as InsightsCompletionPatchResponse);
+    });
     expect(applied).toBe(true);
     expect(useSnapshotStore.getState().messagesById["insights-1"]?.content).toBe("regenerated insights body");
     expect(countTokens("regenerated insights body")).toBe(realEncode("regenerated insights body").length);
@@ -672,14 +654,14 @@ describe("ingestSnapshot — known token counts from server DTOs (TC-5)", () => 
   test("applySceneTargetPatch seeds the patched server message's counts", () => {
     encodedTexts.length = 0;
     useSnapshotStore.getState().ingestSnapshot({
-      activeChat: { id: "chat-tc5", mode: "rp" } as unknown as AppSnapshot["activeChat"],
+      activeChat: wireChat({ id: brandId<ChatId>("chat-tc5") }),
       messages: [makeServerMessage("scene-1", "scene body v0", ["scene body v0", "scene body v1"])],
     } as AppSnapshot);
     const regenerated = makeServerMessage("scene-1", "regenerated scene body", ["scene body v0", "regenerated scene body"]);
     const applied = useSnapshotStore.getState().applySceneTargetPatch({
       target: { chatId: "chat-tc5", branchId: "branch-tc5", messageId: "scene-1", variantId: "scene-1_v1" },
       message: regenerated,
-    } as unknown as SceneTargetResponse);
+    });
     expect(applied).toBe(true);
     expect(countTokens("regenerated scene body")).toBe(realEncode("regenerated scene body").length);
     expect(encodedTexts).toEqual([]);

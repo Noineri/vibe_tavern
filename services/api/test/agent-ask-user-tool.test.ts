@@ -46,7 +46,14 @@ describe("createAskUserTool (DR-4b unification)", () => {
 		const ask = createAskUserTool();
 		// Read the input schema off the built tool and parse directly — the
 		// refine is the SDK-side validation the loop surfaces to the model.
-		const schema = ask.inputSchema as unknown as z.ZodTypeAny;
+		// `Tool["inputSchema"]` is FlexibleSchema (a union); every zod schema
+		// extends ZodType, so this instanceof narrows to the member that
+		// carries safeParse — the tool is declared with a zod schema, and a
+		// non-zod schema is a build regression this probe REPORTS.
+		const schema = ask.inputSchema;
+		if (!(schema instanceof z.ZodType)) {
+			throw new Error("ask_user inputSchema is not a zod schema — the probe contract is broken");
+		}
 		expect(schema.safeParse({ question: "Tone?", options: ["Grim"], recommended: "Cozy" }).success).toBe(false);
 		expect(schema.safeParse({ question: "Tone?", options: ["Grim"], recommended: "Grim" }).success).toBe(true);
 		// The free-text escape: no options at all (and no recommendation).

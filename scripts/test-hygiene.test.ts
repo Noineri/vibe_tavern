@@ -117,6 +117,21 @@ describe("test-hygiene guard (TH-4c, L2 layer)", () => {
 			"apps/web/src/example.test.tsx",
 		);
 		expect(mixed.violations).toMatchObject([{ rule: "rtl-import-needs-dom-env", line: 3 }]);
+
+		// (2026-11-12, owner ruling -- supervisor tooling unit) the rule also
+		// guards the standalone apps/web/test tree.
+		const underTestTree = scanFile(
+			`import { render } from "@testing-library/react";\nuseDomEnv();\n`,
+			"apps/web/test/example.test.tsx",
+		);
+		expect(underTestTree.violations.some((v) => v.rule === "rtl-import-needs-dom-env")).toBe(true);
+
+		// Outside apps/web the rule stays out of scope.
+		const outsideWeb = scanFile(
+			`import { render } from "@testing-library/react";\n`,
+			"packages/example/example.test.ts",
+		);
+		expect(outsideWeb.violations.filter((v) => v.rule === "rtl-import-needs-dom-env")).toEqual([]);
 	});
 
 	test("counts ratchet metrics exactly (as never, screen, innerHTML, long sleeps)", () => {
@@ -136,6 +151,51 @@ describe("test-hygiene guard (TH-4c, L2 layer)", () => {
 		expect(metrics.screen).toBe(2);
 		expect(metrics.innerHTMLEmpty).toBe(1);
 		expect(metrics.longSleeps).toBe(2);
+	});
+
+	test("long sleeps include the promise-setTimeout form above the same threshold (owner ruling 2026-11-12, TQ7a-F03)", () => {
+		const content = [
+			`await new Promise((resolve) => setTimeout(resolve, 700));`,
+			`await new Promise((r) => setTimeout(r, 350));`,
+			`const settle = () => new Promise((resolve) => setTimeout(resolve, 10));`,
+			`await new Promise((r) => setTimeout(r, 0));`,
+			`await new Promise((r) => setTimeout(r, 200));`,
+			`// await new Promise((r) => setTimeout(r, 900)); -- quoted in an incident report`,
+			`await new Promise((r) => otherThing(r));`,
+		].join("\n");
+		const { metrics } = scanFile(content, "a.test.ts");
+		expect(metrics.longSleeps).toBe(2);
+	});
+
+	test("long sleeps include the EXPRESSION form only when the constant resolves in-file (owner ruling 2026-11-12, TQ12-F04)", () => {
+		const content = [
+			`const RESYNC_MS = 2000;`,
+			`const SMALL_MS = 100;`,
+			`const UNRELATED_MS = 5;`,
+			`await new Promise((r) => setTimeout(r, RESYNC_MS + 150));`, // 2150 -- counted
+			`await new Promise((r) => setTimeout(r, SMALL_MS + 50));`, // 150 -- under threshold
+			`await new Promise((r) => setTimeout(r, NOT_DECLARED_HERE + 900));`, // unresolvable -- skipped
+			`// await new Promise((r) => setTimeout(r, RESYNC_MS + 9)); -- comment, not a usage`,
+			`await new Promise((r) => setTimeout(r, 700));`, // literal control -- counted
+		].join("\n");
+		const { metrics } = scanFile(content, "a.test.ts");
+		expect(metrics.longSleeps).toBe(2);
+	});
+
+	test("ratchet metrics skip comment lines -- a mention is not a usage (owner ruling 2026-11-12)", () => {
+		const content = [
+			`// const a = m as never; -- incident prose quoting the pattern`,
+			`// expect(screen.getByRole("button")) was the old query shape`,
+			`/* document.body.innerHTML = ""; -- the legacy teardown hack */`,
+			` * await Bun.sleep(400) -- the runner-child survivor, quoted in trail prose`,
+			`const a = m as never;`,
+			`await Bun.sleep(400);`,
+		].join("\n");
+		const { metrics } = scanFile(content, "a.test.ts");
+		expect(metrics.asNever).toBe(1);
+		expect(metrics.screen).toBe(0);
+		expect(metrics.innerHTMLEmpty).toBe(0);
+		expect(metrics.longSleeps).toBe(1);
 	});
 
 	test("runGuard breaches budgets only on growth and formatReport names the breach", () => {

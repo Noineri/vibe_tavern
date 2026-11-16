@@ -78,12 +78,18 @@ describe("CharacterAssetStore synchronous reorder rollback (ASYNC_TRANSACTION_AU
     const c = await store.create({ characterId: "char_1", ext: "webp", mimeType: "image/webp", order: 2 });
     expect((await store.listByCharacter("char_1")).map((x) => x.id)).toEqual([a.id, b.id, c.id]);
 
-    db.run(sql`CREATE TRIGGER fail_asset_c BEFORE UPDATE ON character_assets WHEN NEW.id = '${sql.raw(c.id)}' BEGIN SELECT RAISE(ABORT, 'injected asset boom'); END`);
+    // Fail the LAST submitted reorder update (a). Earlier updates for c and b
+    // already landed inside the tx and must roll back too.
+    db.run(sql`CREATE TRIGGER fail_asset_a BEFORE UPDATE ON character_assets WHEN NEW.id = '${sql.raw(a.id)}' BEGIN SELECT RAISE(ABORT, 'injected asset boom'); END`);
 
     await expect(store.reorder("char_1", [c.id, b.id, a.id])).rejects.toThrow("injected asset boom");
 
-    // Prior order intact — a/b updates rolled back with the failed c update.
-    expect((await store.listByCharacter("char_1")).map((x) => x.id)).toEqual([a.id, b.id, c.id]);
+    // Prior order and values intact — c/b updates rolled back with the failed a update.
+    expect((await store.listByCharacter("char_1")).map((x) => ({ id: x.id, order: x.order }))).toEqual([
+      { id: a.id, order: 0 },
+      { id: b.id, order: 1 },
+      { id: c.id, order: 2 },
+    ]);
   });
 });
 
@@ -105,10 +111,15 @@ describe("ChatSummaryStore synchronous reorder rollback (ASYNC_TRANSACTION_AUDIT
     const c = await summaryStore.create({ chatId: chat.id, branchId, summarizedFrom: 4, summarizedTo: 5, sortOrder: 2, label: "C" });
     expect((await summaryStore.listByChatBranch(chat.id, branchId)).map((s) => s.label)).toEqual(["A", "B", "C"]);
 
-    db.run(sql`CREATE TRIGGER fail_sum_c BEFORE UPDATE ON chat_summaries WHEN NEW.id = '${sql.raw(c.id)}' BEGIN SELECT RAISE(ABORT, 'injected summary boom'); END`);
+    // Fail the LAST submitted reorder update (a) after c and b already wrote.
+    db.run(sql`CREATE TRIGGER fail_sum_a BEFORE UPDATE ON chat_summaries WHEN NEW.id = '${sql.raw(a.id)}' BEGIN SELECT RAISE(ABORT, 'injected summary boom'); END`);
 
     await expect(summaryStore.reorder(chat.id, branchId, [c.id, b.id, a.id])).rejects.toThrow("injected summary boom");
 
-    expect((await summaryStore.listByChatBranch(chat.id, branchId)).map((s) => s.label)).toEqual(["A", "B", "C"]);
+    expect((await summaryStore.listByChatBranch(chat.id, branchId)).map((s) => ({ label: s.label, sortOrder: s.sortOrder }))).toEqual([
+      { label: "A", sortOrder: 0 },
+      { label: "B", sortOrder: 1 },
+      { label: "C", sortOrder: 2 },
+    ]);
   });
 });

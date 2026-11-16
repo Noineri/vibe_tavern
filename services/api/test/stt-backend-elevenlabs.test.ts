@@ -10,6 +10,7 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 
 import { DEFAULT_ELEVENLABS_STT_MODEL, STT_BACKENDS } from "@vibe-tavern/domain";
+import type { SttProfileConfig } from "@vibe-tavern/domain";
 
 import {
   ElevenLabsSttConfigError,
@@ -18,6 +19,7 @@ import {
   extractSpeechToText,
 } from "../src/domain/stt/backends/elevenlabs-stt.js";
 import type { SttBackend } from "../src/domain/stt/stt-backend.js";
+import { testFetch } from "./test-fetch-seam.js";
 
 const TRANSCRIBE_URL = "https://api.elevenlabs.io/v1/speech-to-text";
 const VOICES_URL = "https://api.elevenlabs.io/v1/voices";
@@ -44,13 +46,13 @@ interface CapturedRequest {
 
 function captureFetch(handler: () => Response): { captured: () => CapturedRequest | null } {
   let captured: CapturedRequest | null = null;
-  globalThis.fetch = mock(async (input: FetchArgs[0], init?: FetchArgs[1]) => {
+  globalThis.fetch = testFetch(mock(async (input: FetchArgs[0], init?: FetchArgs[1]) => {
     captured = {
       url: String(input),
       init: init ?? {},
     };
     return handler();
-  });
+  }));
   return { captured: () => captured };
 }
 
@@ -82,16 +84,20 @@ function scribeReply(text: string, languageCode = "rus"): unknown {
 
 const AUDIO_BYTES = Buffer.from("fake-wav-bytes-16k-mono");
 
+// The factories read apiKey/model/language/emotionAnnotation off the loose
+// config bag — the ST-5a adapter boundary: production injects the key and
+// casts once at the same seam (stt-adapter.ts:419); the stored SttProfileConfig
+// union never carries the secret or the emotion toggle.
 function makeBackend(overrides: Record<string, unknown> = {}): SttBackend {
   return elevenlabsSttFactory({
     model: "scribe_v2-test",
     ...overrides,
-  } as never);
+  } as SttProfileConfig);
 }
 
 describe("elevenlabs-stt: config", () => {
   test("missing apiKey → ElevenLabsSttConfigError", () => {
-    expect(() => elevenlabsSttFactory({ model: "m" } as never)).toThrow(ElevenLabsSttConfigError);
+    expect(() => elevenlabsSttFactory({ model: "m" })).toThrow(ElevenLabsSttConfigError);
   });
 
   test("empty model falls back to DEFAULT_ELEVENLABS_STT_MODEL", async () => {
@@ -187,9 +193,9 @@ describe("elevenlabs-stt: errors", () => {
   });
 
   test("transport failure → ElevenLabsSttError (network error wrapper)", async () => {
-    globalThis.fetch = mock(async () => {
+    globalThis.fetch = testFetch(mock(async () => {
       throw new Error("ECONNREFUSED");
-    });
+    }));
     const backend = makeBackend({ apiKey: "k" });
     await expect(backend.transcribe(AUDIO_BYTES, { mime: "audio/wav" })).rejects.toMatchObject({
       name: "ElevenLabsSttError",
@@ -247,7 +253,8 @@ describe("elevenlabs-stt: no listModels (static Scribe roster)", () => {
 describe("elevenlabs-stt: registry slug", () => {
   test("module-scope registration binds the elevenlabs slug", async () => {
     const { createSttBackend } = await import("../src/domain/stt/stt-registry.js");
-    const backend = createSttBackend(STT_BACKENDS.ElevenLabs, { apiKey: "k" } as never);
+    // Same injected-key bag seam as makeBackend (ST-5a).
+    const backend = createSttBackend(STT_BACKENDS.ElevenLabs, { apiKey: "k" } as SttProfileConfig);
     expect(typeof backend.transcribe).toBe("function");
   });
 });

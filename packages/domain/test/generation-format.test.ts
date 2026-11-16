@@ -50,8 +50,22 @@ describe("resolveEffectiveGenerationFormat (LS-10 decision c)", () => {
 
 	it("profile auto + builtin selection materializes THAT builtin's sequences", () => {
 		const effective = resolveEffectiveGenerationFormat({ mode: "auto", selection: "builtin:chatml" }, PRESET_FORMAT);
-		expect(effective?.selection).toBe("builtin:chatml");
-		expect(effective?.inputSequence).toBe(BUILTIN_FORMAT_TEMPLATES.find((tpl) => tpl.id === "chatml")?.format.inputSequence);
+		expect(effective).toEqual({
+			mode: "manual",
+			selection: "builtin:chatml",
+			inputSequence: "<|im_start|>user",
+			outputSequence: "<|im_start|>assistant",
+			systemSequence: "<|im_start|>system",
+			inputSuffix: "<|im_end|>\n",
+			outputSuffix: "<|im_end|>\n",
+			systemSuffix: "<|im_end|>\n",
+			firstOutputSequence: "",
+			lastOutputSequence: "",
+			systemSequencePrefix: "",
+			systemSequenceSuffix: "",
+			wrap: true,
+			namesBehavior: "always",
+		});
 	});
 
 	it("both absent → null (the adapters keep their auto semantics)", () => {
@@ -61,14 +75,61 @@ describe("resolveEffectiveGenerationFormat (LS-10 decision c)", () => {
 });
 
 describe("BUILTIN_FORMAT_TEMPLATES (LS-10 dropdown)", () => {
-	it("ships only templates with verified sequences (non-empty user+assistant markers)", () => {
-		expect(BUILTIN_FORMAT_TEMPLATES.length).toBeGreaterThan(0);
+	it("ships the three verified builtin templates with pinned sequences and metadata", () => {
+		expect(BUILTIN_FORMAT_TEMPLATES.map((tpl) => tpl.id)).toEqual(["chatml", "llama3", "mistral"]);
 		for (const tpl of BUILTIN_FORMAT_TEMPLATES) {
 			expect(tpl.label.length).toBeGreaterThan(0);
 			expect(tpl.source.length).toBeGreaterThan(0);
-			expect(tpl.format.inputSequence?.length ?? 0).toBeGreaterThan(0);
-			expect(tpl.format.outputSequence?.length ?? 0).toBeGreaterThan(0);
 		}
+		expect(BUILTIN_FORMAT_TEMPLATES.map((tpl) => ({ id: tpl.id, format: tpl.format }))).toEqual([
+			{
+				id: "chatml",
+				format: {
+					mode: "manual",
+					inputSequence: "<|im_start|>user",
+					outputSequence: "<|im_start|>assistant",
+					systemSequence: "<|im_start|>system",
+					inputSuffix: "<|im_end|>\n",
+					outputSuffix: "<|im_end|>\n",
+					systemSuffix: "<|im_end|>\n",
+					firstOutputSequence: "",
+					lastOutputSequence: "",
+					systemSequencePrefix: "",
+					systemSequenceSuffix: "",
+					wrap: true,
+					namesBehavior: "always",
+				},
+			},
+			{
+				id: "llama3",
+				format: {
+					mode: "manual",
+					inputSequence: "<|start_header_id|>user<|end_header_id|>\n\n",
+					outputSequence: "<|start_header_id|>assistant<|end_header_id|>\n\n",
+					systemSequence: "<|start_header_id|>system<|end_header_id|>\n\n",
+					inputSuffix: "<|eot_id|>",
+					outputSuffix: "<|eot_id|>",
+					systemSuffix: "<|eot_id|>",
+					firstOutputSequence: "",
+					lastOutputSequence: "",
+					wrap: false,
+					namesBehavior: "always",
+				},
+			},
+			{
+				id: "mistral",
+				format: {
+					mode: "manual",
+					inputSequence: "[INST] ",
+					outputSequence: "[/INST] ",
+					lastOutputSequence: "[/INST]",
+					systemSequence: "",
+					outputSuffix: "</s>",
+					wrap: false,
+					namesBehavior: "always",
+				},
+			},
+		]);
 	});
 
 	it("the selection parser resolves builtins and rejects unknown ids", () => {

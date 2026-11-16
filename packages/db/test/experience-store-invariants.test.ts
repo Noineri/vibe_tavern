@@ -16,9 +16,12 @@
  * DiceRollStore + MessageStore transaction tests on Windows.
  */
 import { describe, expect, test, beforeEach } from "bun:test";
+import { mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { eq, sql } from "drizzle-orm";
 import { createDb, type AppDb } from "../src/db-connection.js";
 import * as schema from "../src/db-schema.js";
-import { eq } from "drizzle-orm";
 
 import { ChatStore } from "../src/stores/chat-store.js";
 import { MessageStore } from "../src/stores/message-store.js";
@@ -44,34 +47,37 @@ let chatStore: ChatStore;
 let messageStore: MessageStore;
 let store: ExperienceStore;
 
+function seedParents(targetDb: AppDb) {
+  // FK parents: character → persona → chat + root branch.
+  targetDb.insert(schema.characters).values({
+    id: "char_1", name: "TestChar", description: "",
+    alternateGreetingsJson: "[]", extensionsJson: "{}", tagsJson: "[]",
+    status: "active", createdAt: FIXED_NOW, updatedAt: FIXED_NOW,
+  }).run();
+  targetDb.insert(schema.personas).values({
+    id: "persona_1", name: "Player", description: "",
+    defaultForNewChats: 0, hasFileOnDisk: 0,
+    createdAt: FIXED_NOW, updatedAt: FIXED_NOW,
+  }).run();
+  targetDb.insert(schema.chats).values({
+    id: "chat_1", characterId: "char_1", personaId: "persona_1",
+    activeBranchId: "branch_1", promptPresetId: null,
+    title: "Inv chat", summary: "", messageHistoryLimit: 0,
+    status: "active", createdAt: FIXED_NOW, updatedAt: FIXED_NOW,
+  }).run();
+  targetDb.insert(schema.chatBranches).values({
+    id: "branch_1", chatId: "chat_1", parentBranchId: null,
+    forkedFromMessageId: null, label: "main", createdAt: FIXED_NOW,
+  }).run();
+}
+
 beforeEach(async () => {
   idCounters = new Map();
   db = await createDb(":memory:");
   chatStore = new ChatStore(db, { clock: fixedClock, idGenerator: idGen });
   messageStore = new MessageStore(db, { clock: fixedClock, idGenerator: idGen });
   store = new ExperienceStore(db, { clock: fixedClock, idGenerator: idGen });
-
-  // FK parents: character → persona → chat + root branch.
-  db.insert(schema.characters).values({
-    id: "char_1", name: "TestChar", description: "",
-    alternateGreetingsJson: "[]", extensionsJson: "{}", tagsJson: "[]",
-    status: "active", createdAt: FIXED_NOW, updatedAt: FIXED_NOW,
-  }).run();
-  db.insert(schema.personas).values({
-    id: "persona_1", name: "Player", description: "",
-    defaultForNewChats: 0, hasFileOnDisk: 0,
-    createdAt: FIXED_NOW, updatedAt: FIXED_NOW,
-  }).run();
-  db.insert(schema.chats).values({
-    id: "chat_1", characterId: "char_1", personaId: "persona_1",
-    activeBranchId: "branch_1", promptPresetId: null,
-    title: "Inv chat", summary: "", messageHistoryLimit: 0,
-    status: "active", createdAt: FIXED_NOW, updatedAt: FIXED_NOW,
-  }).run();
-  db.insert(schema.chatBranches).values({
-    id: "branch_1", chatId: "chat_1", parentBranchId: null,
-    forkedFromMessageId: null, label: "main", createdAt: FIXED_NOW,
-  }).run();
+  seedParents(db);
 });
 
 function baseSession(overrides: Record<string, unknown> = {}) {
@@ -179,46 +185,100 @@ describe("IR-22 — idempotency: duplicate requestId returns the EXACT prior tra
 // ─── CAS serialization (two-tab / stale-revision races) ─────────────────────
 
 describe("IR-22 — CAS serializes concurrent transitions (no lost updates)", () => {
-  test("two different requestIds claiming the same revision: one wins, the other is stale", async () => {
+  test("two concurrent contenders claiming the same revision: exactly one commits with no lost updates", async () => {
     const s = await seedSession();
-    // Tab A wins the race.
-    const a = await store.applyTransition(
-      baseTransition({ sessionId: s.id, requestId: "req_a", expectedRevision: 0 }),
+    const origGetSessionById = store.getSessionById.bind(store);
+
+    // Coordinate BOTH contenders at the pre-transaction read (experience-store.ts:591)
+    // so both observe revision 0 before either enters db.transaction(...).
+    let arrived = 0;
+    let releaseBarrier!: () => void;
+    const bothRead = new Promise<void>((resolve) => {
+      releaseBarrier = resolve;
+    });
+    store.getSessionById = async (id: string) => {
+      const row = await origGetSessionById(id);
+      arrived += 1;
+      if (arrived === 1) {
+        await bothRead;
+      } else if (arrived === 2) {
+        releaseBarrier();
+      }
+      return row;
+    };
+
+    try {
+      const results = await Promise.allSettled([
+        store.applyTransition(
+          baseTransition({ sessionId: s.id, requestId: "req_a", expectedRevision: 0, newCurrentStateJson: '{"winner":"a"}' }),
+        ),
+        store.applyTransition(
+          baseTransition({ sessionId: s.id, requestId: "req_b", expectedRevision: 0, newCurrentStateJson: '{"winner":"b"}' }),
+        ),
+      ]);
+
+      const winners = results.filter(
+        (r): r is PromiseFulfilledResult<Awaited<ReturnType<typeof store.applyTransition>> & { ok: true }> =>
+          r.status === "fulfilled" && r.value.ok,
+      );
+      expect(winners).toHaveLength(1);
+
+      const loser = results.find((r) => r !== winners[0])!;
+      if (loser.status === "fulfilled") {
+        expect(loser.value).toEqual({ ok: false, conflict: "stale_revision" });
+      } else {
+        // Unique (session_id, sequence) index rolls back the losing tx atomically.
+        expect(String(loser.reason)).toMatch(/UNIQUE constraint failed/i);
+      }
+
+      const winnerStep = winners[0].value.step;
+      const winnerState = winners[0].value.session.currentStateJson;
+      const steps = await store.getSteps(s.id);
+      expect(steps).toHaveLength(1);
+      expect(steps[0].requestId).toBe(winnerStep.requestId);
+      const fresh = await origGetSessionById(s.id);
+      expect(fresh?.revision).toBe(1);
+      expect(fresh?.currentStateJson).toBe(winnerState);
+    } finally {
+      store.getSessionById = origGetSessionById;
+    }
+
+    // Subsequent sequential stale request still yields a clean typed conflict.
+    const sequentialStale = await store.applyTransition(
+      baseTransition({ sessionId: s.id, requestId: "req_late", expectedRevision: 0 }),
     );
-    expect(a.ok).toBe(true);
-    // Tab B's stale view (still thinks rev 0) is rejected AFTER A advanced to rev 1.
-    const b = await store.applyTransition(
-      baseTransition({ sessionId: s.id, requestId: "req_b", expectedRevision: 0 }),
-    );
-    expect(b.ok).toBe(false);
-    if (b.ok) return;
-    expect(b.conflict).toBe("stale_revision");
-    // Only A's step exists; B wrote nothing.
-    expect(await store.getSteps(s.id)).toHaveLength(1);
-    const fresh = await store.getSessionById(s.id);
-    expect(fresh?.revision).toBe(1);
+    expect(sequentialStale).toEqual({ ok: false, conflict: "stale_revision" });
   });
 
-  test("stale revision after simulated restart/process-loss rejects without corrupting state", async () => {
-    const s = await seedSession();
-    await store.applyTransition(baseTransition({ sessionId: s.id, requestId: "req_a" })); // rev 1
-    await store.applyTransition(
-      baseTransition({ sessionId: s.id, requestId: "req_b", expectedRevision: 1, newCurrentStateJson: '{"rev":2}' }),
-    ); // rev 2
+  test("stale revision after DB close and reopen rejects without corrupting state", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "vt-xstore-inv-restart-"));
+    const dbPath = join(dir, "restart.db");
+    const firstDb = await createDb(dbPath);
+    seedParents(firstDb);
+    const firstStore = new ExperienceStore(firstDb, { clock: fixedClock, idGenerator: idGen });
+    const created = await firstStore.createSession(baseSession({ currentStateJson: '{"rev":0}' }));
+    if (!created.ok) throw new Error("createSession failed");
 
-    // A "recovered" client resubmits a transition it had drafted at rev 1.
-    const stale = await store.applyTransition(
-      baseTransition({ sessionId: s.id, requestId: "req_recovered", expectedRevision: 1 }),
+    await firstStore.applyTransition(baseTransition({ sessionId: created.session.id, requestId: "req_a" }));
+    await firstStore.applyTransition(
+      baseTransition({ sessionId: created.session.id, requestId: "req_b", expectedRevision: 1, newCurrentStateJson: '{"rev":2}' }),
     );
-    expect(stale.ok).toBe(false);
-    if (stale.ok) return;
-    expect(stale.conflict).toBe("stale_revision");
+    firstDb.$client.close();
+
+    // Real restart: reopen the SQLite file with a fresh ExperienceStore.
+    const reopenedDb = await createDb(dbPath);
+    const reopenedStore = new ExperienceStore(reopenedDb, { clock: fixedClock, idGenerator: idGen });
+
+    const stale = await reopenedStore.applyTransition(
+      baseTransition({ sessionId: created.session.id, requestId: "req_recovered", expectedRevision: 1 }),
+    );
+    expect(stale).toEqual({ ok: false, conflict: "stale_revision" });
 
     // Session intact at rev 2 with its real state; exactly two steps.
-    const fresh = await store.getSessionById(s.id);
+    const fresh = await reopenedStore.getSessionById(created.session.id);
     expect(fresh?.revision).toBe(2);
     expect(fresh?.currentStateJson).toBe('{"rev":2}');
-    expect(await store.getSteps(s.id)).toHaveLength(2);
+    expect(await reopenedStore.getSteps(created.session.id)).toHaveLength(2);
   });
 });
 
@@ -271,8 +331,35 @@ describe("IR-22 — delayed effect completions never overwrite newer session sta
     expect(fresh?.randomCursor).toBe(2);
   });
 
-  test("a transition + its pending effect are committed together (persist-before-run, no half-applies)", async () => {
+  test("a transition + its pending effect roll back together on effect failure and commit together on success", async () => {
     const s = await seedSession();
+    await db.run(sql.raw(`
+      CREATE TRIGGER inject_effect_insert_fail
+      BEFORE INSERT ON experience_effects
+      BEGIN
+        SELECT RAISE(ABORT, 'inject_effect_fail');
+      END
+    `));
+    try {
+      await expect(
+        store.applyTransition(
+          baseTransition({
+            sessionId: s.id,
+            requestId: "req_abort",
+            emittedEffectsJson: '[{"kind":"model","request":{}}]',
+            newCurrentStateJson: '{"rev":1,"aborted":true}',
+          }),
+        ),
+      ).rejects.toThrow("inject_effect_fail");
+      const rolledBack = await store.getSessionById(s.id);
+      expect(rolledBack?.revision).toBe(0);
+      expect(rolledBack?.currentStateJson).toBe('{"rev":0}');
+      expect(await store.getSteps(s.id)).toHaveLength(0);
+      expect(await store.getEffectsForSession(s.id)).toHaveLength(0);
+    } finally {
+      await db.run(sql.raw("DROP TRIGGER IF EXISTS inject_effect_insert_fail"));
+    }
+
     const out = await store.applyTransition(
       baseTransition({
         sessionId: s.id,
@@ -326,7 +413,7 @@ describe("IR-22 — effect lifecycle: reconcile-on-restart, retry, cancellation"
     expect(fresh?.revision).toBe(1);
   });
 
-  test("a cancelled effect is terminal; the session continues independently", async () => {
+  test("a cancelled effect cannot be claimed and does not block the session", async () => {
     const s = await seedSession();
     await store.applyTransition(
       baseTransition({
@@ -339,6 +426,8 @@ describe("IR-22 — effect lifecycle: reconcile-on-restart, retry, cancellation"
     await store.claimEffect(eff.id);
     await store.cancelEffect(eff.id);
     expect((await store.getEffectById(eff.id))?.status).toBe("cancelled");
+    expect(await store.claimEffect(eff.id)).toBeNull();
+    expect(await store.getPendingEffectsByKind("model")).toEqual([]);
 
     // Another action proceeds normally — the cancelled effect did not block.
     const next = await store.applyTransition(
@@ -442,10 +531,15 @@ describe("IR-22 — fork-copy attachments: fresh id, rebound, snapshot preserved
       (tx, msgIdMap, newBranchId) => store.forkCopyAttachmentsInTx(tx, msgIdMap, newBranchId),
     );
     const forkedMsgs = await messageStore.getMessages(forked.id);
+    expect(forkedMsgs.map((m) => ({ role: m.role, content: m.content }))).toEqual([
+      { role: "user", content: "clean" },
+      { role: "assistant", content: "ok" },
+    ]);
+    expect(forkedMsgs.map((m) => m.id)).not.toContain(userMsg.id);
     for (const m of forkedMsgs) {
       expect(await store.getAttachmentsForMessage(m.id)).toHaveLength(0);
     }
-    void s; void userMsg;
+    void s;
   });
 });
 

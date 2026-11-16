@@ -18,6 +18,7 @@ import {
   setOrUndefined,
   sniffImageMime,
 } from "../src/domain/imagegen/backends/backend-helpers.js";
+import { testFetch } from "./test-fetch-seam.js";
 
 /** The family's main-error shape (message + cause/status options). */
 class TestTransportError extends Error {
@@ -46,7 +47,7 @@ describe("fetchOrWrap (IG-R1)", () => {
   it("returns the transport's response untouched on success", async () => {
     const response = new Response("ok");
     const result = await fetchOrWrap(
-      async () => response,
+      testFetch(async () => response),
       "https://example.test/generate",
       { method: "POST" },
       "generation",
@@ -60,9 +61,9 @@ describe("fetchOrWrap (IG-R1)", () => {
     const abort = new Error("The operation was aborted");
     abort.name = "AbortError";
     const caught = await fetchOrWrap(
-      async () => {
+      testFetch(async () => {
         throw abort;
-      },
+      }),
       "https://example.test/generate",
       { method: "POST" },
       "generation",
@@ -77,9 +78,9 @@ describe("fetchOrWrap (IG-R1)", () => {
   it("rethrows a DOMException AbortError (what fetch itself throws) untouched", async () => {
     const abort = new DOMException("Aborted", "AbortError");
     const caught = await fetchOrWrap(
-      async () => {
+      testFetch(async () => {
         throw abort;
-      },
+      }),
       "https://example.test/generate",
       { method: "POST" },
       "generation",
@@ -92,9 +93,9 @@ describe("fetchOrWrap (IG-R1)", () => {
   it("wraps an Error failure in the given class with the byte-identical message", async () => {
     const cause = new Error("boom");
     const caught = await fetchOrWrap(
-      async () => {
+      testFetch(async () => {
         throw cause;
-      },
+      }),
       "https://example.test/generate",
       { method: "POST" },
       "generation",
@@ -110,9 +111,9 @@ describe("fetchOrWrap (IG-R1)", () => {
 
   it("wraps a non-Error throw with String(cause) in the message", async () => {
     const caught = await fetchOrWrap(
-      async () => {
+      testFetch(async () => {
         throw "raw failure";
-      },
+      }),
       "https://example.test/generate",
       { method: "POST" },
       "image download",

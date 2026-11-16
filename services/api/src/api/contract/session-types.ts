@@ -99,6 +99,11 @@ export interface ImportResult {
 		warnings: string[];
 		attachedToCharacterName?: string;
 	};
+	/** RX-15 UI surface: how many regex RULES landed in the card's single
+	 *  Regex Profile bundle (RXU-23) — 0 on no-regex cards, all-duplicate
+	 *  re-imports, and contained regex failures (always 0 on paths that skip
+	 *  regex import). Present on character imports; omitted otherwise. */
+	createdRegexPresets?: number;
 }
 
 // Result of a mass-import batch (POST /api/import/batch). One entry per input

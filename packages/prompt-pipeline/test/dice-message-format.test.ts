@@ -58,10 +58,17 @@ describe("formatDiceMessageBlock", () => {
       faceShape: "d20",
       resolution: "narrative",
       attempts: [{ attemptId: "att_1", faces: [14], modifier: 0, subtotal: 14, total: 14 }],
-      final: undefined,
+      final: {
+        total: 14,
+        outcome: "success",
+        degree: "critical",
+        constraint: "must never leak into narrative block",
+      },
     });
     const block = formatDiceMessageBlock([roll]);
     expect(block).toBe("[Dice]\nAthletics (d20) — Theron: [14] = 14.");
+    expect(block).not.toContain("Adjudication:");
+    expect(block).not.toContain("must never leak into narrative block");
   });
 
   it("formats multiple checks in one block (order preserved)", () => {

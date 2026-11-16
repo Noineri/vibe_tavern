@@ -91,7 +91,6 @@ export function useAnyHeaderZoneOpen(messageId: string): boolean {
 // Debug helper — mirrors the window.__ exposure pattern used by the other
 // ephemeral stores. Lets a live Playwright / dev-console session inspect the
 // expansion state to diagnose "avatar not growing" / "zone won't expand".
-if (typeof window !== "undefined") {
-  (window as unknown as { __useHeaderZoneExpansionStore?: unknown }).__useHeaderZoneExpansionStore =
-    useHeaderZoneExpansionStore;
-}
+// The member's type lives in lib/debug-globals.d.ts (the debug-window surface's
+// single source).
+if (typeof window !== "undefined") window.__useHeaderZoneExpansionStore = useHeaderZoneExpansionStore;

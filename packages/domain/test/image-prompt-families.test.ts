@@ -30,7 +30,7 @@ describe("image-prompt-families registry", () => {
   });
 
   test("grammars: tag families tags, prose-lineage prose, hybrid hybrid", () => {
-    for (const id of ["pony", "illustrious", "noobai", "anima"] as const) {
+    for (const id of ["pony", "illustrious", "noobai", "anima", "novelai"] as const) {
       expect(IMAGE_PROMPT_FAMILIES[id].grammar).toBe("tags");
     }
     for (const id of ["prose", "krea2", "qwen", "sdxl-realism"] as const) {

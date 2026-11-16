@@ -3,9 +3,12 @@
  * sidechat `propose_objective` record proposal (`recordType: "objective"`),
  * registered as `recordProposalRenderers.objective` in the sidechat host.
  *
- * forks: 2 — StoryPlanProposalCard.tsx (DR-10a's sanctioned fork on this
- * skeleton) and TrackerSceneProposalCard.tsx (DR-10b); each copy's header
- * carries its own correspondence map.
+ * forks: 4 — StoryPlanProposalCard.tsx (DR-10a's sanctioned fork on this
+ * skeleton), TrackerSceneProposalCard.tsx (DR-10b),
+ * DirectorMessageProposalCard.tsx (DMT-33 — one card for both Director
+ * message record types), and StoryDeckProposalCard.tsx (DK-8 — the deck
+ * proposal card, mock §4); each copy's header carries its own correspondence
+ * map.
  *
  * DR-10b (R3): while the ACTIVE branch plan has events, the same objective
  * proposal becomes the next PLAN EVENT (the DR-5 dispatch inserts it after
@@ -55,14 +58,13 @@
  */
 
 import { useState } from "react";
-import { brandId, type ChatId } from "@vibe-tavern/domain";
+import { brandId, pickCurrentPlanTask, type ChatId } from "@vibe-tavern/domain";
 import type { RecordProposal } from "@vibe-tavern/api-contracts";
 import { toast } from "sonner";
 import type { RecordProposalCardProps } from "../../../lib/agent-host-registry.js";
 import { useSnapshotStore } from "../../../stores/snapshot-store.js";
 import { fetchChatAction } from "../../../stores/api-actions/chat-actions.js";
 import { ingestAgentPlan, useAgentPlan } from "../../../hooks/use-agent-plan.js";
-import { pickCurrent } from "../../shared/agent-plan/AgentPlanPanel.js";
 import {
   applyObjectiveProposal,
   rejectObjectiveProposal,
@@ -137,10 +139,11 @@ export function ObjectiveProposalCard({ proposal, threadId, onResolved }: Record
   // cache never flashes the plan-mode copy over a plan that may not exist.
   const planMode = !isLoading && plan.tasks.length > 0;
   // The current event's title interpolates into the "goes next" line (the
-  // shared `pickCurrent` rule — `pickCurrentStoryEvent`'s web twin). An
+  // ONE domain pick rule; a null clock — this card reads no tracker time —
+  // returns exactly the retired local `pickCurrent` result). An
   // all-completed plan has no current event: the line simply renders nothing
   // (the backend appends at the end — `insertStoryEventAfterCurrent`).
-  const currentEvent = pickCurrent(plan.tasks);
+  const currentEvent = pickCurrentPlanTask(plan.tasks, null);
 
   async function runResolve(decision: "apply" | "reject"): Promise<void> {
     if (busy || status !== "pending") return;

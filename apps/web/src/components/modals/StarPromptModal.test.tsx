@@ -6,14 +6,14 @@
  * is covered too: dismissing is a deferral, not consent to be asked again on
  * the next reply.
  */
-import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import { wireUiSettings } from "../../../test/wire-fixtures.js";
 import { useDomEnv } from "../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 import type { UiSettingsRecord } from "../../api/types.js";
 
 useDomEnv();
-const { fireEvent, render, screen } = await import("@testing-library/react");
+const { fireEvent, render } = await import("@testing-library/react");
 
 const mockState = {
   /** Every patch passed to patchUiSettingsAction, in call order. */
@@ -84,10 +84,18 @@ function openModal(settings: Partial<UiSettingsRecord> = {}) {
     },
   });
   useModalStore.setState({ isStarPromptOpen: true });
-  render(<StarPromptModal />);
+  return render(<StarPromptModal />);
 }
 
 describe("StarPromptModal", () => {
+  let originalWindowOpen: typeof window.open;
+  beforeAll(() => {
+    originalWindowOpen = window.open;
+  });
+  afterAll(() => {
+    window.open = originalWindowOpen;
+  });
+
   beforeEach(() => {
     mockState.patches.length = 0;
     mockState.opened.length = 0;
@@ -99,9 +107,9 @@ describe("StarPromptModal", () => {
   });
 
   it("the star button opens the repo and records the ask as answered", () => {
-    openModal();
+    const { getByText } = openModal();
 
-    fireEvent.click(screen.getByText("star_prompt_cta"));
+    fireEvent.click(getByText("star_prompt_cta"));
 
     expect(mockState.opened).toEqual(["https://github.com/Noineri/vibe_tavern"]);
     expect(mockState.patches).toEqual([{ githubStarred: true }]);
@@ -109,26 +117,26 @@ describe("StarPromptModal", () => {
   });
 
   it("Later defers by the next interval without leaving the app", () => {
-    openModal();
+    const { getByText } = openModal();
 
-    fireEvent.click(screen.getByText("star_prompt_later"));
+    fireEvent.click(getByText("star_prompt_later"));
 
     expect(mockState.opened).toEqual([]);
     expect(mockState.patches).toEqual([{ starPromptDeferrals: 1, nextStarPromptAt: 110 }]);
   });
 
   it("a second Later waits longer than the first", () => {
-    openModal({ userMessageCount: 110, nextStarPromptAt: 110, starPromptDeferrals: 1 });
+    const { getByText } = openModal({ userMessageCount: 110, nextStarPromptAt: 110, starPromptDeferrals: 1 });
 
-    fireEvent.click(screen.getByText("star_prompt_later"));
+    fireEvent.click(getByText("star_prompt_later"));
 
     expect(mockState.patches).toEqual([{ starPromptDeferrals: 2, nextStarPromptAt: 410 }]);
   });
 
   it("the opt-out silences the prompt without opening the repo", () => {
-    openModal();
+    const { getByText } = openModal();
 
-    fireEvent.click(screen.getByText("star_prompt_never"));
+    fireEvent.click(getByText("star_prompt_never"));
 
     expect(mockState.opened).toEqual([]);
     expect(mockState.patches).toEqual([{ githubStarred: true }]);

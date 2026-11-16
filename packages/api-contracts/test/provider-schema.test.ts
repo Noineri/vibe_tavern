@@ -12,7 +12,7 @@ import {
   modelSettingsOverlaySchema,
   samplerPresetPayloadSchema,
 } from "../src/schemas/provider-schema.js";
-import { COAUTHOR_TRANSPORT, PHRASE_REP_PEN, SAMPLER_FIELDS, THINKING_MODE, type SamplerFieldId } from "@vibe-tavern/domain";
+import { COAUTHOR_TRANSPORT, PHRASE_REP_PEN, PROXY_MODE, SAMPLER_FIELDS, THINKING_MODE, type SamplerFieldId } from "@vibe-tavern/domain";
 
 /**
  * Characterization tests for the provider schemas.
@@ -144,10 +144,21 @@ describe("saveProviderDraftSchema", () => {
   // Other nullable+optional string fields (defaultModel, seed, visionModel).
   it("treats defaultModel/seed/visionModel as nullable+optional", () => {
     const base = validSaveDraft();
+    const baseParsed = saveProviderDraftSchema.parse(base);
     for (const field of ["defaultModel", "seed", "visionModel"] as const) {
-      expect(saveProviderDraftSchema.safeParse({ ...base, [field]: null }).success).toBe(true);
-      expect(saveProviderDraftSchema.safeParse({ ...base, [field]: undefined }).success).toBe(true);
-      expect(saveProviderDraftSchema.safeParse({ ...base, [field]: "x" }).success).toBe(true);
+      expect(field in baseParsed).toBe(false);
+
+      const asNull = saveProviderDraftSchema.parse({ ...base, [field]: null });
+      expect(asNull[field]).toBeNull();
+
+      const asUndefined = saveProviderDraftSchema.parse({ ...base, [field]: undefined });
+      expect(asUndefined[field]).toBeUndefined();
+
+      const asString = saveProviderDraftSchema.parse({ ...base, [field]: "x" });
+      expect(asString[field]).toBe("x");
+
+      expectReject(saveProviderDraftSchema.safeParse({ ...base, [field]: 123 }));
+      expectReject(saveProviderDraftSchema.safeParse({ ...base, [field]: true }));
     }
   });
 
@@ -276,8 +287,18 @@ describe("fetchModelsSchema", () => {
   });
 
   it("accepts all fields populated", () => {
-    const payload = { baseUrl: "https://e", apiKey: "k", providerType: "openai" };
-    expect(fetchModelsSchema.safeParse(payload).success).toBe(true);
+    const payload = {
+      baseUrl: "https://e",
+      apiKey: "k",
+      providerType: "openai",
+      proxyMode: PROXY_MODE.proxy,
+      proxyId: "proxy-1",
+    };
+    expect(fetchModelsSchema.parse(payload)).toEqual(payload);
+
+    const clearedProxy = { ...payload, proxyId: null };
+    expect(fetchModelsSchema.parse(clearedProxy)).toEqual(clearedProxy);
+    expectReject(fetchModelsSchema.safeParse({ ...payload, proxyMode: "socks5" }));
   });
 });
 
@@ -294,8 +315,14 @@ describe("testChatSchema", () => {
       apiKey: "k",
       model: "gpt-x",
       providerType: "openai",
+      proxyMode: PROXY_MODE.proxy,
+      proxyId: "proxy-1",
     };
-    expect(testChatSchema.safeParse(payload).success).toBe(true);
+    expect(testChatSchema.parse(payload)).toEqual(payload);
+
+    const clearedProxy = { ...payload, proxyId: null };
+    expect(testChatSchema.parse(clearedProxy)).toEqual(clearedProxy);
+    expectReject(testChatSchema.safeParse({ ...payload, proxyMode: "socks5" }));
   });
 });
 
@@ -413,22 +440,48 @@ describe("modelSettingsOverlaySchema", () => {
     expect("name" in parsed).toBe(false);
   });
 
-  it("accepts arrays (stopSequences, drySequenceBreakers, logitBias)", () => {
-    const parsed = modelSettingsOverlaySchema.parse({
+  it("accepts arrays (stopSequences, drySequenceBreakers, bannedStrings, logitBias) and rejects non-string elements", () => {
+    const payload = {
       stopSequences: ["\n\nUser:"],
       drySequenceBreakers: ["\n"],
       bannedStrings: [" finger"],
       logitBias: [{ tokenId: 1, bias: 5 }],
-    });
-    expect(parsed.stopSequences).toEqual(["\n\nUser:"]);
-    expect(parsed.logitBias).toEqual([{ tokenId: 1, bias: 5 }]);
+    };
+    expect(modelSettingsOverlaySchema.parse(payload)).toEqual(payload);
+    expectReject(modelSettingsOverlaySchema.safeParse({ stopSequences: [1] }));
+    expectReject(modelSettingsOverlaySchema.safeParse({ drySequenceBreakers: [1] }));
+    expectReject(modelSettingsOverlaySchema.safeParse({ bannedStrings: [1] }));
   });
 });
 
 describe("samplerPresetPayloadSchema (clipboard)", () => {
-  it("accepts the same surface as the overlay", () => {
-    const payload = { temperature: 0.7, topP: 0.9, stopSequences: ["x"] };
-    expect(samplerPresetPayloadSchema.safeParse(payload).success).toBe(true);
+  it("shares the exact overlay schema and key surface", () => {
+    expect(samplerPresetPayloadSchema).toBe(modelSettingsOverlaySchema);
+    expect(Object.keys(samplerPresetPayloadSchema.shape).sort()).toEqual(
+      Object.keys(modelSettingsOverlaySchema.shape).sort(),
+    );
+
+    const payload = {
+      contextBudget: 8192,
+      pinContextBudget: true,
+      maxTokens: 1024,
+      temperature: 0.7,
+      topP: 0.9,
+      drySequenceBreakers: ["\n"],
+      phraseRepPen: PHRASE_REP_PEN.light,
+      thinkingMode: THINKING_MODE.auto,
+      stopSequences: ["x"],
+      bannedStrings: ["slop"],
+      logitBias: [{ tokenId: 42, bias: -10 }],
+      seed: "42",
+      reasoningEffort: "medium",
+      showReasoning: true,
+      streamResponse: false,
+      customSamplers: true,
+      samplerSetId: "set-1",
+    };
+    expect(samplerPresetPayloadSchema.parse(payload)).toEqual(payload);
+    expect(modelSettingsOverlaySchema.parse(payload)).toEqual(payload);
   });
 
   it("rejects malformed logitBias bias (shares the overlay's -100..100 bound)", () => {

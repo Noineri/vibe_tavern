@@ -16,7 +16,7 @@
  *
  * Pure pipeline test: no DB, no LLM, no I/O.
  */
-import { beforeEach, describe, expect, it } from "bun:test";
+import { afterAll, beforeEach, describe, expect, it } from "bun:test";
 import { getInsightsAssembler, INSIGHTS_ASSEMBLERS } from "../src/insights/insights-assemblers.ts";
 import { setTokenCountFn } from "../src/compaction.ts";
 import type { PromptAssemblyContext, InsightsKind } from "../src/types.ts";
@@ -27,6 +27,10 @@ function messagesOf(result: ReturnType<ReturnType<typeof getInsightsAssembler>["
 
 beforeEach(() => {
   setTokenCountFn((text) => text.length);
+});
+
+afterAll(() => {
+  setTokenCountFn(() => 0);
 });
 
 function makeContext(overrides: Partial<PromptAssemblyContext> = {}): PromptAssemblyContext {
@@ -54,7 +58,9 @@ function makeContext(overrides: Partial<PromptAssemblyContext> = {}): PromptAsse
 
 describe("InsightsAssembler registry (INS-3c manifest)", () => {
   it("registers an assembler for every InsightsKind (no silent holes)", () => {
-    const kinds: InsightsKind[] = ["objective", "scene"];
+    const allKinds: Record<InsightsKind, true> = { objective: true, scene: true };
+    const kinds = Object.keys(allKinds) as InsightsKind[];
+    expect(Object.keys(INSIGHTS_ASSEMBLERS).sort()).toEqual([...kinds].sort());
     for (const kind of kinds) {
       expect(INSIGHTS_ASSEMBLERS[kind]).toBeDefined();
       expect(getInsightsAssembler(kind)).toBe(INSIGHTS_ASSEMBLERS[kind]);
@@ -90,9 +96,14 @@ describe("assembleInsights (INS-3c behavior)", () => {
     expect(msgs.at(-1)).toEqual({ role: "user", content: "Produce the scene JSON.", layerId: "insights_instruction" });
     // The recent window and other depth-zero injections remain before the instruction.
     expect(msgs.some((m) => m.content === "I draw my sword." && m.role === "user")).toBe(true);
-    expect(msgs.some((m) => m.content === "The warlord sneers." && m.role === "assistant")).toBe(true);
-    expect(msgs.findIndex((m) => m.content === "Continue the roleplay.")).toBeLessThan(msgs.length - 1);
-    expect(msgs.findIndex((m) => m.content === "Script depth-zero injection.")).toBeLessThan(msgs.length - 1);
+    const assistantIdx = msgs.findIndex((m) => m.content === "The warlord sneers." && m.role === "assistant");
+    const postHistoryIdx = msgs.findIndex((m) => m.role === "system" && m.content.includes("Continue the roleplay."));
+    const scriptIdx = msgs.findIndex((m) => m.role === "system" && m.content.includes("Script depth-zero injection."));
+    expect(assistantIdx).toBeGreaterThanOrEqual(0);
+    expect(postHistoryIdx).toBeGreaterThan(assistantIdx);
+    expect(postHistoryIdx).toBeLessThan(msgs.length - 1);
+    expect(scriptIdx).toBeGreaterThan(assistantIdx);
+    expect(scriptIdx).toBeLessThan(msgs.length - 1);
   });
 
   it("budgets a long instruction before compaction and reports truthful layer tokens", () => {
@@ -154,9 +165,10 @@ describe("assembleInsights (INS-3c behavior)", () => {
     expect(off.layers.map((l) => l.id)).not.toContain("mes_example");
   });
 
-  it("emits no instruction message when the instruction is blank", () => {
+  it("emits no instruction layer or message anywhere when the instruction is blank", () => {
     const result = getInsightsAssembler("objective").assemble(makeContext(), "   ");
-    expect(messagesOf(result).at(-1)?.layerId).not.toBe("insights_instruction");
+    expect(result.layers.some((layer) => layer.id === "insights_instruction")).toBe(false);
+    expect(messagesOf(result).some((msg) => msg.layerId === "insights_instruction")).toBe(false);
   });
 
   it("returns a clean PromptAssemblyResult (activated lore surfaced, null prefill when none)", () => {

@@ -4,6 +4,7 @@ import { createDb } from "../src/db-connection.js";
 import * as schema from "../src/db-schema.js";
 import { ProviderStore } from "../src/stores/provider-store.js";
 import type { StoreClock, StoreIdGenerator } from "../src/persistence.js";
+import { makeCreateProviderData } from "./provider-test-builders.js";
 
 const FIXED_NOW = "2025-05-04T12:00:00.000Z";
 
@@ -24,25 +25,6 @@ const testIdGen: StoreIdGenerator = {
   },
 };
 
-const BASE_CREATE = {
-  providerPreset: "openrouter" as const,
-  endpoint: "https://openrouter.ai/api/v1",
-  apiKey: "sk-test",
-  defaultModel: "model-a",
-  contextBudget: null as null,
-  temperature: 1, topP: 1, minP: 0, topK: 0, topA: 0,
-  typicalP: 1, tfsZ: 1, repeatLastN: 0,
-  mirostat: 0, mirostatTau: 5, mirostatEta: 0.1,
-  dryMultiplier: 0, dryBase: 1.75, dryAllowedLength: 2,
-  drySequenceBreakers: null as null,
-  xtcThreshold: 0.1, xtcProbability: 0,
-  frequencyPenalty: 0, presencePenalty: 0, repetitionPenalty: 1,
-  maxTokens: 2000,
-  stopSequences: null as null, logitBias: null as null, seed: null as null,
-  reasoningEffort: "auto" as const,
-  showReasoning: false, streamResponse: true, customSamplers: false,
-};
-
 describe("ProviderStore per-model settings overlay", () => {
   let store: ProviderStore;
   let profileId: string;
@@ -51,8 +33,8 @@ describe("ProviderStore per-model settings overlay", () => {
     clockTick = 0;
     idCounters = new Map();
     const db = await createDb(":memory:");
-    store = new ProviderStore(db, testIdGen, testClock);
-    const created = await store.create({ name: "Test", ...BASE_CREATE });
+    store = new ProviderStore(db, { idGenerator: testIdGen, clock: testClock });
+    const created = await store.create(makeCreateProviderData({ name: "Test" }));
     profileId = created.id;
   });
 
@@ -123,15 +105,27 @@ describe("ProviderStore per-model settings overlay", () => {
     expect(await store.getModelSettings(profileId, "model-a")).toBeNull();
   });
 
-  test("deleteModelSettings is a no-op when none exists", async () => {
+  test("deleteModelSettings is a no-op when none exists and leaves unrelated overlays untouched", async () => {
+    const otherProfile = await store.create(makeCreateProviderData({ name: "Other" }));
+    const preservedSame = await store.upsertModelSettings(profileId, "model-other", {
+      temperature: 0.8,
+      contextBudget: 12000,
+    });
+    const preservedCross = await store.upsertModelSettings(otherProfile.id, "never-bound", {
+      topP: 0.7,
+    });
+
     await expect(store.deleteModelSettings(profileId, "never-bound")).resolves.toBeUndefined();
+    expect(await store.getModelSettings(profileId, "never-bound")).toBeNull();
+    expect(await store.listModelSettings(profileId)).toEqual([preservedSame]);
+    expect(await store.getModelSettings(otherProfile.id, "never-bound")).toEqual(preservedCross);
   });
 
   test("malformed settingsJson degrades to empty overlay (not a throw)", async () => {
     // Write a bad row directly to simulate legacy/corrupt data.
     const db = await createDb(":memory:");
-    const corruptStore = new ProviderStore(db, testIdGen, testClock);
-    const created = await corruptStore.create({ name: "X", ...BASE_CREATE });
+    const corruptStore = new ProviderStore(db, { idGenerator: testIdGen, clock: testClock });
+    const created = await corruptStore.create(makeCreateProviderData({ name: "X" }));
     await db.insert(schema.providerModelSettings).values({
       id: "pms_bad", providerProfileId: created.id, modelId: "model-a",
       settingsJson: "{not valid json", createdAt: FIXED_NOW, updatedAt: FIXED_NOW,
@@ -147,8 +141,8 @@ describe("ProviderStore per-model overlay cascade-on-profile-delete", () => {
     clockTick = 0;
     idCounters = new Map();
     const db = await createDb(":memory:");
-    const store = new ProviderStore(db, testIdGen, testClock);
-    const created = await store.create({ name: "Doomed", ...BASE_CREATE });
+    const store = new ProviderStore(db, { idGenerator: testIdGen, clock: testClock });
+    const created = await store.create(makeCreateProviderData({ name: "Doomed" }));
     await store.upsertModelSettings(created.id, "model-a", { temperature: 0.3 });
     expect(await store.getModelSettings(created.id, "model-a")).not.toBeNull();
 
@@ -167,8 +161,8 @@ describe("ProviderStore bindPerModel persistence", () => {
     clockTick = 0;
     idCounters = new Map();
     const db = await createDb(":memory:");
-    const store = new ProviderStore(db, testIdGen, testClock);
-    const created = await store.create({ name: "P", ...BASE_CREATE });
+    const store = new ProviderStore(db, { idGenerator: testIdGen, clock: testClock });
+    const created = await store.create(makeCreateProviderData({ name: "P" }));
     expect(created.bindPerModel).toBe(false);
 
     await store.update(created.id, { bindPerModel: true });

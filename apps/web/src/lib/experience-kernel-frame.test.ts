@@ -205,7 +205,9 @@ describe("frame port — project (hidden information)", () => {
   });
 
   test("rejects an invalid viewer", () => {
-    const result = runProject(HIDDEN_SCRIPT, { scores: {} }, { participantId: 42 } as unknown as never, caps);
+    // Type-valid ExperienceViewer, runtime-rejected: the server suite's fixture
+    // (experience-kernel.test.ts) — an observer may not carry a participantId.
+    const result = runProject(HIDDEN_SCRIPT, { scores: {} }, { kind: "observer", participantId: "p1" }, caps);
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.kind).toBe("invalid_view");
@@ -272,7 +274,10 @@ describe("frame port — reduce", () => {
   });
 
   test("rejects a structurally invalid action as illegal_action", () => {
-    const result = runReduce(COUNTER_SCRIPT, { count: 0 }, { nope: true } as unknown as never, BASE_CAPS);
+    // Type-valid ExperienceAction, runtime-rejected: the zod schema bounds the
+    // type id to min 1 char, so an empty type fails safeParse (the interface's
+    // bare `string` is looser than the wire contract).
+    const result = runReduce(COUNTER_SCRIPT, { count: 0 }, { type: "", requestId: "r1", expectedRevision: 0 }, BASE_CAPS);
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.kind).toBe("illegal_action");

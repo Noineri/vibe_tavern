@@ -9,15 +9,16 @@ import { streamScriptAgentTurn, type ScriptAgentStreamDeps } from "../src/domain
 import { ExperienceCopilotRunAdapter } from "../src/api/adapters/experience-copilot-run-adapter.js";
 import { ExperienceCopilotAdapter } from "../src/api/adapters/experience-copilot-adapter.js";
 import { createExperienceCopilotRoutes } from "../src/api/routes/experience-copilot.js";
+import { makeStreamTextDouble, type StreamTextPart } from "./provider-boundary-test-builders.js";
 
-const call = (id: string, toolName = "write_buffer") => ({ type: "tool-call", toolCallId: id, toolName, input: { target: "code", content: "New code" } });
-const result = (id: string, proposed: string, toolName = "write_buffer") => ({ type: "tool-result", toolCallId: id, toolName, output: { target: "code", proposed, summary: "Updated code" } });
+const call = (id: string, toolName = "write_buffer"): StreamTextPart => ({ type: "tool-call", toolCallId: id, toolName, input: { target: "code", content: "New code" } });
+const result = (id: string, proposed: string, toolName = "write_buffer"): StreamTextPart => ({ type: "tool-result", toolCallId: id, toolName, input: {}, output: { target: "code", proposed, summary: "Updated code" } });
 function deferred() {
   let resolve!: () => void;
   const promise = new Promise<void>((done) => { resolve = done; });
   return { promise, resolve };
 }
-async function setup(parts: unknown[], options: { kind?: "prompt" | "dice"; abort?: AbortController; error?: Error; gate?: ReturnType<typeof deferred>; entered?: ReturnType<typeof deferred> } = {}) {
+async function setup(parts: StreamTextPart[], options: { kind?: "prompt" | "dice"; abort?: AbortController; error?: Error; gate?: ReturnType<typeof deferred>; entered?: ReturnType<typeof deferred> } = {}) {
   const stores = await createStoreContainer(":memory:");
   let tick = 0;
   stores.agentReviewRounds = new AgentReviewRoundStore(stores.db, { clock: { now: () => new Date(Date.UTC(2026, 9, 29) + tick++ * 1000).toISOString() } });
@@ -38,7 +39,10 @@ async function setup(parts: unknown[], options: { kind?: "prompt" | "dice"; abor
     getContextCards: async () => ({ ownerNames: [], cards: [] }),
     getProviderProfile: (id) => stores.providers.getById(id), getEffectiveProviderProfile: async () => profile,
     resolveModel: () => ({}) as LanguageModel,
-    streamText: (() => ({ stream: provider(), finishReason: Promise.resolve("stop"), usage: Promise.resolve(undefined) })) as unknown as ScriptAgentStreamDeps["streamText"],
+    // The generator fake (mid-stream gate, trailing abort/error) rides the
+    // typed streamText double's pull-based parts source — same lazy timing
+    // the erased `stream: provider()` fake had.
+    streamText: makeStreamTextDouble(() => ({ parts: provider() }), "ScriptAgentStreamDeps.streamText (review persistence)"),
   };
   const request = { threadId: thread.id, providerProfileId: profile.id, content: "Revise", code: "Live code" };
   return { stores, script, thread, reviews, deps, request };

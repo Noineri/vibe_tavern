@@ -3,6 +3,7 @@ import type { ReactElement, ReactNode } from "react";
 import { createInstance } from "i18next";
 import { I18nextProvider } from "react-i18next";
 import { useDomEnv } from "../../../../test/dom-env.js";
+import { wireProviderProfile } from "../../../../test/wire-fixtures.js";
 import type { ToolbarSelectItem } from "../ToolbarSelect.js";
 import { useProviderDataStore } from "../../../stores/provider-data-store.js";
 import type { ProviderProfileRecord } from "../../../api/types.js";
@@ -135,18 +136,20 @@ beforeAll(async () => {
 
 // Two profiles; p1 carries one tool-capable cached model so the REAL
 // useProviderModels hook serves the model list from cache (no fetch).
-const PROFILES = [
-  {
+// The rows ride the wire factory — the erased literals also hid the required
+// `cachedAt` on `cachedModels`.
+const PROFILES: ProviderProfileRecord[] = [
+  wireProviderProfile({
     id: "p1",
     name: "OpenAI Pro",
-    cachedModels: { models: [{ id: "m1", label: "Model One", contextLength: 128000, capabilities: { tools: true } }] },
-  },
-  {
+    cachedModels: { models: [{ id: "m1", label: "Model One", contextLength: 128000, capabilities: { tools: true } }], cachedAt: "2026-01-01T00:00:00.000Z" },
+  }),
+  wireProviderProfile({
     id: "p2",
     name: "Anthropic",
-    cachedModels: { models: [{ id: "m2", label: "Model Two", contextLength: 200000, capabilities: { tools: true } }] },
-  },
-] as unknown as ProviderProfileRecord[];
+    cachedModels: { models: [{ id: "m2", label: "Model Two", contextLength: 200000, capabilities: { tools: true } }], cachedAt: "2026-01-01T00:00:00.000Z" },
+  }),
+];
 
 function seedStores() {
   useProviderDataStore.setState({ profiles: PROFILES, copilotFavoritesByProfile: {} });
@@ -321,6 +324,7 @@ describe("ExperienceCopilotInputArea", () => {
     // Favorites section renders above the all-models section, with the stored
     // label and an UNSTAR (filled) star trailing on the row.
     expect(getByTestId("dropdown-group-copilot-model-favorites")).toBeDefined();
+    expect(getByTestId("dropdown-group-label-copilot-model-favorites").textContent).toBe("copilot_model_favorites_section");
     expect(getByTestId("dropdown-option-m9").textContent).toContain("Favored Nine");
     expect(getByTestId("copilot-model-star-m9")).toBeDefined();
     // All-models section still carries every live model with an UNFILLED star.
@@ -333,6 +337,7 @@ describe("ExperienceCopilotInputArea", () => {
 
     expect(queryByTestId("dropdown-group-copilot-model-favorites")).toBeNull();
     expect(getByTestId("dropdown-group-copilot-model-all")).toBeDefined();
+    expect(queryByTestId("dropdown-group-label-copilot-model-all")).toBeNull();
   });
 
   it("model picker: narrow fixed trigger width, popup decoupled via contentWidth", () => {

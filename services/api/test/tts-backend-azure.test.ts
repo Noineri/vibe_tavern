@@ -9,6 +9,7 @@ import {
   parseVoicesList,
 } from "../src/domain/tts/backends/azure-tts.js";
 import { createTtsBackend } from "../src/domain/tts/tts-registry.js";
+import { testFetch } from "./test-fetch-seam.js";
 
 function backend(config: Record<string, unknown> = {}): AzureTtsBackend {
   return azureTtsFactory({ apiKey: "az_key", region: "westus", ...config }) as AzureTtsBackend;
@@ -281,9 +282,9 @@ describe("Azure probe", () => {
 
   test("network errors degrade to a failed probe detail", async () => {
     installFetchMock();
-    globalThis.fetch = (async () => {
+    globalThis.fetch = testFetch(async () => {
       throw new Error("boom");
-    }) as typeof fetch;
+    });
     const result = await backend().probe();
     expect(result.ok).toBe(false);
     expect(result.detail).toContain("boom");

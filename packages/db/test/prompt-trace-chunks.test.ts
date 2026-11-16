@@ -4,7 +4,7 @@ import { sql } from "drizzle-orm";
 import * as schema from "../src/db-schema.js";
 import { PromptTraceStore, type SaveTraceData } from "../src/stores/prompt-trace-store.js";
 import type { StoreClock, StoreIdGenerator } from "../src/persistence.js";
-import { deflateTraceValue } from "../src/trace-chunking.js";
+import { deflateTraceValue, hashTraceChunk } from "../src/trace-chunking.js";
 import { decodeTraceText, isCompressedTraceText } from "../src/trace-storage-codec.js";
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
@@ -159,9 +159,16 @@ describe("PromptTraceStore — chunked payloads", () => {
       expect(isCompressedTraceText(column)).toBe(true);
       expect(decodeTraceText(column)).toContain('"$vtlist"');
     }
-    for (const chunk of db.$client.query<{ content: Uint8Array; size: number }, []>('SELECT content, byte_size AS size FROM prompt_trace_chunks').all()) {
+    const chunks = db.$client
+      .query<{ id: string; content: Uint8Array; size: number }, []>(
+        "SELECT id, content, byte_size AS size FROM prompt_trace_chunks",
+      )
+      .all();
+    expect(chunks.length).toBeGreaterThan(0);
+    for (const chunk of chunks) {
       expect(isCompressedTraceText(chunk.content)).toBe(true);
       expect(chunk.size).toBe(chunk.content.byteLength);
+      expect(chunk.id).toBe(hashTraceChunk(decodeTraceText(chunk.content)));
     }
     expect(JSON.stringify((await store.getLatestTraceByChat("chat_1", "brnch_1"))!.assembledLayers)).toBe(JSON.stringify(data.assembledLayers));
   });
@@ -187,11 +194,29 @@ describe("PromptTraceStore — chunked payloads", () => {
   });
 
   test("sweep keeps chunks still referenced by surviving traces", async () => {
-    await store.saveTrace(makeTraceData("chat_1", "msg_1", 10, "same"));
-    const s2 = await store.saveTrace(makeTraceData("chat_1", "msg_2", 10, "same"));
+    const s1 = await store.saveTrace(makeTraceData("chat_1", "msg_1", 10, "survivor"));
+    const s2 = await store.saveTrace(makeTraceData("chat_1", "msg_2", 10, "doomed"));
+    const expectedSurvivingIds = db.$client
+      .query<{ id: string }, [string]>(
+        "SELECT DISTINCT chunk_id AS id FROM prompt_trace_chunk_refs WHERE trace_id = ? ORDER BY chunk_id",
+      )
+      .all(s1.id)
+      .map((row) => row.id);
+    expect(expectedSurvivingIds.length).toBeGreaterThan(0);
+
     db.run(sql`DELETE FROM prompt_traces WHERE id = ${s2.id}`);
     await store.sweepOrphanedChunks();
-    const chunks = db.select({ n: sql<number>`count(*)` }).from(schema.promptTraceChunks).get() as { n: number };
-    expect(chunks.n).toBeGreaterThan(0);
+
+    const remainingIds = db.$client
+      .query<{ id: string }, []>("SELECT id FROM prompt_trace_chunks ORDER BY id")
+      .all()
+      .map((row) => row.id);
+    expect(remainingIds).toEqual(expectedSurvivingIds);
+
+    const hydrated = await store.getTrace(s1.id);
+    expect(hydrated).not.toBeNull();
+    expect(hydrated!.assembledLayers).toEqual(s1.assembledLayers);
+    expect(hydrated!.finalPayload).toEqual(s1.finalPayload);
+    expect(hydrated!.providerResponse).toEqual(s1.providerResponse);
   });
 });

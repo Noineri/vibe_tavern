@@ -25,6 +25,9 @@ import type { AgentRunRegistry } from "../../domain/agent/agent-run-registry.js"
 import type { AgentRunOwner } from "@vibe-tavern/domain";
 import type { ChatGenerationTurn } from "../contract/chat-runtime-contracts.js";
 import { CoauthorReviewService } from "../../domain/chat/coauthor-review-service.js";
+import { createBranchPinnedSwipeRun } from "./chat-director-swipe-run.js";
+import { coauthorModelRequired, toCoauthorModule } from "./chat-coauthor-wire.js";
+import type { DirectorSwipeGenerationService } from "../../domain/director/director-swipe-delegate.js";
 
 export class ChatAdapter extends ChatGenerationQueueAdapter implements ChatRuntimeApi {
 	constructor(
@@ -41,7 +44,38 @@ export class ChatAdapter extends ChatGenerationQueueAdapter implements ChatRunti
 		private readonly transcribeSttAudio: SttRuntimeApi["transcribeSttAudio"],
 		private readonly executeAttachmentSummary?: AttachmentSummaryExecutor,
 		agentRuns?: AgentRunRegistry<AgentRunOwner>,
-	) { super(stores, agentRuns); }
+	) {
+		super(stores, agentRuns);
+		// DMT-24: the Director swipe delegate's generation service (the narrow
+		// `DirectorSwipeGenerationService` domain seam) — the internal
+		// branch-pinned RP regeneration (chat-director-swipe-run.ts, extracted
+		// at the size cap): the normal `chat:<chatId>` reservation, the target
+		// thread's branch, the ordinary streaming regenerate with the DMT-13
+		// `requestInstruction`. Assigned in the constructor body (parameter
+		// properties only exist there — the deleteTurnForRegenerate precedent).
+		const swipeRun = createBranchPinnedSwipeRun({
+			stores: this.stores,
+			resolveProfile: async (chatId) => this.resolveEffectiveProfileOrThrow({ chatId }),
+			resolveMedia: (profile) => this.resolveReplyMediaAssets(profile),
+			regenerateStream: (input) => this.liveChatOrchestrator.regenerateMessageStream(input),
+			startGeneration: (request, turn) =>
+				this.startOwnedChatGeneration(
+					request.chatId,
+					{ operation: "regenerate", messageId: request.messageId },
+					turn,
+					undefined,
+					request.branchId,
+					true,
+				),
+		});
+		this.runBranchPinnedRegeneration = (request) => swipeRun.runBranchPinnedRegeneration(request);
+	}
+
+	/** DMT-24: the swipe delegate's narrow generation-service member — the ONE
+	 *  branch-pinned RP regeneration an allowed `request_message_swipe` runs
+	 *  through (the runtime composition passes this adapter as the domain
+	 *  delegate's `generation` service). */
+	readonly runBranchPinnedRegeneration: DirectorSwipeGenerationService["runBranchPinnedRegeneration"];
 
 	protected override runGenerationTurn(chatId: string, branchId: string, turn: ChatGenerationTurn, signal: AbortSignal, native = false) {
 		return this.sessionRuntime.chatRuntime.withGenerationScope(brandId<ChatId>(chatId), brandId<ChatBranchId>(branchId), turn(signal), !native);
@@ -753,39 +787,4 @@ export class ChatAdapter extends ChatGenerationQueueAdapter implements ChatRunti
 			: { ...resolveEffectiveSettings(resolved.profile, (await this.providerProfileService.getProviderModelSettings(resolved.profile.id, finalModel))?.settings ?? null), defaultModel: finalModel };
 		return { profile: effective, transport: resolved.transport };
 	}
-}
-
-const COAUTHOR_MODEL_REQUIRED_CODE = "coauthor_model_required";
-
-/** Stable fail-closed error for missing or dangling Co-Author connections.
- * CG-4 maps this code to the Co-Author model-selection state. */
-function coauthorModelRequired() {
-	return validation("Choose a model for the Co-Author.", { code: COAUTHOR_MODEL_REQUIRED_CODE });
-}
-
-/** Map a stored user-module row to the API `CoauthorModule` shape: drop the
- *  DB-only timestamps, stamp `isBuiltIn: false` (user modules are editable). */
-function toCoauthorModule(row: {
-	id: string;
-	name: string;
-	description: string;
-	basePrompt: string;
-	openingMessage: string;
-	skillIds: string[];
-	toolSet: CoauthorModule["toolSet"];
-	maxSteps: number;
-	createdAt: string;
-	updatedAt: string;
-}): CoauthorModule {
-	return {
-		id: row.id,
-		name: row.name,
-		description: row.description,
-		basePrompt: row.basePrompt,
-		openingMessage: row.openingMessage,
-		skillIds: row.skillIds,
-		toolSet: row.toolSet,
-		maxSteps: row.maxSteps,
-		isBuiltIn: false,
-	};
 }

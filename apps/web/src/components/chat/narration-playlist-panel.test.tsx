@@ -8,6 +8,7 @@ import type { TtsProfileRecord } from "../../api/tts-api.js";
 import type { NarrationPlayer } from "../../lib/tts/narration-player.js";
 import type { NarrationPlaylistEntry, NarrationPlaylistIndex, NarrationSegmentCache } from "../../lib/tts/narration-cache.js";
 import { useTtsPlaybackStore, __setTtsPlaybackDepsForTests } from "../../stores/tts-playback-store.js";
+import { readContinuousPlay } from "../../lib/tts/narration-continuous.js";
 import { PlaylistVolumeRail } from "./playlist-volume-rail.js";
 import en from "../../i18n/locales/en.json";
 import ru from "../../i18n/locales/ru.json";
@@ -86,6 +87,43 @@ function profile(): TtsProfileRecord {
     isDefault: false,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
+  };
+}
+
+/** A member-for-member inert `Animation` stand-in for happy-dom (which ships
+ *  no Web Animations API): pending forever, playback members inert. Satisfies
+ *  the interface so a flash-recording stub needs no erasure cast —
+ *  production's flash guard (playlist-row.tsx:66) try/catches the animate
+ *  call and never reads the returned handle. */
+function inertAnimation(): Animation {
+  const neverSettles = new Promise<Animation>(() => {});
+  return {
+    currentTime: null,
+    effect: null,
+    finished: neverSettles,
+    id: "",
+    oncancel: null,
+    onfinish: null,
+    onremove: null,
+    pending: true,
+    playbackRate: 1,
+    playState: "running",
+    overallProgress: null,
+    ready: neverSettles,
+    replaceState: "active",
+    startTime: null,
+    timeline: null,
+    cancel: () => {},
+    commitStyles: () => {},
+    finish: () => {},
+    pause: () => {},
+    persist: () => {},
+    play: () => {},
+    reverse: () => {},
+    updatePlaybackRate: () => Promise.resolve(),
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    dispatchEvent: () => false,
   };
 }
 
@@ -320,6 +358,33 @@ describe("narration playlist panel (TPE-18a)", () => {
   });
 
   it("relisten plays from cache without synthesis", async () => {
+    const playCalls: Array<{ text: string; resolve: (v: "ended") => void }> = [];
+    let parkPlay = false;
+    __setTtsPlaybackDepsForTests({
+      player: {
+        ...autoPlayer(),
+        async play(blob: Blob): Promise<"ended"> {
+          const text = await blob.text();
+          if (!parkPlay) {
+            playCalls.push({ text, resolve: () => {} });
+            return "ended";
+          }
+          return new Promise<"ended">((resolve) => {
+            playCalls.push({ text, resolve });
+          });
+        },
+      },
+      synthesize: mock(async (text: string) => {
+        synthCalls.push(text);
+        return { blob: new Blob([`audio:${text}`]), mime: "audio/wav" };
+      }),
+      cache,
+      playlistIndex: memoryIndex(),
+      notifyError: () => {},
+      libraryClient: stubLibraryClient(),
+      mergeToOgg: async () => new Uint8Array([9, 9]),
+    });
+
     const { getByTestId } = render(<NarrationPlaylistPanel docked />);
     // Seed with the message's own voiced text so the panel replay hits
     // the same segment key (a different text MUST miss — that is the
@@ -335,11 +400,22 @@ describe("narration playlist panel (TPE-18a)", () => {
       });
     });
     expect(synthCalls).toHaveLength(1);
+    expect(playCalls).toHaveLength(1);
+
+    parkPlay = true;
     const pill = await waitFor(() => getByTestId("narration-playlist-pill"));
     await act(async () => { fireEvent.click(pill); });
     const play = await waitFor(() => getByTestId("playlist-row-play"));
     await act(async () => { fireEvent.click(play); });
-    // The replay resolves through the segment cache — eventually consistent.
+    await waitFor(() => {
+      expect(playCalls).toHaveLength(2);
+    });
+    expect(playCalls[1]?.text).toBe("audio:First line\nSecond line\nThird line");
+    expect(useTtsPlaybackStore.getState().narrations["m1"]?.status).toBe("playing");
+    expect(synthCalls).toHaveLength(1);
+
+    await act(async () => { playCalls[1]?.resolve("ended"); });
+    // The replay resolves through the segment cache only after the parked play finishes.
     await waitFor(() => {
       expect(useTtsPlaybackStore.getState().narrations["m1"]?.status).toBe("complete");
     });
@@ -392,12 +468,40 @@ describe("narration playlist panel (TPE-18a)", () => {
   });
 
   it("lists only the selected variant and skips user messages", async () => {
-    mocks.messages = [m1(), u1(), m2()];
-    const { getByTestId, queryByText } = render(<NarrationPlaylistPanel docked />);
+    const multiVariantMessage = (selectedIndex: 0 | 1) =>
+      message({
+        id: "m1",
+        content: selectedIndex === 0 ? "Hidden unselected alternate" : "Selected second variant",
+        selectedVariantIndex: selectedIndex,
+        variants: [
+          {
+            id: brandId<MessageVariantId>("m1-v1"),
+            messageId: brandId<MessageId>("m1"),
+            variantIndex: 0,
+            content: "Hidden unselected alternate",
+            isSelected: selectedIndex === 0,
+            finishReason: null,
+            tokenCount: 1,
+            createdAt: "2026-01-01T00:00:00.000Z",
+          },
+          {
+            id: brandId<MessageVariantId>("m1-v2"),
+            messageId: brandId<MessageId>("m1"),
+            variantIndex: 1,
+            content: "Selected second variant",
+            isSelected: selectedIndex === 1,
+            finishReason: null,
+            tokenCount: 1,
+            createdAt: "2026-01-01T00:00:00.000Z",
+          },
+        ],
+      });
+    mocks.messages = [multiVariantMessage(1), u1(), m2()];
+    const { getByTestId, queryByText, rerender } = render(<NarrationPlaylistPanel docked />);
     await act(async () => {
       const store = useTtsPlaybackStore.getState();
-      await store.startNarration("m1", "First line", profile(), {
-        chatId: "c1", characterId: "char1", branchId: "b1", variantId: "m1-v1", variantIndex: 0, snippet: "First line",
+      await store.startNarration("m1", "Selected second variant", profile(), {
+        chatId: "c1", characterId: "char1", branchId: "b1", variantId: "m1-v2", variantIndex: 1, snippet: "Selected second variant",
       });
       await store.startNarration("m2", "Second message body here", profile(), {
         chatId: "c1", characterId: "char1", branchId: "b1", variantId: "m2-v1", variantIndex: 0, snippet: "Second message body here",
@@ -412,7 +516,25 @@ describe("narration playlist panel (TPE-18a)", () => {
       // m1 + m2 indexed; the user message never gets a row (owner decision).
       expect(document.querySelectorAll('[data-testid="narration-playlist-row"]')).toHaveLength(2);
     });
+    const initialRows = [...document.querySelectorAll('[data-testid="narration-playlist-row"]')];
+    expect(initialRows[0]?.textContent).toContain("Selected second variant");
+    expect(initialRows[0]?.textContent).toContain("narration_playlist_swipe:2:2:");
+    expect(queryByText(/Hidden unselected alternate/)).toBeNull();
     expect(queryByText(/user words/)).toBeNull();
+
+    // Switch the active variant selection to index 0 and replay m1: the row tracks the newly selected variant.
+    mocks.messages = [multiVariantMessage(0), u1(), m2()];
+    rerender(<NarrationPlaylistPanel docked />);
+    const firstPlay = initialRows[0]?.querySelector('[data-testid="playlist-row-play"]');
+    if (!(firstPlay instanceof HTMLElement)) throw new Error("missing playlist-row-play");
+    await act(async () => { fireEvent.click(firstPlay); });
+    await waitFor(() => {
+      const updatedRows = [...document.querySelectorAll('[data-testid="narration-playlist-row"]')];
+      expect(updatedRows).toHaveLength(2);
+      expect(updatedRows[0]?.textContent).toContain("Hidden unselected alternate");
+      expect(updatedRows[0]?.textContent).toContain("narration_playlist_swipe:1:2:");
+    });
+    expect(queryByText(/Selected second variant/)).toBeNull();
   });
 
   it("chat switch collapses the panel and hides the pill", async () => {
@@ -452,7 +574,14 @@ describe("narration playlist panel (TPE-18a)", () => {
     let scrolled = false;
     let flashed = false;
     target.scrollIntoView = () => { scrolled = true; };
-    (target as unknown as { animate: unknown }).animate = () => { flashed = true; return {}; };
+    // happy-dom ships no Web Animations API; production's flash guard
+    // (playlist-row.tsx:66) try/catches the call and never reads the returned
+    // handle. The stand-in satisfies Element["animate"] member-for-member —
+    // a pending-forever Animation literal — so the recording needs no erasure.
+    target.animate = () => {
+      flashed = true;
+      return inertAnimation();
+    };
     try {
       await act(async () => { fireEvent.click(getByTestId("playlist-row-show")); });
       // The chat anchor is unique — playlist rows must not carry
@@ -638,6 +767,23 @@ describe("narration playlist player controls (TPE-18b)", () => {
     // The row surface aborts the parked lane with the same store
     // outcome the FS-2 footer-stop assertion pinned — one path.
     await act(async () => { fireEvent.click(rowStop); });
+    await waitFor(() => {
+      expect(useTtsPlaybackStore.getState().lastStarted).toBeNull();
+      expect(useTtsPlaybackStore.getState().narrations["m1"]?.status).toBe("complete");
+    });
+
+    // Restart the parked lane and exercise the footer stop surface too.
+    act(() => {
+      void useTtsPlaybackStore.getState().startNarration("m1", "Para one.", profile(), playlistMeta());
+    });
+    await waitFor(() => {
+      expect(lane.plays).toHaveLength(2);
+      expect(useTtsPlaybackStore.getState().narrations["m1"]?.status).toBe("playing");
+      expect(getByTestId("playlist-row-stop")).toBeDefined();
+    });
+    const liveFooterStop = getByTestId("playlist-stop");
+    expect(liveFooterStop.getAttribute("disabled")).toBeNull();
+    await act(async () => { fireEvent.click(liveFooterStop); });
     await waitFor(() => {
       expect(useTtsPlaybackStore.getState().lastStarted).toBeNull();
       expect(useTtsPlaybackStore.getState().narrations["m1"]?.status).toBe("complete");
@@ -1503,7 +1649,7 @@ describe("narration playlist continuous play (TPE-18d)", () => {
     return { getByTestId: getByTestId as (id: string) => HTMLElement };
   }
 
-  it("footer toggle flips the pref and persists it across reload", async () => {
+  it("footer toggle flips the pref and persists it via readContinuousPlay", async () => {
     await seedM1WithQueue(["m1"]);
     await openPanel();
     expect(useTtsPlaybackStore.getState().continuous).toBe(false);
@@ -1513,10 +1659,12 @@ describe("narration playlist continuous play (TPE-18d)", () => {
     await act(async () => { fireEvent.click(toggle!); });
     expect(useTtsPlaybackStore.getState().continuous).toBe(true);
     expect(localStorage.getItem("vt.tts.continuous-play")).toBe("true");
+    expect(readContinuousPlay()).toBe(true);
 
     await act(async () => { fireEvent.click(toggle!); });
     expect(useTtsPlaybackStore.getState().continuous).toBe(false);
     expect(localStorage.getItem("vt.tts.continuous-play")).toBe("false");
+    expect(readContinuousPlay()).toBe(false);
   });
 
   it("armed advance auto-plays the next row end-to-end (owner chain scene)", async () => {
@@ -1756,7 +1904,7 @@ describe("narration playlist card layout (RD-1)", () => {
     return el;
   }
 
-  it("RD-1a: settled cache-only card — head, chunk, actions; no playback zone", async () => {
+  it("RD-1a: settled cache-only card — head, chunk, actions; idle playback placeholder", async () => {
     await act(async () => {
       await useTtsPlaybackStore.getState().startNarration("m1", TEXT, profile(), meta());
     });
@@ -1922,15 +2070,17 @@ describe("narration playlist row play/pause toggle (RD-2)", () => {
 
   /** Parked single-segment lane with pause/resume spies — the panel
    *  shows a live row while the play promise is unresolved. */
-  function parkLane(): { pauseCalls: string[]; plays: number; finish: () => void; index: NarrationPlaylistIndex } {
+  function parkLane(): { pauseCalls: string[]; plays: number; blobs: string[]; finish: () => void; index: NarrationPlaylistIndex } {
     const pauseCalls: string[] = [];
+    const blobs: string[] = [];
     const index = memoryIndex();
     let plays = 0;
     let currentResolve: ((v: "ended" | "skipped" | "error") => void) | null = null;
     __setTtsPlaybackDepsForTests({
       player: {
-        play(): Promise<"ended" | "skipped" | "error"> {
+        play(blob: Blob): Promise<"ended" | "skipped" | "error"> {
           plays += 1;
+          void blob.text().then((text) => blobs.push(text));
           return new Promise<"ended" | "skipped" | "error">((resolve) => {
             currentResolve = resolve;
           });
@@ -1956,6 +2106,7 @@ describe("narration playlist row play/pause toggle (RD-2)", () => {
     });
     return {
       pauseCalls,
+      blobs,
       index,
       get plays() { return plays; },
       finish: () => {
@@ -2027,14 +2178,25 @@ describe("narration playlist row play/pause toggle (RD-2)", () => {
   });
 
   it("RD-2c: settled row keeps the play action — clicking replays from cache", async () => {
-    await act(async () => {
-      await useTtsPlaybackStore.getState().startNarration("m1", TEXT, profile(), meta());
+    const lane = parkLane();
+    act(() => {
+      void useTtsPlaybackStore.getState().startNarration("m1", TEXT, profile(), meta());
     });
-    expect(useTtsPlaybackStore.getState().narrations["m1"]?.status).toBe("complete");
+    await waitFor(() => { expect(lane.blobs).toHaveLength(1); });
+    await act(async () => { lane.finish(); });
+    await waitFor(() => {
+      expect(useTtsPlaybackStore.getState().narrations["m1"]?.status).toBe("complete");
+    });
+
     const { getByTestId } = await openPanel();
     const button = rowPlay(getByTestId("narration-playlist-row"));
     expect(button.getAttribute("aria-label")).toContain("narrate_action");
     await act(async () => { fireEvent.click(button); });
+    await waitFor(() => { expect(lane.blobs).toHaveLength(2); });
+    expect(lane.blobs[1]).toBe(`audio:${TEXT}`);
+    expect(useTtsPlaybackStore.getState().narrations["m1"]?.status).toBe("playing");
+
+    await act(async () => { lane.finish(); });
     await waitFor(() => {
       expect(useTtsPlaybackStore.getState().narrations["m1"]?.status).toBe("complete");
     });
@@ -2613,7 +2775,10 @@ describe("narration playlist advance auto-scroll (RD-7)", () => {
   } {
     const calls: Element[] = [];
     const cardScrollsInList: { id: string | null; inListAtScrollTime: boolean }[] = [];
-    const proto = HTMLElement.prototype as unknown as { scrollIntoView?: (options?: unknown) => void };
+    // happy-dom implements Element.scrollIntoView (a no-op receiver), so the
+    // saved member is always defined and the typed restore always applies —
+    // no optional-shape erasure needed on the prototype.
+    const proto = HTMLElement.prototype;
     const prev = proto.scrollIntoView;
     proto.scrollIntoView = function (this: Element): void {
       calls.push(this);
@@ -2629,8 +2794,7 @@ describe("narration playlist advance auto-scroll (RD-7)", () => {
       calls,
       cardScrollsInList,
       restore: () => {
-        if (prev === undefined) delete proto.scrollIntoView;
-        else proto.scrollIntoView = prev;
+        proto.scrollIntoView = prev;
       },
     };
   }
@@ -2658,7 +2822,9 @@ describe("narration playlist advance auto-scroll (RD-7)", () => {
       frames.push(callback);
       return frames.length;
     };
-    const proto = HTMLElement.prototype as unknown as { scrollIntoView?: (options?: unknown) => void };
+    // Same typed prototype stub as stubCardScrolling above — happy-dom always
+    // implements the member, so the saved function restores unconditionally.
+    const proto = HTMLElement.prototype;
     const prevScrollIntoView = proto.scrollIntoView;
     const scrolled: Element[] = [];
     proto.scrollIntoView = function (this: Element): void {
@@ -2681,8 +2847,7 @@ describe("narration playlist advance auto-scroll (RD-7)", () => {
       expect(scrolled[0].closest('[data-testid="playlist-row-list"]')).not.toBeNull();
     } finally {
       globalThis.requestAnimationFrame = prevRaf;
-      if (prevScrollIntoView === undefined) delete proto.scrollIntoView;
-      else proto.scrollIntoView = prevScrollIntoView;
+      proto.scrollIntoView = prevScrollIntoView;
       list.remove();
     }
   });
@@ -3303,7 +3468,7 @@ describe("narration playlist stop/partial honesty (RD-10)", () => {
     expect(queryByTestId("playlist-row-continue")).toBeNull();
   });
 
-  it("RD-10b: no generation line while a live lane has synthesized nothing yet", async () => {
+  it("RD-10b: fetching line shows active synthesis count and clears when segments finish", async () => {
     const index = memoryIndex();
     const plays: Array<{ text: string; startAt: number }> = [];
     const player = parkedPlayer(plays);

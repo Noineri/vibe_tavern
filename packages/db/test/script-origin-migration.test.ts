@@ -7,7 +7,6 @@ import { describe, expect, test } from "bun:test";
 import { mkdtemp, mkdir, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import type { Database } from "bun:sqlite";
 
 import { createDb, type AppDb } from "../src/db-connection.js";
 
@@ -34,11 +33,12 @@ async function buildPreMigrationFolder(): Promise<string> {
 }
 
 function columnsOf(db: AppDb, table: string): string[] {
-  return (db.all(`PRAGMA table_info(${table})`) as unknown as Array<{ name: string }>).map((c) => c.name);
+  // Raw-SQL row boundary: PRAGMA table_info's projection at drizzle's all<T> seam.
+  return db.all<{ name: string }>(`PRAGMA table_info(${table})`).map((c) => c.name);
 }
 
 function closeClient(db: AppDb): void {
-  (db as unknown as { $client: Database }).$client.close();
+  db.$client.close();
 }
 
 describe("migration 0110 — script origin backfill (SS-2)", () => {
@@ -63,7 +63,7 @@ describe("migration 0110 — script origin backfill (SS-2)", () => {
     expect(columnsOf(postDb, "scripts")).toContain("origin");
     expect(columnsOf(postDb, "scripts")).toContain("first_enabled_at");
 
-    const rows = postDb.all("SELECT origin, first_enabled_at FROM scripts WHERE id = 'legacy_1'") as unknown as Array<{ origin: string; first_enabled_at: string | null }>;
+    const rows = postDb.all<{ origin: string; first_enabled_at: string | null }>("SELECT origin, first_enabled_at FROM scripts WHERE id = 'legacy_1'");
     expect(rows).toHaveLength(1);
     expect(rows[0].origin).toBe("in_app");
     expect(rows[0].first_enabled_at).toBeNull();

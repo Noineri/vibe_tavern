@@ -143,12 +143,28 @@ describe("unknown scripts and missing plans", () => {
 });
 
 describe("typed client", () => {
-	test("the web client's exact chains resolve through AppType inference", () => {
-		// The `AppType` import is type-only (erased at runtime): this pins at
-		// compile time that `apps/web/src/api/agent-plan-api.ts` drives paths
-		// the mounted router actually serves.
-		const typed = hc<AppType>("http://localhost");
-		expect(typeof typed.api.scripts[":scriptId"]["agent-plan"].$get).toBe("function");
-		expect(typeof typed.api.scripts[":scriptId"]["agent-plan"].$put).toBe("function");
+	test("the web client's exact chains resolve through AppType inference and drive the mounted route", async () => {
+		const typed = hc<AppType>("http://localhost", {
+			fetch: (input: Parameters<typeof app.request>[0], init?: Parameters<typeof app.request>[1]) =>
+				Promise.resolve(app.request(input, init)),
+		});
+		const chain = typed.api.scripts[":scriptId"]["agent-plan"];
+		expect(typeof chain.$get).toBe("function");
+		expect(typeof chain.$put).toBe("function");
+
+		const putRes = await chain.$put({
+			param: { scriptId },
+			json: { plan: { goal: "Typed script goal", constraints: [], tasks: [] } },
+		});
+		expect(putRes.status).toBe(200);
+		const putBody = await putRes.json();
+		if (!("plan" in putBody)) throw new Error("unexpected validation error response");
+		expect(putBody.plan.goal).toBe("Typed script goal");
+
+		const getRes = await chain.$get({
+			param: { scriptId },
+		});
+		expect(getRes.status).toBe(200);
+		expect((await getRes.json()).plan.goal).toBe("Typed script goal");
 	});
 });

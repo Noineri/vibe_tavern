@@ -12,7 +12,6 @@
  * install has zero presets, so `ensureDefault()` exercises the seed path.
  */
 import { describe, test, expect, beforeEach } from "bun:test";
-import { Database } from "bun:sqlite";
 import { createDb } from "../src/db-connection.js";
 import { PresetStore } from "../src/stores/preset-store.js";
 import type { StoreClock, StoreIdGenerator } from "../src/persistence.js";
@@ -73,18 +72,21 @@ describe("PresetStore — isDefault designated-default marker", () => {
 
   test("ensureDefault() prefers the isDefault-flagged row when presets already exist", async () => {
     const { store } = await createStore();
-    // Seed the default first (rowid 1, isDefault true).
-    const def = await store.ensureDefault();
-    // Add a non-default preset (rowid 2, isDefault false).
+    // Seed an unflagged preset first (rowid 1) so rowid order and isDefault diverge.
     const other = await store.create({ name: "Other", systemPrompt: "x" });
+    const def = await store.create({ name: "Designated", systemPrompt: "y", isDefault: true });
 
     expect(other.isDefault).toBe(false);
-    // ensureDefault must return the flagged row, NOT merely the first by rowid
-    // (they happen to coincide here, so also assert against an explicit case
-    // where the default is not the first row — see next test).
+    expect(def.isDefault).toBe(true);
+    // ensureDefault must return the flagged row rather than falling back to rowid 1.
     const resolved = await store.ensureDefault();
     expect(resolved.id).toBe(def.id);
+    expect(resolved.name).toBe("Designated");
     expect(resolved.isDefault).toBe(true);
+    expect((await store.listAll()).map((p) => ({ id: p.id, isDefault: p.isDefault }))).toEqual([
+      { id: other.id, isDefault: false },
+      { id: def.id, isDefault: true },
+    ]);
   });
 
   test("ensureDefault() falls back to the first row by rowid when no row carries the flag", async () => {
@@ -169,7 +171,7 @@ describe("PresetStore — delete() FK diagnostics (PRESET_COPY_DELETE_CORRUPTION
     // (SQLite cannot retroactively change an FK; only a table rebuild can).
     // The real schema's three preset FKs are all SET NULL, so they cannot block
     // a delete; this synthetic blocker stands in for the stale-FK case.
-    const client = (db as unknown as { $client: Database }).$client;
+    const client = db.$client;
     client.exec(
       'CREATE TABLE test_preset_blocker (child_id TEXT PRIMARY KEY, preset_id TEXT NOT NULL REFERENCES prompt_presets(id))',
     );

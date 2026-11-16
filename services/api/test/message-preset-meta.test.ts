@@ -3,9 +3,12 @@ import { mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { EventBus } from "@vibe-tavern/domain";
-import type { ChatId, StoredProviderProfileRecord } from "@vibe-tavern/domain";
+import type { ChatId } from "@vibe-tavern/domain";
+import { makeProviderProfileRow } from "./copilot-test-builders.js";
+import { strictTestDouble } from "./strict-test-double.js";
 import { LiveChatOrchestrator } from "../src/domain/chat/live-chat-orchestrator.js";
 import type { ChatModeStrategy } from "../src/domain/chat/chat-mode-strategy.js";
+import type { ProviderOrchestrator } from "../src/domain/providers/provider-orchestrator.js";
 import { nonstreamingProviderExecute } from "../src/infrastructure/ai/nonstreaming-provider-executor.js";
 import { streamProviderExecutor } from "../src/infrastructure/ai/stream-provider-executor.js";
 import { SessionRuntime } from "../src/runtime/session/session-runtime.js";
@@ -48,11 +51,10 @@ async function createTestRuntime() {
 	};
 }
 
-const resendProfile = {
+const resendProfile = makeProviderProfileRow({
 	id: "resend-profile",
 	name: "Resend profile",
 	providerPreset: "openai",
-	coauthorTransport: "chatCompletions",
 	generationMode: "chat",
 	endpoint: "https://provider.example/v1",
 	apiKey: "key",
@@ -73,7 +75,7 @@ const resendProfile = {
 	customSamplers: false,
 	proxyMode: "inherit",
 	proxyId: null,
-} as StoredProviderProfileRecord;
+});
 
 function makeResendOrchestrator(
 	runtime: SessionRuntime,
@@ -85,13 +87,13 @@ function makeResendOrchestrator(
 	const strategy: ChatModeStrategy = {
 		mode: "rp",
 		resolveProvider: async () => ({ profile: resendProfile, model: "resend-model" }),
-		onMessageAppended: () => {},
+		onMessageAppended: async () => {},
 		assemble: async () => { throw new Error("Reply generation does not invoke strategy assembly"); },
 	};
 	return new LiveChatOrchestrator(
 		runtime.chatRuntime,
 		runtime.chatApp,
-		null!,
+		strictTestDouble<ProviderOrchestrator>({}, "ProviderOrchestrator unset dep (message-preset-meta)"),
 		new EventBus(),
 		async () => strategy,
 		undefined,
@@ -141,7 +143,10 @@ describe("message meta records resolved preset on reply paths", () => {
 		const chat = (await stores.chats.getById(chatId))!;
 		const expectedPresetName = (await stores.presets.getById(chat.promptPresetId as string))!.name;
 		const orchestrator = makeResendOrchestrator(runtime, {
-			nonstreaming: async () => ({ text: "Resent reply", providerResponse: {} }),
+			nonstreaming: async () => ({
+				text: "Resent reply",
+				providerResponse: { mode: "nonstream", steps: [] },
+			}),
 			stream: async () => { throw new Error("Streaming executor is not used by this test"); },
 		});
 
@@ -170,7 +175,7 @@ describe("message meta records resolved preset on reply paths", () => {
 				finished: Promise.resolve({ finishReason: "stop" }),
 				text: Promise.resolve("Streamed resent reply"),
 				reasoning: Promise.resolve(undefined),
-				providerResponse: {},
+				providerResponse: { mode: "stream", steps: [] },
 			}),
 		});
 

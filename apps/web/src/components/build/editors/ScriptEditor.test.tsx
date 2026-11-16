@@ -17,6 +17,7 @@
  * Runner: bun:test with scoped happy-dom.
  */
 import { afterAll, afterEach, describe, it, expect, beforeAll, beforeEach, mock } from "bun:test";
+import { testFetch } from "@vibe-tavern/test-fetch";
 import { wireScript } from "../../../../test/wire-fixtures.js";
 import { useEffect, type ReactNode } from "react";
 import type { AppCharacterEntry, ScriptLinkRecord, ScriptRecord } from "../../../api/types.js";
@@ -37,10 +38,10 @@ useDomEnv();
 const listScripts = mock((_characterId?: string) => Promise.resolve<ScriptRecord[]>([]));
 const listAllScripts = mock(() => Promise.resolve<ScriptRecord[]>([]));
 const listParticipatingScripts = mock((_chatId: string) => Promise.resolve<ScriptRecord[]>([]));
-const createScript = mock((_body: unknown) => Promise.resolve<ScriptRecord>(undefined as never));
-const updateScript = mock((_id: string, _patch: Partial<ScriptRecord>) => Promise.resolve<ScriptRecord>(undefined as never));
+const createScript = mock((_body: unknown) => Promise.resolve<ScriptRecord>(wireScript()));
+const updateScript = mock((_id: string, _patch: Partial<ScriptRecord>) => Promise.resolve<ScriptRecord>(wireScript()));
 const deleteScript = mock(() => Promise.resolve());
-const importScript = mock((_body: unknown) => Promise.resolve<ScriptRecord>(undefined as never));
+const importScript = mock((_body: unknown) => Promise.resolve<ScriptRecord>(wireScript()));
 const getScriptLinks = mock((_scriptId: string) => Promise.resolve<ScriptLinkRecord[]>([]));
 const setScriptLinks = mock((_scriptId: string, _links: Array<{ targetType: "character" | "persona"; targetId: string }>) => Promise.resolve<ScriptLinkRecord[]>([]));
 const testScript = mock(() => Promise.resolve({
@@ -278,7 +279,7 @@ const agentModeFetch = mock(async (input: RequestInfo | URL, init?: RequestInit)
 const realFetch = globalThis.fetch;
 
 beforeEach(() => {
-	globalThis.fetch = agentModeFetch as unknown as typeof globalThis.fetch;
+	globalThis.fetch = testFetch(agentModeFetch);
 });
 
 afterEach(() => {

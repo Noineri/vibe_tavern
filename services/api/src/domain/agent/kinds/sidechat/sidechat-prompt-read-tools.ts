@@ -246,8 +246,10 @@ function narrowTraceLayers(layers: readonly unknown[]): RpPromptViewLayer[] {
 
 /** The reply's first line — how the user's card names the swipe. The STORED
  *  variant content's first line (what the RP chat shows), never a
- *  transformation of it. */
-function firstLine(content: string): string {
+ *  transformation of it. SHARED SOURCE: the Director message tools'
+ *  target resolver (domain/director/director-message-target.ts) reads the
+ *  same convention from here — a second derivation elsewhere is a defect. */
+export function firstLine(content: string): string {
 	const newline = content.indexOf("\n");
 	return newline === -1 ? content : content.slice(0, newline);
 }

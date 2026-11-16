@@ -62,11 +62,28 @@ describe("CopilotProfileStore (CP-3)", () => {
   });
 
   test("update merges a partial (single field) and bumps updatedAt", async () => {
-    const { store } = await mkStore();
+    const dir = await mkdtemp(join(tmpdir(), "vibe-tavern-db-test-"));
+    const db = await createDb(join(dir, "test.db"));
+    let tick = 0;
+    const steppedClock: StoreClock = {
+      now() {
+        tick += 1;
+        return `2026-06-06T00:00:0${tick - 1}.000Z`;
+      },
+    };
+    const store = new CopilotProfileStore(db, { clock: steppedClock, idGenerator: testIdGen });
     const created = await store.create(PAYLOAD);
     const updated = await store.update(created.id, { name: "Renamed only" });
     expect(updated.name).toBe("Renamed only");
-    expect(created.basePrompt).toBe(PAYLOAD.basePrompt); // untouched
+    expect(updated.basePrompt).toBe(PAYLOAD.basePrompt); // untouched
+    expect(updated.toolSet).toEqual(PAYLOAD.toolSet); // untouched
+    expect(updated.agentKind).toBe("experience");
+    expect(updated.sourceBuiltinId).toBeNull();
+    expect(updated.sortOrder).toBe(0);
+    expect(updated.createdAt).toBe("2026-06-06T00:00:00.000Z");
+    expect(updated.updatedAt).toBe("2026-06-06T00:00:01.000Z");
+    expect(updated.updatedAt).not.toBe(created.updatedAt);
+    expect(await store.getById(created.id)).toEqual(updated);
   });
 
   test("update with a full payload replaces every field", async () => {
@@ -181,7 +198,13 @@ describe("CopilotProfileStore agent_kind (AS-3)", () => {
   test("update never touches agent_kind", async () => {
     const { store, db } = await mkStore();
     const created = await store.create({ ...PAYLOAD, agentKind: "fake-kind" });
-    const updated = await store.update(created.id, { name: "Renamed", toolSet: { run_test: true } });
+    const updated = await store.update(created.id, {
+      name: "Renamed",
+      toolSet: { run_test: true },
+      agentKind: "experience",
+    });
+    expect(updated.name).toBe("Renamed");
+    expect(updated.toolSet).toEqual({ run_test: true });
     expect(updated.agentKind).toBe("fake-kind");
     const raw = await db
       .select({ agentKind: copilotProfiles.agentKind })
@@ -296,45 +319,61 @@ describe("CopilotProfileStore — stored order (ML-6)", () => {
   test("equal sort_order falls back to createdAt ASC, then id ASC (total order)", async () => {
     // Rows the order does not know (or rows tied by a bulk backfill) must not
     // shuffle nondeterministically: the store's list ordering stays total via
-    // created_at → id fallbacks. Flattening sort_order back to the migration
-    // default simulates such rows (the fixed testClock pins createdAt equal,
-    // so the id tiebreak is exercised too).
+    // created_at → id fallbacks. Insert IDs out of alphabetical order ("C", "A", "B")
+    // so id ASC differs from insertion/rowid order when sort_order and createdAt tie.
     const dir = await mkdtemp(join(tmpdir(), "vibe-tavern-db-test-"));
     const db = await createDb(join(dir, "test.db"));
-    const store = new CopilotProfileStore(db, { clock: testClock, idGenerator: testIdGen });
+    const ids = ["cprof_c", "cprof_a", "cprof_b"];
+    let idIdx = 0;
+    const outOfOrderIdGen: StoreIdGenerator = {
+      next() {
+        return ids[idIdx++]!;
+      },
+    };
+    const store = new CopilotProfileStore(db, { clock: testClock, idGenerator: outOfOrderIdGen });
+    await store.create({ ...PAYLOAD, name: "C" });
     await store.create({ ...PAYLOAD, name: "A" });
     await store.create({ ...PAYLOAD, name: "B" });
-    await store.create({ ...PAYLOAD, name: "C" });
     await db
       .update(copilotProfiles)
       .set({ sortOrder: 0 })
       .run();
     const all = await store.list("experience");
     expect(all.every((p) => p.sortOrder === 0)).toBe(true);
-    expect(all.map((p) => p.name)).toEqual(["A", "B", "C"]); // same clock ⇒ id ASC
+    expect(all.map((p) => p.id)).toEqual(["cprof_a", "cprof_b", "cprof_c"]); // same clock ⇒ id ASC
+    expect(all.map((p) => p.name)).toEqual(["A", "B", "C"]);
   });
 
   test("createdAt breaks a sort_order tie before id is consulted", async () => {
-    // Distinct createdAt values (a stepped clock) decide the order when
-    // sort_order ties, matching the backfill's ORDER BY created_at ASC, id ASC.
+    // Pit createdAt ASC strictly against BOTH insertion order and id ASC:
+    // the later-timestamp row is inserted first with a smaller id, while the
+    // earlier-timestamp row is inserted second with a larger id.
     const dir = await mkdtemp(join(tmpdir(), "vibe-tavern-db-test-"));
     const db = await createDb(join(dir, "test.db"));
-    let tick = 0;
-    const steppedClock: StoreClock = {
+    const times = ["2026-06-06T00:00:02.000Z", "2026-06-06T00:00:01.000Z"];
+    let tIdx = 0;
+    const reverseClock: StoreClock = {
       now() {
-        tick += 1;
-        return `2026-06-06T00:00:${String(tick).padStart(2, "0")}.000Z`;
+        return times[tIdx++]!;
       },
     };
-    const store = new CopilotProfileStore(db, { clock: steppedClock, idGenerator: testIdGen });
-    await store.create({ ...PAYLOAD, name: "first-created" });
-    await store.create({ ...PAYLOAD, name: "second-created" });
+    const ids = ["cprof_a", "cprof_z"];
+    let idIdx = 0;
+    const idGen: StoreIdGenerator = {
+      next() {
+        return ids[idIdx++]!;
+      },
+    };
+    const store = new CopilotProfileStore(db, { clock: reverseClock, idGenerator: idGen });
+    await store.create({ ...PAYLOAD, name: "second-chronologically" });
+    await store.create({ ...PAYLOAD, name: "first-chronologically" });
     await db
       .update(copilotProfiles)
       .set({ sortOrder: 0 })
       .run();
     const all = await store.list("experience");
-    expect(all.map((p) => p.name)).toEqual(["first-created", "second-created"]);
+    expect(all.map((p) => p.name)).toEqual(["first-chronologically", "second-chronologically"]);
+    expect(all.map((p) => p.id)).toEqual(["cprof_z", "cprof_a"]);
   });
 
   test("append max+1 is scoped per kind: another kind's first profile starts at 0", async () => {
@@ -352,19 +391,20 @@ describe("CopilotProfileStore — stored order (ML-6)", () => {
 
   test("reorder(kind) ignores another kind's ids (no cross-kind position writes)", async () => {
     // The update's WHERE pins BOTH id and agent_kind: an update entry naming
-    // another kind's row is a no-op — an id list can never rewrite another
-    // kind's positions — and the returned list is the requested kind's only.
+    // another kind's row with a distinct sortOrder is a no-op — an id list can
+    // never rewrite another kind's positions — and the returned list is the requested kind's only.
     const { store } = await mkStore();
     const expA = await store.create({ ...PAYLOAD, name: "Exp A" });
-    await store.create({ ...PAYLOAD, name: "Exp B" });
+    const expB = await store.create({ ...PAYLOAD, name: "Exp B" });
     const script = await store.create({ ...PAYLOAD, name: "Script A", agentKind: "script" });
     const list = await store.reorder("experience", [
       { id: expA.id, sortOrder: 5 }, // out-of-band position is fine (total order still holds)
-      { id: script.id, sortOrder: 0 }, // foreign kind — must be ignored
+      { id: script.id, sortOrder: 9 }, // foreign kind requesting a different value — must be ignored
     ]);
     expect(list.map((p) => p.name)).toEqual(["Exp B", "Exp A"]); // experience rows only
+    expect(list.map((p) => p.sortOrder)).toEqual([expB.sortOrder, 5]);
     expect(list.every((p) => p.agentKind === "experience")).toBe(true);
     const scriptAfter = await store.getById(script.id);
-    expect(scriptAfter?.sortOrder).toBe(0); // untouched
+    expect(scriptAfter?.sortOrder).toBe(0); // untouched despite requested 9
   });
 });

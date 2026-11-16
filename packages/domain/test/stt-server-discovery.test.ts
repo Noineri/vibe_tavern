@@ -89,7 +89,14 @@ describe("discoverLocalSttServers", () => {
     const outcomes = await discoverLocalSttServers(fetchLike);
     // The probe list is the shared TTS/STT port set (7 ports) — mirrored
     // from the TTS route test rather than importing the private const.
-    expect(outcomes.length).toBe(7);
-    expect(outcomes.every((o) => o.status === "refused")).toBe(true);
+    expect(outcomes.map((o) => ({ port: o.port, status: o.status }))).toEqual([
+      { port: 8880, status: "refused" },
+      { port: 8000, status: "refused" },
+      { port: 7851, status: "refused" },
+      { port: 5000, status: "refused" },
+      { port: 5050, status: "refused" },
+      { port: 4123, status: "refused" },
+      { port: 5005, status: "refused" },
+    ]);
   });
 });

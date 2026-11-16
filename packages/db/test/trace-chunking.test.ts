@@ -80,10 +80,11 @@ describe("trace-chunking", () => {
   });
 
   test("chunk id is sha256 of the utf-8 content", () => {
-    const content = bigText("hash-me", 600);
-    const { chunks } = deflateTraceValue({ content });
-    expect(chunks[0]!.id).toBe(hashTraceChunk(content));
-    expect(chunks[0]!.id).toMatch(/^[0-9a-f]{64}$/);
+    const content = "chunk-\u00E9".repeat(50);
+    const expectedSha256 = "b23c25808bd541fddc01c45e3886bb421145b95eecede15ad7e6e7960963afda";
+    const { chunks, skeleton } = deflateTraceValue({ content });
+    expect(chunks[0]!.id).toBe(expectedSha256);
+    expect(skeleton).toEqual({ content: { [TRACE_CHUNK_MARKER]: expectedSha256 } });
   });
 
   test("empty and null-ish documents pass through untouched", () => {

@@ -12,7 +12,7 @@
  * message puts the stable sections (role/catalog/refs) BEFORE the volatile
  * context package so a prefix-cache provider hits on the stable block.
  */
-import { describe, test, expect, beforeEach } from "bun:test";
+import { describe, test, expect, beforeEach, afterAll } from "bun:test";
 import { setTokenCountFn } from "@vibe-tavern/prompt-pipeline";
 import type { ToolCallPart } from "ai";
 import { assembleExperienceCopilotPrompt } from "../src/domain/interactive/copilot/experience-copilot-prompt.js";
@@ -28,6 +28,10 @@ import {
 beforeEach(() => {
   // Char-length heuristic so estimateTokens returns a realistic number.
   setTokenCountFn((text: string) => text.length);
+});
+
+afterAll(() => {
+  setTokenCountFn(() => 0);
 });
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────

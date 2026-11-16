@@ -1,5 +1,5 @@
 /**
- * RootErrorBoundary — the last-resort crash screen.
+ * RootErrorBoundary — the crash screen of last resort.
  *
  * Pins that a throwing child renders the themed fallback (title + body +
  * reload action) instead of an unmounted tree, and that healthy children pass

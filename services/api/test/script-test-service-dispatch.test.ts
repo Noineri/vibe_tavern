@@ -8,9 +8,11 @@
  *    against simulated persona/character inputs.
  */
 import { describe, expect, test } from "bun:test";
-import type { StoreContainer } from "@vibe-tavern/db";
+import type { StoreContainer, ScriptStore } from "@vibe-tavern/db";
 import type { Script } from "@vibe-tavern/domain";
 import { testScript } from "../src/domain/scripts-engine/script-test-service.js";
+import { makeScriptRow } from "./copilot-test-builders.js";
+import { strictTestDouble } from "./strict-test-double.js";
 
 function makeScript(overrides: Partial<Script> & { id: string; code: string }): Script {
   return {
@@ -31,12 +33,24 @@ function makeScript(overrides: Partial<Script> & { id: string; code: string }): 
   };
 }
 
-function storesWith(script: Script): StoreContainer {
-  return {
-    scripts: {
-      getById: async () => ({ ...script }),
+function storesWith(
+  script: Omit<Script, "scriptKind"> & { scriptKind?: Script["scriptKind"] },
+): StoreContainer {
+  return strictTestDouble<StoreContainer>(
+    {
+      scripts: strictTestDouble<ScriptStore>(
+        {
+          // The domain-level Script row completes to the STORE row through the
+          // standing builder (the domain shape lacks origin/firstEnabledAt/
+          // creationIntentId/defaultVisualId/copilotProfileId — all inert on
+          // the tester's dispatch path).
+          getById: async () => makeScriptRow(script.scriptKind, script.id, script),
+        },
+        "storesWith: scripts (script-test-service-dispatch)",
+      ),
     },
-  } as unknown as StoreContainer;
+    "StoreContainer (script-test-service-dispatch)",
+  );
 }
 
 // ─── Prompt dispatch (unchanged seven-channel tester) ────────────────────────
@@ -63,13 +77,18 @@ describe("testScript — prompt dispatch", () => {
 
   test("a legacy script with no scriptKind defaults to prompt dispatch", async () => {
     // Simulate a mock that omits scriptKind (undefined) — must be treated as prompt.
-    const script = makeScript({
+    // Tested input: a script whose scriptKind key is ABSENT — dispatch reads the
+    // VALUE (script-test-service.ts:116-122), so the absent key falls through to
+    // prompt. The rest-destructure omit (not `= undefined`) keeps the key
+    // genuinely absent; the widened builder seam (copilot-test-builders.ts
+    // makeScriptRow takes `scriptKind: string | undefined`) accepts the absent
+    // kind through the same documented fixture seam as the union-unrepresentable
+    // bogus kinds. Killed the last type-gate ts-directive (step 13b).
+    const { scriptKind: _omitted, ...legacyScript } = makeScript({
       id: "s1",
       code: `context.character.scenario += " rain";`,
     });
-    // @ts-expect-error — deliberately omit scriptKind to simulate legacy/mock
-    delete script.scriptKind;
-    const result = await testScript(storesWith(script), { scriptId: "s1" });
+    const result = await testScript(storesWith(legacyScript), { scriptId: "s1" });
 
     expect(result.kind).toBe("prompt");
     if (result.kind !== "prompt") return;
@@ -139,6 +158,7 @@ describe("testScript — dice dispatch", () => {
       characterName: "Dragon",
     });
 
+    expect(result.kind).toBe("dice");
     if (result.kind !== "dice") return;
     expect(result.sampleRolls).toHaveLength(2);
 
@@ -164,6 +184,8 @@ describe("testScript — dice dispatch", () => {
     const r1 = await testScript(storesWith(script), { scriptId: "s1", characterName: "C" });
     const r2 = await testScript(storesWith(script), { scriptId: "s1", characterName: "C" });
 
+    expect(r1.kind).toBe("dice");
+    expect(r2.kind).toBe("dice");
     if (r1.kind !== "dice" || r2.kind !== "dice") return;
     expect(r1.sampleRolls).toEqual(r2.sampleRolls);
   });
@@ -176,6 +198,7 @@ describe("testScript — dice dispatch", () => {
     });
     const result = await testScript(storesWith(script), { scriptId: "s1" });
 
+    expect(result.kind).toBe("dice");
     if (result.kind !== "dice") return;
     expect(result.discoveryError).toBe("discovery boom");
     expect(result.checks).toHaveLength(0);
@@ -192,6 +215,7 @@ context.dice.register({
     const script = makeScript({ id: "s1", scriptKind: "dice", code });
     const result = await testScript(storesWith(script), { scriptId: "s1" });
 
+    expect(result.kind).toBe("dice");
     if (result.kind !== "dice") return;
     expect(result.sampleRolls).toHaveLength(1);
     expect(result.sampleRolls[0].result.ok).toBe(false);
@@ -281,6 +305,7 @@ describe("testScript — interactive dispatch", () => {
     });
     const result = await testScript(storesWith(script), { scriptId: "s1" });
 
+    expect(result.kind).toBe("interactive");
     if (result.kind !== "interactive") return;
     expect(result.definition).toBeNull();
     expect(result.discoveryError).toBeTruthy();
@@ -294,6 +319,7 @@ describe("testScript — interactive dispatch", () => {
     });
     const result = await testScript(storesWith(script), { scriptId: "s1" });
 
+    expect(result.kind).toBe("interactive");
     if (result.kind !== "interactive") return;
     expect(result.definition).toBeNull();
     expect(result.discoveryError).toBeTruthy();
@@ -352,7 +378,9 @@ describe("testScript — interactive dispatch", () => {
     });
     const result = await testScript(storesWith(script), { scriptId: "s1" });
 
+    expect(result.kind).toBe("interactive");
     if (result.kind !== "interactive") return;
+    expect(result.definition).not.toBeNull();
     if (!result.definition) return;
     expect(result.definition.setup).toBeUndefined();
   });
@@ -365,6 +393,7 @@ describe("testScript — interactive dispatch", () => {
     });
     const result = await testScript(storesWith(script), { scriptId: "s1" });
 
+    expect(result.kind).toBe("interactive");
     if (result.kind !== "interactive") return;
     expect(result.definition).toBeNull();
     expect(result.discoveryError).toBeTruthy();

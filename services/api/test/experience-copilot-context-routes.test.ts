@@ -1,5 +1,6 @@
 import { describe, test, expect } from "bun:test";
 import { createExperienceCopilotRoutes } from "../src/api/routes/experience-copilot.js";
+import { makeCopilotRuntime } from "./copilot-test-builders.js";
 import type { ExperienceCopilotContextLink } from "@vibe-tavern/api-contracts";
 import type {
   ExperienceCopilotRuntimeApi,
@@ -22,7 +23,7 @@ function makeApp() {
   const state: ExperienceCopilotContextState = { metrics: null, autoCompact: true };
   let links: ExperienceCopilotContextLink[] = [];
 
-  const runtime = {
+  const runtime = makeCopilotRuntime({
     experienceCopilotGetContext: async (): Promise<ExperienceCopilotContextState> => state,
     experienceCopilotPatchContext: async (
       threadId: string,
@@ -41,7 +42,7 @@ function makeApp() {
       links = body;
       return links;
     },
-  } as unknown as ExperienceCopilotRuntimeApi;
+  });
 
   return { app: createExperienceCopilotRoutes(runtime), calls, state };
 }
@@ -161,12 +162,12 @@ describe("POST /api/experience-copilot/:threadId/compact (CM-5)", () => {
       digest: { id: "digest_1", threadId: "thread_1", role: "digest", content: "summary", toolCallsJson: null, toolCallId: "m3", createdAt: "2025-01-01T00:00:00.000Z" },
       metrics: { systemTokens: 1, digestTokens: 2, historyTokens: 3, totalTokens: 6, budgetTokens: 100, reserveTokens: 10, source: "estimate", measuredAt: "2025-01-01T00:00:00.000Z" },
     };
-    const runtime = {
+    const runtime = makeCopilotRuntime({
       experienceCopilotCompact: async (threadId: string, body: { providerProfileId?: string; model?: string }) => {
         calls.push({ threadId, body });
         return result;
       },
-    } as unknown as ExperienceCopilotRuntimeApi;
+    });
     return { app: createExperienceCopilotRoutes(runtime), calls, result };
   }
 

@@ -45,6 +45,19 @@ function mount(load: typeof getAgentFeedPage) {
 const olderButton = (view: ReturnType<typeof render>) => view.getByRole("button", { name: "agent_feed_load_older" });
 
 describe("AFP-17 feed feedback", () => {
+  it("places history controls inside the scrolling transcript instead of a fixed panel", async () => {
+    const { view } = mount(async () => page());
+    await waitFor(() => expect((olderButton(view) as HTMLButtonElement).disabled).toBe(false));
+    const viewport = view.container.querySelector<HTMLElement>("[data-scroll-viewport]")!;
+    const feedback = view.getByTestId("agent-feed-feedback");
+    expect(viewport.contains(feedback)).toBe(true);
+    expect(feedback.closest("[data-message-scroller-header]")).not.toBeNull();
+    expect(feedback.classList.contains("border-b")).toBe(false);
+    expect(olderButton(view).classList.contains("bg-s3")).toBe(false);
+    const row = view.getByText("history 2").closest("[data-scroller-message-id]")!;
+    expect(feedback.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+  });
+
   it("forwards a positive decreasing inverse index through the real core when virtual rows prepend", async () => {
     const observer = spyOn(scrollerCore, "MessageScrollerCore");
     try {
@@ -53,6 +66,19 @@ describe("AFP-17 feed feedback", () => {
       const earlier = agentFeedPageFromMessages("T", Array.from({ length: 40 }, (_, i) => page(101 + i).messages[0]!), { head: initial.head }, 101);
       let calls = 0;
       const { view } = mount(async () => ++calls === 1 ? initial : earlier);
+      // AFP-17 (CI_WEB_TIMING_FLAKES_REPORT, run 42580831178): the enabled
+      // click precondition is a TWO-HOP settle — the feed data lands (rows +
+      // button in one commit), then the scroller-element attach re-render
+      // (scroll-area's useImperativeHandle → the core's attachScroller
+      // setState) flips the strip's disabled gate. On a loaded runner the
+      // conjunction of both hops outlived RTL's default 1s waitFor and the
+      // park died with the rows already visible (Expected: false, Received:
+      // true inside checkCallback). Park on the DATA terminal event first,
+      // drain the attach hop with the file's act-flush idiom, and only then
+      // park the unchanged click precondition — each waitFor targets ONE
+      // arrival; no timeout is widened.
+      await waitFor(() => expect(olderButton(view)).toBeDefined());
+      await act(async () => {});
       await waitFor(() => expect((olderButton(view) as HTMLButtonElement).disabled).toBe(false));
       const before = observer.mock.calls.at(-1)![0].firstItemIndex;
       expect(typeof before).toBe("number");

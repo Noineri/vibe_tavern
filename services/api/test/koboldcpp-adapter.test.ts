@@ -8,6 +8,7 @@ import {
   koboldCppProtocol,
 } from "../src/domain/providers/koboldcpp-adapter.js";
 import { generationFormatToTemplate } from "../src/domain/providers/completion-prompt.js";
+import { testFetch } from "./test-fetch-seam.js";
 
 // ─── Mock fetch ──────────────────────────────────────────────────────────
 
@@ -25,7 +26,7 @@ function setupMockFetch(responses: Array<{ ok: boolean; status: number; json?: u
       headers,
     });
   });
-  globalThis.fetch = mockFetch as typeof fetch;
+  globalThis.fetch = testFetch(mockFetch);
 }
 
 function setupMockSSEStream(tokens: string[], doneText = "full text") {
@@ -40,7 +41,7 @@ function setupMockSSEStream(tokens: string[], doneText = "full text") {
       headers: new Headers({ "Content-Type": "text/event-stream" }),
     });
   });
-  globalThis.fetch = mockFetch as typeof fetch;
+  globalThis.fetch = testFetch(mockFetch);
 }
 
 // Byte-level control over the wire: SSE line reassembly and UTF-8 decoding are
@@ -58,7 +59,7 @@ function setupMockByteChunks(chunks: readonly (string | Uint8Array)[]) {
     }),
     { status: 200, headers: new Headers({ "Content-Type": "text/event-stream" }) },
   ));
-  globalThis.fetch = mockFetch as typeof fetch;
+  globalThis.fetch = testFetch(mockFetch);
 }
 
 // Splits text at a byte offset INSIDE a multi-byte character, so each half is
@@ -353,7 +354,7 @@ describe("KoboldCPP adapter — doStream", () => {
       }),
       { status: 200, headers: { "Content-Type": "text/event-stream" } },
     ));
-    globalThis.fetch = mockFetch as typeof fetch;
+    globalThis.fetch = testFetch(mockFetch);
     const model = createKoboldCppModel({ baseURL: "http://localhost:5001", modelId: "test" });
     const result = await model.doStream({
       prompt: [{ role: "user", content: [{ type: "text", text: "go" }] }],
@@ -504,7 +505,7 @@ function tokenizeFetch(
   calls: TokenizeCapture[],
   respond: (body: { prompt: string }) => { status: number; json?: unknown },
 ): typeof fetch {
-  return (async (url: string | URL | Request, init?: RequestInit) => {
+  return testFetch(async (url: string | URL | Request, init?: RequestInit) => {
     const urlText = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
     const body = JSON.parse(String(init?.body ?? "{}")) as { prompt: string };
     calls.push({ url: urlText, body });
@@ -513,7 +514,7 @@ function tokenizeFetch(
       status: r.status,
       headers: { "Content-Type": "application/json" },
     });
-  }) as typeof fetch;
+  });
 }
 
 describe("KoboldCPP adapter — tokenize (V1f normalization)", () => {

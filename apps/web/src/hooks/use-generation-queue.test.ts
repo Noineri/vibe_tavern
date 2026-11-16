@@ -1,14 +1,16 @@
 import { afterAll, beforeEach, expect, spyOn, test } from "bun:test";
-import { brandId, type ChatId } from "@vibe-tavern/domain";
+import { brandId, type ChatId, type MessageVariantId } from "@vibe-tavern/domain";
 import type { ChatGenerationJob } from "@vibe-tavern/api-contracts";
 import { toast } from "sonner";
-import type { AppMessage, AppSnapshot } from "../api/types.js";
+import type { AppSnapshot } from "../api/types.js";
 import { useChatStore } from "../stores/chat-store.js";
 import { useGenerationQueueStore } from "../stores/generation-queue-store.js";
 import { useSnapshotStore } from "../stores/snapshot-store.js";
 import { cancelQueueJob, clearQueuePending, enqueueGenerateMore, useGenerationQueue } from "./use-generation-queue.js";
 import { refreshGenerationQueue } from "../lib/chat-generation-queue-client.js";
 import { useDomEnv } from "../../test/dom-env.js";
+import { wireMessage, wireVariant } from "../../test/wire-fixtures.js";
+import { testFetch } from "@vibe-tavern/test-fetch";
 
 useDomEnv();
 const { act, renderHook, waitFor } = await import("@testing-library/react");
@@ -22,7 +24,12 @@ function job(id: string, status: ChatGenerationJob["status"] = "pending"): ChatG
   return { id, chatId: A, messageId: MESSAGE, model: id, promptPresetId: null, status, enqueuedAt: 1 };
 }
 function setVariants(ids: string[]) {
-  useSnapshotStore.setState({ messagesById: { [MESSAGE]: { id: MESSAGE, role: "assistant", variants: ids.map((id, variantIndex) => ({ id, variantIndex })) } } as unknown as Record<string, AppMessage>, messageOrder: [MESSAGE] });
+  useSnapshotStore.setState({
+    messagesById: { [MESSAGE]: wireMessage(MESSAGE, {
+      variants: ids.map((id, variantIndex) => wireVariant(MESSAGE, variantIndex, { id: brandId<MessageVariantId>(id) })),
+    }) },
+    messageOrder: [MESSAGE],
+  });
 }
 beforeEach(() => {
   globalThis.fetch = originalFetch; errorToast.mockClear(); failEnqueue = false; calls = []; jobs = [];
@@ -30,7 +37,7 @@ beforeEach(() => {
   useGenerationQueueStore.setState({ jobsByChat: {}, batchesByChat: {}, recordsByChat: {} });
   useSnapshotStore.setState({ activeChat: { id: A, mode: "rp" } as AppSnapshot["activeChat"] });
   setVariants(["original"]);
-  globalThis.fetch = (async (input, init) => {
+  globalThis.fetch = testFetch(async (input, init) => {
     const path = new URL(String(input), "http://localhost").pathname;
     const method = init?.method ?? "GET";
     const body = typeof init?.body === "string" ? JSON.parse(init.body) : undefined;
@@ -43,7 +50,7 @@ beforeEach(() => {
     if (method === "DELETE") jobs = jobs.map((item) => path.endsWith(`/${item.id}`) ? { ...item, status: "cancelled" } : item);
     if (path.endsWith("/clear")) jobs = jobs.filter((item) => item.status !== "pending");
     return Response.json({ ok: true });
-  }) as typeof fetch;
+  });
 });
 afterAll(() => {
   globalThis.fetch = originalFetch; errorToast.mockRestore();
@@ -134,10 +141,10 @@ test("a parked older hydration cannot overwrite a later cancellation", async () 
   let entered!: () => void;
   const ready = new Promise<void>((resolve) => { entered = resolve; });
   let park = true;
-  globalThis.fetch = (async (input, init) => {
+  globalThis.fetch = testFetch(async (input, init) => {
     if (park && (!init?.method || init.method === "GET")) { park = false; entered(); return new Promise<Response>((resolve) => { release = resolve; }); }
     return transport(input, init);
-  }) as typeof fetch;
+  });
   const older = refreshGenerationQueue(A); await ready;
   const cancel = cancelQueueJob("cancel");
   release(Response.json(jobs)); await older; await cancel;

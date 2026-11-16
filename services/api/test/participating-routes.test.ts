@@ -10,29 +10,39 @@ import { createScriptRoutes } from "../src/api/routes/script.js";
 import type { LorebookRuntimeApi, ScriptRuntimeApi } from "../src/api/contract/runtime-api.js";
 import { LorebookAdapter } from "../src/api/adapters/lorebook-adapter.js";
 import { ScriptAdapter } from "../src/api/adapters/script-adapter.js";
-import type { StoreContainer } from "@vibe-tavern/db";
+import type { ChatStore, LorebookStore, ScriptStore, StoreContainer } from "@vibe-tavern/db";
 import { httpStatusForDomainError, isDomainError } from "../src/shared/errors.js";
+import { makeLorebookRow, makeChatRow, makeChatBranchRow } from "./insights-test-builders.js";
+import { makeScriptRow } from "./copilot-test-builders.js";
+import { strictTestDouble } from "./strict-test-double.js";
 
 function mockLorebookRuntime(overrides: Partial<LorebookRuntimeApi> = {}): LorebookRuntimeApi {
-  return { ...overrides } as unknown as LorebookRuntimeApi;
+  return strictTestDouble<LorebookRuntimeApi>(overrides, "LorebookRuntimeApi (participating)");
 }
 
 function mockScriptRuntime(overrides: Partial<ScriptRuntimeApi> = {}): ScriptRuntimeApi {
-  return { ...overrides } as unknown as ScriptRuntimeApi;
+  return strictTestDouble<ScriptRuntimeApi>(overrides, "ScriptRuntimeApi (participating)");
 }
 
 /** StoreContainer stub carrying only the members the participating adapters
  * touch — the adapter seam (constructor DI) keeps this test-local and visible. */
-function stubStores(chats: { getById: (id: string) => Promise<unknown> }, lorebooks?: unknown, scripts?: unknown) {
-  return {
-    chats,
-    lorebooks,
-    scripts,
-  } as unknown as StoreContainer;
+function stubStores(
+  chats: { getById: ChatStore["getById"] },
+  lorebooks?: Partial<LorebookStore>,
+  scripts?: Partial<ScriptStore>,
+) {
+  return strictTestDouble<StoreContainer>(
+    {
+      chats: strictTestDouble<ChatStore>(chats, "stubStores chats"),
+      ...(lorebooks ? { lorebooks: strictTestDouble<LorebookStore>(lorebooks, "stubStores lorebooks") } : {}),
+      ...(scripts ? { scripts: strictTestDouble<ScriptStore>(scripts, "stubStores scripts") } : {}),
+    },
+    "StoreContainer (participating-routes)",
+  );
 }
 
-const BOOK = { id: "lb_1", name: "book", enabled: true };
-const SCRIPT = { id: "s_1", name: "script", enabled: true, scriptKind: "prompt" };
+const BOOK = makeLorebookRow({ id: "lb_1", name: "book" });
+const SCRIPT = makeScriptRow("prompt", "s_1", { name: "script" });
 
 describe("GET /api/lorebooks/participating (mock runtime)", () => {
   test("200 + the runtime's list, chatId carried from the query", async () => {
@@ -102,7 +112,7 @@ describe("participating adapters (fail-closed delegation)", () => {
         return [BOOK];
       },
     };
-    const chatRow = { id: "chat_X", characterId: "char_1", personaId: "persona_9" };
+    const chatRow = makeChatRow({ id: "chat_X", characterId: "char_1", personaId: "persona_9" });
     const adapter = new LorebookAdapter(stubStores({ getById: async () => chatRow }, lorebooks));
     const result = await adapter.listParticipatingLorebooks("chat_X");
     expect(result).toEqual([BOOK]);
@@ -117,7 +127,9 @@ describe("participating adapters (fail-closed delegation)", () => {
         return [SCRIPT];
       },
     };
-    const chatRow = { id: "chat_X", characterId: "char_1", personaId: null, insightsConfig: { diceScriptIds: null } };
+    // The normalized chat config already carries diceScriptIds: null — the
+    // same value the erased literal pinned by hand.
+    const chatRow = makeChatRow({ id: "chat_X", characterId: "char_1", personaId: null });
     const adapter = new ScriptAdapter(stubStores({ getById: async () => chatRow }, undefined, scripts));
     const result = await adapter.listParticipatingScripts("chat_X");
     expect(result).toEqual([SCRIPT]);

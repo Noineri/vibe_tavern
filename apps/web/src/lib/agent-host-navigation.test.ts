@@ -1,5 +1,6 @@
 import { afterAll, beforeEach, expect, test } from "bun:test";
 import { useDomEnv } from "../../test/dom-env.js";
+import { testFetch } from "@vibe-tavern/test-fetch";
 useDomEnv();
 await import("../components/build/editors/copilot/experience-agent-host.js");
 await import("../components/build/editors/script-agent-host.js");
@@ -35,13 +36,13 @@ function reset() {
 }
 beforeEach(() => {
   reset(); requests = []; chatMode = "rp";
-  globalThis.fetch = (async (input, init) => {
+  globalThis.fetch = testFetch(async (input, init) => {
     const path = new URL(String(input), "http://gateway.test").pathname;
     requests.push([init?.method ?? "GET", path]);
     if (path.endsWith("/api/agent-runs")) return Response.json([]);
     if (path.endsWith("/coauthor/review")) return Response.json(null);
     return Response.json({ activeChat: { id: "destination-chat", characterId: "character", mode: chatMode }, activeBranch: { id: path.endsWith("/activate") ? "destination-branch" : "previous-branch" } });
-  }) as typeof fetch;
+  });
 });
 afterAll(reset);
 

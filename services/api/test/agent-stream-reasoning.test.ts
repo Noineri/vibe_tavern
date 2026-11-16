@@ -18,7 +18,7 @@
  *   boundary split all ignore both columns.
  */
 import { describe, expect, it } from "bun:test";
-import type { LanguageModel } from "ai";
+import { type LanguageModel, streamText } from "ai";
 import type { ProviderProfile } from "@vibe-tavern/db";
 import type { ExperienceCopilotMessage } from "@vibe-tavern/db";
 import { setTokenCountFn } from "@vibe-tavern/prompt-pipeline";
@@ -31,6 +31,8 @@ import {
 } from "../src/domain/agent/agent-stream.js";
 import { estimateHistoryTokens, resolveDigestBoundary, type AgentFlowMessage } from "../src/domain/agent/agent-prompt.js";
 import { brandId, type ExperienceCopilotMessageId, type ExperienceCopilotThreadId } from "@vibe-tavern/domain";
+import { makeProviderProfileRow } from "./copilot-test-builders.js";
+import { makeStreamTextDouble, type StreamTextPart } from "./provider-boundary-test-builders.js";
 
 // ─── Fakes ───────────────────────────────────────────────────────────────────
 
@@ -75,43 +77,35 @@ function createFakeStore() {
 let clockNow = 0;
 
 function makeFakeStreamText(
-  parts: Array<() => unknown>,
+  parts: Array<() => StreamTextPart>,
   opts: { lateUsageTick?: number } = {},
-): ReturnType<typeof import("ai").streamText> {
-  const usage =
-    opts.lateUsageTick !== undefined
-      ? // A thenable that advances the clock BEFORE resolving — a deterministic
-        // stand-in for "time passed between the last chunk and the persist"
-        // (parked-promise discipline, never a sleep).
-        {
-          then(onFulfilled: (v: unknown) => unknown) {
-            clockNow = opts.lateUsageTick!;
-            return Promise.resolve().then(() => onFulfilled(undefined));
-          },
-        }
-      : Promise.resolve(undefined);
-  return (() => {
-    async function* gen(): AsyncGenerator<unknown, void, unknown> {
+): typeof streamText {
+  return makeStreamTextDouble(() => ({
+    // Pull-based generator: each consumer pull runs the next thunk (its
+    // clock advance included), preserving the per-chunk timing. The
+    // late-usage tick advances AFTER the last part — in the interval between
+    // the drained stream and the persist read, exactly where the erased
+    // fake's thenable usage advanced it on adoption (parked sequencing,
+    // never a sleep).
+    parts: async function* () {
       for (const part of parts) yield part();
-    }
-    return {
-      stream: gen(),
-      finishReason: Promise.resolve("stop"),
-      usage,
-    };
-  }) as unknown as ReturnType<typeof import("ai").streamText>;
+      if (opts.lateUsageTick !== undefined) clockNow = opts.lateUsageTick;
+    }(),
+  }), "agent-stream-reasoning streamText");
 }
 
+// Completed through the standing row builder: the erased literal was missing
+// the row's other required columns; none are read on these paths
+// (resolveModel is stubbed, no transport resolution runs).
 function makeProviderProfile(): ProviderProfile {
-  return {
+  return makeProviderProfileRow({
     id: "prov_1",
     providerPreset: "openai",
     endpoint: "http://test",
     apiKey: "key",
     defaultModel: "test-model",
     proxyMode: "inherit",
-    proxyId: null,
-  } as unknown as ProviderProfile;
+  });
 }
 
 function makeDeps(
@@ -159,22 +153,22 @@ async function runTurn(streamText: ReturnType<typeof makeFakeStreamText>) {
 }
 
 // Raw fullStream part builders (createMappedStream maps these to the loop's
-// ProviderStreamChunk vocabulary).
-const reasoning = (t: number, text: string) => () => {
+// ProviderStreamChunk vocabulary), typed to the SDK's real part union.
+const reasoning = (t: number, text: string): () => StreamTextPart => () => {
   clockNow = t;
-  return { type: "reasoning-delta", text };
+  return { type: "reasoning-delta", id: "asr-reasoning", text };
 };
-const text = (t: number, s: string) => () => {
+const text = (t: number, s: string): () => StreamTextPart => () => {
   clockNow = t;
-  return { type: "text-delta", text: s };
+  return { type: "text-delta", id: "asr-text", text: s };
 };
-const toolCall = (t: number, toolCallId: string) => () => {
+const toolCall = (t: number, toolCallId: string): () => StreamTextPart => () => {
   clockNow = t;
   return { type: "tool-call", toolCallId, toolName: "write_buffer", input: { target: "rules" } };
 };
-const toolResult = (t: number, toolCallId: string) => () => {
+const toolResult = (t: number, toolCallId: string): () => StreamTextPart => () => {
   clockNow = t;
-  return { type: "tool-result", toolCallId, toolName: "write_buffer", output: { ok: true } };
+  return { type: "tool-result", toolCallId, toolName: "write_buffer", input: {}, output: { ok: true } };
 };
 
 /** The turn's rows minus the content-mode user row. */

@@ -184,39 +184,20 @@ function withFieldDescriptions<T extends Record<string, z.ZodType>>(
   shape: T,
   descriptions: { readonly [K in keyof T]: string },
 ): { [K in keyof T]: T[K] } {
-  const out: Record<string, z.ZodType> = {};
-  for (const key of Object.keys(shape)) {
-    out[key] = shape[key as keyof T].describe(descriptions[key as keyof T]);
+  // Spread keeps the declared shape's exact keys and field types; the loop
+  // only swaps each field for its described clone — zod's `.describe()`
+  // returns `this` — so the result type is the input shape verbatim, with no
+  // edge cast.
+  const out = { ...shape };
+  for (const key of Object.keys(shape) as Array<keyof T & string>) {
+    out[key] = shape[key].describe(descriptions[key]);
   }
-  // The loop rebuilt the same shape with descriptions attached; one edge cast
-  // (ZodRawShape values carry no public members, so TS cannot see the loop
-  // preserves each field's exact type) restores the precise generic.
-  return out as unknown as { [K in keyof T]: T[K] };
+  return out;
 }
 
 /** Values of a domain as-const string-enum object as a zod enum (one source). */
 function domainEnumValues<const T extends Record<string, string>>(values: T) {
   return z.enum(Object.values(values) as [T[keyof T], ...T[keyof T][]]);
-}
-
-/**
- * Pick a subset of an already-described shape (step 6's basic view). The keys
- * argument is the only hand-written part — WHICH fields are "basics" — while
- * the field schemas AND their descriptions stay the derived contract ones, so
- * the basic view can never drift from the schema source. The mapped type makes
- * a basic-field key that does not exist in the source shape a compile error.
- */
-function pickDescribedFields<T extends Record<string, z.ZodType>>(
-  shape: T,
-  keys: { readonly [K in keyof T & string]?: string },
-): { [K in keyof T & keyof typeof keys]: T[K] } {
-  const out: Record<string, z.ZodType> = {};
-  for (const key of Object.keys(keys)) {
-    out[key] = shape[key as keyof T];
-  }
-  // Same edge cast as withFieldDescriptions: the loop provably preserves each
-  // picked field's exact type; TS cannot see through Object.keys.
-  return out as unknown as { [K in keyof T & keyof typeof keys]: T[K] };
 }
 
 // ─── Book-level settings fields (create_lorebook / edit_lorebook) ───────────
@@ -258,11 +239,23 @@ export const LORE_TOOL_BASIC_BOOK_FIELDS = {
   recursiveScanning: "core activation knob",
 } as const;
 
-/** Book settings EXCLUDING `name` in the basic view (picked from the full shape). */
-const lorebookBasicSettingsFieldsExceptName = pickDescribedFields(
-  lorebookSettingsFieldsExceptName,
-  LORE_TOOL_BASIC_BOOK_FIELDS,
-);
+/** Book settings EXCLUDING `name` in the basic view (picked from the full
+ *  shape). Hand-named keys, tied to {@link LORE_TOOL_BASIC_BOOK_FIELDS} by the
+ *  Pick annotation: a basic key missing from the source shape, a picked key
+ *  dropped from either side, or an extra key here is a compile error — the
+ *  same drift contract the old keys-argument helper enforced, without the
+ *  erasure cast. */
+const lorebookBasicSettingsFieldsExceptName: Pick<
+  typeof lorebookSettingsFieldsExceptName,
+  keyof typeof LORE_TOOL_BASIC_BOOK_FIELDS
+> = {
+  description: lorebookSettingsFieldsExceptName.description,
+  scopeType: lorebookSettingsFieldsExceptName.scopeType,
+  enabled: lorebookSettingsFieldsExceptName.enabled,
+  scanDepth: lorebookSettingsFieldsExceptName.scanDepth,
+  tokenBudget: lorebookSettingsFieldsExceptName.tokenBudget,
+  recursiveScanning: lorebookSettingsFieldsExceptName.recursiveScanning,
+};
 
 // ─── Entry-level settings fields ─────────────────────────────────────────────
 
@@ -311,11 +304,19 @@ export const LORE_TOOL_BASIC_ENTRY_FIELDS = {
   enabled: "on/off",
 } as const;
 
-/** Entry settings in the basic view (picked from the described full shape). */
-const loreEntryBasicSettingsFields = pickDescribedFields(
-  loreEntrySettingsFields,
-  LORE_TOOL_BASIC_ENTRY_FIELDS,
-);
+/** Entry settings in the basic view (picked from the described full shape).
+ *  Same Pick-tied hand-named keys as the book twin above. */
+const loreEntryBasicSettingsFields: Pick<
+  typeof loreEntrySettingsFields,
+  keyof typeof LORE_TOOL_BASIC_ENTRY_FIELDS
+> = {
+  title: loreEntrySettingsFields.title,
+  constant: loreEntrySettingsFields.constant,
+  position: loreEntrySettingsFields.position,
+  depth: loreEntrySettingsFields.depth,
+  logic: loreEntrySettingsFields.logic,
+  enabled: loreEntrySettingsFields.enabled,
+};
 
 // ─── Tool input schemas: full (in lore work) and basic (outside) views ───────
 

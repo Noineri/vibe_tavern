@@ -3,19 +3,24 @@ import { EventBus } from "@vibe-tavern/domain";
 import { createApp } from "../src/server/app-factory.js";
 import { FeatureRegistry } from "../src/shared/feature-registry.js";
 import { createAiAssistantFeature } from "../src/domain/ai-assistant/ai-assistant-feature.js";
-import type { AiAssistantRuntimeApi } from "../src/api/contract/runtime-api.js";
+import { makeRuntimeApi } from "./routes-test-builders.js";
 
 describe("feature routes", () => {
   test("mount before final catch-all", async () => {
-    const runtime = {
-      async *streamAiAssistant() {
-        yield { type: "done" };
+    const runtime = makeRuntimeApi(
+      {
+        aiAssistant: {
+          async *streamAiAssistant() {
+            yield { type: "done" };
+          },
+        },
       },
-    } as unknown as AiAssistantRuntimeApi;
+      "RuntimeApi (feature-routes: mount)",
+    );
 
     const events = new EventBus();
     const features = new FeatureRegistry();
-    features.register(createAiAssistantFeature(runtime));
+    features.register(createAiAssistantFeature(runtime.aiAssistant));
 
     const app = await createApp({
       runtime,
@@ -39,22 +44,27 @@ describe("feature routes", () => {
     const clientController = new AbortController();
     let runtimeSignal: AbortSignal | undefined;
     const TOTAL_CHUNKS = 40;
-    const runtime = {
-      // Deliberately uncooperative: ignores the signal and keeps yielding, so
-      // the pin is on the ROUTE — it must pass an abortable signal and break
-      // out of the pump instead of draining the whole generator.
-      async *streamAiAssistant(_body: unknown, signal?: AbortSignal) {
-        runtimeSignal = signal;
-        for (let i = 0; i < TOTAL_CHUNKS; i++) {
-          yield { type: "text", text: `chunk-${i}` };
-          await Bun.sleep(4);
-        }
+    const runtime = makeRuntimeApi(
+      {
+        aiAssistant: {
+          // Deliberately uncooperative: ignores the signal and keeps yielding, so
+          // the pin is on the ROUTE — it must pass an abortable signal and break
+          // out of the pump instead of draining the whole generator.
+          async *streamAiAssistant(_body: unknown, signal?: AbortSignal) {
+            runtimeSignal = signal;
+            for (let i = 0; i < TOTAL_CHUNKS; i++) {
+              yield { type: "text", text: `chunk-${i}` };
+              await Bun.sleep(4);
+            }
+          },
+        },
       },
-    } as unknown as AiAssistantRuntimeApi;
+      "RuntimeApi (feature-routes: abort)",
+    );
 
     const events = new EventBus();
     const features = new FeatureRegistry();
-    features.register(createAiAssistantFeature(runtime));
+    features.register(createAiAssistantFeature(runtime.aiAssistant));
     const app = await createApp({
       runtime,
       configureFeatures: (router) => features.activateAll({ events, router }),
@@ -98,20 +108,25 @@ describe("feature routes", () => {
   test("ai-assistant routes reject a body that fails aiAssistantRequestSchema", async () => {
     let streamed = false;
     let counted = false;
-    const runtime = {
-      async *streamAiAssistant() {
-        streamed = true;
-        yield { type: "done" };
+    const runtime = makeRuntimeApi(
+      {
+        aiAssistant: {
+          async *streamAiAssistant() {
+            streamed = true;
+            yield { type: "done" };
+          },
+          async countAiAssistantTokens() {
+            counted = true;
+            return { tokens: 0, model: "m", layerCount: 0, messageCount: 0, activatedLoreCount: 0 };
+          },
+        },
       },
-      async countAiAssistantTokens() {
-        counted = true;
-        return { tokens: 0, model: "m", layerCount: 0, messageCount: 0, activatedLoreCount: 0 };
-      },
-    } as unknown as AiAssistantRuntimeApi;
+      "RuntimeApi (feature-routes: schema reject)",
+    );
 
     const events = new EventBus();
     const features = new FeatureRegistry();
-    features.register(createAiAssistantFeature(runtime));
+    features.register(createAiAssistantFeature(runtime.aiAssistant));
     const app = await createApp({
       runtime,
       configureFeatures: (router) => features.activateAll({ events, router }),

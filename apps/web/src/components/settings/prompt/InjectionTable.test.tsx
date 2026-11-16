@@ -26,8 +26,10 @@
  * Runner: bun:test + happy-dom.
  */
 import { beforeAll, describe, it, expect, mock } from "bun:test";
-import type { ComponentProps, ReactElement } from "react";
+import type { ComponentProps, ReactElement, ReactNode } from "react";
+import type { DragEndEvent, DragStartEvent } from "@dnd-kit/core";
 import { useDomEnv } from "../../../../test/dom-env.js";
+import { flush } from "../../../../test/flush.js";
 import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 import type { CustomInjection, PromptOrderEntry } from "@vibe-tavern/domain";
 import type { CanvasLoreEntrySummary } from "../../../lib/prompt-canvas-lore.js";
@@ -756,10 +758,20 @@ describe("PromptOrderCanvas — characterization", () => {
 
     expect(dndHandlers).toBeTruthy();
     // Minimal drag lifecycle: start freezes the visual zones, end commits
-    // every entry. Shapes are the subset handleDragStart/handleDragEnd read
-    // ({active:{id}} / {active:{id}, over}) — cast, not `as any`.
-    const startEvent = { active: { id: "slot:personaDescription" } } as unknown as Parameters<NonNullable<RealDndContextProps["onDragStart"]>>[0];
-    const endEvent = { active: { id: "slot:personaDescription" }, over: null } as unknown as Parameters<NonNullable<RealDndContextProps["onDragEnd"]>>[0];
+    // every entry. Member-for-member dnd-kit event literals (the 7d
+    // master-list shape): the handlers read only active.id / over; the
+    // remaining members ride inert defaults.
+    const startEvent: DragStartEvent = {
+      activatorEvent: new Event("pointerdown"),
+      active: { id: "slot:personaDescription", data: { current: undefined }, rect: { current: { initial: null, translated: null } } },
+    };
+    const endEvent: DragEndEvent = {
+      activatorEvent: new Event("pointerdown"),
+      active: { id: "slot:personaDescription", data: { current: undefined }, rect: { current: { initial: null, translated: null } } },
+      collisions: null,
+      delta: { x: 0, y: 0 },
+      over: null,
+    };
     act(() => {
       dndHandlers!.onDragStart!(startEvent);
       dndHandlers!.onDragEnd!(endEvent);
@@ -794,7 +806,7 @@ describe("PromptOrderCanvas — characterization", () => {
     expect(q.queryByRole("switch")).toBeNull();
     // Expand: the header is the click target (cursor-pointer when expandable).
     fireEvent.click(card!.querySelector(".canvas-card-header")!);
-    await new Promise((r) => setTimeout(r, 10));
+    await flush();
     const toggle = q.getByRole("switch");
     expect(toggle.getAttribute("aria-checked")).toBe("true");
     // The toggle + hint render INSIDE the card, below the prefill editor.
@@ -810,7 +822,7 @@ describe("PromptOrderCanvas — characterization", () => {
     const card = view.baseElement.querySelector('[data-canvas-identifier="assistantPrefill"]') as HTMLElement | null;
     expect(card).toBeTruthy();
     fireEvent.click(card!.querySelector(".canvas-card-header")!);
-    await new Promise((r) => setTimeout(r, 10));
+    await flush();
     expect(within(view.baseElement).queryByRole("switch")).toBeNull();
     expect(within(card!).queryByText("per_send_prefill_enable")).toBeNull();
   });

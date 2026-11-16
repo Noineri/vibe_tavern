@@ -11,10 +11,10 @@
  * `chat-actions.test.ts`, here pinned as the flag passed through).
  */
 import { afterAll, afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import type { ChatId } from "@vibe-tavern/domain";
-import type { AppSnapshot } from "../api/types.js";
+import { brandId, type ChatId, type ChatBranchId } from "@vibe-tavern/domain";
 
 import { useDomEnv } from "../../test/dom-env.js";
+import { wireBranch } from "../../test/wire-fixtures.js";
 
 useDomEnv();
 
@@ -60,9 +60,13 @@ function respondSummary(status: number, body: unknown): void {
 }
 
 function seedActiveBranch(branchId: string | null): void {
-  useSnapshotStore.getState().ingestSnapshot({
-    ...(branchId ? { activeBranch: { id: branchId, chatId: chatId("chat-1") } } : {}),
-  } as unknown as AppSnapshot);
+  // AppSnapshot fields are Partial — a bare `{}` (no branch) is a valid
+  // snapshot; a seeded branch is a complete wire row (wireBranch).
+  useSnapshotStore.getState().ingestSnapshot(
+    branchId === null
+      ? {}
+      : { activeBranch: wireBranch({ id: brandId<ChatBranchId>(branchId), chatId: chatId("chat-1") }) },
+  );
 }
 
 beforeEach(() => {

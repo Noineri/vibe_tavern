@@ -18,7 +18,7 @@
  * assistant's chat pane); the objective proposal card (SC-13c) renders
  * `recordType: "objective"`, the AS-5 fallback covers every other type.
  */
-import { SIDECHAT_OOC_TOOL_KEYS } from "@vibe-tavern/api-contracts";
+import { DIRECTOR_MESSAGE_RECORD_TYPES, SIDECHAT_OOC_TOOL_KEYS } from "@vibe-tavern/api-contracts";
 import type { AgentThreadOwner } from "@vibe-tavern/domain";
 import { agentThreadRuns } from "../../../api/agent-run-api.js";
 import { openSidechatAgent } from "../../../lib/agent-host-navigation.js";
@@ -56,8 +56,10 @@ import {
 } from "../../../stores/sidechat-variant-attachments-store.js";
 import { Icons } from "../../shared/icons.js";
 import { ObjectiveProposalCard } from "./ObjectiveProposalCard.js";
+import { DirectorMessageProposalCard } from "./director-message-proposal-card.js";
 import { STORY_PLAN_RECORD_TYPE, StoryPlanProposalCard } from "./StoryPlanProposalCard.js";
 import { TRACKER_SCENE_RECORD_TYPE, TrackerSceneProposalCard } from "./TrackerSceneProposalCard.js";
+import { STORY_DECK_RECORD_TYPE, StoryDeckProposalCard } from "./StoryDeckProposalCard.js";
 import { SidechatVariantChips } from "./SidechatVariantChips.js";
 
 /**
@@ -242,10 +244,13 @@ registerAgentHost({
     const base = ctx.bridge.session?.buildSendOptions() ?? {};
     const triple = chatOwnerTriple(ctx.owner);
     const pending = readPendingVariantAttachments(triple.chatId, triple.branchId);
-    if (pending.length === 0) return base;
+    const promptAttachments = (ctx.contextLinks ?? [])
+      .filter((link) => link.targetType === "prompt_preset")
+      .map((link) => ({ presetId: link.targetId }));
     return {
       ...base,
-      attachedVariants: pending.map((chip) => ({ messageId: chip.messageId, variantId: chip.variantId })),
+      ...(pending.length ? { attachedVariants: pending.map((chip) => ({ messageId: chip.messageId, variantId: chip.variantId })) } : {}),
+      ...(promptAttachments.length ? { promptAttachments } : {}),
     };
   },
   // SC-18: a successful send clears the pending chips, a failed (or
@@ -284,12 +289,18 @@ registerAgentHost({
   // in place; DR-10a adds the story-plan card for the `propose_plan` tool's
   // record type and DR-10b the tracker-scene card for
   // `propose_tracker_template`'s (the record-type strings' home is the
-  // proposal domain — the card modules pin the web-side spellings). Every
-  // other recordType still falls back to the AS-5 card.
+  // proposal domain — the card modules pin the web-side spellings). DMT-33
+  // adds ONE card for BOTH Director message record types, keyed off the
+  // SHARED contract constants (the DMT-11 schema module — the one source,
+  // no local literals). DK-8 adds the story-deck card for `propose_deck`'s
+  // record type. Every other recordType still falls back to the AS-5 card.
   recordProposalRenderers: {
     objective: ObjectiveProposalCard,
     [STORY_PLAN_RECORD_TYPE]: StoryPlanProposalCard,
     [TRACKER_SCENE_RECORD_TYPE]: TrackerSceneProposalCard,
+    [DIRECTOR_MESSAGE_RECORD_TYPES.messageEdit]: DirectorMessageProposalCard,
+    [DIRECTOR_MESSAGE_RECORD_TYPES.messageVariant]: DirectorMessageProposalCard,
+    [STORY_DECK_RECORD_TYPE]: StoryDeckProposalCard,
   },
   // AP-2: RP colors without RP sizes for the sidechat's bubbles.
   messageMarkup: "rp-colors",

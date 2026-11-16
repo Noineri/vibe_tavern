@@ -130,14 +130,19 @@ test("extractCardRegexScripts — full ST field mapping + lossless sourceScript"
   expect((d.sourceScript as Record<string, unknown>).someFutureStField).toEqual({ nested: true });
 });
 
-test("extractCardRegexScripts — sortOrder follows array index across drafts", () => {
+test("extractCardRegexScripts — sortOrder tracks contiguous accepted-draft index when invalid entries are skipped", () => {
   const drafts = extractCardRegexScripts({
     regex_scripts: [
       { findRegex: "/a/g", scriptName: "first" },
+      { scriptName: "skipped-no-find", replaceString: "x" },
+      "garbage",
       { findRegex: "/b/g", scriptName: "second" },
     ],
   });
-  expect(drafts.map((d) => d.sortOrder)).toEqual([0, 1]);
+  expect(drafts.map((d) => ({ name: d.name, sortOrder: d.sortOrder }))).toEqual([
+    { name: "first", sortOrder: 0 },
+    { name: "second", sortOrder: 1 },
+  ]);
 });
 
 // ── Real fixture card (V3 with 3 embedded scripts) ─────────────────────────
@@ -157,6 +162,9 @@ test("fixture card yields exactly 3 drafts, names/placements correct, source sta
     REGEX_PLACEMENT.AiOutput,
     REGEX_PLACEMENT.Reasoning,
   ]);
+  expect(byName.get("Mood tag styling")!.placement).toEqual([
+    REGEX_PLACEMENT.AiOutput,
+  ]);
   expect(byName.get("Censor word (depth 0-2)")!.placement).toEqual([
     REGEX_PLACEMENT.UserInput,
     REGEX_PLACEMENT.AiOutput,
@@ -175,20 +183,24 @@ test("fixture control card (no regex_scripts) yields [] and bundle stays lossles
 
   // The WITH-regex card keeps its raw scripts inside extensions untouched.
   const withRegex = await loadCard(CARD_WITH_REGEX);
+  const expectedRawScripts = structuredClone(
+    ((withRegex.data as Record<string, unknown>).extensions as Record<string, unknown>)
+      .regex_scripts,
+  );
   const imported = importBundle(withRegex);
   const rawScripts = (imported.normalized.extensions.regex_scripts ?? null) as unknown;
-  expect(Array.isArray(rawScripts)).toBe(true);
-  expect(rawScripts).toHaveLength(3);
+  expect(rawScripts).toEqual(expectedRawScripts);
 });
 
 test("bundle.extensions still carries the RAW regex_scripts after extraction (lossless pin)", async () => {
   const card = await loadCard(CARD_WITH_REGEX);
+  const expectedRawScripts = structuredClone(
+    ((card.data as Record<string, unknown>).extensions as Record<string, unknown>).regex_scripts,
+  );
   const bundle = importBundle(card);
   const raw = bundle.normalized.extensions.regex_scripts;
-  expect(Array.isArray(raw)).toBe(true);
-  const first = (raw as Array<Record<string, unknown>>)[0]!;
-  expect(first.scriptName).toBe("Strip thinking tags");
-  expect(first.disabled).toBe(false); // raw copy is UNTOUCHED — parsing never rewrites extensions
+  expect(raw).toEqual(expectedRawScripts);
+  expect(((raw as Array<Record<string, unknown>>)[0]!).disabled).toBe(false); // raw copy is UNTOUCHED — parsing never rewrites extensions
 });
 
 // ── V2 path (extensions at top level) ──────────────────────────────────────

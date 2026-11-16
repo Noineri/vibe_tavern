@@ -9,6 +9,7 @@
  */
 
 import { afterAll, describe, expect, it } from "bun:test";
+import { testFetch } from "./test-fetch-seam.js";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -49,13 +50,13 @@ interface RecordedCall {
  *  `handler`; an already-aborted signal rejects like a real transport. */
 function makeTransport(handler: (url: URL, init: RequestInit | undefined) => Response | Promise<Response>) {
   const calls: RecordedCall[] = [];
-  const transport = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+  const transport = testFetch(async (input: Parameters<typeof fetch>[0], init?: RequestInit): Promise<Response> => {
     calls.push({ url: String(input), init });
     if (init?.signal?.aborted) {
       throw new DOMException("The operation was aborted.", "AbortError");
     }
     return handler(new URL(String(input)), init);
-  };
+  });
   return { transport, calls };
 }
 
@@ -973,11 +974,16 @@ describe("comfyui adapter", () => {
 
     it("fails closed on an unknown direct workflow selection instead of falling back", async () => {
       const { transport } = ditTransport("pid-workflow-unknown");
+      // The fails-closed pin needs a family id that is by construction OUTSIDE
+      // the ImageGenWorkflowFamilyId union (the unregistered-selection case) —
+      // the string is branded at this one documented fixture seam, the same
+      // unrepresentable-test-value pattern as makeAgentKind's serve-list.
+      const unregisteredWorkflow = (id: string) => id as ImageGenWorkflowFamilyId;
       await expect(
         backendWith(transport).generate({
           prompt: "p",
           model: MUSE,
-          workflowFamily: "unregistered-workflow" as unknown as ImageGenWorkflowFamilyId,
+          workflowFamily: unregisteredWorkflow("unregistered-workflow"),
         }),
       ).rejects.toThrow('ComfyUI workflow family "unregistered-workflow" has no workflow template');
     });
@@ -1753,25 +1759,27 @@ describe("comfyui ws progress + interrupt (CG-C1)", () => {
     let historyServed = false;
     let midSecondRun: { progress?: number; state?: string } | null = null;
     let backend: ReturnType<typeof comfyImageGenFactory> | undefined;
-    const transport = async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
-      const url = new URL(typeof input === "string" ? input : input.url ?? String(input));
-      transportCalls.push(url.pathname);
-      if (url.pathname === "/object_info/CheckpointLoaderSimple") {
-        return objectInfoResponse("CheckpointLoaderSimple", "ckpt_name", HAPPY_CHECKPOINTS);
-      }
-      if (url.pathname === "/prompt") return queuedOk(PID);
-      if (url.pathname === `/history/${PID}`) {
-        if (!historyServed) {
-          historyServed = true;
+    const transport = testFetch(
+      async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+        const url = new URL(typeof input === "string" ? input : input.url ?? String(input));
+        transportCalls.push(url.pathname);
+        if (url.pathname === "/object_info/CheckpointLoaderSimple") {
+          return objectInfoResponse("CheckpointLoaderSimple", "ckpt_name", HAPPY_CHECKPOINTS);
+        }
+        if (url.pathname === "/prompt") return queuedOk(PID);
+        if (url.pathname === `/history/${PID}`) {
+          if (!historyServed) {
+            historyServed = true;
+            return historyDone(PID);
+          }
+          // Second run: parked here — read the poll mid-flight.
+          midSecondRun = await backend!.progress();
           return historyDone(PID);
         }
-        // Second run: parked here — read the poll mid-flight.
-        midSecondRun = await backend!.progress();
-        return historyDone(PID);
-      }
-      if (url.pathname === "/view") return new Response(new Uint8Array(PNG_BYTES));
-      return new Response("not found", { status: 404 });
-    };
+        if (url.pathname === "/view") return new Response(new Uint8Array(PNG_BYTES));
+        return new Response("not found", { status: 404 });
+      },
+    );
     backend = comfyImageGenFactory({ endpoint: WS_EP(9115), fetch: transport, openWebSocket: () => fake.socket });
 
     // Run one completes — the registry is left holding its terminal 100%.
@@ -1787,6 +1795,8 @@ describe("comfyui ws progress + interrupt (CG-C1)", () => {
   it("cross-prompt events, binary preview frames, and malformed text frames are all ignored", async () => {
     const PID = "ws-pid-3";
     const fake = makeFakeWs();
+    let backend: ReturnType<typeof comfyImageGenFactory> | undefined;
+    const midRuns: Array<Awaited<ReturnType<NonNullable<ReturnType<typeof comfyImageGenFactory>["progress"]>>>> = [];
     let polls = 0;
     const { transport } = makeTransport(async (url) => {
       if (url.pathname === "/object_info/CheckpointLoaderSimple") {
@@ -1803,6 +1813,8 @@ describe("comfyui ws progress + interrupt (CG-C1)", () => {
           // A malformed text frame.
           fake.pushRaw("{not json");
           fake.pushText({ type: "progress", data: { value: 4, max: 8, prompt_id: PID, node: "3" } });
+          if (!backend?.progress) throw new Error("Expected ComfyUI backend.progress()");
+          midRuns.push(await backend.progress());
           return Response.json({});
         }
         return historyDone(PID);
@@ -1810,15 +1822,16 @@ describe("comfyui ws progress + interrupt (CG-C1)", () => {
       if (url.pathname === "/view") return new Response(new Uint8Array(PNG_BYTES));
       return new Response("not found", { status: 404 });
     });
-    const backend = comfyImageGenFactory({
+    backend = comfyImageGenFactory({
       endpoint: WS_EP(9103),
       fetch: transport,
       openWebSocket: () => fake.socket,
     });
 
     await backend.generate({ prompt: "a tavern", model: "graycolor_v18.safetensors" });
-    // Only OUR 4/8 event landed (0.5); the noise never threw and never
-    // wrote a snapshot.
+    // Only OUR 4/8 event landed (0.5) mid-run; the noise never threw and never
+    // overwrote our snapshot.
+    expect(midRuns).toEqual([{ progress: 0.5, state: "step 4/8" }]);
     expect(await backend.progress()).toEqual({ progress: 1 });
   });
 
@@ -1878,7 +1891,7 @@ describe("comfyui registry registration", () => {
     const { createImageGenBackend } = await import("../src/domain/imagegen/imagegen-registry.js");
     const backend = createImageGenBackend(IMAGE_GEN_BACKENDS.ComfyUI, {
       endpoint: ENDPOINT,
-      fetch: (() => new Response()) as unknown as typeof fetch,
+      fetch: testFetch(() => new Response()),
     });
     expect(typeof backend.generate).toBe("function");
   });

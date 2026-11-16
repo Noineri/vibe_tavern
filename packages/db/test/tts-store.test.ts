@@ -14,9 +14,9 @@ const fixedClock: StoreClock = { now: () => "2026-08-27T00:00:00.000Z" };
 let counter = 0;
 const idGen: StoreIdGenerator = { next: (prefix) => `${prefix}_test_${++counter}` };
 
-async function setup() {
+async function setup(clock: StoreClock = fixedClock) {
 	const db = await createDb(":memory:");
-	const store = new TtsStore(db, { clock: fixedClock, idGenerator: idGen });
+	const store = new TtsStore(db, { clock, idGenerator: idGen });
 	return { store, db };
 }
 
@@ -84,9 +84,12 @@ describe("TtsStore CRUD", () => {
 	});
 
 	test("update patches fields, serializes config, bumps updatedAt; unknown id → null", async () => {
-		const { store } = await setup();
+		let now = "2026-08-27T00:00:00.000Z";
+		const { store } = await setup({ now: () => now });
 		const created = await store.create(baseInput({ sortOrder: 1 }));
+		expect(created.createdAt).toBe("2026-08-27T00:00:00.000Z");
 
+		now = "2026-08-27T00:05:00.000Z";
 		const updated = await store.update(created.id, {
 			name: "Kokoro — Bella",
 			voiceId: "af_bella",
@@ -95,8 +98,9 @@ describe("TtsStore CRUD", () => {
 		expect(updated?.name).toBe("Kokoro — Bella");
 		expect(updated?.voiceId).toBe("af_bella");
 		expect(updated?.config).toEqual({ speed: 1.2 });
-		expect(updated?.createdAt).toBe(created.createdAt);
-		expect(updated?.updatedAt).toBe(fixedClock.now());
+		expect(updated?.createdAt).toBe("2026-08-27T00:00:00.000Z");
+		expect(updated?.updatedAt).toBe("2026-08-27T00:05:00.000Z");
+		expect((await store.getById(created.id))?.updatedAt).toBe("2026-08-27T00:05:00.000Z");
 
 		expect(await store.update("tts_profile_missing", { name: "x" })).toBeNull();
 	});
@@ -274,8 +278,8 @@ describe("TtsStore links (voice map)", () => {
 });
 
 describe("TtsStore typed key columns (TE2-16)", () => {
-	test("create round-trips apiKey + providerRef; the config bag never carries them", async () => {
-		const { store } = await setup();
+	test("create round-trips apiKey + providerRef; the config bag never carries them — and raw config_json never stores them", async () => {
+		const { store, db } = await setup();
 		const created = await store.create(
 			baseInput({
 				backend: TTS_BACKEND.OpenAiCompatible,
@@ -288,6 +292,13 @@ describe("TtsStore typed key columns (TE2-16)", () => {
 		expect(created.providerRef).toBe("provider_1");
 		// Strip-on-write: bag-sent secrets are dropped, not persisted.
 		expect(created.config).toEqual({ endpoint: "https://api.example.com/v1" });
+
+		const raw = db.select().from(ttsProfiles).where(eq(ttsProfiles.id, created.id)).get();
+		expect(raw!.configJson).toBe(JSON.stringify({ endpoint: "https://api.example.com/v1" }));
+		expect(raw!.configJson).not.toContain("apiKey");
+		expect(raw!.configJson).not.toContain("providerRef");
+		expect(raw!.apiKey).toBe("sk-real");
+		expect(raw!.providerRef).toBe("provider_1");
 	});
 
 	test("update tri-state: undefined keeps, empty clears, value replaces", async () => {

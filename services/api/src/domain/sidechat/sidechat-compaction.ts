@@ -50,6 +50,7 @@ import {
 	type AgentCompactionStore,
 } from "../agent/agent-compaction.js";
 import { storeMessagesToHistory } from "../agent/agent-stream.js";
+import { renderSidechatPromptAttachments } from "./sidechat-prompt-attachments.js";
 import {
 	stubHistoricalToolEchoes,
 	type AgentFlowMessage,
@@ -111,7 +112,7 @@ async function buildSidechatSummarizerTranscript(
 	},
 ): Promise<AgentFlowMessage[]> {
 	const stubbed = stubHistoricalToolEchoes(
-		storeMessagesToHistory(input.toSummarize).filter(
+		storeMessagesToHistory(input.toSummarize).map(renderSidechatPromptAttachments).filter(
 			(m): m is AgentFlowMessage => m.role !== "digest",
 		),
 		{ keepUserTurns: 0 },
@@ -176,7 +177,7 @@ export class SidechatOocCompactionService extends AgentCompactionService<Experie
 	) {
 		super(sidechatStore, providerProfiles, execute, {
 			attachmentAssetLoader,
-			storeMessagesToFlow: storeMessagesToHistory,
+			storeMessagesToFlow: (messages) => storeMessagesToHistory(messages).map(renderSidechatPromptAttachments),
 			// SC-8a ladder over SC-8b's key: the active service-prompt
 			// profile's override first, else the bundled asset.
 			resolveSystemPrompt: () =>

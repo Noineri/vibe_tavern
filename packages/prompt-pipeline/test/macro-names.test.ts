@@ -31,8 +31,9 @@ describe("extractMacroNames", () => {
 		expect(extractMacroNames("{{// a comment}}{{if::x}}prose{{else}}y{{/if}}")).toEqual([]);
 	});
 
-	it("reduces legacy markers to their resolver name (<BOT>/<CHAR> → char)", () => {
-		expect(extractMacroNames("<USER> and <BOT>")).toEqual(["user", "char"]);
+	it("reduces legacy markers to their resolver name (<USER> → user, <BOT>/<CHAR> → char)", () => {
+		expect(extractMacroNames("<USER>, <BOT>, <CHAR>")).toEqual(["user", "char"]);
+		expect(extractMacroNames("<CHAR>")).toEqual(["char"]);
 	});
 
 	it("does not throw on nested macros (tokenizer depth-scans)", () => {

@@ -21,6 +21,7 @@ import type {
   AgentReviewSnapshot,
   AgentThreadEventWire,
   ExperienceCopilotLaunchContext,
+  ExperienceCopilotContextLink,
   ExperienceCopilotStep,
   ExperienceCopilotThreadWire,
   RecordProposal,
@@ -172,6 +173,8 @@ export interface AgentSendOptions {
    *  selection at freeze time, the schema rejects anything else). Only the
    *  `sidechat-ooc` kind reads the field; the other kinds ignore it. */
   attachedVariants?: { messageId: string; variantId: string }[];
+  /** Pending sidechat prompt preset identities, resolved at send time. */
+  promptAttachments?: { presetId: string }[];
   /** CA-4e3 — the composer's draft attachments for this turn (full domain
    *  `Attachment` objects; the controller maps them onto the send body via
    *  the ONE send mapper `toSendAttachment`). An attachment-only send omits
@@ -194,6 +197,8 @@ export interface AgentHostContext {
   /** AS-6b2: the live thread the shell renders (null while the session
    *  loads) — buffer hosts key review rounds and draft persistence by it. */
   threadId: string | null;
+  /** Current optimistic context selections. */
+  contextLinks?: readonly ExperienceCopilotContextLink[];
   /** AS-6b2: true while the host's turn is streaming — freeze/lock
    *  affordances and the review-enable gate read it. */
   isSending: boolean;

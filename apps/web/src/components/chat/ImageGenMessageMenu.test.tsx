@@ -2,6 +2,7 @@ import { describe, expect, it, mock, afterEach } from "bun:test";
 import React from "react";
 import { useDomEnv } from "../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
+import { wireChat } from "../../../test/wire-fixtures.js";
 
 useDomEnv();
 
@@ -175,12 +176,12 @@ afterEach(() => {
 });
 
 describe("ImageGenMessageMenu — co-author gate (RP-only surface)", () => {
-  /** The chat-actions seed pattern: minimal activeChat double via ingest
-   *  (as unknown as AppSnapshot — the established cast for wire doubles). */
+  /** The chat-actions seed pattern: the active chat rides the shared wire
+   *  factory (the `chat-1`/`c1` pair) — only the gate's `mode` is pinned. */
   function seedActiveChat(mode: "rp" | "coauthor"): void {
     useSnapshotStore.getState().ingestSnapshot({
-      activeChat: { id: "chat-1", characterId: "char-1", mode },
-    } as unknown as import("../../api/types.js").AppSnapshot);
+      activeChat: wireChat({ mode }),
+    });
   }
 
   it("renders nothing when the active chat is a co-author chat (owner 2026-09-18: the button is for RP)", () => {

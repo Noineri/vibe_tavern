@@ -190,6 +190,16 @@ describe("ImageGenSection", () => {
     const defaultRow = view.getByText("Saved default").closest('[data-profile-id="default"]');
     expect(defaultRow?.querySelector(".bg-success")).toBeNull();
     expect(defaultRow?.querySelector(".bg-danger")).toBeNull();
+
+    cleanup();
+    useImageGenChatStore.setState({ activeImageGenProfileId: null });
+    const fallbackView = renderSection(imageGen);
+    await waitFor(() => expect(fallbackView.getByText("Saved default")).toBeTruthy());
+    const fallbackDefaultRow = fallbackView.getByText("Saved default").closest('[data-profile-id="default"]');
+    expect(fallbackDefaultRow?.querySelector(".bg-success")).toBeTruthy();
+    const idleSessionRow = fallbackView.getByText("Session choice").closest('[data-profile-id="session"]');
+    expect(idleSessionRow?.querySelector(".bg-success")).toBeNull();
+    expect(idleSessionRow?.querySelector(".bg-danger")).toBeNull();
   });
 
   it("passes hook-owned search to the unified list and disables its drag handles while active", async () => {

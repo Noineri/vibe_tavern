@@ -47,7 +47,7 @@ describe("0029/0030 proxy persistence migrations", () => {
     const preProxyFolder = await buildPreProxyFolder();
 
     let db = await createDb(dbPath, preProxyFolder);
-    const preClient = (db as unknown as { $client: Database }).$client;
+    const preClient = db.$client;
     preClient.exec(`
       INSERT INTO provider_profiles (
         id, name, provider_preset, endpoint, api_key, created_at, updated_at
@@ -59,7 +59,7 @@ describe("0029/0030 proxy persistence migrations", () => {
     preClient.close();
 
     db = await createDb(dbPath, REAL_DRIZZLE);
-    const client = (db as unknown as { $client: Database }).$client;
+    const client = db.$client;
 
     const provider = client.query(`
       SELECT name, endpoint, api_key, proxy_mode, proxy_id

@@ -24,13 +24,18 @@
 
 import { describe, test, expect } from "bun:test";
 import type { ToolExecutionOptions } from "ai";
-import type { StoreContainer, ScriptRow } from "@vibe-tavern/db";
+import type { StoreContainer, ScriptRow, ScriptStore } from "@vibe-tavern/db";
 import { SCRIPT_AGENT_TOOL_KEYS } from "@vibe-tavern/api-contracts";
 import {
   buildScriptAgentTools,
   type ScriptAgentRunTestResult,
 } from "../src/domain/agent/script-agent/script-agent-tools.js";
 import { isScriptAuthoringTrusted } from "../src/domain/agent/script-agent/script-agent-module.js";
+// Shared zod input-schema probe over a built ToolSet (same narrowing the
+// co-author tools suite uses; it takes any ToolSet, so the script toolset
+// reuses it instead of forking a third copy).
+import { coauthorToolInputSchema as toolInputSchema } from "./provider-boundary-test-builders.js";
+import { strictTestDouble } from "./strict-test-double.js";
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -98,14 +103,20 @@ function makeScriptRow(overrides: Partial<ScriptRow> & { id: string; code: strin
  *  even this read). Mirrors the dispatch suite's stub convention. */
 function storesWith(script: ScriptRow): { stores: StoreContainer; getByIdCalls: () => number } {
   let calls = 0;
-  const stores = {
-    scripts: {
-      getById: async () => {
-        calls += 1;
-        return { ...script };
-      },
+  const stores = strictTestDouble<StoreContainer>(
+    {
+      scripts: strictTestDouble<ScriptStore>(
+        {
+          getById: async () => {
+            calls += 1;
+            return { ...script };
+          },
+        },
+        "storesWith: scripts (script-agent-tools)",
+      ),
     },
-  } as unknown as StoreContainer;
+    "StoreContainer (script-agent-tools)",
+  );
   return { stores, getByIdCalls: () => calls };
 }
 
@@ -113,17 +124,6 @@ function storesWith(script: ScriptRow): { stores: StoreContainer; getByIdCalls: 
  *  `ToolExecutionOptions` (every tool here ignores it; `buildScriptAgentTools`
  *  returns a `ToolSet`, so the loose element typing accepts this stub). */
 const ctx: ToolExecutionOptions<unknown> = { toolCallId: "t", messages: [], context: undefined };
-
-/** Minimal view of a built tool exposing its zod input schema for direct
- *  validation assertions (the AI SDK validates `inputSchema` at tool-call
- *  time — enum/min/max/refine rejections are asserted against the schema). */
-interface ToolSchemaProbe {
-  inputSchema: { safeParse(value: unknown): { success: boolean } };
-}
-
-function schemaOf(tools: Record<string, unknown>, name: string): ToolSchemaProbe {
-  return tools[name] as ToolSchemaProbe;
-}
 
 // ─── Buffer tools over the single `code` buffer ──────────────────────────────
 
@@ -200,42 +200,39 @@ describe("script-agent-tools: write_buffer / edit_buffer over `code`", () => {
 describe("script-agent-tools: input schema validation", () => {
   test("edit_buffer rejects a missing target, an empty edit list, and a foreign target", () => {
     const { stores } = storesWith(makeScriptRow({ id: "s1", code: "" }));
-    const tools = buildScriptAgentTools({ scriptId: "s1", codeTrusted: true, stores }) as unknown as Record<string, unknown>;
-    const schema = schemaOf(tools, "edit_buffer");
+    const schema = toolInputSchema(buildScriptAgentTools({ scriptId: "s1", codeTrusted: true, stores }), "edit_buffer");
 
-    expect(schema.inputSchema.safeParse({ edits: [{ search: "a", replace: "b" }], summary: "s" }).success).toBe(false);
-    expect(schema.inputSchema.safeParse({ target: "code", edits: [], summary: "s" }).success).toBe(false);
-    expect(schema.inputSchema.safeParse({ target: "rules", edits: [{ search: "a", replace: "b" }], summary: "s" }).success).toBe(false);
+    expect(schema.safeParse({ edits: [{ search: "a", replace: "b" }], summary: "s" }).success).toBe(false);
+    expect(schema.safeParse({ target: "code", edits: [], summary: "s" }).success).toBe(false);
+    expect(schema.safeParse({ target: "rules", edits: [{ search: "a", replace: "b" }], summary: "s" }).success).toBe(false);
   });
 
   test("run_script_test rejects an empty character/persona name and an input past the chat-message cap", () => {
     const { stores } = storesWith(makeScriptRow({ id: "s1", code: "" }));
-    const tools = buildScriptAgentTools({ scriptId: "s1", codeTrusted: true, stores }) as unknown as Record<string, unknown>;
-    const schema = schemaOf(tools, "run_script_test");
+    const schema = toolInputSchema(buildScriptAgentTools({ scriptId: "s1", codeTrusted: true, stores }), "run_script_test");
 
-    expect(schema.inputSchema.safeParse({ characterName: "" }).success).toBe(false);
-    expect(schema.inputSchema.safeParse({ personaName: "" }).success).toBe(false);
+    expect(schema.safeParse({ characterName: "" }).success).toBe(false);
+    expect(schema.safeParse({ personaName: "" }).success).toBe(false);
     // AS-8e2 (owner 2026-10-18): the simulated message shares the chat
     // message cap (50 000, `experienceCopilotStreamRequestSchema.content`) —
     // was: rejected past 4 000. Names are unbounded — was: rejected past 200.
-    expect(schema.inputSchema.safeParse({ input: "x".repeat(4001) }).success).toBe(true);
-    expect(schema.inputSchema.safeParse({ input: "x".repeat(50_001) }).success).toBe(false);
-    expect(schema.inputSchema.safeParse({ characterName: "N".repeat(201) }).success).toBe(true);
+    expect(schema.safeParse({ input: "x".repeat(4001) }).success).toBe(true);
+    expect(schema.safeParse({ input: "x".repeat(50_001) }).success).toBe(false);
+    expect(schema.safeParse({ characterName: "N".repeat(201) }).success).toBe(true);
     // All-optional args and a short input parse fine.
-    expect(schema.inputSchema.safeParse({}).success).toBe(true);
-    expect(schema.inputSchema.safeParse({ input: "hello", characterName: "Aria" }).success).toBe(true);
+    expect(schema.safeParse({}).success).toBe(true);
+    expect(schema.safeParse({ input: "hello", characterName: "Aria" }).success).toBe(true);
   });
 
   test("ask_user's recommended must name one of the options (refine)", () => {
     const { stores } = storesWith(makeScriptRow({ id: "s1", code: "" }));
-    const tools = buildScriptAgentTools({ scriptId: "s1", codeTrusted: true, stores }) as unknown as Record<string, unknown>;
-    const schema = schemaOf(tools, "ask_user");
+    const schema = toolInputSchema(buildScriptAgentTools({ scriptId: "s1", codeTrusted: true, stores }), "ask_user");
 
     expect(
-      schema.inputSchema.safeParse({ question: "Which?", options: ["a", "b"], recommended: "c" }).success,
+      schema.safeParse({ question: "Which?", options: ["a", "b"], recommended: "c" }).success,
     ).toBe(false);
     expect(
-      schema.inputSchema.safeParse({ question: "Which?", options: ["a", "b"], recommended: "b" }).success,
+      schema.safeParse({ question: "Which?", options: ["a", "b"], recommended: "b" }).success,
     ).toBe(true);
   });
 });
@@ -479,7 +476,9 @@ describe("script-agent-tools: run_script_test refuses UNTRUSTED scripts — fail
 describe("script-agent-tools: tool set shape and gating", () => {
   test("default set: every module tool plus always-on read_skill_file", () => {
     const { stores } = storesWith(makeScriptRow({ id: "s1", code: "" }));
-    const tools = buildScriptAgentTools({ scriptId: "s1", codeTrusted: true, stores }) as unknown as Record<string, unknown>;
+    // The ToolSet return is an index-signature record — presence pins read
+    // members directly, no probe cast needed.
+    const tools = buildScriptAgentTools({ scriptId: "s1", codeTrusted: true, stores });
     const names = Object.keys(tools).sort();
     expect(names).toEqual([...SCRIPT_AGENT_TOOL_KEYS, "read_skill_file"].sort());
   });
@@ -491,7 +490,7 @@ describe("script-agent-tools: tool set shape and gating", () => {
       codeTrusted: true,
       stores,
       toolSet: { run_script_test: true },
-    }) as unknown as Record<string, unknown>;
+    });
     expect(tools.run_script_test).toBeDefined();
     expect(tools.write_buffer).toBeUndefined();
     expect(tools.edit_buffer).toBeUndefined();

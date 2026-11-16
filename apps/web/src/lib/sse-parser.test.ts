@@ -1,6 +1,7 @@
 import { describe, expect, it, mock } from "bun:test";
 import { parseSSEStream } from "./sse-parser.js";
 import type { GenerationMetadata } from "./generation-metadata.js";
+import type { DirectorSwipeRunOutcome } from "@vibe-tavern/api-contracts";
 import { ProviderStreamError } from "../api/provider-stream-error.js";
 
 /**
@@ -30,6 +31,14 @@ function opts() {
 }
 
 describe("parseSSEStream", () => {
+	it("signals only an explicit finish event, not EOF or an error", async () => {
+		const onFinish = mock(() => {});
+		await parseSSEStream({ response: sseResponse(['event: finish\ndata: {"finishReason":"cancelled"}\n\n']), ...opts(), onFinish });
+		expect(onFinish).toHaveBeenCalledTimes(1);
+		await parseSSEStream({ response: sseResponse([]), ...opts(), onFinish });
+		await expect(parseSSEStream({ response: sseResponse(['event: error\ndata: {"message":"failed"}\n\n']), ...opts(), onFinish })).rejects.toBeInstanceOf(ProviderStreamError);
+		expect(onFinish).toHaveBeenCalledTimes(1);
+	});
 	it("forwards text-delta chunks to onChunk", async () => {
 		const o = opts();
 		await parseSSEStream({
@@ -254,5 +263,80 @@ describe("parseSSEStream", () => {
 		});
 		expect(o.onChunk).not.toHaveBeenCalled();
 		expect(o.onStatus).toHaveBeenCalledWith("idle");
+	});
+
+	// ── DMT-24b: the sidechat answer stream's swipe-run outcome tail frame ──
+	// A non-fatal frame by contract: the decision was accepted (the receipt
+	// stored), only the generation outcome is carried; the frame must never
+	// fail the stream that already succeeded.
+
+	it("forwards the swipe-run outcome frame to onSwipeRunOutcome without failing the stream", async () => {
+		const o = opts();
+		const onSwipeRunOutcome = mock((_: { toolCallId: string; outcome: DirectorSwipeRunOutcome }) => {});
+		await parseSSEStream({
+			response: sseResponse([
+				"event: swipe-run-outcome\n",
+				'data: {"toolCallId":"tc_sw","outcome":{"status":"failed","reason":"Provider 502: upstream exploded"}}\n\n',
+				'data: {"delta":"the model kept talking"}\n\n',
+				'data: {"finishReason":"stop"}\n\n',
+			]),
+			onStatus: o.onStatus,
+			onChunk: o.onChunk,
+			onSwipeRunOutcome,
+		});
+		expect(onSwipeRunOutcome).toHaveBeenCalledTimes(1);
+		expect(onSwipeRunOutcome.mock.calls[0]![0]).toEqual({
+			toolCallId: "tc_sw",
+			outcome: { status: "failed", reason: "Provider 502: upstream exploded" },
+		});
+		// The frame is not a text delta and the stream settled normally.
+		expect(o.onChunk).toHaveBeenCalledTimes(1);
+		expect(o.onChunk.mock.calls[0]![0]).toBe("the model kept talking");
+	});
+
+	it("forwards no_output and cancelled outcome frames verbatim", async () => {
+		const o = opts();
+		const onSwipeRunOutcome = mock((_: { toolCallId: string; outcome: DirectorSwipeRunOutcome }) => {});
+		await parseSSEStream({
+			response: sseResponse([
+				"event: swipe-run-outcome\n",
+				'data: {"toolCallId":"tc_a","outcome":{"status":"no_output","messageId":"msg-9"}}\n\n',
+				"event: swipe-run-outcome\n",
+				'data: {"toolCallId":"tc_b","outcome":{"status":"cancelled"}}\n\n',
+			]),
+			onStatus: o.onStatus,
+			onChunk: o.onChunk,
+			onSwipeRunOutcome,
+		});
+		expect(onSwipeRunOutcome).toHaveBeenCalledTimes(2);
+		expect(onSwipeRunOutcome.mock.calls[0]![0]).toEqual({
+			toolCallId: "tc_a",
+			outcome: { status: "no_output", messageId: "msg-9" },
+		});
+		expect(onSwipeRunOutcome.mock.calls[1]![0]).toEqual({
+			toolCallId: "tc_b",
+			outcome: { status: "cancelled" },
+		});
+	});
+
+	it("drops a malformed swipe-run outcome payload (never fails the stream)", async () => {
+		const o = opts();
+		const onSwipeRunOutcome = mock((_: { toolCallId: string; outcome: DirectorSwipeRunOutcome }) => {});
+		const result = await parseSSEStream({
+			response: sseResponse([
+				// Unknown outcome status (fails the strict contract schema)…
+				"event: swipe-run-outcome\n",
+				'data: {"toolCallId":"tc_sw","outcome":{"status":"weird"}}\n\n',
+				// …and a frame missing the toolCallId.
+				"event: swipe-run-outcome\n",
+				'data: {"outcome":{"status":"cancelled"}}\n\n',
+				'data: {"finishReason":"stop"}\n\n',
+			]),
+			onStatus: o.onStatus,
+			onChunk: o.onChunk,
+			onSwipeRunOutcome,
+		});
+		expect(onSwipeRunOutcome).not.toHaveBeenCalled();
+		expect(result.finishReason).toBe("stop");
 	});
 });

@@ -1,22 +1,29 @@
 import { describe, expect, test } from "bun:test";
 import { createCharacterRoutes } from "../src/api/routes/character.js";
 import { createPersonaRoutes } from "../src/api/routes/persona.js";
-import type { CharacterRuntimeApi, PersonaRuntimeApi } from "../src/api/contract/runtime-api.js";
+import type { CharacterAssetRuntimeApi, CharacterRuntimeApi, PersonaRuntimeApi } from "../src/api/contract/runtime-api.js";
+import { strictTestDouble } from "./strict-test-double.js";
 
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
 
-// Build a mock runtime that lets each test override the avatar methods.
-function mockCharacter(overrides: Partial<Pick<CharacterRuntimeApi, "uploadCharacterAvatar" | "serveCharacterAvatar" | "serveCharacterAvatarFull">> = {}): CharacterRuntimeApi {
-	return { ...overrides } as unknown as CharacterRuntimeApi;
+// Build a mock runtime that lets each test override the avatar methods; an
+// unprovided member throws a labeled miss instead of `undefined`. The
+// character mock returns the route module's real parameter type (the
+// CharacterAssetRuntimeApi intersection) — the old `as unknown as
+// CharacterRuntimeApi` return hid the mismatch from every call site.
+function mockCharacter(overrides: Partial<Pick<CharacterRuntimeApi, "uploadCharacterAvatar" | "serveCharacterAvatar" | "serveCharacterAvatarFull">> = {}): CharacterRuntimeApi & CharacterAssetRuntimeApi {
+	return strictTestDouble<CharacterRuntimeApi & CharacterAssetRuntimeApi>(overrides, "CharacterRuntimeApi (avatar routes)");
 }
 function mockPersona(overrides: Partial<Pick<PersonaRuntimeApi, "uploadPersonaAvatar" | "servePersonaAvatar">> = {}): PersonaRuntimeApi {
-	return { ...overrides } as unknown as PersonaRuntimeApi;
+	return strictTestDouble<PersonaRuntimeApi>(overrides, "PersonaRuntimeApi (avatar routes)");
 }
 
 describe("C1 character avatar routes", () => {
 	test("POST /api/characters/:id/avatar: multipart upload → 200 + {avatarExt}", async () => {
 		const runtime = mockCharacter({
-			uploadCharacterAvatar: async () => ({ avatarExt: "png" }),
+			// The full upload return the real adapter answers with (the erased
+			// fragment hid `avatarFullExt`); the route passes it through.
+			uploadCharacterAvatar: async () => ({ avatarExt: "png", avatarFullExt: null }),
 		});
 		const app = createCharacterRoutes(runtime);
 
@@ -25,7 +32,7 @@ describe("C1 character avatar routes", () => {
 
 		const res = await app.request("/api/characters/char_1/avatar", { method: "POST", body: form });
 		expect(res.status).toBe(200);
-		expect(await res.json()).toEqual({ avatarExt: "png" });
+		expect(await res.json()).toEqual({ avatarExt: "png", avatarFullExt: null });
 	});
 
 	test("POST avatar: no file → 400", async () => {
@@ -130,7 +137,9 @@ describe("C1 character avatar routes", () => {
 describe("C1 persona avatar routes", () => {
 	test("POST /api/personas/:id/avatar: upload → 200; GET → bytes; GET null → 404", async () => {
 		const runtime = mockPersona({
-			uploadPersonaAvatar: async () => ({ avatarExt: "webp" }),
+			// The full upload return the real adapter answers with (the erased
+			// fragment hid `avatarFullExt`); the route passes it through.
+			uploadPersonaAvatar: async () => ({ avatarExt: "webp", avatarFullExt: null }),
 			servePersonaAvatar: async () => new Response(PNG, { headers: { "Content-Type": "image/png" } }),
 		});
 		const app = createPersonaRoutes(runtime);
@@ -139,7 +148,7 @@ describe("C1 persona avatar routes", () => {
 		form.append("file", new File([PNG], "a.webp", { type: "image/webp" }));
 		const post = await app.request("/api/personas/p_1/avatar", { method: "POST", body: form });
 		expect(post.status).toBe(200);
-		expect(await post.json()).toEqual({ avatarExt: "webp" });
+		expect(await post.json()).toEqual({ avatarExt: "webp", avatarFullExt: null });
 
 		const get = await app.request("/api/personas/p_1/avatar");
 		expect(get.status).toBe(200);

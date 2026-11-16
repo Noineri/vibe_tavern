@@ -198,25 +198,49 @@ describe("useAgentTurnStore", () => {
     // aggregation. The extractor's fallback branch emits a graceful done card
     // whose summary is the raw tool-result content.
     const runTestContent = JSON.stringify({ passed: true, failures: [] });
+    const runSimContent = JSON.stringify({ simulated: true, turnCount: 3 });
+    const suggestVisualContent = JSON.stringify({ target: "mood", confidence: 0.9 });
     const messages = [
       { id: "user_new", role: "user", content: "run the tests" },
       {
         id: "assistant_call",
         role: "assistant",
         content: "",
-        toolCalls: [{ id: "call_test", name: "run_test", args: { testName: "smoke" } }],
+        toolCalls: [
+          { id: "call_test", name: "run_test", args: { testName: "smoke" } },
+          { id: "call_sim", name: "run_simulate", args: { turns: 3 } },
+          { id: "call_vis", name: "suggest_visual_binding", args: { field: "mood" } },
+        ],
       },
       { id: "tool_test", role: "tool", toolCallId: "call_test", content: runTestContent },
+      { id: "tool_sim", role: "tool", toolCallId: "call_sim", content: runSimContent },
+      { id: "tool_vis", role: "tool", toolCallId: "call_vis", content: suggestVisualContent },
       { id: "assistant_final", role: "assistant", content: "Done" },
     ] as AppMessage[];
 
-    expect(extractPersistedAgentActivities(messages)).toEqual([{
-      toolCallId: "call_test",
-      toolName: "run_test",
-      args: { testName: "smoke" },
-      status: "done",
-      summary: runTestContent,
-    }]);
+    expect(extractPersistedAgentActivities(messages)).toEqual([
+      {
+        toolCallId: "call_test",
+        toolName: "run_test",
+        args: { testName: "smoke" },
+        status: "done",
+        summary: runTestContent,
+      },
+      {
+        toolCallId: "call_sim",
+        toolName: "run_simulate",
+        args: { turns: 3 },
+        status: "done",
+        summary: runSimContent,
+      },
+      {
+        toolCallId: "call_vis",
+        toolName: "suggest_visual_binding",
+        args: { field: "mood" },
+        status: "done",
+        summary: suggestVisualContent,
+      },
+    ]);
   });
 
   it("reconstructs operation input from selected-variant fields used by the real snapshot", () => {

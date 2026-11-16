@@ -1,5 +1,9 @@
 {
   "compilerOptions": {
+    // Secure default: no DOM types unless a workspace declares them (apps/web
+    // opts in via its own "lib"); also lets bun-types alias stream globals to
+    // node:stream/web where lib.dom is absent.
+    "lib": ["ESNext"],
     "target": "ESNext",
     "module": "ESNext",
     "moduleResolution": "bundler",

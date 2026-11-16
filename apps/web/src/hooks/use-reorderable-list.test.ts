@@ -12,7 +12,7 @@
  * check passes, `displayItems` becomes the `items` prop again.
  */
 import { beforeAll, describe, expect, mock, test } from "bun:test";
-import type { DragEndEvent, DragStartEvent } from "@dnd-kit/core";
+import type { Active, ClientRect, DragEndEvent, DragStartEvent, Over } from "@dnd-kit/core";
 import { useDomEnv } from "../../test/dom-env.js";
 
 useDomEnv();
@@ -34,9 +34,33 @@ const A: Item = { id: "a" };
 const B: Item = { id: "b" };
 const C: Item = { id: "c" };
 
+// Member-for-member dnd-kit event doubles (the 7a/7f shape): the hook reads
+// only `active.id` / `over?.id`, so the data refs carry `undefined` and the
+// rects are inert zeros — every required Active/Over member present, the
+// compiler checks the member set.
+const ZERO_RECT: ClientRect = { width: 0, height: 0, top: 0, left: 0, right: 0, bottom: 0 };
+function dragActive(id: string): Active {
+	return { id, data: { current: undefined }, rect: { current: { initial: null, translated: null } } };
+}
+function dragOver(id: string): Over {
+	return { id, rect: ZERO_RECT, disabled: false, data: { current: undefined } };
+}
+function dragStartEvent(activeId: string): DragStartEvent {
+	return { active: dragActive(activeId), activatorEvent: new Event("dragstart") };
+}
+function dragEndEvent(activeId: string, overId: string): DragEndEvent {
+	return {
+		active: dragActive(activeId),
+		activatorEvent: new Event("dragend"),
+		collisions: null,
+		delta: { x: 0, y: 0 },
+		over: dragOver(overId),
+	};
+}
+
 function drop(result: { handleDragEnd: (e: DragEndEvent) => void }, activeId: string, overId: string) {
 	act(() => {
-		result.handleDragEnd({ active: { id: activeId }, over: { id: overId } } as unknown as DragEndEvent);
+		result.handleDragEnd(dragEndEvent(activeId, overId));
 	});
 }
 
@@ -85,10 +109,7 @@ describe("useReorderableList", () => {
 		);
 
 		await act(async () => {
-			result.current.handleDragEnd({
-				active: { id: "b" },
-				over: { id: "c" },
-			} as unknown as DragEndEvent);
+			result.current.handleDragEnd(dragEndEvent("b", "c"));
 			// Flush the rejected-persist microtask that triggers the rollback.
 			await Promise.resolve();
 			await Promise.resolve();
@@ -123,7 +144,7 @@ describe("useReorderableList", () => {
 		);
 
 		act(() => {
-			result.current.handleDragStart({ active: { id: "b" } } as unknown as DragStartEvent);
+			result.current.handleDragStart(dragStartEvent("b"));
 		});
 		expect(result.current.activeDragItem).toBe(B);
 
@@ -135,7 +156,7 @@ describe("useReorderableList", () => {
 
 		// Start again, then a real drop also clears the overlay item (and commits).
 		act(() => {
-			result.current.handleDragStart({ active: { id: "c" } } as unknown as DragStartEvent);
+			result.current.handleDragStart(dragStartEvent("c"));
 		});
 		expect(result.current.activeDragItem).toBe(C);
 		drop(result.current, "c", "a");

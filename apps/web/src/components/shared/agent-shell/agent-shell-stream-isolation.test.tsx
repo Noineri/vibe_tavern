@@ -44,20 +44,25 @@
  * Runner: bun:test with scoped happy-dom (useDomEnv).
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { testFetch } from "@vibe-tavern/test-fetch";
 import { memo, type ReactNode } from "react";
-import type { ExperienceCopilotThreadWire } from "@vibe-tavern/api-contracts";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import { agentFeedPageFromMessages } from "../../../../test/agent-feed-page.js";
-import { wireUiSettings } from "../../../../test/wire-fixtures.js";
+import { wireProviderProfile } from "../../../../test/wire-fixtures.js";
 import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
+import {
+  chatThread,
+  flushSessionLoad,
+  jsonResponse,
+  resetShellStores,
+  seedShellStores,
+  shellRouter,
+} from "../../../../test/agent-shell-harness.js";
 import { useSnapshotStore } from "../../../stores/snapshot-store.js";
 import type { ProviderProfileRecord } from "../../../api/types.js";
 import { useAgentTurnStore } from "../../../stores/agent-turn-store.js";
-import { useAgentReviewRoundStore } from "../../../stores/agent-review-store.js";
 import { useAgentPendingReviewStore } from "../../../stores/agent-pending-review-store.js";
 import { useAgentReviewOutcomeStore } from "../../../stores/agent-review-outcome-store.js";
-import { useProviderDataStore } from "../../../stores/provider-data-store.js";
-import { useBootstrapStore } from "../../../stores/api-actions/bootstrap-actions.js";
 
 useDomEnv();
 
@@ -157,133 +162,93 @@ mock.module("./AgentChatHeader.js", () => ({
 // raw keys (identity spec) — the mount must succeed, the strings are not under test.
 installI18nContextSeam();
 
-// ── Fetch-level API router (same rationale as ExperienceCopilotShell.test.tsx:
-// the transport seam is faked at the FETCH level so the REAL hono clients and
-// the REAL SSE parser run against canned payloads). ──────────────────────────
+// ── Fetch-level API router — the SHARED harness (test/agent-shell-harness.ts)
+// carries the bootstrap quartet, the copilot messages/context/context-links
+// family and the fail-loud tail; this file's stream-specific routes (feed,
+// agent-runs, the review endpoints, script/active+sessions, the HELD-OPEN
+// stream with its enqueue/release handles, agent-plan) ride the custom-first
+// escape hatch. Same rationale as ExperienceCopilotShell.test.tsx: the
+// transport seam is faked at the FETCH level so the REAL hono clients and
+// the REAL SSE parser run against canned payloads. ──────────────────────────
 
-const jsonResponse = (payload: unknown) =>
-  new Response(JSON.stringify(payload), { status: 200, headers: { "Content-Type": "application/json" } });
-
-const activeThread = chatThread("thread-1");
+const activeThread = chatThread({ id: "thread-1", scriptId: "script-1", title: "Copilot" });
 
 // The held-open stream's write handle: each call enqueues SSE events; the
 // test releases the FINISH at the very end so the turn settles cleanly.
 let enqueueStream: ((events: string) => void) | null = null;
 let releaseStream: (() => void) | null = null;
 
-const fetchRouter = mock(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-  const path = new URL(String(input), "http://gateway.test").pathname;
-  const method = (init?.method ?? "GET").toUpperCase();
-  const feedThreadId = /\/api\/agent\/threads\/([^/]+)\/feed$/.exec(path)?.[1];
-  if (method === "GET" && feedThreadId) return jsonResponse(agentFeedPageFromMessages(feedThreadId, []));
-  // BR-3a / BR-2c: run discovery (nothing running) and the durable review
-  // round (none stored; writes are acknowledged) — the shell reads both on mount.
-  if (method === "GET" && path.endsWith("/api/agent-runs")) return jsonResponse([]);
-  if (/\/api\/experience-copilot\/[^/]+\/review$/.test(path)) {
-    if (method === "PUT") return jsonResponse(JSON.parse(String(init?.body)));
-    if (method === "DELETE") return jsonResponse({ ok: true });
-    return jsonResponse(null);
-  }
-  if (method === "GET" && /\/api\/experience-copilot\/script\/[^/]+\/active$/.test(path)) {
-    return jsonResponse(activeThread);
-  }
-  if (method === "GET" && /\/api\/experience-copilot\/[^/]+\/messages$/.test(path)) {
-    return jsonResponse([]);
-  }
-  if (method === "GET" && /\/api\/experience-copilot\/script\/[^/]+\/sessions$/.test(path)) {
-    return jsonResponse([]);
-  }
-  if (method === "POST" && /\/api\/experience-copilot\/[^/]+\/stream$/.test(path)) {
-    return new Response(
-      new ReadableStream<Uint8Array>({
-        start(controller) {
-          const encoder = new TextEncoder();
-          enqueueStream = (events) => controller.enqueue(encoder.encode(events));
-          releaseStream = () => {
-            enqueueStream = null;
-            controller.enqueue(encoder.encode('event: finish\ndata: {"finishReason":"stop"}\n\n'));
-            controller.close();
-          };
-        },
-      }),
-      { status: 200, headers: { "Content-Type": "text/event-stream" } },
-    );
-  }
-  if (method === "GET" && /\/api\/experience-copilot\/[^/]+\/context$/.test(path)) {
-    return jsonResponse({ metrics: null, autoCompact: true });
-  }
-  if (method === "GET" && /\/api\/experience-copilot\/[^/]+\/context-links$/.test(path)) {
-    return jsonResponse([]);
-  }
-  if (method === "GET" && /\/api\/scripts\/[^/]+\/agent-plan$/.test(path)) {
-    return jsonResponse({ plan: { goal: "", constraints: [], tasks: [] } });
-  }
-  if (method === "GET" && path.endsWith("/api/personas")) return jsonResponse([]);
-  if (method === "GET" && path.endsWith("/api/lorebooks/all")) return jsonResponse([]);
-  if (method === "GET" && path.endsWith("/api/scripts/all")) return jsonResponse([]);
-  if (method === "GET" && path.endsWith("/api/coauthor/skills")) return jsonResponse({ entries: [], errors: [] });
-  if (method === "GET" && path.endsWith("/model-favorites")) return jsonResponse([]);
-  return new Response(JSON.stringify({ error: { message: `Unhandled fetch in test: ${method} ${path}` } }), { status: 500 });
+const fetchRouter = shellRouter({
+  custom: ({ path, method, init }) => {
+    const feedThreadId = /\/api\/agent\/threads\/([^/]+)\/feed$/.exec(path)?.[1];
+    if (method === "GET" && feedThreadId) return jsonResponse(agentFeedPageFromMessages(feedThreadId, []));
+    // BR-3a / BR-2c: run discovery (nothing running) and the durable review
+    // round (none stored; writes are acknowledged) — the shell reads both on mount.
+    if (method === "GET" && path.endsWith("/api/agent-runs")) return jsonResponse([]);
+    if (/\/api\/experience-copilot\/[^/]+\/review$/.test(path)) {
+      if (method === "PUT") return jsonResponse(JSON.parse(String(init?.body)));
+      if (method === "DELETE") return jsonResponse({ ok: true });
+      return jsonResponse(null);
+    }
+    if (method === "GET" && /\/api\/experience-copilot\/script\/[^/]+\/active$/.test(path)) {
+      return jsonResponse(activeThread);
+    }
+    if (method === "GET" && /\/api\/experience-copilot\/script\/[^/]+\/sessions$/.test(path)) {
+      return jsonResponse([]);
+    }
+    if (method === "POST" && /\/api\/experience-copilot\/[^/]+\/stream$/.test(path)) {
+      return new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            const encoder = new TextEncoder();
+            enqueueStream = (events) => controller.enqueue(encoder.encode(events));
+            releaseStream = () => {
+              enqueueStream = null;
+              controller.enqueue(encoder.encode('event: finish\ndata: {"finishReason":"stop"}\n\n'));
+              controller.close();
+            };
+          },
+        }),
+        { status: 200, headers: { "Content-Type": "text/event-stream" } },
+      );
+    }
+    if (method === "GET" && /\/api\/scripts\/[^/]+\/agent-plan$/.test(path)) {
+      return jsonResponse({ plan: { goal: "", constraints: [], tasks: [] } });
+    }
+    return null;
+  },
 });
 
-function chatThread(id: string): ExperienceCopilotThreadWire {
-  return {
-    id,
-    scriptId: "script-1",
-    draftSessionId: null,
-    title: "Copilot",
-    archivedAt: null,
-    createdAt: "",
-    updatedAt: "",
-    metrics: null,
-    contextLinks: [],
-    todo: [],
-  } as unknown as ExperienceCopilotThreadWire;
-}
-
-// ── Store seeding (the ExperienceCopilotShell suite's shapes) ───────────────
+// ── Store seeding via the shared harness (the ExperienceCopilotShell suite's shapes) ──
 
 // One profile with a tool-capable cached model so the real useProviderModels
 // hook serves the model list from cache (no fetch) and the send guard passes
 // (no saved binding → the first profile, p1/m1).
-const PROFILES = [
-  {
+const PROFILES: ProviderProfileRecord[] = [
+  // The wire factory — the erased literal also hid the required `cachedAt`
+  // on `cachedModels`.
+  wireProviderProfile({
     id: "p1",
     name: "OpenAI Pro",
-    cachedModels: { models: [{ id: "m1", label: "Model One", contextLength: 128000, capabilities: { tools: true } }] },
-  },
-] as unknown as ProviderProfileRecord[];
+    cachedModels: { models: [{ id: "m1", label: "Model One", contextLength: 128000, capabilities: { tools: true } }], cachedAt: "2026-01-01T00:00:00.000Z" },
+  }),
+];
 
 function seedStores(): void {
-  const current = useBootstrapStore.getState().data;
-  const base = current ?? {
-    initialChatId: null,
-    snapshot: null,
-    isFirstRun: false,
-    allCharacters: [],
-    promptPresets: [],
-    uiSettings: { ...wireUiSettings(), id: "default" },
-    agentKindSettings: {},
-    isArmServer: false,
-  };
-  useBootstrapStore.setState({
-    data: {
-      ...base,
-      agentKindSettings: {
-        ...base.agentKindSettings,
-        experience: {
-          agentKind: "experience",
-          providerProfileId: null,
-          modelName: null,
-          defaultProfileId: null,
-          updatedAt: "",
-          servesChatModes: [],
-          autoCompactDefault: true,
-        },
+  seedShellStores({
+    agentKinds: {
+      experience: {
+        agentKind: "experience",
+        providerProfileId: null,
+        modelName: null,
+        defaultProfileId: null,
+        updatedAt: "",
+        servesChatModes: [],
+        autoCompactDefault: true,
       },
     },
+    profiles: PROFILES,
   });
-  useProviderDataStore.setState({ profiles: PROFILES });
   useSnapshotStore.setState({ allCharacters: [] });
 }
 
@@ -306,9 +271,9 @@ beforeAll(async () => {
 
 beforeEach(() => {
   mobileOverride = false;
-  globalThis.fetch = fetchRouter as unknown as typeof fetch;
-  useAgentTurnStore.setState({ turnsByThread: {}, feedByThread: {}, todoByThread: {} });
-  useAgentReviewRoundStore.setState({ roundsByThread: {} });
+  globalThis.fetch = testFetch(fetchRouter);
+  resetShellStores();
+  // File-specific store extras beyond the harness reset (the review surfaces).
   useAgentPendingReviewStore.setState({ summariesByThread: {} });
   useAgentReviewOutcomeStore.setState({ outcomesByThread: {}, supersededByThread: {} });
   localStorage.clear();
@@ -331,14 +296,6 @@ afterAll(() => {
 });
 
 /** Drain the shell's chained async microtasks + React's scheduler macrotasks. */
-async function flushSessionLoad() {
-  await act(async () => {
-    for (let i = 0; i < 5; i++) {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    }
-  });
-}
-
 /** Run the OLDEST scheduled frame (one flush per tick — LAG-2's cadence). */
 function tickNextFrame(): void {
   const frame = rafFrames.shift();

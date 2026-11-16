@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeEach, describe, expect, test } from "bun:test";
-import type { Window as HappyWindow } from "happy-dom";
+import type { DetachedWindowAPI } from "happy-dom";
 import { useDomEnv } from "../../../test/dom-env.js";
 
 useDomEnv({ failOnNetwork: true });
@@ -23,7 +23,11 @@ const originalWarnings = useScriptSafetySettingsStore.getState();
 const originalStored = localStorage.getItem(INTERFACE_SETTINGS_STORAGE_KEY);
 const originalSections = getSettingsSections();
 const originalWidth = window.innerWidth;
-const browser = window as unknown as HappyWindow;
+// The happy-dom global registered by useDomEnv(): lib.dom's Window type
+// cannot express the test driver's happyDOM member, so the view is a
+// documented narrowing (the registered window really carries it).
+type HappyDomTestWindow = typeof window & { happyDOM: DetachedWindowAPI };
+const browser = window as HappyDomTestWindow;
 const disposeSection = registerInterfaceSettingsSection();
 const temporarySections: Array<() => void> = [];
 

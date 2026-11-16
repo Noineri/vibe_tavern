@@ -6,12 +6,18 @@
  * sidechat_event_rp_sync shape: base + suffixed forms, `count` at the call
  * site), pinned byte-exact in both locales and rendered through the real
  * i18next for the RU cardinal rules.
+ * DMT-32 — the `request_message_swipe` family: the FULL instruction editable
+ * inline (draft store survives remounts), Allow sends the exact edited text,
+ * Reject sends only the decision, the empty-field guard, the send-failure
+ * rollback (the draft kept), the generation-specific receipts, and the
+ * unchanged prompt-read presentation.
  */
-import { afterAll, describe, expect, it, mock } from "bun:test";
+import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import type { ReactNode } from "react";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 import type { AgentPermissionState } from "../../../stores/agent-turn-store.js";
+import { useDirectorSwipeDraftStore } from "../../../stores/director-swipe-draft-store.js";
 import en from "../../../i18n/locales/en.json";
 import ru from "../../../i18n/locales/ru.json";
 
@@ -249,5 +255,342 @@ describe("CopilotPermissionCard — page translation (follow-up 2026-10-24)", ()
     expect(getByTestId("copilot-permission-meta").getAttribute("translate")).toBeNull();
     expect(getByTestId("copilot-permission-allow").getAttribute("translate")).toBeNull();
     expect(getByTestId("copilot-permission-deny").getAttribute("translate")).toBeNull();
+  });
+});
+
+// ─── Director swipe instruction (DMT-32, DIRECTOR_MESSAGE_TOOLS_PLAN) ────
+// The `request_message_swipe` family extends the SAME card frame: the
+// instruction is visible and editable INLINE (never ellipsized), Allow sends
+// the EXACT edited text, Reject sends ONLY the decision, an empty field is
+// refused card-side, a transport refusal returns the card to interactive
+// with the user's draft kept, the receipts show the generation-specific
+// facts (the approved text on grant — never a reset to the Director's
+// draft), and the prompt-read presentation is untouched.
+const THREAD_KEY = "swipe-thread-1";
+const SWIPE_CALL = "tc-swipe-1";
+
+function swipePermission(over: Partial<AgentPermissionState>): AgentPermissionState {
+  return {
+    status: "awaiting_permission",
+    kind: "swipe",
+    position: 7,
+    variantNumber: 2,
+    replyFirstLine: "First line of the swipe",
+    messageId: "msg-1",
+    variantId: "var-2",
+    instruction: "Rewrite it spicier",
+    ...over,
+  };
+}
+
+type DecisionCall = ["allow" | "deny", string | undefined];
+
+function renderSwipeCard(
+  state: AgentPermissionState,
+  opts?: {
+    interactive?: boolean;
+    onDecision?: (d: "allow" | "deny", instruction?: string) => void;
+    pendingDecision?: "allow" | "deny" | null;
+    persistedStatus?: AgentPermissionState["status"];
+  },
+) {
+  const calls: DecisionCall[] = [];
+  const onDecision =
+    opts?.onDecision ?? ((d: "allow" | "deny", instruction?: string) => calls.push([d, instruction]));
+  const utils = render(
+    <AgentPermissionCard
+      permission={state}
+      interactive={opts?.interactive ?? true}
+      onDecision={onDecision}
+      draftThreadKey={THREAD_KEY}
+      draftToolCallId={SWIPE_CALL}
+      pendingDecision={opts?.pendingDecision}
+      persistedStatus={opts?.persistedStatus ?? state.status}
+    />,
+  );
+  return { ...utils, calls };
+}
+
+describe("CopilotPermissionCard — director swipe instruction (DMT-32)", () => {
+  beforeEach(() => {
+    useDirectorSwipeDraftStore.setState({ draftsByThread: {} });
+  });
+
+  it("awaiting swipe: swipe title, target line, variant meta and the FULL instruction editable inline (no token meta)", () => {
+    const { getByTestId, getByText, queryByTestId } = renderSwipeCard(swipePermission({}));
+    const card = getByTestId("copilot-permission-card");
+    expect(card.getAttribute("data-state")).toBe("awaiting");
+    // The action-specific title (not the read's), the target reply line and
+    // the variant meta — but no prompt-token estimate (the marker has none).
+    expect(getByTestId("copilot-permission-title").textContent).toBe("copilot_permission_swipe_title");
+    expect(getByText("First line of the swipe")).toBeDefined();
+    expect(getByTestId("copilot-permission-meta").textContent).toBe("copilot_permission_variant");
+    expect(queryByTestId("copilot-permission-allow")).toBeNull();
+    // The proposed instruction is IN the field, full text, editable.
+    const field = getByTestId("copilot-permission-swipe-instruction") as HTMLTextAreaElement;
+    expect(field.value).toBe("Rewrite it spicier");
+    expect(field.getAttribute("aria-label")).toBe("copilot_permission_swipe_instruction_aria");
+    // The card frame: the accent left rule while awaiting.
+    expect(card.className).toContain("border-l-accent");
+  });
+
+  it("the field is editable and the edit lands in the draft store (survives a remount)", () => {
+    const first = renderSwipeCard(swipePermission({}));
+    fireEvent.change(first.getByTestId("copilot-permission-swipe-instruction"), {
+      target: { value: "Make it spicier, keep the accent" },
+    });
+    expect(
+      useDirectorSwipeDraftStore.getState().draftsByThread[THREAD_KEY]?.[SWIPE_CALL],
+    ).toBe("Make it spicier, keep the accent");
+    first.unmount();
+    // Remount (feed virtualization): the card re-reads the retained edit.
+    const second = renderSwipeCard(swipePermission({}));
+    expect((second.getByTestId("copilot-permission-swipe-instruction") as HTMLTextAreaElement).value).toBe(
+      "Make it spicier, keep the accent",
+    );
+  });
+
+  it("allow sends the EXACT edited text ONCE (the second click is a no-op)", () => {
+    const { getByTestId, calls } = renderSwipeCard(swipePermission({}));
+    fireEvent.change(getByTestId("copilot-permission-swipe-instruction"), {
+      target: { value: "Make it spicier, keep the accent" },
+    });
+    const allow = getByTestId("copilot-permission-swipe-allow") as HTMLButtonElement;
+    fireEvent.click(allow);
+    fireEvent.click(allow);
+    expect(calls).toEqual([["allow", "Make it spicier, keep the accent"]]);
+    expect(allow.disabled).toBe(true);
+    expect((getByTestId("copilot-permission-swipe-reject") as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("allow with the UNTOUCHED draft sends the proposed text verbatim", () => {
+    const { getByTestId, calls } = renderSwipeCard(swipePermission({}));
+    fireEvent.click(getByTestId("copilot-permission-swipe-allow"));
+    expect(calls).toEqual([["allow", "Rewrite it spicier"]]);
+  });
+
+  it("reject sends ONLY the decision — the edited text never rides it", () => {
+    const { getByTestId, calls } = renderSwipeCard(swipePermission({}));
+    fireEvent.change(getByTestId("copilot-permission-swipe-instruction"), {
+      target: { value: "an edit that must not be saved" },
+    });
+    fireEvent.click(getByTestId("copilot-permission-swipe-reject"));
+    expect(calls).toEqual([["deny", undefined]]);
+  });
+
+  it("allow with an EMPTY field does not send — the required line renders, the card stays actionable", () => {
+    const { getByTestId, queryByTestId, calls } = renderSwipeCard(swipePermission({}));
+    fireEvent.change(getByTestId("copilot-permission-swipe-instruction"), { target: { value: "   " } });
+    fireEvent.click(getByTestId("copilot-permission-swipe-allow"));
+    expect(calls).toEqual([]);
+    expect(getByTestId("copilot-permission-swipe-error").textContent).toBe(
+      "copilot_permission_swipe_instruction_required",
+    );
+    // Not latched: writing a real instruction and clicking again sends.
+    fireEvent.change(getByTestId("copilot-permission-swipe-instruction"), { target: { value: "now real" } });
+    expect(queryByTestId("copilot-permission-swipe-error")).toBeNull();
+    fireEvent.click(getByTestId("copilot-permission-swipe-allow"));
+    expect(calls).toEqual([["allow", "now real"]]);
+  });
+
+  it("a transport refusal returns the card to interactive with the send-failed line; the draft STAYS and a retry re-sends", () => {
+    const view = renderSwipeCard(swipePermission({}));
+    fireEvent.change(view.getByTestId("copilot-permission-swipe-instruction"), {
+      target: { value: "my kept edit" },
+    });
+    fireEvent.click(view.getByTestId("copilot-permission-swipe-allow"));
+    expect(view.calls).toEqual([["allow", "my kept edit"]]);
+    // The optimistic flight: the anchor's pendingDecision echo.
+    view.rerender(
+      <AgentPermissionCard
+        permission={swipePermission({})}
+        interactive
+        onDecision={(d, i) => view.calls.push([d, i])}
+        draftThreadKey={THREAD_KEY}
+        draftToolCallId={SWIPE_CALL}
+        pendingDecision="allow"
+        persistedStatus="awaiting_permission"
+      />,
+    );
+    // The refusal: the override rolls back, the row still awaits.
+    view.rerender(
+      <AgentPermissionCard
+        permission={swipePermission({})}
+        interactive
+        onDecision={(d, i) => view.calls.push([d, i])}
+        draftThreadKey={THREAD_KEY}
+        draftToolCallId={SWIPE_CALL}
+        pendingDecision={null}
+        persistedStatus="awaiting_permission"
+      />,
+    );
+    expect(view.getByTestId("copilot-permission-card").getAttribute("data-state")).toBe("awaiting");
+    expect(view.getByTestId("copilot-permission-swipe-send-failed").textContent).toBe(
+      "copilot_permission_swipe_send_failed",
+    );
+    // The user's edit is kept (a retry must not revert to the original text).
+    expect((view.getByTestId("copilot-permission-swipe-instruction") as HTMLTextAreaElement).value).toBe(
+      "my kept edit",
+    );
+    const allow = view.getByTestId("copilot-permission-swipe-allow") as HTMLButtonElement;
+    expect(allow.disabled).toBe(false);
+    fireEvent.click(allow);
+    expect(view.calls).toEqual([["allow", "my kept edit"], ["allow", "my kept edit"]]);
+  });
+
+  it("the granted receipt shows the APPROVED text under the approved label (translate=yes), read-only", () => {
+    const { getByTestId, queryByTestId } = renderSwipeCard(
+      swipePermission({ status: "granted", instruction: "the final approved text" }),
+    );
+    const card = getByTestId("copilot-permission-card");
+    expect(card.getAttribute("data-state")).toBe("allowed");
+    // The receipt asserts only "sent to generation" — never that a variant
+    // was saved (the row carries no run outcome).
+    expect(getByTestId("copilot-permission-swipe-allowed").textContent).toBe(
+      "→ copilot_permission_swipe_allowed_receipt",
+    );
+    const approved = getByTestId("copilot-permission-swipe-approved-text");
+    expect(approved.textContent).toBe("the final approved text");
+    expect(approved.getAttribute("translate")).toBe("yes");
+    expect(queryByTestId("copilot-permission-swipe-allow")).toBeNull();
+    expect(queryByTestId("copilot-permission-swipe-reject")).toBeNull();
+    expect(queryByTestId("copilot-permission-swipe-instruction")).toBeNull();
+    expect(card.className).not.toContain("border-l-accent");
+  });
+
+  it("the denied receipt is read-only with no field and no draft text", () => {
+    useDirectorSwipeDraftStore.setState({
+      draftsByThread: { [THREAD_KEY]: { [SWIPE_CALL]: "stale edit" } },
+    });
+    const { getByTestId, queryByTestId } = renderSwipeCard(
+      swipePermission({ status: "denied", instruction: undefined }),
+      { persistedStatus: "denied" },
+    );
+    expect(getByTestId("copilot-permission-card").getAttribute("data-state")).toBe("denied");
+    expect(getByTestId("copilot-permission-swipe-denied").textContent).toBe(
+      "→ copilot_permission_swipe_denied_receipt",
+    );
+    expect(queryByTestId("copilot-permission-swipe-instruction")).toBeNull();
+    expect(queryByTestId("copilot-permission-swipe-approved-text")).toBeNull();
+    // The stale draft cleared with the resolution.
+    expect(useDirectorSwipeDraftStore.getState().draftsByThread[THREAD_KEY]?.[SWIPE_CALL]).toBeUndefined();
+  });
+
+  it("expired swipe renders read-only with the generation-specific copy", () => {
+    const { getByTestId, queryByTestId } = renderSwipeCard(swipePermission({}), { interactive: false });
+    const card = getByTestId("copilot-permission-card");
+    expect(card.getAttribute("data-state")).toBe("expired");
+    expect(card.className).not.toContain("border-l-accent");
+    expect(getByTestId("copilot-permission-swipe-expired").textContent).toBe(
+      "copilot_permission_swipe_expired",
+    );
+    expect(queryByTestId("copilot-permission-swipe-allow")).toBeNull();
+    expect(queryByTestId("copilot-permission-swipe-reject")).toBeNull();
+    expect(queryByTestId("copilot-permission-swipe-instruction")).toBeNull();
+  });
+
+  it("the draft clears when the PERSISTED row resolves — never on the optimistic flip", () => {
+    useDirectorSwipeDraftStore.setState({
+      draftsByThread: { [THREAD_KEY]: { [SWIPE_CALL]: "kept edit" } },
+    });
+    const view = renderSwipeCard(swipePermission({}), { persistedStatus: "awaiting_permission" });
+    // The optimistic flip alone must NOT clear the draft (a refusal has to
+    // keep it): the granted state renders, but the persisted row awaits.
+    view.rerender(
+      <AgentPermissionCard
+        permission={swipePermission({ status: "granted" })}
+        interactive={false}
+        onDecision={() => {}}
+        draftThreadKey={THREAD_KEY}
+        draftToolCallId={SWIPE_CALL}
+        pendingDecision="allow"
+        persistedStatus="awaiting_permission"
+      />,
+    );
+    expect(useDirectorSwipeDraftStore.getState().draftsByThread[THREAD_KEY]?.[SWIPE_CALL]).toBe("kept edit");
+    // The persisted grant resolves the request — the transient draft clears.
+    view.rerender(
+      <AgentPermissionCard
+        permission={swipePermission({ status: "granted", instruction: "the final approved text" })}
+        interactive={false}
+        onDecision={() => {}}
+        draftThreadKey={THREAD_KEY}
+        draftToolCallId={SWIPE_CALL}
+        pendingDecision="allow"
+        persistedStatus="granted"
+      />,
+    );
+    expect(useDirectorSwipeDraftStore.getState().draftsByThread[THREAD_KEY]?.[SWIPE_CALL]).toBeUndefined();
+  });
+
+  it("responsive controls: the action pair wraps and keeps phone-sized targets", () => {
+    const { getByTestId } = renderSwipeCard(swipePermission({}));
+    const allow = getByTestId("copilot-permission-swipe-allow");
+    const reject = getByTestId("copilot-permission-swipe-reject");
+    // AD-022: the RU copy of the pair (ru.json `copilot_permission_swipe_allow`
+    // + `copilot_permission_swipe_reject`) exceeds the narrowest mobile
+    // content width, so the row wraps — authored copy is never truncated and
+    // each button alone fits.
+    expect(allow.className).toContain("min-h-[44px]");
+    expect(reject.className).toContain("min-h-[44px]");
+    expect(allow.parentElement!.className).toContain("flex-wrap");
+    // Allow is PRIMARY; Reject is the ghost idiom.
+    expect(allow.className).toContain("bg-accent");
+    expect(reject.className).not.toContain("bg-accent");
+  });
+
+  it("prompt-read rendering is unchanged: no instruction field, no swipe testids", () => {
+    const { getByTestId, queryByTestId } = renderCard(permission({}));
+    expect(getByTestId("copilot-permission-card").getAttribute("data-state")).toBe("awaiting");
+    expect(queryByTestId("copilot-permission-swipe-instruction")).toBeNull();
+    expect(queryByTestId("copilot-permission-swipe-allow")).toBeNull();
+    expect(queryByTestId("copilot-permission-swipe-reject")).toBeNull();
+    expect(getByTestId("copilot-permission-allow")).toBeDefined();
+  });
+
+  it("i18n parity: every swipe-card key exists in en + ru with the plan's wording", () => {
+    const enMap = en as Record<string, string>;
+    const ruMap = ru as Record<string, string>;
+    const expected: Record<string, { en: string; ru: string }> = {
+      copilot_permission_swipe_title: {
+        en: "The director wants to generate a new variant of this reply",
+        ru: "Режиссёр хочет сгенерировать новый вариант этого ответа",
+      },
+      copilot_permission_swipe_instruction_label: {
+        en: "Instruction for this generation",
+        ru: "Инструкция для этой генерации",
+      },
+      copilot_permission_swipe_instruction_aria: {
+        en: "Edit the generation instruction",
+        ru: "Редактировать инструкцию для генерации",
+      },
+      copilot_permission_swipe_allow: { en: "Allow generation", ru: "Разрешить генерацию" },
+      copilot_permission_swipe_reject: { en: "Reject", ru: "Отклонить" },
+      copilot_permission_swipe_instruction_required: {
+        en: "Write an instruction first — an empty one cannot be sent.",
+        ru: "Сначала напишите инструкцию — пустую отправить нельзя.",
+      },
+      copilot_permission_swipe_send_failed: {
+        en: "Couldn't send the decision — your edit is kept, try again.",
+        ru: "Не удалось отправить решение — ваша правка сохранена, попробуйте ещё раз.",
+      },
+      copilot_permission_swipe_allowed_receipt: {
+        en: "Allowed — the instruction was sent to generation.",
+        ru: "Разрешено — инструкция отправлена на генерацию.",
+      },
+      copilot_permission_swipe_approved_label: { en: "Approved instruction", ru: "Утверждённая инструкция" },
+      copilot_permission_swipe_denied_receipt: {
+        en: "Rejected — no generation was started.",
+        ru: "Отклонено — генерация не запускалась.",
+      },
+      copilot_permission_swipe_expired: {
+        en: "Left unanswered — no generation was started.",
+        ru: "Осталось без ответа — генерация не запускалась.",
+      },
+    };
+    for (const [key, wording] of Object.entries(expected)) {
+      expect(enMap[key]).toBe(wording.en);
+      expect(ruMap[key]).toBe(wording.ru);
+    }
   });
 });

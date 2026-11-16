@@ -287,6 +287,9 @@ describe("GET /api/agent/threads/:threadId/events/:eventId (AFP-11)", () => {
     expect(page2.offset).toBe(50);
     expect(page2.messages).toHaveLength(5);
     expect(page2.nextCursor).toBeNull();
+    expect([...page1.messages.map((m) => m.id), ...page2.messages.map((m) => m.id)]).toEqual(
+      Array.from({ length: 55 }, (_, i) => `rp-${i}`),
+    );
   });
 
   test("a small kind is one atomic page; a wrong-thread event id is 404, never a cross-thread body", async () => {
@@ -339,11 +342,20 @@ describe("AFP-11 app-level integration", () => {
       headers: { Authorization: "Bearer wrong" },
     });
     expect(wrong.status).toBe(401);
+    const detailWrong = await app.request("http://localhost/api/agent/threads/t1/events/ev-fork", {
+      headers: { Authorization: "Bearer wrong" },
+    });
+    expect(detailWrong.status).toBe(401);
 
     const allowed = await app.request("http://localhost/api/agent/threads/t1/feed", {
       headers: { Authorization: "Bearer feed-token" },
     });
     expect(allowed.status).toBe(200);
+    const detailAllowed = await app.request("http://localhost/api/agent/threads/t1/events/ev-fork", {
+      headers: { Authorization: "Bearer feed-token" },
+    });
+    expect(detailAllowed.status).toBe(200);
+    expect(((await detailAllowed.json()) as { eventId: string }).eventId).toBe("ev-fork");
   });
 
   test("the legacy full-list messages route is untouched and wire-identical to the feed page", async () => {

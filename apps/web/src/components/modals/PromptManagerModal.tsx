@@ -1209,7 +1209,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
                   promptOrder={draft.promptOrder}
                   onPromptOrderChange={(promptOrder) => { setDraft((d) => ({ ...d, promptOrder })); setDirty(true); setSaveState("idle"); }}
                   draft={activePreset ? draft : null}
-                  onUpdateField={(key, value) => updateDraft(key, value as never)}
+                  onUpdateField={(key, value) => updateDraft(key, value)}
                   characterDraft={characterDraft}
                   onCharacterFieldUpdate={updateCharacterDraft}
                   personaDescription={personaDescriptionDraft}

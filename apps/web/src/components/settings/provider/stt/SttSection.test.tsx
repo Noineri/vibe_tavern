@@ -21,6 +21,7 @@ const { useSttProfiles } = await import("../../../../hooks/use-stt-profiles.js")
 const { useMasterDetail, MasterDetailModal } = await import("../../../shared/MasterDetailModal.js");
 
 type SttRecord = import("../../../../api/stt-api.js").SttProfileRecord;
+type SttHook = ReturnType<typeof useSttProfiles>;
 
 function makeRecord(overrides: Partial<SttRecord> = {}): SttRecord {
   return {
@@ -39,9 +40,9 @@ function makeRecord(overrides: Partial<SttRecord> = {}): SttRecord {
   };
 }
 
-function makeStt(overrides: Record<string, unknown> = {}) {
-  const base = {
-    profiles: [makeRecord()] as SttRecord[],
+function makeStt(overrides: Partial<SttHook> = {}): SttHook {
+  const base: SttHook = {
+    profiles: [makeRecord()],
     loading: false,
     editingId: "p1",
     form: null,
@@ -49,6 +50,8 @@ function makeStt(overrides: Record<string, unknown> = {}) {
     error: null,
     saving: false,
     headerMode: "view",
+    // D21-STT analog: the live-form draft hint — unread by SttSection, inert.
+    draftAutoKeyProviderName: null,
     startEdit: mock(() => {}),
     setDefault: mock(async () => {}),
     select: mock(() => {}),
@@ -59,10 +62,10 @@ function makeStt(overrides: Record<string, unknown> = {}) {
     cancelEdit: mock(() => {}),
     reload: mock(async () => {}),
     profileSearch: "",
-    filteredProfiles: [makeRecord()] as SttRecord[],
+    filteredProfiles: [makeRecord()],
     setProfileSearch: mock(() => {}),
     reorder: mock(async () => {}),
-    defaultProfileId: null as string | null,
+    defaultProfileId: null,
   };
   return {
     ...base,
@@ -90,18 +93,19 @@ describe("SttSection", () => {
     const stt = makeStt();
     const view = render(
       React.createElement(
-        MasterDetailModal as never,
+        MasterDetailModal,
         {
           isOpen: true,
           title: "x",
-          masterContent: () => React.createElement(SectionHost, { stt: stt as never }) as never,
+          masterContent: () => React.createElement(SectionHost, { stt }),
           detailContent: null,
           onClose: () => {},
-        } as never,
-        null as never,
+        },
+        null,
       ),
     );
     await waitFor(() => expect(view.getByTestId("stt-section")).toBeTruthy());
+    expect(view.getByText("stt_section_title")).toBeTruthy();
     expect(view.getByText("Dictation")).toBeTruthy();
     // Behavior change (was: the editing row carried an accent hand-rolled
     // dot; now: the primitive owns the dot and selection owns the accent —
@@ -119,7 +123,7 @@ describe("SttSection", () => {
       filteredProfiles: [makeRecord({ id: "p1", isDefault: true, hasStoredApiKey: true }), makeRecord({ id: "p2", name: "Second", hasStoredApiKey: true })],
       editingId: null,
       defaultProfileId: "p1",
-    }) as unknown as ReturnType<typeof useSttProfiles>;
+    });
     const view = render(
       <MasterDetailModal
         isOpen={true}
@@ -142,15 +146,15 @@ describe("SttSection", () => {
     const stt = makeStt({ loading: true, profiles: [] });
     const view = render(
       React.createElement(
-        MasterDetailModal as never,
+        MasterDetailModal,
         {
           isOpen: true,
           title: "x",
-          masterContent: () => React.createElement(SectionHost, { stt: stt as never }) as never,
+          masterContent: () => React.createElement(SectionHost, { stt }),
           detailContent: null,
           onClose: () => {},
-        } as never,
-        null as never,
+        },
+        null,
       ),
     );
     await waitFor(() => expect(view.getByTestId("stt-section")).toBeTruthy());
@@ -163,35 +167,35 @@ describe("SttSection", () => {
     const stt = makeStt({ error: "boom" });
     const view = render(
       React.createElement(
-        MasterDetailModal as never,
+        MasterDetailModal,
         {
           isOpen: true,
           title: "x",
-          masterContent: () => React.createElement(SectionHost, { stt: stt as never }) as never,
+          masterContent: () => React.createElement(SectionHost, { stt }),
           detailContent: null,
           onClose: () => {},
-        } as never,
-        null as never,
+        },
+        null,
       ),
     );
     await waitFor(() => expect(view.getByTestId("stt-load-error")).toBeTruthy());
   });
 
-  it("whisper-browser rows carry the browser badge", async () => {
+  it("whisper-browser rows carry no browser badge (removed as an anti-pattern)", async () => {
     const stt = makeStt({
       profiles: [makeRecord({ id: "p1", backend: "whisper-browser" })],
     });
     const view = render(
       React.createElement(
-        MasterDetailModal as never,
+        MasterDetailModal,
         {
           isOpen: true,
           title: "x",
-          masterContent: () => React.createElement(SectionHost, { stt: stt as never }) as never,
+          masterContent: () => React.createElement(SectionHost, { stt }),
           detailContent: null,
           onClose: () => {},
-        } as never,
-        null as never,
+        },
+        null,
       ),
     );
     await waitFor(() => expect(view.getByTestId("stt-profile-row")).toBeTruthy());

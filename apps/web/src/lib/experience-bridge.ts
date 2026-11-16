@@ -53,11 +53,13 @@ export interface LoopDiagSample {
   readonly final: boolean;
 }
 
-/** A minimal MessagePort surface (the Web `MessagePort` satisfies this). */
+/** A minimal MessagePort surface (the Web `MessagePort` satisfies this —
+ *  the handler payloads are the DOM event types a port really delivers, so
+ *  a port binds without a cast; the bridge only reads `.data` off either). */
 export interface BridgePort {
   postMessage(message: unknown, transferOrTarget?: unknown): void;
-  onmessage: ((ev: { data: unknown }) => void) | null;
-  onmessageerror: ((ev: unknown) => void) | null;
+  onmessage: ((ev: MessageEvent<unknown>) => void) | null;
+  onmessageerror: ((ev: MessageEvent<unknown>) => void) | null;
   start?(): void;
   close?(): void;
 }
@@ -168,7 +170,9 @@ export class ExperienceHostBridge {
    */
   attach(contentWindow: BridgeContentWindow): void {
     const channel = new MessageChannel();
-    this.bindHostPort(channel.port1 as unknown as BridgePort);
+    // The DOM MessagePort satisfies BridgePort structurally (the interface's
+    // contract) — port1 binds without an erasure.
+    this.bindHostPort(channel.port1);
     contentWindow.postMessage({ kind: "port", port: channel.port2 }, "*", [channel.port2]);
     // hello travels on the host port → arrives at the frame's port after the
     // frame has registered its onmessage (the SDK binds synchronously on the

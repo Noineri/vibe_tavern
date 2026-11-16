@@ -12,6 +12,7 @@
  */
 import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import { useDomEnv } from "../../../../test/dom-env.js";
+import { flush } from "../../../../test/flush.js";
 import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 import { installToggleSeam } from "../../../../test/toggle-seam.js";
 import type { FormState } from "../../modals/ProviderModal.js";
@@ -100,8 +101,6 @@ function makeForm(over: Partial<FormState> = {}): FormState {
 		...over,
 	} as FormState;
 }
-
-const settle = () => new Promise((resolve) => setTimeout(resolve, 10));
 
 /** The last generationFormat update pushed through updateForm. */
 function lastStored(updates: Array<{ k: string; v: unknown }>): ProviderGenerationFormat | undefined {
@@ -222,14 +221,14 @@ describe("ProviderFormatPanel (sampler-clone redesign)", () => {
 		});
 		const { getByTestId } = render(<ProviderFormatPanel form={form} updateForm={updateForm} tcTemplateSource="default" />);
 		fireEvent.click(getByTestId("provider-format-template"));
-		await settle();
+		await flush();
 		const options = Array.from(document.querySelectorAll("[cmdk-item]"));
 		// Backend IS an entry (the "no set" analog), builtins grouped, customs listed.
 		expect(options.some((el) => el.textContent?.includes("providerFormat.templateBackend"))).toBe(true);
 		const chatml = options.find((el) => el.textContent?.includes("ChatML"));
 		expect(chatml).toBeTruthy();
 		fireEvent.click(chatml!);
-		await settle();
+		await flush();
 		const applied = lastStored(updates);
 		expect(applied?.mode).toBe("manual");
 		expect(applied?.selection).toBe("builtin:chatml");
@@ -247,7 +246,7 @@ describe("ProviderFormatPanel (sampler-clone redesign)", () => {
 		const { getByTestId, unmount } = render(<ProviderFormatPanel form={form} updateForm={updateForm} tcTemplateSource="default" />);
 		expect(getByTestId("provider-format-dirty-dot")).toBeTruthy();
 		fireEvent.click(getByTestId("provider-format-template-reapply"));
-		await settle();
+		await flush();
 		const reseeded = lastStored(updates);
 		expect(reseeded?.mode).toBe("manual");
 		expect((reseeded?.format?.inputSequence ?? "").includes("<|im_start|>")).toBe(true);
@@ -270,7 +269,7 @@ describe("ProviderFormatPanel (sampler-clone redesign)", () => {
 			generationFormat: { mode: "manual", selection: "backend", format: { mode: "manual", inputSequence: "<u> " } },
 		});
 		const { getByTestId, queryByTestId } = render(<ProviderFormatPanel form={form} updateForm={updateForm} tcTemplateSource="default" />);
-		await settle(); // the library loads via a useEffect promise
+		await flush(); // the library loads via a useEffect promise
 		fireEvent.click(getByTestId("provider-format-template-new"));
 		const input = getByTestId("provider-format-save-name");
 		// Collision: the taken name warns inline and confirms nothing.
@@ -281,7 +280,7 @@ describe("ProviderFormatPanel (sampler-clone redesign)", () => {
 		fireEvent.input(input, { target: { value: "My Template" } });
 		expect(queryByTestId("provider-format-name-exists")).toBeNull();
 		fireEvent.click(getByTestId("provider-format-save-confirm"));
-		await settle();
+		await flush();
 		const applied = lastStored(updates);
 		expect(applied?.mode).toBe("manual");
 		expect(applied?.selection).toBe("custom:ftpl_2");
@@ -298,10 +297,10 @@ describe("ProviderFormatPanel (sampler-clone redesign)", () => {
 			generationFormat: { mode: "manual", selection: "custom:ftpl_a", format: { mode: "manual", inputSequence: "new: " } },
 		});
 		const { getByTestId } = render(<ProviderFormatPanel form={form} updateForm={updateForm} tcTemplateSource="default" />);
-		await settle();
+		await flush();
 		// 💾 — the current fields land in the selected custom's payload.
 		fireEvent.click(getByTestId("provider-format-template-save"));
-		await settle();
+		await flush();
 		expect(updateCalls.at(-1)?.id).toBe("ftpl_a");
 		expect((updateCalls.at(-1)?.patch.payload as { inputSequence?: string }).inputSequence).toBe("new: ");
 		// ✏ — the morph opens prefilled; confirm renames via the API.
@@ -310,7 +309,7 @@ describe("ProviderFormatPanel (sampler-clone redesign)", () => {
 		expect(renameInput.value).toBe("Alpha");
 		fireEvent.input(renameInput, { target: { value: "Alpha 2" } });
 		fireEvent.click(getByTestId("provider-format-save-confirm"));
-		await settle();
+		await flush();
 		expect(updateCalls.at(-1)?.patch.name).toBe("Alpha 2");
 		expect(templates.find((tpl) => tpl.id === "ftpl_a")?.name).toBe("Alpha 2");
 	});
@@ -327,17 +326,17 @@ describe("ProviderFormatPanel (sampler-clone redesign)", () => {
 		const { getByTestId, queryByTestId, getByText } = render(
 			<ProviderFormatPanel form={form} updateForm={updateForm} tcTemplateSource="default" />,
 		);
-		await settle();
+		await flush();
 		fireEvent.click(getByTestId("provider-format-template-delete"));
 		// The destructive confirm modal (inline) — its title renders.
-		await settle();
+		await flush();
 		expect(getByText("providerFormat.templateDeleteTitle")).toBeTruthy();
 		expect(getByText("providerFormat.templateDeleteBody")).toBeTruthy();
 		// Confirm = the last button in the modal.
 		const modal = getByText("providerFormat.templateDeleteTitle").closest("div")!.parentElement!;
 		const buttons = Array.from(modal.querySelectorAll("button"));
 		fireEvent.click(buttons[buttons.length - 1]);
-		await settle();
+		await flush();
 		expect(deleteCalls).toEqual(["ftpl_doomed"]);
 		expect(templates.length).toBe(0);
 		const degraded = lastStored(updates);

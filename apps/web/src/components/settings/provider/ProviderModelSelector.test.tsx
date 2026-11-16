@@ -36,6 +36,7 @@ mock.module("../../shared/Tooltip.js", () => ({
 
 let ProviderModelSelector: typeof import("./ProviderModelSelector.js").ProviderModelSelector;
 let ProviderModalModelSelector: typeof import("./ProviderModalModelSelector.js").ProviderModalModelSelector;
+let ProviderVisionModelSelector: typeof import("./provider-vision-model-selector.js").ProviderVisionModelSelector;
 let render: typeof import("@testing-library/react").render;
 let fireEvent: typeof import("@testing-library/react").fireEvent;
 let waitFor: typeof import("@testing-library/react").waitFor;
@@ -44,6 +45,7 @@ beforeAll(async () => {
   ({ render, fireEvent, waitFor } = await import("@testing-library/react"));
   ({ ProviderModelSelector } = await import("./ProviderModelSelector.js"));
   ({ ProviderModalModelSelector } = await import("./ProviderModalModelSelector.js"));
+  ({ ProviderVisionModelSelector } = await import("./provider-vision-model-selector.js"));
 });
 
 /** The Popover portals its list into document.body; cmdk items carry the
@@ -144,6 +146,148 @@ describe("ProviderModelSelector refresh button height (W1 step 5)", () => {
     // basis: FIXED_FONT_SIZE_AUDIT_REPORT verdict, step 6.
     expect(refresh.className).toContain("text-[calc(var(--ui-fs)-1px)]");
     expect(refresh.textContent).toContain("refresh_models");
+    view.unmount();
+  });
+});
+
+describe("ProviderModelSelector favorites outside the catalog", () => {
+  const favorite = { modelId: "retired/model", label: "Saved model name", contextLength: 32_768 };
+
+  beforeEach(() => {
+    isMobileValue = false;
+  });
+
+  it("shows the saved name, ID and context of a missing favorite in its own group", () => {
+    const view = render(<ProviderModelSelector {...baseProps({ favoriteModels: [favorite] })} />);
+    fireEvent.click(view.getByText("gpt-4o").closest("button")!);
+    const group = view.getByRole("group", { name: "favorites_outside_catalog" });
+    expect(group.textContent).toContain(favorite.label);
+    expect(group.textContent).toContain(favorite.modelId);
+    expect(group.textContent).toContain("32.8k ctx");
+    view.unmount();
+  });
+
+  it.each([false, true])("removes a missing favorite without selecting or closing (mobile=%s)", (mobile) => {
+    isMobileValue = mobile;
+    const onChange = mock();
+    const onOptionSelected = mock();
+    const onToggleFavoriteModel = mock();
+    const props = baseProps({ favoriteModels: [favorite], onChange, onOptionSelected, onToggleFavoriteModel });
+    const view = render(<ProviderModelSelector {...props} />);
+    fireEvent.click(view.getByText("gpt-4o").closest("button")!);
+    fireEvent.click(view.getByRole("button", { name: "remove_from_favorites" }));
+    expect(onToggleFavoriteModel).toHaveBeenCalledWith({ id: favorite.modelId, label: favorite.label, contextLength: favorite.contextLength });
+    expect(onChange).not.toHaveBeenCalled();
+    expect(onOptionSelected).not.toHaveBeenCalled();
+    expect(view.getByRole("listbox")).toBeTruthy();
+    view.rerender(<ProviderModelSelector {...props} favoriteModels={[]} />);
+    expect(view.queryByText(favorite.label)).toBeNull();
+    expect(view.queryByRole("group", { name: "favorites_outside_catalog" })).toBeNull();
+    expect(view.getByRole("listbox")).toBeTruthy();
+    view.unmount();
+  });
+
+  it("keeps favorites reachable when the catalog is empty or its refresh failed", () => {
+    const view = render(<ProviderModelSelector {...baseProps({ options: [], favoriteModels: [{ ...favorite, label: null }], fetchError: "Catalog fetch failed" })} />);
+    fireEvent.click(view.getByText("gpt-4o").closest("button")!);
+    expect(view.getByRole("group", { name: "favorites_outside_catalog" }).textContent).toContain(favorite.modelId);
+    expect(view.getByRole("button", { name: "remove_from_favorites" })).toBeTruthy();
+    expect(view.queryByText("no_models_found")).toBeNull();
+    view.unmount();
+  });
+
+  it("searches missing favorites by saved name and ID", () => {
+    const props = baseProps({ favoriteModels: [favorite], modelSearch: "saved MODEL" });
+    const view = render(<ProviderModelSelector {...props} />);
+    fireEvent.click(view.getByText("gpt-4o").closest("button")!);
+    expect(view.getByText(favorite.label)).toBeTruthy();
+    view.rerender(<ProviderModelSelector {...props} modelSearch="RETIRED/" />);
+    expect(view.getByText(favorite.label)).toBeTruthy();
+    view.rerender(<ProviderModelSelector {...props} modelSearch="different" />);
+    expect(view.queryByText(favorite.label)).toBeNull();
+    expect(view.queryByRole("group", { name: "favorites_outside_catalog" })).toBeNull();
+    view.unmount();
+  });
+
+  it("does not dismiss the dropdown when the last favorite is removed from an empty catalog", () => {
+    const props = baseProps({ value: "", options: [], favoriteModels: [favorite] });
+    const view = render(<ProviderModelSelector {...props} />);
+    fireEvent.click(view.getByRole("button", { name: "select_model" }));
+    fireEvent.click(view.getByRole("button", { name: "remove_from_favorites" }));
+    view.rerender(<ProviderModelSelector {...props} favoriteModels={[]} />);
+    expect(view.queryByText(favorite.label)).toBeNull();
+    expect(view.getByRole("listbox")).toBeTruthy();
+    expect(view.getByText("no_models_found")).toBeTruthy();
+    view.unmount();
+  });
+
+  it("compares favorites with the full catalog, not the search or free-only results", () => {
+    const view = render(<ProviderModelSelector {...baseProps({
+      options: [{ id: favorite.modelId, label: "Live name", pricing: { input: 1, output: 2 } }],
+      favoriteModels: [favorite],
+      freeOnly: { checked: true, onChange: () => {} },
+      modelSearch: "no match",
+    })} />);
+    fireEvent.click(view.getByText("gpt-4o").closest("button")!);
+    expect(view.queryByRole("group", { name: "favorites_outside_catalog" })).toBeNull();
+    expect(view.queryByText(favorite.label)).toBeNull();
+    view.unmount();
+  });
+
+  it("does not treat favorites excluded by a capability-specific picker as missing", () => {
+    const view = render(<ProviderModelSelector {...baseProps({
+      options: MODELS,
+      catalogOptions: [...MODELS, { id: favorite.modelId, label: "Text-only model" }],
+      favoriteModels: [favorite],
+    })} />);
+    fireEvent.click(view.getByText("gpt-4o").closest("button")!);
+    expect(view.queryByRole("group", { name: "favorites_outside_catalog" })).toBeNull();
+    expect(view.queryByText(favorite.label)).toBeNull();
+    expect(view.getAllByRole("option").some((row) => row.getAttribute("data-value") === favorite.modelId)).toBe(false);
+    view.unmount();
+  });
+
+  it("keeps missing favorites manageable under free-only and owner-group filters", () => {
+    const view = render(<ProviderModelSelector {...baseProps({
+      favoriteModels: [favorite],
+      freeOnly: { checked: true, onChange: () => {} },
+      groupByOwner: { checked: true, onChange: () => {} },
+    })} />);
+    fireEvent.click(view.getByText("gpt-4o").closest("button")!);
+    expect(view.getByRole("group", { name: "favorites_outside_catalog" }).textContent).toContain(favorite.label);
+    expect(view.getByRole("button", { name: "remove_from_favorites" })).toBeTruthy();
+    view.unmount();
+  });
+
+  it("preserves the vision subset while exposing genuinely missing favorites for removal", () => {
+    const textFavorite = { modelId: "text-only", label: "Text only", contextLength: null };
+    const view = render(<ProviderVisionModelSelector {...baseProps({
+      value: "vision",
+      options: [
+        { id: "vision", label: "Vision model", capabilities: { vision: true } },
+        { id: textFavorite.modelId, label: textFavorite.label },
+      ],
+      favoriteModels: [favorite, textFavorite],
+    })} />);
+    expect(view.queryByTestId("provider-models-refresh")).toBeNull();
+    expect(view.getByText("vision_fallback_model")).toBeTruthy();
+    fireEvent.click(view.getByText("Vision model").closest("button")!);
+    expect(view.getByRole("group", { name: "favorites_outside_catalog" }).textContent).toContain(favorite.label);
+    expect(view.queryByText(textFavorite.label)).toBeNull();
+    expect(view.queryByText("32.8k ctx")).toBeNull();
+    view.unmount();
+  });
+
+  it("does not duplicate the current missing model or a favorite that returns to the catalog", () => {
+    const props = baseProps({ value: favorite.modelId, favoriteModels: [favorite] });
+    const view = render(<ProviderModelSelector {...props} />);
+    fireEvent.click(view.getAllByText(favorite.modelId)[0]!.closest("button")!);
+    expect(view.getAllByRole("option").filter((row) => row.getAttribute("data-value") === favorite.modelId)).toHaveLength(1);
+    expect(view.getByRole("group", { name: "favorites_outside_catalog" })).toBeTruthy();
+    view.rerender(<ProviderModelSelector {...props} options={[...MODELS, { id: favorite.modelId, label: "Returned model" }]} />);
+    expect(view.queryByRole("group", { name: "favorites_outside_catalog" })).toBeNull();
+    expect(view.getAllByRole("option").filter((row) => row.getAttribute("data-value") === favorite.modelId)).toHaveLength(1);
+    expect(cmdkItem(favorite.modelId).textContent).toContain("Returned model");
     view.unmount();
   });
 });

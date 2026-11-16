@@ -4,6 +4,7 @@ import { createBufferAgentReviewPersistence } from "./buffer-agent-review-persis
 import { useAgentTurnStore } from "../stores/agent-turn-store.js";
 import { useAgentReviewRoundStore } from "../stores/agent-review-store.js";
 import { agentThreadKey } from "./agent-host-registry.js";
+import { testFetch } from "@vibe-tavern/test-fetch";
 
 const originalFetch = globalThis.fetch;
 const originalTurns = useAgentTurnStore.getState();
@@ -29,7 +30,7 @@ for (const kind of ["experience", "script"] as const) {
       let running = true;
       const writes: string[] = [];
       const signal = new AbortController();
-      globalThis.fetch = (async (input, init) => {
+      globalThis.fetch = testFetch(async (input, init) => {
         const url = new URL(String(input), "http://gateway.test");
         if (init?.method === "PUT" || init?.method === "DELETE") writes.push(init.method);
         if (url.pathname.endsWith("/agent-runs")) return Response.json(running ? [{ threadId: id }] : []);
@@ -39,7 +40,7 @@ for (const kind of ["experience", "script"] as const) {
         running = detached;
         if (detached) signal.abort();
         return new Response(`id: 1\nevent: tool-result\ndata: ${JSON.stringify({ toolCallId: "write", toolName: "write_buffer", output: { target: activity.target, proposed: "Partial browser projection", summary: "Partial" } })}\n\nid: 2\nevent: finish\ndata: {"finishReason":"stop"}\n\n`);
-      }) as typeof fetch;
+      });
       const persistence = createBufferAgentReviewPersistence(kind);
       await persistence.runs.subscribe(id, 0, {
         signal: signal.signal, onStatus: () => {}, onChunk: () => {},

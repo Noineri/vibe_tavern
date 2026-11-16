@@ -163,7 +163,7 @@ describe("createPromptPresetSchema", () => {
     const base = validCreatePreset();
     const withDepth = (depth: unknown) => createPromptPresetSchema.safeParse({
       ...base,
-      promptOrder: [{ identifier: "x", enabled: true, depth: depth as never }],
+      promptOrder: [{ identifier: "x", enabled: true, depth }],
     });
     expect(withDepth(null).success).toBe(true);
     expect(withDepth(undefined).success).toBe(true);

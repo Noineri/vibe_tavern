@@ -17,6 +17,14 @@ describe('agent attachment wire projection (CA-4a2)', () => {
     }
   });
 
+  test('prompt snapshots survive the real store and wire mapper', async () => {
+    const stores = await createStoreContainer(':memory:');
+    const thread = await stores.experienceCopilot.startNewSession('script');
+    const promptAttachments = [{ presetId: 'p', displayName: 'Preset', promptText: 'Resolved prompt' }];
+    await stores.experienceCopilot.appendMessage(thread.id, { role: 'user', content: 'Hello', promptAttachments });
+    expect(toMessageWire((await stores.experienceCopilot.listMessages(thread.id))[0]!).promptAttachments).toEqual(promptAttachments);
+  });
+
   test('the full stored attachment shape survives the real store and wire mapper', async () => {
     const stores = await createStoreContainer(':memory:');
     const thread = await stores.experienceCopilot.startNewSession('script');

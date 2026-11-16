@@ -1,6 +1,8 @@
 export { pronounFormsSchema, createPersonaSchema, updatePersonaSchema, setPersonaSchema, personaExportQuerySchema, personaExportBulkQuerySchema, personaExportAvatarSchema, personaExportVtSchema, personaExportVtBulkSchema, stPronounSchema, stPersonaBackupSchema } from "./persona-schema.js";
 export { agentPlanSchema, agentPlanTaskSchema } from "./agent-plan-schema.js";
 export type { AgentPlan, AgentPlanTask } from "./agent-plan-schema.js";
+export { storyDeckSchema, storyCardSchema, storyDeckPlaySchema } from "./story-deck-schema.js";
+export type { StoryDeck, StoryCard, StoryDeckPlayRequest } from "./story-deck-schema.js";
 export {
   agentToolStatusSchema, agentTodoActivityResultSchema, agentAskStateSchema,
   agentPermissionStateSchema, agentToolActivitySchema, agentReviewActivitySchema,
@@ -428,6 +430,41 @@ export type {
   CopilotProfileCreate,
   CopilotProfileUpdate,
 } from "./experience-copilot-schema.js";
+
+export {
+  DIRECTOR_MESSAGE_TOOLS,
+  DIRECTOR_MESSAGE_TOOL_NAMES,
+  DIRECTOR_MESSAGE_RECORD_TYPES,
+  proposeMessageEditInputSchema,
+  proposeMessageVariantInputSchema,
+  requestMessageSwipeInputSchema,
+  directorMessageSourceIdentitySchema,
+  directorMessageEditProposalSchema,
+  directorMessageVariantProposalSchema,
+  directorSwipePermissionMarkerSchema,
+  directorSwipeGrantedReceiptSchema,
+  directorSwipeDeniedReceiptSchema,
+  directorSwipeToolOutputSchema,
+  directorSwipeRunOutcomeSchema,
+  DIRECTOR_SWIPE_RUN_OUTCOME_SSE_EVENT,
+  directorSwipeRunOutcomeFrameSchema,
+} from "./director-message-tools-schema.js";
+export type {
+  DirectorMessageToolName,
+  DirectorMessageRecordType,
+  DirectorMessageSourceIdentity,
+  ProposeMessageEditInput,
+  ProposeMessageVariantInput,
+  RequestMessageSwipeInput,
+  DirectorMessageEditProposal,
+  DirectorMessageVariantProposal,
+  DirectorSwipePermissionMarker,
+  DirectorSwipeGrantedReceipt,
+  DirectorSwipeDeniedReceipt,
+  DirectorSwipeToolOutput,
+  DirectorSwipeRunOutcome,
+  DirectorSwipeRunOutcomeFrame,
+} from "./director-message-tools-schema.js";
 
 export { experienceTestDiscoverRequestSchema } from "./experience-test-discover-schema.js";
 export type { ExperienceTestDiscoverRequestDto } from "./experience-test-discover-schema.js";

@@ -1,5 +1,6 @@
 import { createDb, type AppDb } from './db-connection.js';
 import { AgentPlanStore } from './stores/agent-plan-store.js';
+import { StoryDeckStore } from './stores/story-deck-store.js';
 import { AgentReviewRoundStore } from './stores/agent-review-round-store.js';
 import { ChatGenerationJobStore } from './stores/chat-generation-job-store.js';
 import { AgentKindSettingsStore } from './stores/agent-kind-settings-store.js';
@@ -57,6 +58,8 @@ export interface StoreContainer {
   experienceResources: ExperienceResourceStore;
   experienceCopilot: ExperienceCopilotStore;
   agentPlans: AgentPlanStore;
+  /** The one story deck per (chat, branch) pair (DK-3). */
+  storyDecks: StoryDeckStore;
   agentReviewRounds: AgentReviewRoundStore;
   chatGenerationJobs: ChatGenerationJobStore;
   quota: QuotaStore;
@@ -137,6 +140,7 @@ export async function createStoreContainer(dbPath: string, dataDir?: string): Pr
     experienceResources: new ExperienceResourceStore(db),
     experienceCopilot: new ExperienceCopilotStore(db),
     agentPlans: new AgentPlanStore(db),
+    storyDecks: new StoryDeckStore(db),
     agentReviewRounds: new AgentReviewRoundStore(db),
     chatGenerationJobs: new ChatGenerationJobStore(db),
     quota: new QuotaStore(db),

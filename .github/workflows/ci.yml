@@ -288,12 +288,16 @@ jobs:
           restore-keys: |
             bun-install-${{ runner.os }}-${{ runner.arch }}-
       - run: bun install --frozen-lockfile --prefer-offline
+      # Keep publish validation against the real registry, but never reuse an
+      # already-published release version: npm dry-run rejects those too.
       - run: bun scripts/build-npm-dist.ts
+        env:
+          VERSION: 0.0.0-ci.${{ github.run_id }}.${{ github.run_attempt }}
       # Validates the generated manifest and the file list against the registry's
       # rules without publishing anything. Catches a malformed `bin`, a missing
       # LICENSE, or a `repository.url` that would fail trusted publishing.
       - name: Validate publishable manifest
-        run: npm publish --dry-run
+        run: npm publish --dry-run --tag ci
         working-directory: out/npm-dist
       - name: Pack tarball
         run: npm pack --pack-destination "$RUNNER_TEMP"

@@ -367,11 +367,15 @@ describe("AFP-10 frozen detail", () => {
     const va = await loadAgentEventDetail(deps, "t1", "e-va");
     if (va.kind !== "variants_attached") throw new Error("expected variants_attached");
     expect(va).toMatchObject({ position: 4, offset: 0, nextCursor: null });
-    expect(va.variants).toHaveLength(2);
+    expect(va.variants).toEqual([
+      { text: "v1", selected: true, number: 1, model: null, preset: null },
+      { text: "v2", selected: false, number: 2, model: "m", preset: null },
+    ]);
     const sc = await loadAgentEventDetail(deps, "t1", "e-sc");
     if (sc.kind !== "selection_changed") throw new Error("expected selection_changed");
     expect(sc).toMatchObject({ position: 4, messageId: "m4", nextCursor: null });
     expect(sc.previous).toEqual({ variantId: "v0", text: "old", model: null, preset: null });
+    expect(sc.current).toEqual({ variantId: "v1", text: "new", model: null, preset: null });
     const bf = await loadAgentEventDetail(deps, "t1", "e-bf");
     if (bf.kind !== "branch_forked") throw new Error("expected branch_forked");
     expect(bf).toMatchObject({ at: 7, nextCursor: null });

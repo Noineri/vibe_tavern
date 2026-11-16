@@ -19,7 +19,8 @@
 import { describe, it, expect, mock, beforeEach, afterEach } from "bun:test";
 
 import { useDomEnv } from "../../../test/dom-env.js";
-import type { DetachWindow } from "./ExperienceDetachedWindow.js";
+import type { ExperienceQueuedAttachmentView } from "../../api/types.js";
+import type { DetachWindow, DetachedExperienceDescriptor } from "./ExperienceDetachedWindow.js";
 import type { ExperienceLoopConfig } from "../../lib/experience-loop-host.js";
 
 useDomEnv();
@@ -45,20 +46,22 @@ afterEach(() => {
 // until that session exists).
 const realStore = await import("../../stores/experience-store.js");
 let storeSessionValue: unknown = null;
+let storeQueuedAttachment: unknown = null;
+let storeReportStatus: unknown = null;
 const storeMocks = {
   rehydrate: mock(async () => {}),
   setScope: mock(),
   submitAction: mock(),
   runEffect: mock(),
-  queueReport: mock(async () => null),
+  queueReport: mock(async (): Promise<ExperienceQueuedAttachmentView | null> => null),
   endSession: mock(async () => null),
 };
 mock.module("../../stores/experience-store.js", () => ({
   ...realStore,
   useExperienceSession: () => storeSessionValue,
   useExperienceEffects: () => [],
-  useExperienceQueuedAttachment: () => null,
-  useExperienceReportStatus: () => null,
+  useExperienceQueuedAttachment: () => storeQueuedAttachment,
+  useExperienceReportStatus: () => storeReportStatus,
   useExperienceStore: {
     getState: () => ({
       setScope: storeMocks.setScope,
@@ -145,24 +148,38 @@ const STORE_SESSION = {
   manifest: { name: "Hearts" },
 };
 
-/** A minimal fake opener window with a controllable location + open() result. */
+/** A minimal fake opener window with a controllable location + open() result.
+ *  The literal carries the full {@link DetachWindow} surface, so it types
+ *  directly — no erasure needed. */
 function fakeOpener(props: { pathname?: string; search?: string; open?: Window | null }): DetachWindow {
   return {
     location: { pathname: props.pathname ?? "/app", search: props.search ?? "", hash: "" },
     opener: null,
     // Pass through exactly — `null` means "popup blocked". (Do NOT coalesce,
-    // which would turn null into {}.)
-    open: () => props.open as Window | null,
-  } as unknown as DetachWindow;
+    // which would turn null into {}; an absent prop answers null too, the
+    // same "no window" answer the bridge checks.)
+    open: () => props.open ?? null,
+  };
 }
 
-/** A minimal fake popup window whose `opener` points at the given descriptor. */
+/**
+ * A minimal fake popup window whose `opener` points at the given descriptor.
+ * The parameter is deliberately `unknown`: half the pins below pass MALFORMED
+ * descriptors (missing required fields, junk realtimeConfig) and the function
+ * under test must reject them — the malformed shapes are unrepresentable as
+ * {@link DetachedExperienceDescriptor} on purpose. That makes the one narrowing
+ * here a sanctioned test-value edge: the runtime contract (only the stashed
+ * property is read) is exactly what the bridge does with `window.opener`.
+ */
 function fakePopup(openerDesc?: unknown): DetachWindow {
   return {
-    location: { pathname: "/app", search: "", hash: openerDesc ? "#experience=sess_42" : "" },
-    opener: openerDesc ? ({ __experienceDetachDescriptor: openerDesc } as unknown as DetachWindow["opener"]) : null,
+    location: { pathname: "/app", search: "", hash: openerDesc !== undefined ? "#experience=sess_42" : "" },
+    opener:
+      openerDesc !== undefined
+        ? { __experienceDetachDescriptor: openerDesc as DetachedExperienceDescriptor }
+        : null,
     open: () => null,
-  } as unknown as DetachWindow;
+  };
 }
 
 describe("openExperienceDetachedWindow — mechanism + popup-blocked fallback", () => {
@@ -170,7 +187,7 @@ describe("openExperienceDetachedWindow — mechanism + popup-blocked fallback", 
     let openedUrl = "";
     let openedFeatures = "";
     const handle = {} as Window;
-    const opener = {
+    const opener: DetachWindow = {
       location: { pathname: "/app", search: "?x=1", hash: "" },
       opener: null,
       open: (url?: string, _t?: string, features?: string) => {
@@ -178,7 +195,7 @@ describe("openExperienceDetachedWindow — mechanism + popup-blocked fallback", 
         openedFeatures = features ?? "";
         return handle;
       },
-    } as unknown as DetachWindow;
+    };
 
     const result = openExperienceDetachedWindow(DESCRIPTOR, opener);
 
@@ -226,10 +243,16 @@ describe("isDetachedExperienceWindow", () => {
   });
 });
 
+function resetStoreState(): void {
+  storeSessionValue = null;
+  storeQueuedAttachment = null;
+  storeReportStatus = null;
+  for (const m of Object.values(storeMocks)) m.mockClear();
+}
+
 describe("ExperienceDetachedHost — trusted wrapper", () => {
   beforeEach(() => {
-    storeSessionValue = null;
-    for (const m of Object.values(storeMocks)) m.mockClear();
+    resetStoreState();
   });
 
   it("renders trusted chrome + the sandboxed frame from an explicit descriptor", () => {
@@ -305,8 +328,7 @@ describe("ExperienceDetachedHost — trusted wrapper", () => {
 // ─── IR-73C: trusted Finish + report controls in the detached surface ──────
 describe("ExperienceDetachedHost — trusted Finish + report controls (IR-73C)", () => {
   beforeEach(() => {
-    storeSessionValue = null;
-    for (const m of Object.values(storeMocks)) m.mockClear();
+    resetStoreState();
   });
 
   it("Finish is disabled before the store session hydrates (descriptor alone is not authority)", () => {
@@ -379,15 +401,32 @@ describe("ExperienceDetachedHost — trusted Finish + report controls (IR-73C)",
 
   it("report controls call store.queueReport on a click (no silent growth)", async () => {
     installUrlSpy();
-    storeMocks.queueReport.mockResolvedValue(null);
+    storeReportStatus = { reportFrontier: 0, pendingPublicEventCount: 2 };
+    storeMocks.queueReport.mockResolvedValue({
+      id: "att_1",
+      chatId: "chat_1",
+      branchId: "branch_1",
+      sessionId: "sess_1",
+      sessionRevision: 1,
+      queueRevision: 1,
+      kind: "report",
+      publicReport: { title: "Hearts", events: [] },
+      rulesSourceHash: "hash_r",
+      visualSourceHash: "hash_v",
+      createdAt: "2026-01-01T00:00:00Z",
+      updatedAt: "2026-01-01T00:00:00Z",
+    });
     const { getByTestId } = render(
       <ExperienceDetachedHost descriptor={DESCRIPTOR} />,
     );
-    // The report controls are present in the trusted footer. The action
-    // button is disabled by default (no pending events / no attachment from
-    // the null store reads) so no queue call happens automatically.
+    // At rest (before clicking), queueReport has not been invoked.
     expect(storeMocks.queueReport).not.toHaveBeenCalled();
-    void getByTestId;
+    const btn = getByTestId("experience-report-action") as HTMLButtonElement;
+    expect(btn.disabled).toBe(false);
+    await act(async () => {
+      fireEvent.click(btn);
+    });
+    expect(storeMocks.queueReport).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -413,8 +452,7 @@ function resetRealtimeCaptures(): void {
 
 describe("ExperienceDetachedHost — realtime round plumb (RM-6)", () => {
   beforeEach(() => {
-    storeSessionValue = null;
-    for (const m of Object.values(storeMocks)) m.mockClear();
+    resetStoreState();
     resetRealtimeCaptures();
   });
 

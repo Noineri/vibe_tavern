@@ -11,6 +11,7 @@ import { aggregateExperienceCopilotProposal } from "../../../apps/web/src/lib/ex
 import { serializeDraft } from "../../../apps/web/src/lib/experience-copilot-draft.js";
 import { EMPTY_REVIEW_ROUND, useAgentReviewRoundStore } from "../../../apps/web/src/stores/agent-review-store.js";
 import { useAgentTurnStore } from "../../../apps/web/src/stores/agent-turn-store.js";
+import { makeStreamTextDouble, type StreamTextPart } from "./provider-boundary-test-builders.js";
 
 const originalRounds = useAgentReviewRoundStore.getState();
 const originalTurns = useAgentTurnStore.getState();
@@ -28,10 +29,10 @@ function deferred() {
   const promise = new Promise<void>((done) => { resolve = done; });
   return { promise, resolve };
 }
-const call = (id: string, target: "rules" | "visual", content: string) => ({ type: "tool-call", toolCallId: id, toolName: "edit_buffer", input: { target, edits: [{ search: "Old", replace: content }] } });
-const result = (id: string, target: "rules" | "visual", proposed: string) => ({ type: "tool-result", toolCallId: id, toolName: "edit_buffer", output: { target, proposed, summary: `Changed ${target}` } });
+const call = (id: string, target: "rules" | "visual", content: string, toolName = "edit_buffer"): StreamTextPart => ({ type: "tool-call", toolCallId: id, toolName, input: { target, edits: [{ search: "Old", replace: content }] } });
+const result = (id: string, target: "rules" | "visual", proposed: string, toolName = "edit_buffer"): StreamTextPart => ({ type: "tool-result", toolCallId: id, toolName, input: {}, output: { target, proposed, summary: `Changed ${target}` } });
 
-async function setup(parts: unknown[], options: { error?: Error; abort?: AbortController; gate?: ReturnType<typeof deferred>; entered?: ReturnType<typeof deferred> } = {}) {
+async function setup(parts: StreamTextPart[], options: { error?: Error; abort?: AbortController; gate?: ReturnType<typeof deferred>; entered?: ReturnType<typeof deferred> } = {}) {
   const stores = await createStoreContainer(":memory:");
   let tick = 0;
   stores.agentReviewRounds = new AgentReviewRoundStore(stores.db, { clock: { now: () => new Date(Date.UTC(2026, 9, 29) + tick++ * 1000).toISOString() } });
@@ -54,7 +55,10 @@ async function setup(parts: unknown[], options: { error?: Error; abort?: AbortCo
     getProviderProfile: (id) => stores.providers.getById(id),
     getEffectiveProviderProfile: async () => profile,
     resolveModel: () => ({}) as LanguageModel,
-    streamText: (() => ({ stream: provider(), finishReason: Promise.resolve("stop"), usage: Promise.resolve(undefined) })) as unknown as ExperienceCopilotStreamDeps["streamText"],
+    // The generator fake (mid-stream gates, trailing abort/error) rides the
+    // typed streamText double's pull-based parts source — same lazy timing
+    // the erased `stream: provider()` fake had.
+    streamText: makeStreamTextDouble(() => ({ parts: provider() }), "agent-review streamText"),
   };
   const request = { threadId: thread.id, content: "Revise", providerProfileId: profile.id, rules: "Old rules", visual: "Old visual" };
   return { stores, thread, service, deps, request };
@@ -135,7 +139,7 @@ describe("server-written agent review", () => {
   });
 
   test("no-proposal turns preserve the previous envelope and updatedAt byte for byte", async () => {
-    const h = await setup([{ type: "text-delta", text: "Just advice" }]);
+    const h = await setup([{ type: "text-delta", id: "arp-advice", text: "Just advice" }]);
     const previous = webOracle(null, h.request, [{ event: "tool-result", data: JSON.stringify({ toolCallId: "r", toolName: "write_buffer", output: { target: "rules", proposed: "Pending", summary: "Rules" } }) }]);
     await h.service.put(h.thread.id, previous);
     const row = await h.stores.agentReviewRounds.get(h.thread.id);
@@ -146,9 +150,9 @@ describe("server-written agent review", () => {
   test("read-only tools, unfinished calls, malformed outputs and failed tools never create a review", async () => {
     const h = await setup([
       call("pending", "rules", "Partial"),
-      { type: "tool-result", toolCallId: "read", toolName: "run_test", output: { target: "rules", proposed: "Not a write", summary: "Read only" } },
-      { type: "tool-result", toolCallId: "bad", toolName: "edit_buffer", output: { target: "rules", proposed: "Missing summary" } },
-      { type: "tool-error", toolCallId: "error", toolName: "write_buffer", error: new Error("Failed") },
+      { type: "tool-result", toolCallId: "read", toolName: "run_test", input: {}, output: { target: "rules", proposed: "Not a write", summary: "Read only" } },
+      { type: "tool-result", toolCallId: "bad", toolName: "edit_buffer", input: {}, output: { target: "rules", proposed: "Missing summary" } },
+      { type: "tool-error", toolCallId: "error", toolName: "write_buffer", input: {}, error: new Error("Failed") },
     ]);
     const events = await collect(streamExperienceCopilot(h.request, h.deps));
     expect(events.at(-1)!.event).toBe("finish");
@@ -164,9 +168,9 @@ describe("server-written agent review", () => {
 
   test("write_buffer and repeated calls keep browser call order with the last valid result", async () => {
     const h = await setup([
-      { ...call("a", "rules", "First"), toolName: "write_buffer" }, { ...result("a", "rules", "First rules"), toolName: "write_buffer" },
+      call("a", "rules", "First", "write_buffer"), result("a", "rules", "First rules", "write_buffer"),
       call("b", "visual", "Visual"), result("b", "visual", "New visual"),
-      { ...result("a", "rules", "Revised rules"), toolName: "write_buffer" },
+      result("a", "rules", "Revised rules", "write_buffer"),
     ]);
     const events = await collect(streamExperienceCopilot(h.request, h.deps));
     const saved = await h.service.get(h.thread.id);
@@ -177,7 +181,7 @@ describe("server-written agent review", () => {
   });
 
   test("a later failed result for the same call cannot revive its earlier valid proposal", async () => {
-    const h = await setup([call("a", "rules", "First"), result("a", "rules", "First rules"), { type: "tool-error", toolCallId: "a", toolName: "edit_buffer", error: new Error("Revised call failed") }]);
+    const h = await setup([call("a", "rules", "First"), result("a", "rules", "First rules"), { type: "tool-error", toolCallId: "a", toolName: "edit_buffer", input: {}, error: new Error("Revised call failed") }]);
     await collect(streamExperienceCopilot(h.request, h.deps));
     expect(await h.service.get(h.thread.id)).toBeNull();
   });

@@ -106,8 +106,6 @@ export function usePendingVariantAttachments(chatId: string, branchId: string): 
 
 // Debug helper — mirrors the window.__ exposure pattern used by the other
 // ephemeral stores. Lets a live Playwright / dev-console session inspect the
-// pending chips to diagnose "variants not attached" reports.
-if (typeof window !== "undefined") {
-  (window as unknown as { __useSidechatVariantAttachmentsStore?: unknown }).__useSidechatVariantAttachmentsStore =
-    useSidechatVariantAttachmentsStore;
-}
+// pending chips to diagnose "variants not attached" reports. The member's type
+// lives in lib/debug-globals.d.ts (the debug-window surface's single source).
+if (typeof window !== "undefined") window.__useSidechatVariantAttachmentsStore = useSidechatVariantAttachmentsStore;

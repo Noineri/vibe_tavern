@@ -199,16 +199,28 @@ describe("providerQuotaSnapshotSchema rejections", () => {
     expect(providerQuotaSnapshotSchema.safeParse({ ...NONE_SNAPSHOT, observedAt: "2026-08-07T10:00:00.000Z" }).success).toBe(false);
   });
 
-  test("usedPercent outside 0..100 is rejected", () => {
+  test("rejects usedPercent outside 0..100 and accepts exact boundaries 0 and 100", () => {
+    expect(firstIssuePath({
+      ...KIMI_SNAPSHOT,
+      windows: [{ kind: PROVIDER_QUOTA_WINDOW_KIND.session, label: "x", usedPercent: -0.01, resetsAt: null }],
+    })).toBe("windows.0.usedPercent");
     expect(firstIssuePath({
       ...KIMI_SNAPSHOT,
       windows: [{ kind: PROVIDER_QUOTA_WINDOW_KIND.session, label: "x", usedPercent: 101, resetsAt: null }],
     })).toBe("windows.0.usedPercent");
+
+    for (const boundary of [0, 100]) {
+      const candidate = {
+        ...KIMI_SNAPSHOT,
+        windows: [{ kind: PROVIDER_QUOTA_WINDOW_KIND.session, label: "x", usedPercent: boundary, resetsAt: null }],
+      };
+      expect(providerQuotaSnapshotSchema.parse(candidate)).toEqual(candidate);
+    }
   });
 });
 
 describe("providerQuotaConfigSchema", () => {
-  test("the windowed config is exactly the three toggles plus the poll period", () => {
+  test("the windowed config has six exact keys and rejects unknown keys", () => {
     const config = {
       kind: PROVIDER_QUOTA_KIND.windowed,
       displayEnabled: true,
@@ -219,7 +231,8 @@ describe("providerQuotaConfigSchema", () => {
     };
     const parsed: ProviderQuotaConfig = providerQuotaConfigSchema.parse(config);
     expect(parsed).toEqual(config);
-    expect(Object.keys(config)).toHaveLength(6);
+    expect(Object.keys(parsed)).toHaveLength(6);
+    expect(providerQuotaConfigSchema.safeParse({ ...config, bogusToggle: true }).success).toBe(false);
   });
 
   test("the balance config has display plus the poll period — notification keys are rejected", () => {

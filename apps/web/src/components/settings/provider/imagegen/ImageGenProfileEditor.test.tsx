@@ -411,7 +411,7 @@ describe("ImageGenProfileEditor — edit mode (level-1 connection form)", () => 
     await waitFor(() => expect(view.getByTestId("image-gen-test-failure")).toBeTruthy());
   });
 
-  it("an empty model catalog still resolves as a successful probe (ok:true, zero models)", async () => {
+  it("P10: an empty model catalog resolves without throwing and fail-closes to the failure badge", async () => {
     const fetchDraftModels = mock(async () => []);
     const imageGen = makeImageGen({ fetchDraftModels });
     const view = render(<ImageGenProfileEditor imageGen={imageGen} />);

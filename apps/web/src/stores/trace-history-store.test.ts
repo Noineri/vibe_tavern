@@ -10,32 +10,55 @@
  * override pattern so the rest of chat-api stays genuine (see AGENTS gotcha on
  * mock.module being process-global).
  */
-import { describe, test, expect, beforeEach, mock } from "bun:test";
-import type { PromptTraceRecordDto } from "@vibe-tavern/domain";
+import { afterAll, describe, test, expect, beforeEach, mock } from "bun:test";
+import { brandId } from "@vibe-tavern/domain";
+import type { ChatBranchId, ChatId, MessageId } from "@vibe-tavern/domain";
+import type { AppPromptTrace } from "../api/types.js";
 
 // Capture the real module before registering the mock, then spread it so every
 // unrelated export remains genuine. `mockFetch` is a plain `let`; tests mutate
 // it directly and the replacement reads its live value on every call.
-type FetchImpl = (chatId: string, opts?: { messageId?: string; branchId?: string }) => Promise<PromptTraceRecordDto[]>;
+type FetchImpl = (chatId: string, opts?: { messageId?: string; branchId?: string }) => Promise<AppPromptTrace[]>;
 let mockFetch: FetchImpl | null = null;
-const realChatApi = await import("../api/chat-api.js");
+const realChatApi = { ...(await import("../api/chat-api.js")) };
 mock.module("../api/chat-api.js", () => {
   return {
     ...realChatApi,
     fetchTraceHistory: ((chatId: string, opts?: { messageId?: string; branchId?: string }) =>
-      mockFetch ? mockFetch(chatId, opts) : realChatApi.fetchTraceHistory(chatId as never, opts)) as FetchImpl,
+      mockFetch ? mockFetch(chatId, opts) : realChatApi.fetchTraceHistory(brandId<ChatId>(chatId), opts)) as FetchImpl,
   };
 });
 
 const { useTraceHistoryStore } = await import("./trace-history-store.js");
+const { useSnapshotStore } = await import("./snapshot-store.js");
+const originalSnapshotState = useSnapshotStore.getState();
+const originalTraceState = useTraceHistoryStore.getState();
+afterAll(() => {
+  useSnapshotStore.setState(originalSnapshotState, true);
+  useTraceHistoryStore.setState(originalTraceState, true);
+  mockFetch = null;
+});
 
-function makeTrace(id: string, branchId: string): PromptTraceRecordDto {
+function makeTrace(id: string, branchId: string): AppPromptTrace {
   return {
-    id, chatId: "chat-1" as never, branchId: branchId as never, messageId: "m" as never,
-    createdAt: "2026-01-01T00:00:00Z", model: "m", presetName: "p", latencyMs: 1,
-    tokenAccounting: { total: 1 } as never, layers: [], finalPayload: null as never,
-    activatedLoreEntries: [], activatedLoreDetail: [], retrievedMemories: [], scriptInjections: [],
-  } as unknown as PromptTraceRecordDto;
+    id,
+    chatId: brandId<ChatId>("chat-1"),
+    branchId: brandId<ChatBranchId>(branchId),
+    messageId: brandId<MessageId>("m"),
+    createdAt: "2026-01-01T00:00:00Z",
+    model: "m",
+    presetName: "p",
+    latencyMs: 1,
+    tokenAccounting: { total: 1 },
+    layers: [],
+    // `finalPayload` is `Record<string, unknown>` — the erased literal's null
+    // was a hidden type lie; nothing in these tests reads it.
+    finalPayload: {},
+    activatedLoreEntries: [],
+    activatedLoreDetail: [],
+    retrievedMemories: [],
+    scriptInjections: [],
+  };
 }
 
 const entry = (branchId: string) =>
@@ -49,9 +72,16 @@ describe("trace-history cache — fetch + dedup", () => {
 
   test("fetch transitions idle → loading → success and stores branch-scoped traces", async () => {
     const tA = makeTrace("t1", "brA");
-    mockFetch = async (_chatId, opts) => (opts?.branchId === "brA" ? [tA] : []);
+    let resolveFetch!: (traces: Array<typeof tA>) => void;
+    mockFetch = () => new Promise<Array<typeof tA>>((resolve) => { resolveFetch = resolve; });
 
-    await useTraceHistoryStore.getState().fetch("chat-1", "brA");
+    expect(entry("brA")).toBeUndefined();
+    const promise = useTraceHistoryStore.getState().fetch("chat-1", "brA");
+    expect(entry("brA")?.status).toBe("loading");
+    expect(entry("brA")?.traces).toEqual([]);
+
+    resolveFetch([tA]);
+    await promise;
     expect(entry("brA")?.status).toBe("success");
     expect(entry("brA")?.traces).toEqual([tA]);
   });
@@ -123,6 +153,26 @@ describe("trace-history cache — optimistic post-generation upsert", () => {
     const fresh = makeTrace("fresh", "brA");
     useTraceHistoryStore.getState().upsertLatest("chat-1", "brA", fresh);
     expect(entry("brA")?.traces.map((t) => t.id)).toEqual(["fresh", "old"]);
+  });
+
+  test("the wire trace keeps recursive provider JSON intact from snapshot to history cache", async () => {
+    mockFetch = async () => [makeTrace("old", "brA")];
+    await useTraceHistoryStore.getState().fetch("chat-1", "brA");
+    const fresh = makeTrace("fresh", "brA");
+    fresh.providerResponse = {
+      mode: "stream",
+      steps: [{
+        response: { body: { nested: [{ children: [null, true, { text: "kept" }] }] } },
+        providerMetadata: { nested: { tokens: [1, 2, 3] } },
+        rawChunks: [{ delta: { parts: [{ text: "kept" }] } }],
+      }],
+    };
+    useSnapshotStore.getState().ingestSnapshot({ promptTrace: fresh });
+    const fromSnapshot = useSnapshotStore.getState().promptTrace;
+    if (fromSnapshot === null) throw new Error("Snapshot lost the trace");
+    useTraceHistoryStore.getState().upsertLatest("chat-1", "brA", fromSnapshot);
+    expect(entry("brA")?.traces[0]).toBe(fromSnapshot);
+    expect(entry("brA")?.traces[0]?.providerResponse).toEqual(fresh.providerResponse);
   });
 
   test("upsertLatest is a no-op when the cache entry does not exist (tab was never opened)", () => {

@@ -45,7 +45,7 @@ async function createTestRuntime(): Promise<{
 		branchId: chat!.activeBranchId,
 		stores,
 		cleanup: async () => {
-			try { await rm(tmpDir, { recursive: true, force: true }); } catch {}
+			try { await rm(tmpDir, { recursive: true, force: true }); } catch { /* best-effort teardown: the test has finished asserting; a locked or already-removed tmp dir must not fail it */ }
 		},
 	};
 }
@@ -84,13 +84,14 @@ describe("TL-A1 — listPromptTraces (lazy-loaded history)", () => {
 	it("scopes to a branchId server-side", async () => {
 		const { runtime, chatId, branchId, stores } = env;
 
-		// Fork to create a second branch; its traces (none yet) should be empty.
+		// Fork at the greeting message; copied greeting trace proves branchId scoping is non-vacuous.
 		const forked = await stores.chats.forkBranch(chatId, (await stores.messages.getMessages(branchId))[0].id);
 
 		const forkedMsgs = await stores.messages.getMessages(forked.id);
-		// Wave 0 copied the 1 message that exists at the fork point, but its
+		// Wave 0 copied the 1 message that exists at the fork point, and its
 		// traces copy too — so the fork is NOT empty here.
 		const forkTraces = await runtime.listPromptTraces(chatId, { branchId: forked.id });
+		expect(forkTraces.length).toBeGreaterThan(0);
 		expect(forkTraces.every((t) => t.branchId === forked.id)).toBe(true);
 		expect(forkedMsgs.length).toBeGreaterThan(0);
 	});

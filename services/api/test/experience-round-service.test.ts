@@ -16,7 +16,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { createStoreContainer, type StoreContainer } from "@vibe-tavern/db";
-import { createDeterministicRandom, type ExperienceAction } from "@vibe-tavern/domain";
+import { createDeterministicRandom, type ExperienceAction, type ExperienceCapability } from "@vibe-tavern/domain";
 import type { ExperienceRoundCommitRequestDto } from "@vibe-tavern/api-contracts";
 
 import { ExperienceResourceService } from "../src/domain/interactive/experience-resource-service.js";
@@ -88,7 +88,7 @@ const PARTICIPANTS = [
 	{ id: "bot", label: "Bot", controller: "script" as const },
 	{ id: "ai", label: "AI", controller: "model" as const, providerProfileId: "pp1", modelId: "test-model" },
 ];
-const GRANTS = ["participants", "deterministic_random", "model"];
+const GRANTS: ExperienceCapability[] = ["participants", "deterministic_random", "model"];
 
 // ─── Setup ───────────────────────────────────────────────────────────────────
 
@@ -107,12 +107,12 @@ beforeAll(async () => {
 	sessionSeed = seedToNumeric("seed");
 });
 
-async function seedSession(source: string, participants = PARTICIPANTS, grants: string[] = GRANTS) {
-	const character = await stores.characters.create({ name: "Aria", description: "Mage." } as never);
-	const chat = await stores.chats.createChat({ characterId: character.id, title: "T" } as never);
+async function seedSession(source: string, participants = PARTICIPANTS, grants: ExperienceCapability[] = GRANTS) {
+	const character = await stores.characters.create({ name: "Aria", description: "Mage." });
+	const chat = await stores.chats.createChat({ characterId: character.id, title: "T", promptPresetId: null });
 	const branchId = chat.activeBranchId as string;
-	const script = await stores.scripts.create({ name: "Rules", scriptKind: "interactive", code: source } as never);
-	await resources.updateConfig(chat.id, { enabled: true, scriptId: script.id, capabilityGrants: grants as never } as never);
+	const script = await stores.scripts.create({ name: "Rules", scriptKind: "interactive", code: source });
+	await resources.updateConfig(chat.id, { enabled: true, scriptId: script.id, capabilityGrants: grants });
 	const started = await service.startSession({ chatId: chat.id, branchId, settings: {}, participants });
 	if (!started.ok) throw new Error(`startSession failed: ${started.error.code}`);
 	return started.data.sessionId;

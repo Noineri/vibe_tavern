@@ -71,7 +71,7 @@ function makeFakeData() {
     isSending: false,
     activeChatId: null as string | null,
     chatMeta: null,
-    personas: [] as never[],
+    personas: [],
     activePersonaId: null as string | null,
     contextSize: 8192,
     maxTokens: 1024,

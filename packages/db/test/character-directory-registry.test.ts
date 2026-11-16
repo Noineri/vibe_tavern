@@ -257,6 +257,13 @@ describe("sanitizeDirectoryName (HUMAN_READABLE_FOLDERS HRF-4)", () => {
     expect(result.length).toBe(60);
     expect(result.endsWith("-")).toBe(false);
     expect(result).toBe("a".repeat(60));
+
+    // A non-alphanumeric separator landing at index 59 becomes a hyphen at
+    // position 60, which must be trimmed away after slicing to 60 chars.
+    const hyphenAtBoundary = sanitizeDirectoryName(`${"a".repeat(59)}!@${"b".repeat(20)}`);
+    expect(hyphenAtBoundary.length).toBe(59);
+    expect(hyphenAtBoundary.endsWith("-")).toBe(false);
+    expect(hyphenAtBoundary).toBe("a".repeat(59));
   });
 
   test("a degenerate name (no alphanumerics) returns empty", () => {

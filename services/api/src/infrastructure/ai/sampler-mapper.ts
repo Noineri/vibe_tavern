@@ -398,11 +398,9 @@ export function buildSamplerConfig(
     case PROVIDER_TYPE.googleInteractions: {
       // Only temperature, topP, maxOutputTokens, stopSequences (already set above).
       // reasoningEffort -> providerOptions.google.thinkingLevel (request body
-      // generation_config.thinking_level): the Interactions language model in
-      // @ai-sdk/google NEVER reads the SDK-neutral `reasoning` call setting,
-      // so the effort must ride the providerOptions.google namespace that
-      // model documents for exactly this ("per-call options that the AI SDK
-      // doesn't natively expose live here" — googleInteractionsLanguageModelOptions).
+      // generation_config.thinking_level). Keep VT's explicit provider option:
+      // the SDK also supports neutral reasoning now, but thinkingLevel takes
+      // precedence and preserves the existing request shape.
       const effort = mapReasoningEffort(profile.reasoningEffort);
       if (can("reasoningEffort") && effort != null) {
         config.providerOptions = { google: { thinkingLevel: effort } };

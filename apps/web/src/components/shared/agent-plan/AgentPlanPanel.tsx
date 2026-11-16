@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { AgentPlan, AgentPlanTask } from "@vibe-tavern/api-contracts";
+import { isStoryEventDue, pickCurrentPlanTask, type StoryClock } from "@vibe-tavern/domain";
 import { cn } from "../../../lib/cn.js";
 import { useT } from "../../../i18n/context.js";
 import { Ic } from "../icons.js";
 import { ScrollArea } from "../scroll-area.js";
+import { storyEventTimeChipCls, storyEventTimeLabel } from "./story-event-time.js";
 
 export interface AgentPlanPanelProps {
   plan: AgentPlan;
@@ -36,6 +38,11 @@ export interface AgentPlanPanelProps {
    *  ~6 s after the tracker's check completes the current event; the count
    *  and chevron stay live (the refreshed plan drives them). */
   flashTitle?: string | null;
+  /** DK-9 (mockup §6): the flash's tone — "success" (the DR-11 default, the
+   *  completed glyph) or "accent" (the clock-promotion flash
+   *  `story_cal_flash_promoted`: the accent tint + the clock glyph). One
+   *  tone live per change — the strip decides, never both at once. */
+  flashTone?: "success" | "accent";
   /** DR-9: default true — today's editor button in the collapsed row (the
    *  expanded header always carries the button, whatever this says). */
   showEditorInCollapsedRow?: boolean;
@@ -44,20 +51,40 @@ export interface AgentPlanPanelProps {
    *  saves the reverted task as the one active event through the plan
    *  hook's `save` — the editor's write. */
   onRevertTask?: (taskId: string) => void;
+  /** DK-6 (mockup §1): the curtain's SECOND header row — the story deck's
+   *  tab strip (events/deck/calendar counts, StoryCurtainTabs).
+   *  Rendered inside the scroll content right after the first header row;
+   *  undefined = nothing rendered (today's curtain, byte-identical). */
+  curtainTabs?: ReactNode;
+  /** DK-6: replaces the curtain's DEFAULT body (the premise line + the
+   *  task list) when set — the deck/calendar tab bodies. Undefined = the
+   *  default body (the events tab, byte-identical). */
+  curtainBody?: ReactNode;
+  /** DK-10 (mockup §6): the branch story clock, threaded EXPLICITLY by the
+   *  caller that knows it (AgentPlanSection reads `useStorySceneClock` for a
+   *  chatBranch owner; the strip and every other caller pass nothing).
+   *  Null/undefined = no clock: dated rows carry no time chip, no row is
+   *  ever "awaits its time", and the current-event pick is the clockless
+   *  rule — exactly the retired local `pickCurrent` (the domain pins the
+   *  equality). NEVER read `useStorySceneClock` inside this shared panel or
+   *  the shared editor modal: a script plan can render while the active
+   *  branch has a clock, and it must stay byte-identical. */
+  storyClock?: StoryClock | null;
 }
 
 type TaskStatus = AgentPlanTask["status"];
 
-/** The plan's CURRENT task (first `active`, else first `pending`) — the web
- *  twin of the server's `pickCurrentStoryEvent` (story-plan-sync.ts names
- *  this rule G2; later per-event features read ONE derivation). Exported
- *  since DR-10a: the story-plan proposal card picks the event whose body it
- *  shows through the same rule. */
-export function pickCurrent(tasks: AgentPlanTask[]): AgentPlanTask | null {
-  return tasks.find((task) => task.status === "active") ?? tasks.find((task) => task.status === "pending") ?? null;
-}
+// DK-10: the local `pickCurrent` twin is retired — the ONE current-event
+// rule is the domain's `pickCurrentPlanTask` (imported above); with a null
+// clock it returns exactly the old first-active-else-first-pending result
+// (the equality is pinned in the domain's story-clock tests). Callers that
+// have no clock pass null (the objective/story proposal cards); callers that
+// know the branch clock thread it (AgentPlanSection).
 
-function countRemaining(tasks: AgentPlanTask[]): number {
+/** The plan's remaining (pending + active) task count — the collapsed row's
+ *  number. Exported since DK-6: the story section's tab row passes THE SAME
+ *  derivation as the events tab's muted count (never a second one). */
+export function countRemaining(tasks: AgentPlanTask[]): number {
   return tasks.filter((task) => task.status === "pending" || task.status === "active").length;
 }
 
@@ -112,8 +139,12 @@ export function AgentPlanPanel({
   actions,
   headerActionsBefore,
   flashTitle,
+  flashTone = "success",
   showEditorInCollapsedRow = true,
   onRevertTask,
+  curtainTabs,
+  curtainBody,
+  storyClock,
 }: AgentPlanPanelProps) {
   const { t } = useT();
   const [open, setOpen] = useState(false);
@@ -141,12 +172,15 @@ export function AgentPlanPanel({
 
   if (plan.tasks.length === 0 && plan.goal === "" && plan.constraints.length === 0) return null;
 
-  const current = pickCurrent(plan.tasks);
+  const current = pickCurrentPlanTask(plan.tasks, storyClock ?? null);
   const remaining = countRemaining(plan.tasks);
   const summaryStatus: TaskStatus = current?.status ?? "completed";
   // DR-11 (§4): the passed-check flash — curtain-only by contract (the
-  // story strip is its only driver).
+  // story strip is its only driver). DK-9 (§6): the same mechanism's second
+  // tone — the clock-promotion flash on the accent tint with the clock
+  // glyph (mutually exclusive per change: the strip picks the tone).
   const flashing = curtain && typeof flashTitle === "string" && flashTitle !== "";
+  const accentFlash = flashing && flashTone === "accent";
   const editorButton = (
     <button
       type="button"
@@ -173,6 +207,29 @@ export function AgentPlanPanel({
     </button>
   );
 
+  // DK-10 (mockup §6): the dated rows' muted time chip and the not-yet-due
+  // pending rows' "awaits" mark — both only while a readable clock is
+  // THREADED (null/undefined prop = today's rendering, byte-identical). The
+  // wait rule is the domain's `isStoryEventDue` (never a hand-rolled
+  // comparison); the chip label is the ONE `storyEventTimeLabel` derivation.
+  const clock = storyClock ?? null;
+  const timeChip = (task: AgentPlanTask): ReactNode => {
+    if (clock === null || task.at === undefined) return null;
+    return (
+      <span data-testid="agent-plan-event-time" className={storyEventTimeChipCls}>
+        {storyEventTimeLabel(task.at, t)}
+      </span>
+    );
+  };
+  const waitMark = (task: AgentPlanTask): ReactNode => {
+    if (task.status !== "pending" || isStoryEventDue(task, clock)) return null;
+    return (
+      <span data-testid="agent-plan-event-wait" className="mt-px shrink-0 whitespace-nowrap rounded bg-warning-dim px-1.5 py-px font-ui text-[calc(var(--ui-fs)-4px)] text-warning-text">
+        {t("story_event_awaits_time")}
+      </span>
+    );
+  };
+
   const taskList = (withRevert: boolean) => (
     <ol className="flex flex-col">
       {plan.tasks.map((task) => (
@@ -184,6 +241,8 @@ export function AgentPlanPanel({
             <span translate="yes" className={cn("block truncate font-ui text-[calc(var(--ui-fs)-3px)]", task.status === "completed" && "text-success-text line-through", task.status === "abandoned" && "text-t4 line-through", task.status === "active" && "text-t2", task.status === "pending" && "text-t3")}>{task.title}</span>
             {task.status === "active" && task.body && <span translate="yes" className="mt-0.5 block whitespace-pre-wrap font-ui text-[calc(var(--ui-fs)-3px)] text-t4">{task.body}</span>}
           </span>
+          {timeChip(task)}
+          {waitMark(task)}
           {withRevert && task.status === "completed" && onRevertTask !== undefined && revertButton(task)}
         </li>
       ))}
@@ -242,10 +301,11 @@ export function AgentPlanPanel({
       <div
         className={cn(
           "flex w-full min-w-0 items-center gap-1.5 border-b border-border px-2 py-1 text-[calc(var(--ui-fs)-3px)] font-medium text-t3",
-          // §4's flash row: the SUCCESS TINT replaces the surface background
-          // (never stacked — bg utilities resolve by stylesheet order, not
-          // class-string order; the ternary keeps exactly one live).
-          flashing ? "bg-success-dim" : "bg-surface",
+          // §4's flash row: the SUCCESS or ACCENT tint replaces the surface
+          // background (never stacked — bg utilities resolve by stylesheet
+          // order, not class-string order; the ternary keeps exactly one
+          // live).
+          flashing ? (accentFlash ? "bg-accent-dim" : "bg-success-dim") : "bg-surface",
         )}
       >
         <button
@@ -255,19 +315,25 @@ export function AgentPlanPanel({
           aria-label={open ? t("agent_plan_collapse") : t("agent_plan_expand")}
           className="group flex min-w-0 flex-1 items-center gap-1.5 text-left transition-colors hover:text-t2"
         >
-          <NodeGlyph status={flashing ? "completed" : summaryStatus} />
+          {accentFlash
+            ? <span className="shrink-0 text-accent"><Ic.clock /></span>
+            : <NodeGlyph status={flashing ? "completed" : summaryStatus} />}
           {/* The current task is the MODEL's plan title — page-translatable
               (owner follow-up 2026-10-24); the count beside it is chrome.
               DR-11: the flash label interpolates that same model title, so it
               opts in with the span; the all-done line is the story label
               (§4 story-done label `agent_plan_story_done` — the curtain is the story
-              presentation, like the header's story title since DR-9). */}
-          <span translate="yes" className={cn("min-w-0 flex-1 truncate", flashing && "text-success-text")}>
-            {flashing
-              ? t("agent_plan_story_flash_done", { title: flashTitle })
-              : current
-                ? current.title
-                : t(curtain ? "agent_plan_story_done" : "agent_plan_done")}
+              presentation, like the header's story title since DR-9). DK-9
+              (§6): the accent tone interpolates the promoted event the same
+              way (`story_cal_flash_promoted`). */}
+          <span translate="yes" className={cn("min-w-0 flex-1 truncate", flashing && !accentFlash && "text-success-text", accentFlash && "text-accent-t")}>
+            {accentFlash
+              ? t("story_cal_flash_promoted", { event: flashTitle })
+              : flashing
+                ? t("agent_plan_story_flash_done", { title: flashTitle })
+                : current
+                  ? current.title
+                  : t(curtain ? "agent_plan_story_done" : "agent_plan_done")}
           </span>
           <span className="shrink-0 tabular-nums text-t4">· {remaining} {t("agent_plan_remaining")}</span>
           <Chevron open={open} />
@@ -318,15 +384,25 @@ export function AgentPlanPanel({
               <Chevron open />
             </button>
           </div>
-          {/* P2 (§5): the premise as one muted line at the top — a reminder
-              for the user; it never reaches the RP model. The goal is model
-              text, so the line opts into page translation. */}
-          {plan.goal !== "" && (
-            <p data-testid="agent-plan-premise" translate="yes" className="my-1 border-l-2 border-border2 py-0.5 pl-2 font-ui text-[calc(var(--ui-fs)-2px)] leading-normal text-t3">
-              {t("agent_plan_story_premise", { premise: plan.goal })}
-            </p>
+          {/* DK-6 (§1): the second header row — the story deck's tab strip
+              (curtain-only; undefined = nothing, today's curtain). */}
+          {curtainTabs}
+          {curtainBody === undefined ? (
+            <>
+              {/* P2 (§5): the premise as one muted line at the top — a
+                  reminder for the user; it never reaches the RP model. The
+                  goal is model text, so the line opts into page translation. */}
+              {plan.goal !== "" && (
+                <p data-testid="agent-plan-premise" translate="yes" className="my-1 border-l-2 border-border2 py-0.5 pl-2 font-ui text-[calc(var(--ui-fs)-2px)] leading-normal text-t3">
+                  {t("agent_plan_story_premise", { premise: plan.goal })}
+                </p>
+              )}
+              {taskList(true)}
+            </>
+          ) : (
+            /* DK-6: the deck/calendar tab body replaces the default body. */
+            curtainBody
           )}
-          {taskList(true)}
         </ScrollArea>
       )}
     </div>

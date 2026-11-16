@@ -54,7 +54,15 @@ const scope = new AsyncLocalStorage<ProviderTokenContext>();
 export function runWithProviderTokenContext<T>(
 	ctx: ProviderTokenContext | null,
 	fn: () => Promise<T>,
-): Promise<T> {
+): Promise<T>;
+/** Sync callbacks run and return synchronously (ALS supports both forms; the
+ *  counting seam is sync by contract). The body is shared and returns `fn`'s
+ *  value verbatim — no promise wrapping on either path. */
+export function runWithProviderTokenContext<T>(ctx: ProviderTokenContext | null, fn: () => T): T;
+export function runWithProviderTokenContext<T>(
+	ctx: ProviderTokenContext | null,
+	fn: () => T | Promise<T>,
+): T | Promise<T> {
 	if (!ctx) return fn();
 	return scope.run(ctx, fn);
 }

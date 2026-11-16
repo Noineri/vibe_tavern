@@ -36,13 +36,20 @@ import { brandId, EventBus } from "@vibe-tavern/domain";
 import type { ChatBranchId, ChatId, MessageId, ProviderResponseTrace, StoredProviderProfileRecord } from "@vibe-tavern/domain";
 import { LiveChatOrchestrator } from "../src/domain/chat/live-chat-orchestrator.js";
 import type { RegexTextHook } from "../src/domain/chat/live-chat-orchestrator.js";
+import type { ChatApplicationService } from "../src/domain/chat/chat-application-service.js";
+import type { ProviderOrchestrator } from "../src/domain/providers/provider-orchestrator.js";
 import { RpModeStrategy } from "../src/domain/chat/chat-mode-strategy.js";
 import { ChatRuntime } from "../src/runtime/session/session-runtime-chat.js";
+import type { ChatRuntimeDeps } from "../src/runtime/session/session-runtime-chat.js";
+import { makeChatRow, makeVariantRow } from "./insights-test-builders.js";
+import { strictTestDouble } from "./strict-test-double.js";
+import { makeProviderProfileRow } from "./copilot-test-builders.js";
 import { CONTINUATION_USER_INSTRUCTION } from "../src/infrastructure/ai/provider-executor-utils.js";
 import { mergeContinuation } from "../src/infrastructure/ai/merge-continuation.js";
 import { nonstreamingProviderExecute } from "../src/infrastructure/ai/nonstreaming-provider-executor.js";
 import { streamProviderExecutor } from "../src/infrastructure/ai/stream-provider-executor.js";
 import { ProviderExecutionError } from "../src/infrastructure/ai/provider-execution-types.js";
+import { testFetch } from "./test-fetch-seam.js";
 
 const CHAT = "chat_1";
 const MESSAGE = "msg_1";
@@ -73,7 +80,7 @@ let restoreFetch: (() => void) | null = null;
 function installFetchQueue(responses: Array<() => Response>): WireCall[] {
   const calls: WireCall[] = [];
   let index = 0;
-  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+  globalThis.fetch = testFetch(async (input: Parameters<typeof fetch>[0], init?: RequestInit): Promise<Response> => {
     const url = typeof input === "string" ? input : input.toString();
     const rawBody = typeof init?.body === "string" ? init.body : "";
     let messages: Array<{ role: string; content: string }> = [];
@@ -86,7 +93,7 @@ function installFetchQueue(responses: Array<() => Response>): WireCall[] {
     index += 1;
     if (!next) throw new Error(`unexpected provider fetch #${index} (${url})`);
     return next();
-  }) as typeof fetch;
+  });
   restoreFetch = () => {
     globalThis.fetch = realFetch;
     restoreFetch = null;
@@ -160,11 +167,10 @@ function sseCompletion(deltas: string[]): () => Response {
 function makeProfile(): StoredProviderProfileRecord {
   // "multiai" is not a known preset → normalizes to openai_compat (the
   // aggregator protocol; prefill-capable — the gate under test).
-  return {
+  return makeProviderProfileRow({
     id: "profile_1",
     name: "profile",
     providerPreset: "multiai",
-    coauthorTransport: "chatCompletions",
     generationMode: "chat",
     endpoint: "http://127.0.0.1:9/v1",
     apiKey: "test-key",
@@ -185,7 +191,7 @@ function makeProfile(): StoredProviderProfileRecord {
     customSamplers: false,
     proxyMode: "direct",
     proxyId: null,
-  } as StoredProviderProfileRecord;
+  });
 }
 
 interface ContinueCalls {
@@ -200,9 +206,13 @@ function makeCalls(): ContinueCalls {
 }
 
 /** Required-but-unused orchestrator deps (chatApp / providers — the continue
- *  paths never touch them). One declaration so the nominal-class cast is a
- *  single, counted suppression instead of per-site noise. */
-const UNSET = null as never;
+ *  paths never touch them). One strict double: every member access throws
+ *  labeled (objective-service-fixture.ts's unusedObjectiveDeps semantics
+ *  through the strictTestDouble seam) — the same loud failure class the old
+ *  erasure produced, with the real dep types and no cast. */
+const UNSET: ChatApplicationService & ProviderOrchestrator = strictTestDouble<
+  ChatApplicationService & ProviderOrchestrator
+>({}, "LiveChatOrchestrator unset deps (live-chat-continue-fallback)");
 
 /** chatRuntime DI stub: the prefill assembly EXCLUDES the target message (so
  *  the executor's prefill push is the only trailing assistant), the fallback
@@ -216,25 +226,39 @@ function makeOrchestrator(calls: ContinueCalls, executors?: {
     { role: "user", content: "Tell me a story." },
     { role: "assistant", content: ORIGINAL },
   ];
-  const runtime = {
-    async assemblePromptPreview(_chatId: string, options: { excludeMessageId?: MessageId; setPendingTrace?: boolean }) {
-      calls.assemblies.push({ excludeMessageId: options.excludeMessageId, setPendingTrace: options.setPendingTrace });
-      return {
-        prefill: null,
-        finalPayload: { messages: options.excludeMessageId ? prefillHistory : fallbackHistory },
-      };
+  const runtime = strictTestDouble<ChatRuntime>(
+    {
+      async assemblePromptPreview(_chatId: string, options: { excludeMessageId?: MessageId; setPendingTrace?: boolean }) {
+        calls.assemblies.push({ excludeMessageId: options.excludeMessageId, setPendingTrace: options.setPendingTrace });
+        return {
+          layers: [],
+          tokenAccounting: {},
+          activatedLoreEntries: [],
+          scriptInjections: [],
+          retrievedMemories: [],
+          prefill: null,
+          finalPayload: { messages: options.excludeMessageId ? prefillHistory : fallbackHistory },
+        };
+      },
+      async appendMessageVariant(_chatId: string, messageId: MessageId, input: { content: string }) {
+        calls.appendedVariants.push({ messageId, content: input.content });
+        return { messages: [], promptTrace: null, overflowAlerts: [] };
+      },
+      patchPendingTrace(_chatId: string, patch: { prefill?: string | null; sentConfig?: unknown; providerResponse?: unknown }) {
+        calls.tracePatches.push({ prefill: patch.prefill, sentConfig: patch.sentConfig, providerResponse: patch.providerResponse });
+      },
+      discardPendingPromptTrace() {
+        calls.discards += 1;
+      },
+      // The orchestrator reads this through `?.() ?? null` (stream-start
+      // metadata); the erased literal answered undefined → null, the double
+      // must answer the same value explicitly.
+      peekPendingPresetName() {
+        return null;
+      },
     },
-    async appendMessageVariant(_chatId: string, messageId: MessageId, input: { content: string }) {
-      calls.appendedVariants.push({ messageId, content: input.content });
-      return { messages: [], overflowAlerts: [] };
-    },
-    patchPendingTrace(_chatId: string, patch: { prefill?: string | null; sentConfig?: unknown; providerResponse?: unknown }) {
-      calls.tracePatches.push({ prefill: patch.prefill, sentConfig: patch.sentConfig, providerResponse: patch.providerResponse });
-    },
-    discardPendingPromptTrace() {
-      calls.discards += 1;
-    },
-  } as never;
+    "ChatRuntime (live-chat-continue-fallback)",
+  );
   // The REAL RP strategy — dependency-free, pass-through provider resolution:
   // better fidelity than a stub for the continue paths under test.
   const strategy = new RpModeStrategy();
@@ -729,60 +753,94 @@ describe("ChatRuntime — setPendingTrace (CPF-2b fallback trace attribution)", 
     const addVariantCalls: Array<{ messageId: string; content: string; modelId: string | null; presetName: string | null }> = [];
     const savedTraces: Array<{ model: string; presetName: string; prefill?: string | null; finalPayload?: Record<string, unknown>; variantId?: string | null }> = [];
     const finalPayload = { messages: [{ role: "user", content: "Tell me a story." }, { role: "assistant", content: ORIGINAL }] };
-    // One whole-deps cast: ChatRuntimeDeps members are nominal store/app
-    // classes (ChatStore, MessageStore, …) that stub literals cannot satisfy
-    // structurally — the per-member alternatives would be a dozen casts.
-    const runtime = new ChatRuntime({
-      chats: { getById: async () => ({ activeBranchId: brandId<ChatBranchId>("branch_1") }) },
-      messages: {
-        // Real MessageStore.addVariant returns the newly added variant — the
-        // writer consumes it to link the trace to the swipe it produced (SC-23b).
-        addVariant: async (messageId: string, content: string, _finishReason: undefined, _reasoning: undefined, _duration: undefined, modelId: string | null, presetName: string | null) => {
-          addVariantCalls.push({ messageId, content, modelId, presetName });
-          return { id: `mvar_fallback_${addVariantCalls.length}`, messageId, variantIndex: addVariantCalls.length, content, isSelected: 1, modelId, presetName, createdAt: "2026-10-21T00:00:00.000Z" };
+    // Strict deps double: the provided members are checked against the REAL
+    // ChatRuntimeDeps signatures; the nominal store/app members the trace
+    // path never touches (chatApp, diceRolls, uiSettings, experiences, the
+    // response builders, chatOrder) are simply OMITTED — a call into one
+    // throws labeled instead of the old whole-object erasure.
+    const runtime = new ChatRuntime(strictTestDouble<ChatRuntimeDeps>(
+      {
+        chats: {
+          getById: async () => makeChatRow(),
         },
-      },
-      traces: {
-        saveTrace: async (data: { model: string; presetName: string; prefill?: string | null; finalPayload?: Record<string, unknown>; variantId?: string | null }) => {
-          savedTraces.push({ model: data.model, presetName: data.presetName, prefill: data.prefill, finalPayload: data.finalPayload, variantId: data.variantId });
+        messages: {
+          // Real MessageStore.addVariant returns the newly added variant — the
+          // writer consumes it to link the trace to the swipe it produced (SC-23b).
+          addVariant: async (messageId, content, _finishReason, _reasoning, _duration, modelId, presetName) => {
+            addVariantCalls.push({ messageId, content, modelId: modelId ?? null, presetName: presetName ?? null });
+            return makeVariantRow({
+              id: `mvar_fallback_${addVariantCalls.length}`,
+              messageId,
+              variantIndex: addVariantCalls.length,
+              content,
+              modelId: modelId ?? null,
+              presetName: presetName ?? null,
+            });
+          },
         },
-      },
-      chatApp: null,
-      diceRolls: null,
-      uiSettings: null,
-      experiences: null,
-      assemblePrompt: async () => ({
-        branchId: brandId<ChatBranchId>("branch_1"),
-        prompt: { finalPayload },
-        promptTraceDraft: {
-          chatId: CHAT,
+        traces: {
+          saveTrace: async (data) => {
+            savedTraces.push({ model: data.model, presetName: data.presetName, prefill: data.prefill, finalPayload: data.finalPayload, variantId: data.variantId });
+            return {
+              id: `trace_${savedTraces.length}`,
+              chatId: data.chatId,
+              branchId: data.branchId,
+              messageId: data.messageId,
+              variantId: data.variantId ?? null,
+              model: data.model,
+              presetName: data.presetName,
+              assembledLayers: data.assembledLayers,
+              tokenAccounting: data.tokenAccounting,
+              finalPayload: data.finalPayload ?? {},
+              activatedLoreEntries: data.activatedLoreEntries,
+              activatedLoreDetail: data.activatedLoreDetail,
+              retrievedMemories: data.retrievedMemories,
+              scriptInjections: data.scriptInjections,
+              latencyMs: data.latencyMs,
+              createdAt: "2026-10-21T00:00:00.000Z",
+              prefill: data.prefill,
+            };
+          },
+        },
+        assemblePrompt: async () => ({
           branchId: brandId<ChatBranchId>("branch_1"),
-          model: "model-1",
-          presetId: null,
-          presetName: "Fallback Preset",
-          assembledLayers: [],
-          tokenAccounting: {},
-          finalPayload,
-          activatedLoreEntries: [],
-          activatedLoreDetail: [],
-          retrievedMemories: [],
-          scriptInjections: [],
-          latencyMs: 0,
-          prefill: "Stale preset prefill",
-        },
-        tools: undefined,
-        maxSteps: undefined,
-        coauthorModuleId: undefined,
-        coauthorSkillId: null,
-      }),
-      getSnapshot: null,
-      buildMessageResponse: async () => ({ messages: [] }),
-      buildVariantResponse: null,
-      buildBranchResponse: null,
-      buildBranchMetaResponse: null,
-      buildChatListResponse: null,
-      chatOrder: null,
-    } as never);
+          prompt: {
+            layers: [],
+            tokenAccounting: {},
+            activatedLoreEntries: [],
+            scriptInjections: [],
+            retrievedMemories: [],
+            finalPayload,
+          },
+          promptTraceDraft: {
+            chatId: brandId<ChatId>(CHAT),
+            branchId: brandId<ChatBranchId>("branch_1"),
+            model: "model-1",
+            presetId: null,
+            presetName: "Fallback Preset",
+            assembledLayers: [],
+            tokenAccounting: {},
+            finalPayload,
+            activatedLoreEntries: [],
+            activatedLoreDetail: [],
+            retrievedMemories: [],
+            scriptInjections: [],
+            latencyMs: 0,
+            prefill: "Stale preset prefill",
+          },
+          tools: undefined,
+          maxSteps: undefined,
+          coauthorModuleId: undefined,
+          coauthorSkillId: null,
+        }),
+        buildMessageResponse: async () => ({ messages: [], promptTrace: null }),
+        // persistUnscopedReview reads this through `?.()` on the direct
+        // (non-scoped) append path; the omitted key answered undefined →
+        // skip, an inert no-op is the same observable no-persistence.
+        persistCoauthorReview: async () => {},
+      },
+      "ChatRuntimeDeps (CPF-2b trace)",
+    ));
     return { runtime, addVariantCalls, savedTraces };
   }
 

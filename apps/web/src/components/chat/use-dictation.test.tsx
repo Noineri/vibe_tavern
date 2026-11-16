@@ -67,9 +67,9 @@ function setup(
 ) {
   const recorder = options?.recorder ?? makeFakeRecorder();
   const transcripts: string[] = [];
+  // The bun mock carries the exact transcriber signature — no cast needed.
   const transcriber =
-    options?.transcriber ??
-    (mock(async (_profile: SttProfileRecord, _blob: Blob) => "расшифровано") as unknown as DictationTranscriber);
+    options?.transcriber ?? mock(async (_profile: SttProfileRecord, _blob: Blob) => "расшифровано");
   const hook = renderHook(() =>
     useDictation({
       profile: makeProfile(),
@@ -150,9 +150,9 @@ describe("useDictation state machine", () => {
 
   test("transcriber failure → error state with the transcribe i18n key", async () => {
     const recorder = makeFakeRecorder();
-    const transcriber = (async () => {
+    const transcriber: DictationTranscriber = async () => {
       throw new Error("upstream 502");
-    }) as unknown as DictationTranscriber;
+    };
     const { hook } = setup({ recorder, transcriber });
     await act(async () => {
       await hook.result.current.start();
@@ -169,7 +169,7 @@ describe("useDictation state machine", () => {
 
   test("an all-whitespace transcript is dropped (no callback, clean idle)", async () => {
     const recorder = makeFakeRecorder();
-    const transcriber = (async () => "   ") as unknown as DictationTranscriber;
+    const transcriber: DictationTranscriber = async () => "   ";
     const { hook, transcripts } = setup({ recorder, transcriber });
     await act(async () => {
       await hook.result.current.start();

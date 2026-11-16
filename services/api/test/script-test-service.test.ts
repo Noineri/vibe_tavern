@@ -1,6 +1,8 @@
 import { describe, expect, it } from "bun:test";
-import type { StoreContainer } from "@vibe-tavern/db";
+import type { StoreContainer, ScriptStore } from "@vibe-tavern/db";
 import { testScript } from "../src/domain/scripts-engine/script-test-service.js";
+import { makeScriptRow } from "./copilot-test-builders.js";
+import { strictTestDouble } from "./strict-test-double.js";
 
 /**
  * Script test service — authoring-buffer boundary.
@@ -12,25 +14,21 @@ import { testScript } from "../src/domain/scripts-engine/script-test-service.js"
  */
 
 function storesWithStoredCode(code: string): StoreContainer {
-  return {
-    scripts: {
-      getById: async () => ({
-        id: "script_1",
-        name: "Test script",
-        description: "",
-        code,
-        enabled: true,
-        scopeType: "entity",
-        sortOrder: 0,
-        characterId: "character_1",
-        personaId: null,
-        chatId: null,
-        extensions: {},
-        createdAt: "2026-01-01T00:00:00.000Z",
-        updatedAt: "2026-01-01T00:00:00.000Z",
-      }),
+  return strictTestDouble<StoreContainer>(
+    {
+      scripts: strictTestDouble<ScriptStore>(
+        {
+          // Complete stored row via the standing builder; the erased literal
+          // omitted scriptKind (undefined — testScript treats a missing kind
+          // as "prompt", script-test-service.ts:104, so "prompt" is the same
+          // dispatch) and the row's other required columns.
+          getById: async () => makeScriptRow("prompt", "script_1", { name: "Test script", code, scopeType: "entity", characterId: "character_1" }),
+        },
+        "storesWithStoredCode: scripts (script-test-service)",
+      ),
     },
-  } as unknown as StoreContainer;
+    "StoreContainer (script-test-service)",
+  );
 }
 
 describe("testScript code override", () => {

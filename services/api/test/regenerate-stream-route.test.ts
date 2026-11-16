@@ -1,7 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import type { RegenerateOverride } from "@vibe-tavern/api-contracts";
+import type { StoreContainer } from "@vibe-tavern/db";
 import { createApp } from "../src/server/app-factory.js";
 import type { RuntimeApi } from "../src/api/contract/runtime-api.js";
+import { makeRuntimeApi } from "./routes-test-builders.js";
+import { makeCharacterRow } from "./copilot-test-builders.js";
+import { makeChatRow } from "./insights-test-builders.js";
+import { strictTestDouble } from "./strict-test-double.js";
 import { ChatGenerationRunAdapter } from "../src/api/adapters/chat-generation-run-adapter.js";
 
 /**
@@ -28,11 +33,17 @@ async function appRecordingOverrides(): Promise<{
   };
   // createApiRouter hands createChatRoutes `runtime.chat`; only the method
   // under test is stubbed.
-  const runs = new ChatGenerationRunAdapter({
-    chats: { getById: async () => ({ id: "chat_1", characterId: "char_1", activeBranchId: "branch_1", mode: "rp", title: "Regenerate" }) },
-    characters: { getById: async () => ({ name: "Regenerate" }) },
-  } as unknown as ConstructorParameters<typeof ChatGenerationRunAdapter>[0]);
-  const runtime = { chat: { regenerateMessageStream, startChatGeneration: runs.startChatGeneration } } as unknown as RuntimeApi;
+  const runs = new ChatGenerationRunAdapter(strictTestDouble<StoreContainer>(
+    {
+      chats: { getById: async () => makeChatRow({ id: "chat_1", characterId: "char_1", activeBranchId: "branch_1", mode: "rp", title: "Regenerate" }) },
+      characters: { getById: async () => makeCharacterRow("char_1", { name: "Regenerate" }) },
+    },
+    "ChatGenerationRunAdapter stores (regenerate-stream)",
+  ));
+  const runtime = makeRuntimeApi(
+    { chat: { regenerateMessageStream, startChatGeneration: runs.startChatGeneration } },
+    "RuntimeApi (regenerate-stream)",
+  );
   return { app: await createApp({ runtime }), overrides };
 }
 

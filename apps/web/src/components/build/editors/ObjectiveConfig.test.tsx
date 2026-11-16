@@ -11,6 +11,7 @@
  * Runner: bun:test + happy-dom.
  */
 import { afterEach, afterAll, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { testFetch } from "@vibe-tavern/test-fetch";
 import { brandId, type ChatId } from "@vibe-tavern/domain";
 import { act } from "react";
 import { useDomEnv } from "../../../../test/dom-env.js";
@@ -168,7 +169,7 @@ describe("ObjectiveConfig (INS-5)", () => {
   it("renders the empty state and still allows creating the first task manually", () => {
     withState(EMPTY);
     mocks.addObjectiveTaskAction.mockResolvedValue(undefined);
-    const { getByText, getByPlaceholderText } = render(<ObjectiveConfig chatId={"chat_1" as never} />);
+    const { getByText, getByPlaceholderText } = render(<ObjectiveConfig chatId={CHAT_ID} />);
     expect(getByText("obj_empty_title")).toBeTruthy();
     const input = getByPlaceholderText("obj_add_task_placeholder");
     fireEvent.change(input, { target: { value: "Start manually" } });
@@ -203,7 +204,7 @@ describe("ObjectiveConfig (INS-5)", () => {
         { id: "t3", description: "Find the cave", status: "pending" },
       ],
     });
-    const { getByText, getByDisplayValue } = render(<ObjectiveConfig chatId={"chat_1" as never} />);
+    const { getByText, getByDisplayValue } = render(<ObjectiveConfig chatId={CHAT_ID} />);
     // Task descriptions render (the active/pending ones as buttons, completed as a strikethrough button).
     expect(getByText("Ask the innkeeper")).toBeTruthy();
     expect(getByText("Enter the forest")).toBeTruthy();
@@ -215,7 +216,7 @@ describe("ObjectiveConfig (INS-5)", () => {
   it("switches to goals mode through the shared segmented control", () => {
     withState(EMPTY);
     mocks.setObjectiveModeAction.mockResolvedValue(undefined);
-    const { getByRole } = render(<ObjectiveConfig chatId={"chat_1" as never} />);
+    const { getByRole } = render(<ObjectiveConfig chatId={CHAT_ID} />);
     fireEvent.click(getByRole("radio", { name: "obj_mode_goals" }));
     expect(mocks.setObjectiveModeAction).toHaveBeenCalledWith("chat_1", "goals");
   });
@@ -235,7 +236,7 @@ describe("ObjectiveConfig (INS-5)", () => {
     mocks.updateObjectiveShortTermGoalAction.mockResolvedValue(undefined);
     mocks.deleteObjectiveShortTermGoalAction.mockResolvedValue(undefined);
     mocks.selectObjectiveShortTermGoalAction.mockResolvedValue(undefined);
-    const view = render(<ObjectiveConfig chatId={"chat_1" as never} />);
+    const view = render(<ObjectiveConfig chatId={CHAT_ID} />);
 
     expect(view.getByText("obj_long_term_label")).toBeTruthy();
     expect(view.getByText("Reach the gate")).toBeTruthy();
@@ -266,7 +267,7 @@ describe("ObjectiveConfig (INS-5)", () => {
   it("clicking Generate dispatches generateObjectiveTasksAction", () => {
     withState(EMPTY);
     mocks.generateObjectiveTasksAction.mockResolvedValue(undefined);
-    const { getByText } = render(<ObjectiveConfig chatId={"chat_1" as never} />);
+    const { getByText } = render(<ObjectiveConfig chatId={CHAT_ID} />);
     fireEvent.click(getByText("obj_generate_button"));
     expect(mocks.generateObjectiveTasksAction).toHaveBeenCalledWith("chat_1", expect.any(AbortSignal));
   });
@@ -280,7 +281,7 @@ describe("ObjectiveConfig (INS-5)", () => {
         signal.addEventListener("abort", () => reject(signal.reason), { once: true });
       });
     });
-    const { getByText } = render(<ObjectiveConfig chatId={"chat_1" as never} />);
+    const { getByText } = render(<ObjectiveConfig chatId={CHAT_ID} />);
 
     fireEvent.click(getByText("obj_generate_button"));
     fireEvent.click(getByText("obj_stop_button"));
@@ -298,7 +299,7 @@ describe("ObjectiveConfig (INS-5)", () => {
         signal.addEventListener("abort", () => reject(signal.reason), { once: true });
       });
     });
-    const view = render(<ObjectiveConfig chatId={"chat_1" as never} />);
+    const view = render(<ObjectiveConfig chatId={CHAT_ID} />);
     fireEvent.click(view.getByText("obj_generate_button"));
 
     view.unmount();
@@ -314,17 +315,17 @@ describe("ObjectiveConfig (INS-5)", () => {
         signal.addEventListener("abort", () => reject(signal.reason), { once: true });
       });
     });
-    const view = render(<ObjectiveConfig chatId={"chat_1" as never} />);
+    const view = render(<ObjectiveConfig chatId={CHAT_ID} />);
     fireEvent.click(view.getByText("obj_generate_button"));
 
-    view.rerender(<ObjectiveConfig chatId={"chat_2" as never} />);
+    view.rerender(<ObjectiveConfig chatId={brandId<ChatId>("chat_2")} />);
     expect(receivedSignal?.aborted).toBe(true);
   });
 
   it("typing + Enter in the add-task field dispatches addObjectiveTaskAction", () => {
     withState({ ...EMPTY, tasks: [{ id: "t1", description: "First", status: "pending" }] });
     mocks.addObjectiveTaskAction.mockResolvedValue(undefined);
-    const { getByPlaceholderText } = render(<ObjectiveConfig chatId={"chat_1" as never} />);
+    const { getByPlaceholderText } = render(<ObjectiveConfig chatId={CHAT_ID} />);
     const input = getByPlaceholderText("obj_add_task_placeholder");
     fireEvent.change(input, { target: { value: "Climb the tower" } });
     fireEvent.keyDown(input, { key: "Enter" });
@@ -334,7 +335,7 @@ describe("ObjectiveConfig (INS-5)", () => {
   it("clicking a task description to edit + blur dispatches updateObjectiveTaskAction", () => {
     withState({ ...EMPTY, tasks: [{ id: "t1", description: "Open the gate", status: "active" }] });
     mocks.updateObjectiveTaskAction.mockResolvedValue(undefined);
-    const { getByText, getByDisplayValue } = render(<ObjectiveConfig chatId={"chat_1" as never} />);
+    const { getByText, getByDisplayValue } = render(<ObjectiveConfig chatId={CHAT_ID} />);
     // Click the task text (a <button>) to enter edit mode → reveals an <input>.
     fireEvent.click(getByText("Open the gate"));
     const input = getByDisplayValue("Open the gate") as HTMLInputElement;
@@ -359,7 +360,7 @@ describe("ObjectiveConfig (INS-5)", () => {
   it("clicking the status dot cycles the status (active → completed)", () => {
     withState({ ...EMPTY, tasks: [{ id: "t1", description: "A task", status: "active" }] });
     mocks.updateObjectiveTaskAction.mockResolvedValue(undefined);
-    const { getByLabelText } = render(<ObjectiveConfig chatId={"chat_1" as never} />);
+    const { getByLabelText } = render(<ObjectiveConfig chatId={CHAT_ID} />);
     fireEvent.click(getByLabelText("obj_cycle_status"));
     expect(mocks.updateObjectiveTaskAction).toHaveBeenCalledWith("chat_1", "t1", { status: "completed" });
   });
@@ -373,7 +374,7 @@ describe("ObjectiveConfig (INS-5)", () => {
       ],
     });
     mocks.reorderObjectiveTasksAction.mockResolvedValue(undefined);
-    const { getAllByLabelText } = render(<ObjectiveConfig chatId={"chat_1" as never} />);
+    const { getAllByLabelText } = render(<ObjectiveConfig chatId={CHAT_ID} />);
     const moveUpButtons = getAllByLabelText("obj_move_task_up");
     expect((moveUpButtons[0] as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(moveUpButtons[1]);
@@ -383,7 +384,7 @@ describe("ObjectiveConfig (INS-5)", () => {
   it("saves contextWindow and exposes the injection prompt in Advanced config", () => {
     withState({ ...EMPTY, injectPrompt: "CUSTOM-INJECT" });
     mocks.updateObjectiveConfigAction.mockResolvedValue(undefined);
-    const { getByText, getByDisplayValue } = render(<ObjectiveConfig chatId={"chat_1" as never} />);
+    const { getByText, getByDisplayValue } = render(<ObjectiveConfig chatId={CHAT_ID} />);
     fireEvent.click(getByText("obj_advanced_label"));
 
     const contextInput = getByDisplayValue("10") as HTMLInputElement;
@@ -400,7 +401,7 @@ describe("ObjectiveConfig (INS-5)", () => {
   it("hovering + clicking delete dispatches deleteObjectiveTaskAction", () => {
     withState({ ...EMPTY, tasks: [{ id: "t1", description: "A task", status: "pending" }] });
     mocks.deleteObjectiveTaskAction.mockResolvedValue(undefined);
-    const { getByLabelText } = render(<ObjectiveConfig chatId={"chat_1" as never} />);
+    const { getByLabelText } = render(<ObjectiveConfig chatId={CHAT_ID} />);
     const deleteButton = getByLabelText("obj_delete_task");
     const classes = deleteButton.className.split(/\s+/);
     expect(classes).not.toContain("opacity-0");
@@ -414,7 +415,7 @@ describe("ObjectiveConfig (INS-5)", () => {
     // useChatModel defaults to true (EMPTY); turning it off pins a separate model.
     withState(EMPTY);
     mocks.updateObjectiveConfigAction.mockResolvedValue(undefined);
-    const { getByRole } = render(<ObjectiveConfig chatId={"chat_1" as never} />);
+    const { getByRole } = render(<ObjectiveConfig chatId={CHAT_ID} />);
     // The single switch in ObjectiveConfig is the ModelSelector's useChatModel toggle.
     fireEvent.click(getByRole("switch"));
     expect(mocks.updateObjectiveConfigAction).toHaveBeenCalledWith("chat_1", { useChatModel: false });
@@ -422,7 +423,7 @@ describe("ObjectiveConfig (INS-5)", () => {
 
   it("locks both dropdowns and the pin while using the chat model", async () => {
     withState({ ...EMPTY, model: "gpt-mini" });
-    const { getByRole } = render(<ObjectiveConfig chatId={"chat_1" as never} />);
+    const { getByRole } = render(<ObjectiveConfig chatId={CHAT_ID} />);
 
     const providerDropdown = getByRole("button", { name: /Active/ });
     await waitFor(() => expect(getByRole("button", { name: /GPT Active/ })).toBeTruthy());
@@ -439,7 +440,7 @@ describe("ObjectiveConfig (INS-5)", () => {
   // unchanged (max-md only ADDS a rule).
   it("max-md: the provider/model picker row is a single full-width column", () => {
     withState(EMPTY);
-    const view = render(<ObjectiveConfig chatId={"chat_1" as never} />);
+    const view = render(<ObjectiveConfig chatId={CHAT_ID} />);
     const pickerRow = view.getByRole("button", { name: /^Active$/ }).parentElement!;
     expect(pickerRow.className).toContain("grid-cols-2");
     expect(pickerRow.className).toContain("max-md:grid-cols-1");
@@ -479,7 +480,7 @@ beforeEach(() => {
   planGetUrls.length = 0;
   holdPlanGets = false;
   heldPlanGets.length = 0;
-  globalThis.fetch = (async (input: RequestInfo | URL): Promise<Response> => {
+  globalThis.fetch = testFetch(async (input: RequestInfo | URL): Promise<Response> => {
     const url = String(input);
     if (!url.includes("/plan")) {
       return new Response(JSON.stringify({}), { status: 200, headers: { "content-type": "application/json" } });
@@ -496,7 +497,7 @@ beforeEach(() => {
       JSON.stringify({ plan: plansByBranch.get(branchId) ?? planOf([]) }),
       { status: 200, headers: { "content-type": "application/json" } },
     );
-  }) as unknown as typeof fetch;
+  });
 });
 
 afterAll(() => {

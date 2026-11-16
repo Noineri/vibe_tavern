@@ -1,6 +1,12 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
+    // Server-only code: pin lib to ESNext WITHOUT DOM (the base's missing
+    // "lib" derives esnext.full, which bundles DOM and hides node's global
+    // ReadableStream aliasing from bun-types).
+    "lib": [
+      "ESNext"
+    ],
     "types": [
       "bun"
     ],

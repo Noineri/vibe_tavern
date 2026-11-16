@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, readdir } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { sql } from "drizzle-orm";
@@ -156,12 +156,16 @@ describe("HRF-5 migrateToReadableFolders", () => {
 
 	test("two same-name legacy characters suffix deterministically (stable id order)", async () => {
 		const { dataRoot, stores } = await setup();
-		await setupLegacyChar(dataRoot, stores.db, "char_o1", "Oliver");
+		// Seed in REVERSE ID order so incidental insertion order would invert suffixes.
 		await setupLegacyChar(dataRoot, stores.db, "char_o2", "Oliver");
+		await setupLegacyChar(dataRoot, stores.db, "char_o1", "Oliver");
 
 		const report = await migrateToReadableFolders(stores);
 
-		expect(report.steps.map((s) => s.to)).toEqual(["oliver", "oliver-2"]);
+		expect(report.steps.map((s) => ({ id: s.characterId, to: s.to }))).toEqual([
+			{ id: "char_o1", to: "oliver" },
+			{ id: "char_o2", to: "oliver-2" },
+		]);
 		expect(await stores.characterDirectory.resolve("char_o1")).toBe("oliver");
 		expect(await stores.characterDirectory.resolve("char_o2")).toBe("oliver-2");
 	});
@@ -191,15 +195,33 @@ describe("HRF-5 migrateToReadableFolders", () => {
 	});
 
 	test("an already-migrated character (stamped + readable) is a no-op", async () => {
-		const { stores } = await setup();
+		const { dataRoot, stores } = await setup();
 		// The modern create() path already stamps storage_id + a readable name.
 		const char = await stores.characters.create({ name: "Modern", description: "x" });
+
+		const snapshotTree = async () => {
+			const root = join(dataRoot, CHARS);
+			const entries = (await readdir(root, { recursive: true })).map(String).sort();
+			const out: Array<{ path: string; text: string | null }> = [];
+			for (const rel of entries) {
+				const abs = join(root, rel);
+				const info = await stat(abs);
+				out.push({ path: rel.replaceAll("\\", "/"), text: info.isFile() ? await Bun.file(abs).text() : null });
+			}
+			return out;
+		};
+		const beforeFiles = await snapshotTree();
+		const beforeChar = await stores.characters.getById(char.id);
+		const beforeResolved = await stores.characterDirectory.resolve(char.id);
 
 		const report = await migrateToReadableFolders(stores);
 
 		const step = report.steps.find((s) => s.characterId === char.id)!;
 		expect(step.action).toBe("already-migrated");
 		expect(step.from).toBe(step.to);
+		expect(await snapshotTree()).toEqual(beforeFiles);
+		expect(await stores.characters.getById(char.id)).toEqual(beforeChar);
+		expect(await stores.characterDirectory.resolve(char.id)).toBe(beforeResolved);
 	});
 
 	test("after migration, a fresh registry (simulated restart) resolves every character by storage_id", async () => {
@@ -252,8 +274,14 @@ describe("HRF-5 migrateToReadableFolders", () => {
 		const restamped = await stores.content.readEntityTextFile(CHARS, "custom", "profile.md");
 		const parsed = parseProfileMd(restamped!);
 		expect(parsed.storageId).toBe("char_custom"); // stamped
-		expect(parsed.unknownVt?.some((u) => u.key === "custom_vt_key")).toBe(true); // preserved
-		expect(parsed.unknownFrontmatter?.some((u) => u.key === "custom_top_key")).toBe(true); // preserved
+		expect(parsed.unknownVt).toEqual([{ key: "custom_vt_key", value: "keeps its value", block: false }]); // preserved value + key
+		expect(parsed.unknownFrontmatter).toEqual([{ key: "custom_top_key", value: "preserved", block: false }]); // preserved value + key
+		expect(parsed.profile.mesExampleMode).toBe("always");
+		expect(parsed.profile.mesExampleDepth).toBe(4);
+		expect(restamped).toContain("custom_vt_key: keeps its value");
+		expect(restamped).toContain("custom_top_key: preserved");
+		expect(restamped).toContain("# PERSONALITY\nbody text");
+		expect(restamped).toContain("# CUSTOM SECTION\ncustom body");
 		// The custom body section FOLLOWED a known section, so the fold
 		// (MD_HEADING_LOSS_REPORT) keeps its text INSIDE # PERSONALITY's field
 		// instead of a separate unknown section — preserved, not dropped.

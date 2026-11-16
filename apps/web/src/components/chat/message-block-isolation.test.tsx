@@ -1,12 +1,14 @@
 import { beforeEach, beforeAll, describe, expect, mock, test } from "bun:test";
-import { normalizeInsightsConfig, normalizeObjectiveState } from "@vibe-tavern/domain";
-import { wireCharacter } from "../../../test/wire-fixtures.js";
+import { brandId, normalizeInsightsConfig, normalizeObjectiveState } from "@vibe-tavern/domain";
+import type { CharacterId, MessageVariantId } from "@vibe-tavern/domain";
+import { wireBranch, wireChat, wireChatListItem, wireCharacter, wireMessage, wirePersona, wireVariant } from "../../../test/wire-fixtures.js";
 import { useDomEnv } from "../../../test/dom-env.js";
+import { flush } from "../../../test/flush.js";
 import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 import { installFramerMotionSeam } from "../../../test/framer-motion-seam.js";
 import { Profiler, type ProfilerOnRenderCallback, type ReactNode } from "react";
 
-useDomEnv();
+useDomEnv({ failOnNetwork: true });
 const { act, render } = await import("@testing-library/react");
 
 /**
@@ -73,9 +75,11 @@ const STABLE_CONTROLLER = {
   handleDeleteActiveBranch: NOOP_ASYNC,
   handleRenameBranch: NOOP_ASYNC,
 };
-const realChatController = await import("../../hooks/use-chat-controller.js");
-const realChatActions = await import("../../stores/api-actions/chat-actions.js");
-const realTooltip = await import("../shared/Tooltip.js");
+const realChatController = { ...await import("../../hooks/use-chat-controller.js") };
+const realChatActions = { ...await import("../../stores/api-actions/chat-actions.js") };
+const realTooltip = { ...await import("../shared/Tooltip.js") };
+const realVoiceMapData = { ...await import("../../lib/tts/voice-map-data.js") };
+const realRegexApi = { ...await import("../../api/regex-api.js") };
 
 mock.module("../../hooks/use-chat-controller.js", () => ({
   ...realChatController,
@@ -109,6 +113,18 @@ mock.module("../shared/Tooltip.js", () => ({
   TooltipProvider: ({ children }: { children: ReactNode }) => children,
 }));
 
+// Narration controls read /api/tts/{profiles/all,links}; regex seam reads
+// /api/regex/resolve-active on mount. Keep both hermetic under failOnNetwork.
+mock.module("../../lib/tts/voice-map-data.js", () => ({
+  ...realVoiceMapData,
+  useVoiceMapData: () => ({ data: null, refresh: async () => {} }),
+}));
+
+mock.module("../../api/regex-api.js", () => ({
+  ...realRegexApi,
+  resolveActiveRegexPresets: async () => [],
+}));
+
 // House animation mock via the shared co-load seam (the AP-29 fix): the
 // seam's motion.div keeps recording each mount's `initial` as
 // `data-motion-initial` (the variant-slide pins below read it) while
@@ -134,11 +150,11 @@ beforeAll(() => {
   // as belt-and-suspenders for any API happy-dom hasn't implemented.
   if (typeof window !== "undefined") {
     if (!window.matchMedia) {
-      window.matchMedia = (q: string) => ({
+      window.matchMedia = (q: string): MediaQueryList => ({
         matches: false, media: q, onchange: null,
         addEventListener: NOOP, removeEventListener: NOOP,
         addListener: NOOP, removeListener: NOOP, dispatchEvent: () => false,
-      }) as unknown as MediaQueryList;
+      });
     }
     if (typeof (globalThis as { ResizeObserver?: unknown }).ResizeObserver === "undefined") {
       (globalThis as { ResizeObserver?: unknown }).ResizeObserver = class {
@@ -181,88 +197,93 @@ async function loadModules() {
 
 import type { AppCharacter, AppMessage, AppSnapshot, AppPersona } from "../../api/types.js";
 import type { ObjectiveState } from "../../api/types.js";
-import type { ChatId, ChatBranchId } from "@vibe-tavern/domain";
+import type { ChatId } from "@vibe-tavern/domain";
 
 const asChatId = (id: string): ChatId => id as ChatId;
-const asBranchId = (id: string): ChatBranchId => id as ChatBranchId;
 
 function makeCharacter(id: string, name = `Char ${id}`): AppCharacter {
-  return {
-    ...wireCharacter(),
-    id, name, avatarExt: null, avatarFullExt: null, description: "", scenario: "",
-    systemPrompt: "", subtitle: "", firstMessage: null, mesExample: null,
-    mesExampleMode: "always", mesExampleDepth: 4, alternateGreetings: [],
-    postHistoryInstructions: null, creatorNotes: null, depthPrompt: null,
-    depthPromptDepth: null, depthPromptRole: null, tags: [], avatarAssetId: null,
-    avatarFullAssetId: null, avatarCropJson: null, personalitySummary: null,
-    includeGalleryInPrompt: false, includeAvatarInPrompt: false,
-    avatarDescription: null, updatedAt: "2026-01-01T00:00:00.000Z",
-  };
+  return wireCharacter({ id, name });
 }
 
 function makePersona(id: string, name = `Persona ${id}`): AppPersona {
-  return {
-    id, name, avatarExt: null, description: "",
-    avatarAssetId: null, avatarCropJson: null,
-  } as unknown as AppPersona;
+  return wirePersona({ id, name });
 }
 
 function makeAssistantMessage(id: string, content = `msg ${id}`): AppMessage {
-  return {
-    id, role: "assistant", content,
-    createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z",
-    variants: [], selectedVariantIndex: null, modelId: null,
-  } as unknown as AppMessage;
+  return wireMessage(id, { content });
 }
 
 /** Message with multiple variants — used for the variant-swipe scenario. */
 function makeMultiVariantMessage(id: string): AppMessage {
-  return {
-    id, role: "assistant",
+  return wireMessage(id, {
     content: "variant-0",
-    createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z",
     variants: [
-      { variantIndex: 0, content: "variant-0", reasoning: null, reasoningDurationMs: null, isSelected: true },
-      { variantIndex: 1, content: "variant-1", reasoning: null, reasoningDurationMs: null, isSelected: false },
-      { variantIndex: 2, content: "variant-2", reasoning: null, reasoningDurationMs: null, isSelected: false },
+      wireVariant(id, 0, { content: "variant-0", isSelected: true }),
+      wireVariant(id, 1, { content: "variant-1" }),
+      wireVariant(id, 2, { content: "variant-2" }),
     ],
-    selectedVariantIndex: 0, modelId: null,
-  } as unknown as AppMessage;
+    selectedVariantIndex: 0,
+  });
 }
+
+// SCN-12: the tracker config derives through the domain's persisted-column
+// seam. normalizeInsightsConfig recomputes `schemaHash` from the schema and
+// never accepts it as input, so the old erased literal's self-consistent
+// "h1" hash was fake on BOTH sides; the sceneTracker records below read the
+// derived hash so the zone's freshness match (scene-zone.tsx:92) is real.
+const SCN12_TRACKER_CONFIG = normalizeInsightsConfig({
+  objectiveEnabled: false,
+  trackerEnabled: true,
+  tracker: { schema: { mood: { $type: "string" } }, revision: 1 },
+});
 
 /** Assistant message with a selected variant + a current-valid Scene record
  *  (SCN-12). Used to pin that a Scene record mutation on B does not re-render
  *  A's MessageBlock — the scene zone's selectors are scoped per-message. */
 function makeSceneMessage(id: string, mood = "calm"): AppMessage {
-  return {
-    id, role: "assistant", content: `msg ${id}`,
-    chatId: "chat-1", branchId: "b1",
-    createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z",
-    variants: [{ id: `${id}-v0`, messageId: id, variantIndex: 0, content: `msg ${id}`, isSelected: true }],
-    selectedVariantIndex: 0, modelId: null,
-    sceneTracker: { variantId: `${id}-v0`, schemaHash: "h1", configRevision: 1, sourceHash: "s1", sceneState: { mood }, modelId: null, generatedAt: "2026-01-01T00:00:00.000Z" },
-  } as unknown as AppMessage;
+  const tracker = SCN12_TRACKER_CONFIG.tracker;
+  if (!tracker) throw new Error("SCN-12 fixture requires the tracker config");
+  return wireMessage(id, {
+    content: `msg ${id}`,
+    variants: [wireVariant(id, 0, { content: `msg ${id}`, isSelected: true })],
+    selectedVariantIndex: 0,
+    sceneTracker: {
+      variantId: brandId<MessageVariantId>(`${id}-v0`),
+      schemaHash: tracker.schemaHash,
+      configRevision: tracker.revision,
+      sourceHash: "s1",
+      sceneState: { mood },
+      modelId: null,
+      generatedAt: "2026-01-01T00:00:00.000Z",
+    },
+  });
 }
 
 function seed(messages: AppMessage[], persona: AppPersona | null = null, objectiveState?: ObjectiveState): AppSnapshot {
   return {
-    chats: [{ id: "chat-1", title: "Chat 1", characterId: "c1", characterName: "Char c1", subtitle: "", activeBranchLabel: "main", mode: "rp", messageCount: messages.length, updatedAt: "2026-01-01T00:00:00.000Z" }],
-    allCharacters: [],
-    activeChat: {
-      id: "chat-1",
+    chats: [wireChatListItem({
+      id: brandId<ChatId>(CHAT),
       title: "Chat 1",
-      characterId: "c1",
+      characterId: brandId<CharacterId>("c1"),
+      characterName: "Char c1",
+      messageCount: messages.length,
+    })],
+    allCharacters: [],
+    activeChat: wireChat({
+      id: brandId<ChatId>(CHAT),
+      title: "Chat 1",
+      characterId: brandId<CharacterId>("c1"),
       insightsConfig: normalizeInsightsConfig({ objectiveEnabled: objectiveState !== undefined }),
       insightsObjectiveState: objectiveState ?? normalizeObjectiveState({}),
-    } as unknown as AppSnapshot["activeChat"],
-    activeBranch: { id: "b1", chatId: "chat-1", label: "main" } as unknown as AppSnapshot["activeBranch"],
+    }),
+    activeBranch: wireBranch(),
     branches: [],
     messages,
     summaries: [],
     promptTrace: null,
     character: makeCharacter("c1"),
     persona,
-  } as unknown as AppSnapshot;
+  };
 }
 
 const CHAT = "chat-1";
@@ -526,29 +547,37 @@ describe("MessageBlock — render isolation invariant", () => {
     // Tracker ON + a config whose schemaHash/revision match the records, so the
     // scene zone mounts on BOTH messages (m1 latest, m2 older-with-valid-record).
     snapshotStore.useSnapshotStore.getState().ingestSnapshot({
-      chats: [{ id: "chat-1", title: "Chat 1", characterId: "c1", characterName: "Char c1", subtitle: "", activeBranchLabel: "main", mode: "rp", messageCount: 2, updatedAt: "2026-01-01T00:00:00.000Z" }],
+      chats: [wireChatListItem({
+        id: brandId<ChatId>(CHAT),
+        title: "Chat 1",
+        characterId: brandId<CharacterId>("c1"),
+        characterName: "Char c1",
+        messageCount: 2,
+      })],
       allCharacters: [],
-      activeChat: {
-        id: "chat-1", title: "Chat 1", characterId: "c1",
-        insightsConfig: { objectiveEnabled: false, trackerEnabled: true, tracker: { schema: { mood: { $type: "string" } }, schemaHash: "h1", revision: 1 } },
-      } as unknown as AppSnapshot["activeChat"],
-      activeBranch: { id: "b1", chatId: "chat-1", label: "main" } as unknown as AppSnapshot["activeBranch"],
+      activeChat: wireChat({
+        id: brandId<ChatId>(CHAT),
+        title: "Chat 1",
+        characterId: brandId<CharacterId>("c1"),
+        insightsConfig: SCN12_TRACKER_CONFIG,
+      }),
+      activeBranch: wireBranch(),
       branches: [], messages: [makeSceneMessage("m1"), makeSceneMessage("m2")], summaries: [],
       promptTrace: null, character: makeCharacter("c1"), persona: null,
-    } as unknown as AppSnapshot);
+    });
     chatStore.useChatStore.getState().setActiveChatId(asChatId(CHAT));
 
     const probeA = await mountBlockForCounting("m1");
     expect(probeA.commits).toBe(1); // mount
     // Let the latest zone's status-hydration effect settle.
-    await act(async () => { await new Promise((r) => setTimeout(r, 10)); });
+    await flush();
     probeA.reset();
 
     // Mutate B's scene record (an unrelated message/variant). A's scene zone
     // selectors are scoped to m1, so A must NOT re-render.
     act(() => {
       snapshotStore.useSnapshotStore.getState().updateMessage("m2", {
-        sceneTracker: { variantId: "m2-v0", schemaHash: "h1", configRevision: 1, sourceHash: "s1", sceneState: { mood: "stormy" }, modelId: null, generatedAt: "2026-01-01T00:00:00.000Z" } as never,
+        sceneTracker: { variantId: brandId<MessageVariantId>("m2-v0"), schemaHash: "h1", configRevision: 1, sourceHash: "s1", sceneState: { mood: "stormy" }, modelId: null, generatedAt: "2026-01-01T00:00:00.000Z" },
       });
     });
     await act(async () => { await Promise.resolve(); });

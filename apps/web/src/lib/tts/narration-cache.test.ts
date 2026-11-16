@@ -78,7 +78,7 @@ describe("createNarrationSegmentCache", () => {
       await cache.put("m", new Blob(["mem"]), "audio/wav");
       expect(await (await cache.get("m"))!.text()).toBe("mem");
     } finally {
-      (globalThis as { indexedDB?: unknown }).indexedDB = realIndexedDB as never;
+      (globalThis as { indexedDB?: unknown }).indexedDB = realIndexedDB;
     }
   });
 });

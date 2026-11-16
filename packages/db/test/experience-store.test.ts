@@ -122,7 +122,8 @@ describe("ExperienceStore — session lifecycle + active-slot enforcement", () =
 
   test("a finished session releases the active slot, allowing a new one", async () => {
     const first = await store.createSession(baseSession());
-    if (!first.ok) return;
+    expect(first.ok).toBe(true);
+    if (!first.ok) throw new Error(`setup createSession failed: ${first.conflict}`);
     await store.finishSession(first.session.id, "completed");
     expect((await store.getActiveSessionForBranch("branch_1"))).toBeNull();
     // A new active session can now be created in the same branch.
@@ -132,7 +133,8 @@ describe("ExperienceStore — session lifecycle + active-slot enforcement", () =
 
   test("getActiveSessionForBranch finds the active session, not finished ones", async () => {
     const first = await store.createSession(baseSession());
-    if (!first.ok) return;
+    expect(first.ok).toBe(true);
+    if (!first.ok) throw new Error(`setup createSession failed: ${first.conflict}`);
     expect((await store.getActiveSessionForBranch("branch_1"))?.id).toBe(first.session.id);
     await store.finishSession(first.session.id, "interrupted");
     expect((await store.getActiveSessionForBranch("branch_1"))).toBeNull();
@@ -242,12 +244,24 @@ describe("ExperienceStore — durable-effect lifecycle", () => {
 
   test("fail and cancel record terminal states with metadata", async () => {
     await store.claimEffect(effectId);
-    expect((await store.failEffect(effectId, "timeout"))?.status).toBe("failed");
-    // retry from failed → pending, attemptCount 1
+    const failed = await store.failEffect(effectId, "timeout");
+    expect(failed?.status).toBe("failed");
+    expect(failed?.error).toBe("timeout");
+    // retry from failed → pending, attemptCount 1, error cleared
     const retried = await store.retryEffect(effectId);
     expect(retried?.status).toBe("pending");
     expect(retried?.attemptCount).toBe(1);
+    expect(retried?.error).toBeNull();
     expect(retried?.id).toBe(effectId); // original id preserved
+
+    // cancel moves the effect to cancelled and keeps it unclaimable via claimEffect.
+    const claimedAgain = await store.claimEffect(effectId);
+    expect(claimedAgain?.status).toBe("running");
+    const cancelled = await store.cancelEffect(effectId);
+    expect(cancelled?.status).toBe("cancelled");
+    expect(await store.claimEffect(effectId)).toBeNull();
+    expect(await store.failEffect("xe_missing", "err")).toBeNull();
+    expect(await store.cancelEffect("xe_missing")).toBeNull();
   });
 
   test("reconcileUnknownEffects moves running → unknown (never back to pending)", async () => {
@@ -298,47 +312,90 @@ describe("ExperienceStore — durable-effect lifecycle", () => {
   });
 
   test("cancelPendingEffectsAboveRevision cancels only pending rows of the kind above the revision", async () => {
-    // beforeEach left a pending model effect at rev 1; the timer test above ran
-    // in its own beforeEach world: this test builds its own rows from scratch.
-    // Session state: rev 0 → three transitions → timers at revs 1, 2, 3.
+    // beforeEach left a pending model effect at rev 1. Build effects across
+    // revisions 2..5:
+    //  - timer:2 -> pending AT threshold (stays pending)
+    //  - timer:3 -> claimed running ABOVE threshold (stays running)
+    //  - timer:4 -> pending ABOVE threshold (cancelled)
+    //  - timer:5 + model:5 -> pending ABOVE threshold (timer cancelled, model stays pending)
     await store.applyTransition(
       baseTransition({
-        requestId: "req_t_low",
+        requestId: "req_t_eq",
         expectedRevision: 1,
         emittedEffectsJson: '[{"kind":"timer","request":{"viewer":"model","actionType":"tick","afterMs":1000}}]',
       }),
     );
     await store.applyTransition(
       baseTransition({
-        requestId: "req_t_mid",
+        requestId: "req_t_running",
         expectedRevision: 2,
         emittedEffectsJson: '[{"kind":"timer","request":{"viewer":"model","actionType":"tick","afterMs":1000}}]',
       }),
     );
     await store.applyTransition(
       baseTransition({
-        requestId: "req_t_high",
+        requestId: "req_t_mid",
         expectedRevision: 3,
+        emittedEffectsJson: '[{"kind":"timer","request":{"viewer":"model","actionType":"tick","afterMs":1000}}]',
+      }),
+    );
+    await store.applyTransition(
+      baseTransition({
+        requestId: "req_t_high",
+        expectedRevision: 4,
         emittedEffectsJson:
           '[{"kind":"timer","request":{"viewer":"model","actionType":"tick","afterMs":1000}},{"kind":"model","request":{"prompt":"reply"}}]',
       }),
     );
 
-    // Undo to rev 1: timers at revs 2, 3, 4 must cancel (their spawn steps no
-    // longer exist in the rewound timeline); the beforeEach model effect at
-    // rev 1 and the model effect at rev 4 are untouched (kind filter).
-    const cancelled = await store.cancelPendingEffectsAboveRevision("xs_test_1", 1, "timer");
-    expect(cancelled).toHaveLength(3);
+    const session1Effects = await store.getEffectsForSession("xs_test_1");
+    const runningTimer = session1Effects.find((e) => e.kind === "timer" && e.originatingRevision === 3)!;
+    const cancelledTargets = session1Effects
+      .filter((e) => e.kind === "timer" && e.originatingRevision > 3)
+      .map((e) => e.id)
+      .sort();
+    expect(await store.claimEffect(runningTimer.id)).not.toBeNull();
+
+    // Seed a second session carrying a pending timer above rev 2 (session scope control).
+    await db.run(
+      sql`INSERT INTO chat_branches (id, chat_id, label, created_at) VALUES ('branch_other', 'chat_1', 'Other', '2026-01-01')`,
+    );
+    const other = await store.createSession({ ...baseSession(), branchId: "branch_other" });
+    expect(other.ok).toBe(true);
+    if (!other.ok) throw new Error(`setup other session failed: ${other.conflict}`);
+    for (let r = 0; r < 3; r += 1) {
+      await store.applyTransition(
+        baseTransition({
+          sessionId: other.session.id,
+          requestId: `req_other_${r}`,
+          expectedRevision: r,
+          emittedEffectsJson: r === 2
+            ? '[{"kind":"timer","request":{"viewer":"model","actionType":"tick","afterMs":500}}]'
+            : "[]",
+        }),
+      );
+    }
+
+    // Undo to rev 2: only pending timers strictly > 2 in xs_test_1 cancel (revs 4 & 5).
+    const cancelled = await store.cancelPendingEffectsAboveRevision("xs_test_1", 2, "timer");
+    expect([...cancelled].sort()).toEqual(cancelledTargets);
+
     const effects = await store.getEffectsForSession("xs_test_1");
     const byKindRev = new Map(effects.map((e) => [`${e.kind}:${e.originatingRevision}`, e.status]));
     expect(byKindRev.get("model:1")).toBe("pending");
-    expect(byKindRev.get("timer:2")).toBe("cancelled");
-    expect(byKindRev.get("timer:3")).toBe("cancelled");
+    expect(byKindRev.get("timer:2")).toBe("pending");
+    expect(byKindRev.get("timer:3")).toBe("running");
     expect(byKindRev.get("timer:4")).toBe("cancelled");
-    expect(byKindRev.get("model:4")).toBe("pending");
+    expect(byKindRev.get("timer:5")).toBe("cancelled");
+    expect(byKindRev.get("model:5")).toBe("pending");
 
-    // Re-running is idempotent: nothing pending above rev 1 remains.
-    expect(await store.cancelPendingEffectsAboveRevision("xs_test_1", 1, "timer")).toHaveLength(0);
+    const otherEffects = await store.getEffectsForSession(other.session.id);
+    expect(otherEffects.map((e) => ({ kind: e.kind, rev: e.originatingRevision, status: e.status }))).toEqual([
+      { kind: "timer", rev: 3, status: "pending" },
+    ]);
+
+    // Re-running is idempotent: nothing pending above rev 2 remains.
+    expect(await store.cancelPendingEffectsAboveRevision("xs_test_1", 2, "timer")).toHaveLength(0);
   });
 });
 
@@ -474,7 +531,8 @@ describe("ExperienceStore — finishSessionQuiet (quiet close, pos 2)", () => {
 
   test("active session: slot released, interrupted, revision+1, NO step, unbound attachment purged", async () => {
     const created = await store.createSession(baseSession());
-    if (!created.ok) return;
+    expect(created.ok).toBe(true);
+    if (!created.ok) throw new Error(`setup createSession failed: ${created.conflict}`);
     const sid = created.session.id;
     await store.queueAttachment({
       chatId: "chat_1",
@@ -503,7 +561,8 @@ describe("ExperienceStore — finishSessionQuiet (quiet close, pos 2)", () => {
 
   test("stale expectedRevision is a typed stale_revision conflict", async () => {
     const created = await store.createSession(baseSession());
-    if (!created.ok) return;
+    expect(created.ok).toBe(true);
+    if (!created.ok) throw new Error(`setup createSession failed: ${created.conflict}`);
     const out = await store.finishSessionQuiet(created.session.id, 99);
     expect(out.ok).toBe(false);
     if (out.ok) return;
@@ -513,7 +572,8 @@ describe("ExperienceStore — finishSessionQuiet (quiet close, pos 2)", () => {
 
   test("already-released (completed) session: idempotent no-op that still purges unbound rows", async () => {
     const created = await store.createSession(baseSession());
-    if (!created.ok) return;
+    expect(created.ok).toBe(true);
+    if (!created.ok) throw new Error(`setup createSession failed: ${created.conflict}`);
     const sid = created.session.id;
     await store.finishSession(sid, "completed");
     await store.queueAttachment({
@@ -545,7 +605,8 @@ describe("ExperienceStore — finishSessionQuiet (quiet close, pos 2)", () => {
 
   test("bound attachments are NEVER deleted by a quiet end", async () => {
     const created = await store.createSession(baseSession());
-    if (!created.ok) return;
+    expect(created.ok).toBe(true);
+    if (!created.ok) throw new Error(`setup createSession failed: ${created.conflict}`);
     const sid = created.session.id;
     await seedMessage(db, "msg_q");
     const att = await store.queueAttachment({

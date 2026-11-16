@@ -57,10 +57,20 @@ describe("createPersonaSchema", () => {
       ...validCreatePersona(),
       description: "A user persona.",
       pronouns: "they/them",
+      pronounForms: {
+        subjective: "they",
+        objective: "them",
+        possessive: "their",
+        possessivePronoun: "theirs",
+        reflexive: "themselves",
+      },
       defaultForNewChats: true,
     };
     const result = createPersonaSchema.safeParse(payload);
     expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data).toEqual(payload);
+    }
   });
 
   it("rejects a payload missing the required name", () => {
@@ -139,8 +149,22 @@ describe("updatePersonaSchema", () => {
   // description is `.string().optional()` on update (NOT nullable, NOT defaulted
   // — asymmetry vs createPersonaSchema where it has `.default("")`).
   it("treats description as optional-string but rejects null (not nullable, not defaulted on update)", () => {
-    expect(updatePersonaSchema.safeParse({ description: "d" }).success).toBe(true);
-    expect(updatePersonaSchema.safeParse({ description: undefined }).success).toBe(true);
+    const provided = updatePersonaSchema.safeParse({ description: "d" });
+    expect(provided.success).toBe(true);
+    if (provided.success) {
+      expect(provided.data).toEqual({ description: "d" });
+    }
+    const emptyPatch = updatePersonaSchema.safeParse({});
+    expect(emptyPatch.success).toBe(true);
+    if (emptyPatch.success) {
+      expect("description" in emptyPatch.data).toBe(false);
+      expect(emptyPatch.data).toEqual({});
+    }
+    const undefinedPatch = updatePersonaSchema.safeParse({ description: undefined });
+    expect(undefinedPatch.success).toBe(true);
+    if (undefinedPatch.success) {
+      expect(undefinedPatch.data.description).toBeUndefined();
+    }
     expectReject(updatePersonaSchema.safeParse({ description: null }));
     expectReject(updatePersonaSchema.safeParse({ description: 42 }));
   });

@@ -19,6 +19,11 @@ export function configureLogDir(dir: string): void {
 	dirEnsure = null;
 }
 
+/** The configured runtime log root, also used by opt-in forensic traces. */
+export function getSendDebugLogDir(): string {
+	return dirname(logPath);
+}
+
 export function logSendDebug(
 	event: string,
 	data: Record<string, unknown> = {},

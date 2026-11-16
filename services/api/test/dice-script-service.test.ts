@@ -8,8 +8,9 @@
  * pure unit tests against the service's orchestration logic.
  */
 import { describe, expect, test } from "bun:test";
-import type { StoreContainer } from "@vibe-tavern/db";
-import type { Script, Persona, Character } from "@vibe-tavern/domain";
+import type { StoreContainer, ScriptRow } from "@vibe-tavern/db";
+import { strictTestDouble } from "./strict-test-double.js";
+import type { Persona, Character } from "@vibe-tavern/domain";
 import {
   discoverDiceScripts,
   resolveDiceRoll,
@@ -25,7 +26,10 @@ function fixedRng(value: number) {
 
 // ─── Mock store factory ──────────────────────────────────────────────────────
 
-function makeScript(overrides: Partial<Script> & { id: string; code: string }): Script {
+// The stored script row as the REAL script store returns it (the erased
+// store double made the rows flow through as the narrower domain `Script`;
+// the compiler now completes the row's other required columns here).
+function makeScript(overrides: Partial<ScriptRow> & { id: string; code: string }): ScriptRow {
   return {
     id: overrides.id,
     name: overrides.name ?? "Dice Script",
@@ -33,11 +37,16 @@ function makeScript(overrides: Partial<Script> & { id: string; code: string }): 
     code: overrides.code,
     scriptKind: overrides.scriptKind ?? "dice",
     enabled: overrides.enabled ?? true,
+    origin: overrides.origin ?? "in_app",
+    firstEnabledAt: overrides.firstEnabledAt ?? null,
+    creationIntentId: overrides.creationIntentId ?? null,
     scopeType: overrides.scopeType ?? "chat",
     sortOrder: overrides.sortOrder ?? 0,
     characterId: overrides.characterId ?? null,
     personaId: overrides.personaId ?? null,
     chatId: overrides.chatId ?? "chat_1",
+    defaultVisualId: overrides.defaultVisualId ?? null,
+    copilotProfileId: overrides.copilotProfileId ?? null,
     extensions: {},
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
@@ -84,7 +93,7 @@ function makeCharacter(overrides: Partial<Character> = {}): Character {
 
 interface MockStoreOptions {
   diceScripts?: Script[];
-  scriptById?: Record<string, Script>;
+  scriptById?: Record<string, ScriptRow>;
   persona?: Persona | null;
   character?: Character | null;
 }
@@ -113,23 +122,29 @@ function makePersona(overrides: Partial<Persona> = {}): Persona {
 function makeStores(opts: MockStoreOptions = {}): StoreContainer {
   const diceScripts = opts.diceScripts ?? [];
   const scriptById = opts.scriptById ?? {};
-  return {
-    scripts: {
-      listAllEnabledDiceScriptsForChat: async () => [...diceScripts],
-      // Override path (fix 1): filter the mock's dice set by id membership,
-      // mirroring the real store's enabled+dice filter (the mock set is already
-      // dice+enabled by construction, so only id selection matters here).
-      listDiceScriptsByIds: async (ids: string[]) =>
-        diceScripts.filter((s) => ids.includes(s.id)),
-      getById: async (id: string) => scriptById[id] ?? null,
+  // The strict double keeps the three provided store members compiler-checked
+  // against the real store container; any other member the service paths
+  // start reading throws a labeled miss.
+  return strictTestDouble<StoreContainer>(
+    {
+      scripts: {
+        listAllEnabledDiceScriptsForChat: async () => [...diceScripts],
+        // Override path (fix 1): filter the mock's dice set by id membership,
+        // mirroring the real store's enabled+dice filter (the mock set is already
+        // dice+enabled by construction, so only id selection matters here).
+        listDiceScriptsByIds: async (ids: string[]) =>
+          diceScripts.filter((s) => ids.includes(s.id)),
+        getById: async (id: string) => scriptById[id] ?? null,
+      },
+      personas: {
+        getById: async () => opts.persona ?? null,
+      },
+      characters: {
+        getById: async () => opts.character ?? null,
+      },
     },
-    personas: {
-      getById: async () => opts.persona ?? null,
-    },
-    characters: {
-      getById: async () => opts.character ?? null,
-    },
-  } as unknown as StoreContainer;
+    "DiceScriptService stores",
+  );
 }
 
 // ─── Test script bodies ──────────────────────────────────────────────────────

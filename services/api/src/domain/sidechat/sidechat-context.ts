@@ -6,6 +6,9 @@ import {
 	type ChatId,
 	type ExperienceCopilotThreadId,
 	type PromptPresetId,
+	type PromptAttachment,
+	type StoryClock,
+	type StoryDeck,
 	isRecord,
 	normalizeSceneTrackerConfig,
 	SCENE_PROMPT_FORMAT,
@@ -14,7 +17,6 @@ import type {
 	CharacterStore,
 	ChatStore,
 	ChatSummaryStore,
-	CopilotContextLink,
 	ExperienceCopilotStore,
 	MessageStore,
 	PresetStore,
@@ -56,6 +58,7 @@ import {
 	type LoreEntryInput,
 } from "./sidechat-xml.js";
 import { renderAgentPlanSection } from "../agent-plan/agent-plan-prompt.js";
+import { readBranchStoryClock } from "../director/story-plan-sync.js";
 
 /**
  * The sidechat context loader (SIDECHAT_PLAN SC-3b, reshaped by SC-4d): loads
@@ -129,18 +132,6 @@ import { renderAgentPlanSection } from "../agent-plan/agent-plan-prompt.js";
  *   `rp_summary` event is ever written — so editing, disabling or deleting a
  *   summary in the RP chat changes what the sidechat sees on its next turn,
  *   in place.
- * - Pinned prompt presets (SC-23c): while the thread carries a
- *   `prompt_preset` context link, EVERY turn re-assembles the thread's chat +
- *   branch DRY with that preset (`assembleForChat({ presetId, dryRun: true })`
- *   — the per-request override, never the chat's own preset; dryRun advances
- *   no lore timer and no script state) and renders the payload through the
- *   shared RP prompt view (`rp-prompt-view.ts`) against the sidechat's held
- *   set — the branch's active lore ids — into a trailing `<rp_prompt>` static
- *   section. The discussion is «edit the block, ask again»: an edited preset
- *   block shows on the NEXT turn because nothing is cached. A deleted preset
- *   is a dangling link, skipped like every other dangling target — never a
- *   400 on the turn. Without a pin NOTHING changes (owner decision 1 holds
- *   by default; the pin is the whole point of the arm).
  *
  * Must stay true: NO store writes anywhere (the lore activation inside
  * buildPipelineContext runs dryRun, like every sidechat read); the RP prompt
@@ -157,6 +148,22 @@ import { renderAgentPlanSection } from "../agent-plan/agent-plan-prompt.js";
  * assembly can meter it into its own `story_plan` segment. Nothing renders
  * when the plan is empty — the section, the package field and the meter
  * segment are all absent/zero.
+ *
+ * DK-5b (DIRECTOR_DECK_CALENDAR_PLAN): the package gains TWO more
+ * present-only pieces, seated between the plan and the current scene —
+ * `<story_deck>` (the branch's twist cards, one suit-tagged line per card,
+ * read through the story-deck store's read seam) and the ONE `<story_time>`
+ * line (`Story time: day N, part, label`) read through the ONE clock-read
+ * composition (`readBranchStoryClock` — the same
+ * schema-over-latest-record composition the plan sync's projection gate
+ * runs). Each renders ONLY when its material exists: an empty deck and a
+ * null clock leave the package byte-identical to the pre-DK-5b one (pinned).
+ * The deck section rides the package (`storyDeckSection`) so the assembly
+ * meters its tokens into the SAME `story_plan` segment (the owner-sanctioned
+ * fold — the deck is story-direction material); the clock line is one line
+ * and rides the `context` remainder. The director asset
+ * (`agent-sidechat/director.md`) teaches both; these sections only carry
+ * the branch's data.
  */
 
 /** The stores/services this loader reads — `Pick`s so tests and callers can
@@ -180,6 +187,10 @@ export interface SidechatContextDeps {
 	/** DR-4b: the shared agent-plan store's READ seam — the thread's branch
 	 *  plan for the `<story_plan>` section (the sidechat never writes it). */
 	agentPlans: { get(owner: AgentPlanOwner): Promise<AgentPlan | null> };
+	/** DK-5b: the story-deck store's READ seam — the thread's branch deck for
+	 *  the `<story_deck>` section (the sidechat never writes it; the cards
+	 *  land through the proposal apply, DK-5a). */
+	storyDecks: { get(chatId: string, branchId: string): Promise<StoryDeck | null> };
 	/** SC-23c: pinned-preset existence — a dangling id skips the pin, exactly
 	 *  like every other dangling context-link target. */
 	presets: Pick<PresetStore, "getById">;
@@ -222,7 +233,10 @@ export interface SidechatEventMessage {
  *  wrong label (owner decision 3, SIDECHAT_PLAN SC-9, 2026-10-20).
  *  `story_plan` (DR-4b) = the `<story_plan>` section the loader renders when
  *  the thread's branch plan is non-empty — its own bucket so the meter shows
- *  the plan's cost separately from the rest of the constant context. */
+ *  the plan's cost separately from the rest of the constant context. Since
+ *  DK-5b it also carries the `<story_deck>` section's tokens (the
+ *  owner-sanctioned fold: the deck is story-direction material, its own
+ *  segment key would fork the meter's key list for one more bucket). */
 export const SIDECHAT_OOC_METER_SEGMENT_KEYS = [
 	"context",
 	"story_plan",
@@ -261,6 +275,12 @@ export interface SidechatContextPackage {
 	 *  the stream's assembly meters its tokens into the `story_plan` segment
 	 *  without a second derivation of what the section is. */
 	readonly storyPlanSection: string | null;
+	/** DK-5b: the thread's branch twist-deck section (`<story_deck>` — one
+	 *  suit-tagged line per card) or null when the branch deck has no cards.
+	 *  Already joined into `staticPackage`; carried separately so the
+	 *  assembly meters its tokens into the SAME `story_plan` segment (the
+	 *  deck is story-direction material — the owner-sanctioned fold). */
+	readonly storyDeckSection: string | null;
 	/** The frozen events, in merged-timeline order (SC-4d placement counts). */
 	readonly eventMessages: readonly SidechatEventMessage[];
 	/** The merged timeline's MESSAGE row count — the flow builder's alignment
@@ -357,30 +377,40 @@ export async function loadSidechatContext(
 	const branchPlan = await deps.agentPlans.get({ kind: "chatBranch", chatId, branchId });
 	const storyPlanSection = renderStoryPlanSection(branchPlan, chat);
 
+	// DK-5b: the branch's twist deck and story clock — both PRESENT-ONLY.
+	// The deck renders when the branch holds cards (the deck read is the
+	// story-deck store's read seam, the play route's own read); the clock
+	// line renders when the ONE clock-read composition resolves (the same
+	// composition the plan sync's projection gate runs — readBranchStoryClock).
+	// Empty deck / no clock renders nothing: the package stays byte-identical
+	// to the pre-DK-5b one (pinned by the context suite).
+	const branchDeck = await deps.storyDecks.get(chatId, branchId);
+	const storyDeckSection = renderStoryDeckSection(branchDeck);
+	const storyClock = await readBranchStoryClock(
+		chat.insightsConfig.tracker,
+		branchId as string,
+		(readBranchId) => deps.messages.getCurrentSceneTarget(readBranchId),
+	);
+	const storyTimeLine = storyClock === null ? null : renderStoryTimeLine(storyClock);
+
 	const sceneSection = renderCurrentSceneSection(await loadCurrentSceneText(deps, chat, branchId));
 
-	// SC-23c: the pinned-preset RP prompt views — one trailing section per
-	// pinned link, re-assembled dry on EVERY load (see the module doc).
-	const presetViews = await loadPinnedPresetViews(
-		deps,
-		thread.contextLinks,
-		chatId,
-		branchId,
-		branchMessages,
-		heldLoreEntryIds,
-	);
-
-	// Static package (SC-4d): the five settled sections (+ any pinned-preset
-	// RP prompt views, SC-23c) only — no timeline section exists anymore; the
-	// timeline walk below feeds the MESSAGE FLOW.
+	// Static package (SC-4d): the five settled sections only — no timeline
+	// section exists anymore; the timeline walk below feeds the MESSAGE FLOW.
+	// Prompt snapshots ride their originating message, not this context (dev
+	// attachment overhaul; the SC-23c pinned-preset views it replaced are gone).
+	// DK-5b seats the twist deck right after the plan (story-direction material
+	// grouped, mirroring DR-4b's seating rule) and the `<story_time>` line
+	// between the deck and the current scene.
 	const sections = [
 		characterSection,
 		personaSection,
 		loreSection,
 		objectivesSection,
 		storyPlanSection,
+		storyDeckSection,
+		storyTimeLine,
 		sceneSection,
-		...presetViews,
 	];
 	const staticPackage = sections.filter((section): section is string => section !== null).join("\n\n");
 
@@ -436,7 +466,7 @@ export async function loadSidechatContext(
 		});
 	}
 
-	return { staticPackage, storyPlanSection, eventMessages, messageCount, heldLoreEntryIds };
+	return { staticPackage, storyPlanSection, storyDeckSection, eventMessages, messageCount, heldLoreEntryIds };
 }
 
 // ─── Active lore (the branch's latest prompt trace) ──────────────────────────
@@ -490,47 +520,45 @@ async function loadLoreEntries(
  *  limit + the position map for the view's history placeholders). */
 type BranchMessageRow = { id: string; position: number };
 
-/** Render one `<rp_prompt>` view per pinned `prompt_preset` link, in link
- *  order: a dangling preset id (deleted) skips the pin — never a 400 on the
- *  turn, the same skip every other dangling context-link target gets. Each
- *  view comes from a DRY whole-branch assembly with THAT preset — the
- *  per-request override (never the chat's own preset, never a chat write),
- *  re-run on every call so an edited block shows on the next turn. */
-async function loadPinnedPresetViews(
+/** Resolve selected preset identities to message-owned RP reference views.
+ *  The returned snapshots are frozen onto the originating message at send
+ *  time and never re-resolved; later preset edits or deletion cannot rewrite them. */
+export async function resolveSidechatPromptAttachments(
 	deps: SidechatContextDeps,
-	links: readonly CopilotContextLink[],
-	chatId: ChatId,
-	branchId: ChatBranchId,
-	branchMessages: readonly BranchMessageRow[],
+	threadId: ExperienceCopilotThreadId,
+	selections: readonly { presetId: string }[],
 	heldLoreEntryIds: ReadonlySet<string>,
-): Promise<string[]> {
-	const presetLinks = links.filter((link) => link.targetType === "prompt_preset");
-	if (presetLinks.length === 0) return [];
+): Promise<PromptAttachment[]> {
+	if (selections.length === 0) return [];
+	const thread = await deps.experienceCopilot.getById(threadId);
+	if (thread === null || !isChatOwnedAgentThread(thread) || thread.branchId === null) {
+		throw new RpSyncThreadNotChatOwnedError(threadId);
+	}
+	const chatId = brandId<ChatId>(thread.chatId);
+	const branchId = brandId<ChatBranchId>(thread.branchId);
+	const branchMessages: readonly BranchMessageRow[] = await deps.messages.getMessages(branchId);
 	const positionByMessageId = new Map(branchMessages.map((message) => [message.id, message.position]));
-	const views: string[] = [];
-	for (const link of presetLinks) {
-		const preset = await deps.presets.getById(link.targetId);
+	const snapshots: PromptAttachment[] = [];
+	for (const selection of selections) {
+		const preset = await deps.presets.getById(selection.presetId);
 		if (preset === null) continue;
 		const assembled = await deps.assembly.assembleForChat({
-			chatId,
-			branchId,
-			model: "",
-			dryRun: true,
-			// The SC-2a whole-branch window — the same limit the loader's own
-			// buildPipelineContext call passes, so the view's history
-			// placeholders carry the branch's real positions.
+			chatId, branchId, model: "", dryRun: true,
 			recentMessageLimit: branchMessages.length,
-			presetId: brandId<PromptPresetId>(link.targetId),
+			presetId: brandId<PromptPresetId>(selection.presetId),
 		});
-		const view = renderRpPromptView({
+		const promptText = renderRpPromptView({
 			presetName: preset.name,
-			messages: mapFinalPayloadMessages(assembled.prompt.finalPayload, positionByMessageId, `preset ${link.targetId} assembly`),
+			messages: mapFinalPayloadMessages(assembled.prompt.finalPayload, positionByMessageId, `preset ${selection.presetId} assembly`),
 			layers: assembled.prompt.layers,
 			heldLoreEntryIds,
 		});
-		if (view !== null) views.push(view);
+		// Empty payloads have no reference view and therefore no snapshot: the
+		// confirmed indicator must show only material actually included, just as
+		// for a dangling preset. The successful turn still consumes selection.
+		if (promptText !== null) snapshots.push({ presetId: selection.presetId, displayName: preset.name, promptText });
 	}
-	return views;
+	return snapshots;
 }
 
 /** Map a frozen final payload (plain JSON — a dry assembly's response or a
@@ -635,6 +663,42 @@ function renderStoryPlanSection(plan: AgentPlan | null, chat: ChatRow): string |
 	const rendered = renderAgentPlanSection(plan);
 	if (rendered === "") return null;
 	return ["<story_plan>", rendered, "", renderStoryPlanTrackerFactsLine(chat), "</story_plan>"].join("\n");
+}
+
+// ─── Twist deck + story clock (DIRECTOR_DECK_CALENDAR_PLAN DK-5b) ──────
+
+/** Render the `<story_deck>` section (DK-5b): one suit-tagged line per card
+ *  in the deck's stored (play) order, each card's body indented under its
+ *  title line — the same `[tag] title` convention the plan section's task
+ *  list uses, with the suit where the plan puts the status. Null when the
+ *  deck is null (no row) or holds no cards — an empty deck renders NOTHING
+ *  (the byte-identical-when-absent rule; the deck is never rendered empty).
+ *  The director asset (`agent-sidechat/director.md`) teaches what the suits
+ *  and cards mean; this section only lists them. Pure. */
+function renderStoryDeckSection(deck: StoryDeck | null): string | null {
+	if (deck === null || deck.cards.length === 0) return null;
+	const lines: string[] = [];
+	for (const card of deck.cards) {
+		lines.push(`- [${card.suit}] ${card.title}`);
+		const bodyLines = card.body.split("\n");
+		if (card.body.trim() !== "") {
+			for (const bodyLine of bodyLines) lines.push(`  ${bodyLine}`);
+		}
+	}
+	return ["<story_deck>", ...lines, "</story_deck>"].join("\n");
+}
+
+/** Render the ONE `<story_time>` line (DK-5b): `Story time: day N`, plus the
+ *  named part of the day when the clock carries one, plus the free-form date
+ *  label when present — the packet's exact line shape. The section tag keeps
+ *  the package's grammar (every section is tagged); the wording is the
+ *  loader's own, like the tracker-facts line above. Pure. */
+function renderStoryTimeLine(clock: StoryClock): string {
+	const parts = [`day ${clock.day}`];
+	if (clock.part !== null) parts.push(clock.part);
+	const label = clock.label?.trim();
+	if (label !== undefined && label !== "") parts.push(label);
+	return `<story_time>Story time: ${parts.join(", ")}.</story_time>`;
 }
 
 // ─── Objectives (the chat row's state, via the RP path's own derivation) ─────

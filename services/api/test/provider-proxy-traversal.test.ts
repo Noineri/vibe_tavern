@@ -19,6 +19,7 @@ import {
 	type ProxyLookup,
 } from "../src/domain/providers/provider-fetch-factory.js";
 import { resolveModel } from "../src/infrastructure/ai/provider-executor-utils.js";
+import { testFetch } from "./test-fetch-seam.js";
 
 const PROXIED_TARGET = "http://203.0.113.10:8080";
 const TEST_PROXY_CERTIFICATE = Bun.file(new URL("./fixtures/provider-proxy-cert.pem", import.meta.url));
@@ -185,11 +186,11 @@ function startFixture(): Fixture {
 }
 
 function createTestCaFetch(): typeof fetch {
-	const trustedFetch = ((input: RequestInfo | URL, init?: RequestInit) =>
+	const trustedFetch = testFetch((input: Parameters<typeof fetch>[0], init?: RequestInit) =>
 		fetch(input, {
 			...init,
 			tls: { ca: [TEST_PROXY_CERTIFICATE] },
-		})) as typeof fetch;
+		}));
 	trustedFetch.preconnect = () => {};
 	return trustedFetch;
 }

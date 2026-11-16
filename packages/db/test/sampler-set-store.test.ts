@@ -13,8 +13,9 @@ import type { StoreClock, StoreIdGenerator } from "../src/persistence.js";
 // select: deleting a set must not touch the values profiles already applied).
 
 const FIXED_NOW = "2026-09-09T00:00:00.000Z";
+let nowIso = FIXED_NOW;
 
-const testClock: StoreClock = { now: () => FIXED_NOW };
+const testClock: StoreClock = { now: () => nowIso };
 
 let idCounters: Map<string, number>;
 const testIdGen: StoreIdGenerator = {
@@ -30,6 +31,7 @@ let store: SamplerSetStore;
 let providers: ProviderStore;
 
 beforeEach(async () => {
+  nowIso = FIXED_NOW;
   db = await createDb(":memory:");
   idCounters = new Map();
   store = new SamplerSetStore(db, { clock: testClock, idGenerator: testIdGen });
@@ -84,19 +86,32 @@ describe("sampler_sets store CRUD (LS-5a)", () => {
 
   test("update rewrites name and/or payload and bumps updatedAt only", async () => {
     const created = await store.create({ name: "before", payload: { temperature: 0.7 } });
+    expect(created.createdAt).toBe(FIXED_NOW);
+    expect(created.updatedAt).toBe(FIXED_NOW);
+
+    nowIso = "2026-09-09T00:05:00.000Z";
     const renamed = await store.update(created.id, { name: "after" });
     expect(renamed.name).toBe("after");
     expect(renamed.payload).toEqual({ temperature: 0.7 });
     expect(renamed.createdAt).toBe(FIXED_NOW);
-    expect(renamed.updatedAt).toBe(FIXED_NOW);
+    expect(renamed.updatedAt).toBe("2026-09-09T00:05:00.000Z");
 
+    nowIso = "2026-09-09T00:10:00.000Z";
     const resaved = await store.update(created.id, { payload: { temperature: 1.2, topK: 49 } });
     expect(resaved.name).toBe("after");
     expect(resaved.payload).toEqual({ temperature: 1.2, topK: 49 });
+    expect(resaved.createdAt).toBe(FIXED_NOW);
+    expect(resaved.updatedAt).toBe("2026-09-09T00:10:00.000Z");
+
+    const reread = await store.getById(created.id);
+    expect(reread).toEqual(resaved);
   });
 
-  test("update and delete throw for an unknown id", async () => {
+  test("update throws for an unknown id while delete is a no-op", async () => {
+    const existing = await store.create({ name: "Keep", payload: { temperature: 0.8 } });
     await expect(store.update("sset_ghost", { name: "x" })).rejects.toThrow(/not found/);
+    await expect(store.delete("sset_ghost")).resolves.toBeUndefined();
+    expect(await store.getById(existing.id)).toEqual(existing);
   });
 
   test("delete removes the row", async () => {

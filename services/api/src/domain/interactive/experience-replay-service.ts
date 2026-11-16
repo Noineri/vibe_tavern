@@ -44,7 +44,7 @@ import {
   resolveHumanViewer,
   seedToNumeric,
 } from "./experience-service.js";
-import { ExperienceResourceService, type ResolvedRulesSource } from "./experience-resource-service.js";
+import { ExperienceResourceService, parseContextMode, type ResolvedRulesSource } from "./experience-resource-service.js";
 
 // ─── Replay outcome ──────────────────────────────────────────────────────────
 
@@ -332,7 +332,7 @@ export class ExperienceReplayService {
     const history: ExperienceAction[] = steps
       .filter((s) => s.kind === "action")
       .sort((a, b) => a.sequence - b.sequence)
-      .map((s) => parseJson<ExperienceAction>(s.inputJson ?? "null", null as never))
+      .map((s) => parseJson<ExperienceAction | null>(s.inputJson ?? "null", null))
       .filter((a): a is ExperienceAction => a !== null);
 
     const rules: ResolvedRulesSource = {
@@ -385,7 +385,7 @@ export class ExperienceReplayService {
       participants: parseJson<ExperienceParticipant[]>(session.participantsJson, []),
       initialSettings: parseJson<unknown>(session.initialSettingsJson, {}),
       capabilityGrants: parseJson<ExperienceCapability[]>(session.capabilityGrantsJson, []),
-      contextMode: session.contextMode as never,
+      contextMode: parseContextMode(session.contextMode),
       rulesRevision: session.rulesRevision,
       rulesSourceHash: session.rulesSourceHash,
       visualId: session.visualId,

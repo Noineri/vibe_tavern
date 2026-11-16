@@ -107,7 +107,17 @@ async function openDesktopPreview(rules?: RegexScriptImportDraft[]) {
   if (!input) throw new Error("Character import input did not render");
   setFiles(input, [CARD_FILE]);
   fireEvent.change(input);
-  await waitFor(() => expect(view.baseElement.textContent).toContain("add_to_library"));
+  // RXU-25 (CI_WEB_TIMING_FLAKES_REPORT): park on the PREVIEW-committed frame,
+  // not the footer. `add_to_library` is ImportModalFooter's confirm label and
+  // renders unconditionally from the FIRST commit (ImportModals.tsx:420,
+  // disabled until parsed), so this await could resolve before
+  // parseCharacterFile's async continuation committed — and the callers'
+  // queries raced the CharacterImportPreview mount (the switch query found no
+  // element; the ScrollAreaRoot act(...) warning was that same late commit).
+  // `ready_to_import` renders only from the preview body, in the SAME commit
+  // that mounts the Regex card's switch — parking here narrows the race to
+  // zero for every caller.
+  await waitFor(() => expect(view.baseElement.textContent).toContain("ready_to_import"));
   return view;
 }
 

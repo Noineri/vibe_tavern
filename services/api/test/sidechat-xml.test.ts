@@ -275,7 +275,12 @@ describe("sidechat XML renderers (SC-3a)", () => {
 		});
 
 		it("an event kind outside the renderer's union throws instead of silently dropping the event", () => {
-			const bogus = { rowType: "event", kind: "not_a_kind", payload: {} } as unknown as SidechatTimelineEvent;
+			// Hostile fixture: a timeline row whose kind is not in the renderer's
+			// union — a corrupted persisted json column, exactly what the throw
+			// path guards. The value is unrepresentable as SidechatTimelineEvent
+			// by construction, so it rides the JSON-parse wire boundary the real
+			// renderer input arrives through.
+			const bogus = JSON.parse(`{"rowType":"event","kind":"not_a_kind","payload":{}}`) as SidechatTimelineEvent;
 			expect(() => renderTimelineSection([bogus])).toThrow(/unknown timeline event kind/);
 		});
 
@@ -304,7 +309,9 @@ describe("sidechat XML renderers (SC-3a)", () => {
 		});
 
 		it("a message row is outside the timeline renderer's contract (SC-4d: OOC turns ride the message flow) — it throws, never renders a User: line", () => {
-			const bogus = { rowType: "message", role: "user", content: "an OOC turn" } as unknown as SidechatTimelineEvent;
+			// Hostile fixture (same JSON-parse wire boundary as the bogus-kind
+			// case): a message row reaching the events-only renderer.
+			const bogus = JSON.parse(`{"rowType":"message","role":"user","content":"an OOC turn"}`) as SidechatTimelineEvent;
 			expect(() => renderTimelineEvent(bogus)).toThrow(/unknown timeline event kind/);
 		});
 	});

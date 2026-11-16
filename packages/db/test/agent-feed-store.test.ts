@@ -78,23 +78,50 @@ describe('AFP-9 paged DB read seam', () => {
   test('newest/before/after pages preserve the full timeline order, including exact cross-table ties', async () => {
     const { db, store } = await setup();
     for (let i = 0; i < 12; i++) {
+      if (i === 8) continue;
       const common = { id: `row-${i.toString().padStart(2, '0')}`, threadId: 't1', seq: i < 2 ? null : i, createdAt: NOW };
       if (i % 2) db.insert(schema.agentThreadContextEvents).values({ ...common, kind: 'branch_forked', payloadJson: '{"at":0}' }).run();
       else db.insert(schema.experienceCopilotMessages).values({ ...common, role: 'user', content: `body-${i}` }).run();
     }
+    // Exact (seq, createdAt, id) ties across tables: message strictly precedes event.
+    db.insert(schema.agentThreadContextEvents).values({
+      id: 'tie-null', threadId: 't1', seq: null, kind: 'branch_forked', payloadJson: '{"at":0}', createdAt: NOW,
+    }).run();
+    db.insert(schema.experienceCopilotMessages).values({
+      id: 'tie-null', threadId: 't1', seq: null, role: 'user', content: 'tie-null-msg', createdAt: NOW,
+    }).run();
+    db.insert(schema.agentThreadContextEvents).values({
+      id: 'tie', threadId: 't1', seq: 8, kind: 'branch_forked', payloadJson: '{"at":8}', createdAt: NOW,
+    }).run();
+    db.insert(schema.experienceCopilotMessages).values({
+      id: 'tie', threadId: 't1', seq: 8, role: 'user', content: 'tie-msg', createdAt: NOW,
+    }).run();
+
     const page = await store.readFeedPage('t1', { mode: 'newest', limit: 4 });
     expect(page.status).toBe('ready');
     if (page.status !== 'ready') throw new Error('Expected page');
-    expect(page.records.map((r) => r.position.id)).toEqual(['row-08', 'row-09', 'row-10', 'row-11']);
+    expect(page.records.map((r) => `${r.record}:${r.position.id}`)).toEqual([
+      'event:tie', 'event:row-09', 'message:row-10', 'event:row-11',
+    ]);
     expect(page.hasOlder).toBe(true);
     expect(page.hasNewer).toBe(false);
     const cursor = { threadId: 't1', epoch: page.historyEpoch, position: page.records[0]!.position };
     const older = await store.readFeedPage('t1', { mode: 'before', cursor, limit: 4 });
     if (older.status !== 'ready') throw new Error('Expected older page');
-    expect(older.records.map((r) => r.position.id)).toEqual(['row-04', 'row-05', 'row-06', 'row-07']);
+    expect(older.records.map((r) => `${r.record}:${r.position.id}`)).toEqual([
+      'event:row-05', 'message:row-06', 'event:row-07', 'message:tie',
+    ]);
     const after = await store.readFeedPage('t1', { mode: 'after', cursor: { ...cursor, position: older.records.at(-1)!.position }, limit: 4 });
     if (after.status !== 'ready') throw new Error('Expected newer page');
     expect(after.records).toEqual(page.records);
+    const oldest = await store.readFeedPage('t1', {
+      mode: 'before', cursor: { ...cursor, position: older.records[0]!.position }, limit: 7,
+    });
+    if (oldest.status !== 'ready') throw new Error('Expected oldest page');
+    expect(oldest.records.map((r) => `${r.record}:${r.position.id}`)).toEqual([
+      'message:row-00', 'event:row-01', 'message:tie-null', 'event:tie-null', 'message:row-02', 'event:row-03', 'message:row-04',
+    ]);
+    expect(oldest.hasOlder).toBe(false);
     expect(await store.readFeedPage('missing', { mode: 'newest', limit: 4 })).toEqual({ status: 'missing-thread' });
   });
 
@@ -231,12 +258,37 @@ describe('AFP-9 paged DB read seam', () => {
     }
     const page = ready(await store.readFeedPage('t1', { mode: 'newest', limit: 20 }));
     expect(JSON.stringify(page)).not.toContain('SECRET');
+    const emptyFacts = {
+      payloadValid: true, payloadType: 'object',
+      fromPosition: null, toPosition: null, position: null, at: null,
+      messageId: null, messagesType: null, variantsType: null, messageCount: null, variantCount: null,
+      fromId: null, fromName: null, toId: null, toName: null,
+    };
     const facts = page.records.flatMap((r) => r.record === 'event' ? [{ id: r.position.id, facts: r.facts }] : []);
-    expect(facts.find((r) => r.id === 'e0')?.facts).toMatchObject({ payloadValid: true, messageCount: 1, fromPosition: 0 });
-    expect(facts.find((r) => r.id === 'e1')?.facts.variantCount).toBe(1);
-    expect(facts.find((r) => r.id === 'e4')?.facts).toMatchObject({ fromName: 'Old', toName: 'New' });
-    expect(facts.find((r) => r.id === 'broken')?.facts.payloadValid).toBe(false);
-    expect(facts.find((r) => r.id === 'malformed-facts')?.facts).toMatchObject({ fromPosition: null, messageCount: null });
+    expect(facts.find((r) => r.id === 'e0')?.facts).toEqual({
+      ...emptyFacts, fromPosition: 0, toPosition: 2, messagesType: 'array', messageCount: 1,
+    });
+    expect(facts.find((r) => r.id === 'e1')?.facts).toEqual({
+      ...emptyFacts, position: 1, variantsType: 'array', variantCount: 1,
+    });
+    expect(facts.find((r) => r.id === 'e2')?.facts).toEqual({
+      ...emptyFacts, position: 2, messageId: 'rp',
+    });
+    expect(facts.find((r) => r.id === 'e3')?.facts).toEqual({
+      ...emptyFacts, at: 3,
+    });
+    expect(facts.find((r) => r.id === 'e4')?.facts).toEqual({
+      ...emptyFacts, fromId: 'a', fromName: 'Old', toId: 'b', toName: 'New',
+    });
+    expect(facts.find((r) => r.id === 'broken')?.facts).toEqual({
+      ...emptyFacts, payloadValid: false,
+    });
+    expect(facts.find((r) => r.id === 'null')?.facts).toEqual({
+      ...emptyFacts, payloadValid: false,
+    });
+    expect(facts.find((r) => r.id === 'malformed-facts')?.facts).toEqual({
+      ...emptyFacts, messagesType: 'text',
+    });
   });
 
   test('10k rows hydrate only the requested window; neither legacy full-list method runs', async () => {

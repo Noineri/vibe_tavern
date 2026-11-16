@@ -97,18 +97,38 @@ describe("importCharacterCardV3Json", () => {
     expect(result.character.name).toBe("Flat Card");
   });
 
-  it("strips control characters from text fields", () => {
+  it("strips control characters from character text fields", () => {
     const card = {
       ...minimalCard,
       data: {
         ...minimalCard.data,
         name: "Test\u0001Char",
         description: "desc\u0002ription",
+        personality: "calm\u0003wise",
+        scenario: "room\u0004one",
+        first_mes: "hello\u0005there",
+        mes_example: "ex\u0006ample",
+        system_prompt: "sys\u0007prompt",
+        post_history_instructions: "post\u0008hist",
+        depth_prompt: "depth\u000bnote",
+        creator_notes: "creator\u000cnote",
+        alternate_greetings: ["alt\u000eone", "alt\u000ftwo"],
+        tags: ["tag\u0011a", "tag\u001fb"],
       },
     };
     const result = importCharacterCardV3Json(card);
     expect(result.character.name).toBe("TestChar");
     expect(result.character.description).toBe("description");
+    expect(result.character.personalitySummary).toBe("calmwise");
+    expect(result.character.defaultScenario).toBe("roomone");
+    expect(result.character.firstMessage).toBe("hellothere");
+    expect(result.character.mesExample).toBe("example");
+    expect(result.character.systemPrompt).toBe("sysprompt");
+    expect(result.character.postHistoryInstructions).toBe("posthist");
+    expect(result.character.depthPrompt).toBe("depthnote");
+    expect(result.character.creatorNotes).toBe("creatornote");
+    expect(result.character.alternateGreetings).toEqual(["altone", "alttwo"]);
+    expect(result.character.tags).toEqual(["taga", "tagb"]);
   });
 
   it("generates deterministic IDs from the same input", () => {
@@ -307,10 +327,12 @@ describe("parseSillyTavernChat", () => {
     ].join("\n");
 
     const result = parseSillyTavernChat(jsonl);
-    expect(result.messages[0].variants).toHaveLength(3);
-    expect(result.messages[0].variants[0].isSelected).toBe(false);
-    expect(result.messages[0].variants[1].isSelected).toBe(true);
-    expect(result.messages[0].variants[2].isSelected).toBe(false);
+    expect(result.messages[0].content).toBe("Reply A");
+    expect(result.messages[0].variants).toEqual([
+      { content: "Reply A", isSelected: false, reasoning: undefined },
+      { content: "Reply B", isSelected: true, reasoning: undefined },
+      { content: "Reply C", isSelected: false, reasoning: undefined },
+    ]);
   });
 
   it("identifies system messages", () => {
@@ -416,7 +438,7 @@ describe("serializeSillyTavernChat", () => {
       characterName: "Bot",
       messages: [
         { name: "User", isUser: true, isSystem: false, content: "Hello!", sendDate: "1234" },
-        { name: "Bot", isUser: false, isSystem: false, content: "Hi!", sendDate: "1235", swipes: ["Hi!", "Hey!"], swipeId: 0 },
+        { name: "Bot", isUser: false, isSystem: false, content: "Hi!", sendDate: "1235", swipes: ["Hi!", "Hey!"], swipeId: 1 },
       ],
     });
 
@@ -424,8 +446,23 @@ describe("serializeSillyTavernChat", () => {
     expect(parsed.metadata.userName).toBe("User");
     expect(parsed.metadata.characterName).toBe("Bot");
     expect(parsed.messages).toHaveLength(2);
-    expect(parsed.messages[0].content).toBe("Hello!");
-    expect(parsed.messages[1].variants).toHaveLength(2);
+    expect(parsed.messages[0]).toMatchObject({
+      role: "user",
+      name: "User",
+      content: "Hello!",
+      createdAt: 1234,
+      variants: [{ content: "Hello!", isSelected: true }],
+    });
+    expect(parsed.messages[1]).toMatchObject({
+      role: "assistant",
+      name: "Bot",
+      content: "Hi!",
+      createdAt: 1235,
+      variants: [
+        { content: "Hi!", isSelected: false },
+        { content: "Hey!", isSelected: true },
+      ],
+    });
   });
 });
 
@@ -915,16 +952,21 @@ describe("flattenV2CompatFields", () => {
 
   it("keeps existing top-level ST meta fields instead of overwriting", () => {
     // A re-export of an already-hybrid card must be stable: don't clobber fav /
-    // create_date / avatar that were already there. (Content fields, however,
-    // are always re-synced from `data` — see next test.)
+    // create_date / avatar / talkativeness / creatorcomment that were already
+    // there. (Content fields, however, are always re-synced from `data`.)
     const hybrid = JSON.parse(JSON.stringify(bareV3));
+    delete hybrid.data.creator_notes;
     hybrid.fav = true;
     hybrid.avatar = "kieran.png";
     hybrid.create_date = "2020-01-01T00:00:00.000Z";
+    hybrid.talkativeness = "0.8";
+    hybrid.creatorcomment = "Existing comment.";
     const card = flattenV2CompatFields(hybrid);
     expect(card.fav).toBe(true);
     expect(card.avatar).toBe("kieran.png");
     expect(card.create_date).toBe("2020-01-01T00:00:00.000Z");
+    expect(card.talkativeness).toBe("0.8");
+    expect(card.creatorcomment).toBe("Existing comment.");
   });
 
   it("always re-syncs top-level content fields from `data` (no drift)", () => {
@@ -932,10 +974,22 @@ describe("flattenV2CompatFields", () => {
     // fields, flatten must overwrite them from the canonical `data` block.
     const stale = JSON.parse(JSON.stringify(bareV3));
     stale.name = "STALE NAME";
+    stale.description = "STALE DESC";
+    stale.personality = "STALE PERSONALITY";
+    stale.scenario = "STALE SCENARIO";
     stale.first_mes = "STALE FIRST MES";
+    stale.mes_example = "STALE EXAMPLE";
+    stale.tags = ["stale-tag"];
+    stale.creatorcomment = "STALE COMMENT";
     const card = flattenV2CompatFields(stale);
-    expect(card.name).toBe("Kieran Sullivan");
+    expect(card.name).toBe(bareV3.data.name);
+    expect(card.description).toBe(bareV3.data.description);
+    expect(card.personality).toBe(bareV3.data.personality);
+    expect(card.scenario).toBe(bareV3.data.scenario);
     expect(card.first_mes).toBe(bareV3.data.first_mes);
+    expect(card.mes_example).toBe(bareV3.data.mes_example);
+    expect(card.tags).toEqual(bareV3.data.tags);
+    expect(card.creatorcomment).toBe(bareV3.data.creator_notes);
   });
 
   it("does not mutate the input", () => {
@@ -1018,9 +1072,22 @@ describe("vtfContentToImportedBundle", () => {
     expect(bundle.character.depthPromptRole).toBe("system");
     expect(bundle.character.systemPrompt).toBe("Respond in second person.");
     expect(bundle.character.tags).toEqual(["modern", "werewolf"]);
-    // The seeded opening mirrors the monolith's greeting set.
+    expect(bundle.character.extensions).toEqual({
+      creator: "anonymous",
+      character_version: "1.0",
+      talkativeness: "0.5",
+    });
+    expect(bundle.version.title).toBe("1.0");
+    // The seeded opening and extension-derived metadata mirror the monolith's content.
     expect(bundle.normalized.firstMessage).toBe("The door creaks open.");
     expect(bundle.normalized.alternateGreetings).toEqual(["A second opener."]);
+    expect(bundle.normalized.creator).toBe("anonymous");
+    expect(bundle.normalized.characterVersion).toBe("1.0");
+    expect(bundle.normalized.extensions).toEqual({
+      creator: "anonymous",
+      character_version: "1.0",
+      talkativeness: "0.5",
+    });
   });
 
   it("promotes a nested character_book out of extensions into the dedicated field", () => {
@@ -1048,10 +1115,30 @@ describe("vtfContentToImportedBundle", () => {
   it("strips control characters from string fields", () => {
     const content = fullContent();
     content.name = "Silv\x07ius";
+    content.description = "Watch\x01ful";
+    content.personalitySummary = "ca\x02lm";
+    content.defaultScenario = "tav\x03ern";
     content.firstMessage = "Door\x0bcreaks";
+    content.mesExample = "Ex\x04ample";
+    content.systemPrompt = "Sys\x05tem";
+    content.postHistoryInstructions = "Post\x06note";
+    content.depthPrompt = "Scar\x08hint";
+    content.creatorNotes = "Auth\x0cnote";
+    content.alternateGreetings = ["Alt\x0eone", "Alt\x0ftwo"];
+    content.tags = ["t\x10a", "t\x1fb"];
     const bundle = vtfContentToImportedBundle(content, "m");
     expect(bundle.character.name).toBe("Silvius");
+    expect(bundle.character.description).toBe("Watchful");
+    expect(bundle.character.personalitySummary).toBe("calm");
+    expect(bundle.character.defaultScenario).toBe("tavern");
     expect(bundle.character.firstMessage).toBe("Doorcreaks");
+    expect(bundle.character.mesExample).toBe("Example");
+    expect(bundle.character.systemPrompt).toBe("System");
+    expect(bundle.character.postHistoryInstructions).toBe("Postnote");
+    expect(bundle.character.depthPrompt).toBe("Scarhint");
+    expect(bundle.character.creatorNotes).toBe("Authnote");
+    expect(bundle.character.alternateGreetings).toEqual(["Altone", "Alttwo"]);
+    expect(bundle.character.tags).toEqual(["ta", "tb"]);
   });
 
   it("throws when the name is empty", () => {

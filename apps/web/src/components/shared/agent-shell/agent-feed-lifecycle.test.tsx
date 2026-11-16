@@ -32,6 +32,7 @@ import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import type { AgentFeedQuery, AgentFeedResponse, ExperienceCopilotMessageWire } from "@vibe-tavern/api-contracts";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import { agentFeedPageFromMessages } from "../../../../test/agent-feed-page.js";
+import { strictTestDouble } from "../../../../test/strict-test-double.js";
 import type { AgentHostTransport } from "../../../lib/agent-host-registry.js";
 import type { getAgentEventDetail, getAgentFeedPage } from "../../../api/agent-feed-api.js";
 import type { AgentFeedLocalMutation } from "./agent-feed-reconcile.js";
@@ -62,10 +63,14 @@ const fakeDetail: typeof getAgentEventDetail = async () => {
   throw new Error("detail reads are AFP-16's subject — not this suite");
 };
 
-// `as unknown as` — the transport type carries every built-in route; this
-// suite exercises only `feed` (and the actions' deleteTurn/editMessage
-// below), and the double is the DI seam, not a mock of the real client.
-const pagedTransport = { feed: { page: fakeFeedPage, detail: fakeDetail } } as unknown as AgentHostTransport;
+// The transport type carries every built-in route; this suite exercises only
+// `feed` (and the actions' deleteTurn/editMessage below), and the double is
+// the DI seam, not a mock of the real client — so an unprovided route throws
+// a labeled miss instead of answering `undefined` (the strict double seam).
+const pagedTransport = strictTestDouble<AgentHostTransport>(
+  { feed: { page: fakeFeedPage, detail: fakeDetail } },
+  "pagedTransport",
+);
 const legacyTransport = {} as AgentHostTransport;
 
 beforeEach(() => {
@@ -317,12 +322,19 @@ function turnActionsHarness(wireOutcome: boolean) {
   const applyLocalOutcome = mock((_mutation: AgentFeedLocalMutation) => {});
   const loadAround = mock((_messageId: string) => {});
   const onTurnSettled = mock((_ok: boolean) => {});
-  const transport = {
-    // The server names the deleted rows (AFP-7's delete wire) — the turn
-    // actions carry THIS list, never the caller's single messageId guess.
-    deleteTurn: mock(async () => ({ deletedMessageIds: ["m4", "m5"] })),
-    editMessage: mock(async () => ({})),
-  } as unknown as AgentHostTransport;
+  const transport = strictTestDouble<AgentHostTransport>(
+    {
+      // The server names the deleted rows (AFP-7's delete wire) — the turn
+      // actions carry THIS list, never the caller's single messageId guess.
+      // deletedUserMessageId is part of the wire result; these turns delete
+      // assistant rows only.
+      deleteTurn: mock(async () => ({ deletedMessageIds: ["m4", "m5"], deletedUserMessageId: null })),
+      // The edit's refreshed row — the hook discards it (the store refetches
+      // through the settle refresh), so any valid wire row answers.
+      editMessage: mock(async () => row("A", "m4", 4)),
+    },
+    "turnActionsTransport",
+  );
   const noop = () => {};
   // CopilotStreamOpts' required pair — the actions never invoke them in
   // these flows (no stream is started); the shape only satisfies the type.
@@ -364,6 +376,7 @@ describe("useAgentTurnActions — local-outcome wiring", () => {
     // An invalidation, not a neighborhood re-read: loadAround stays quiet.
     expect(loadAround).not.toHaveBeenCalled();
     expect(onTurnSettled).toHaveBeenCalledWith(true);
+    expect(applyLocalOutcome.mock.invocationCallOrder[0]).toBeLessThan(onTurnSettled.mock.invocationCallOrder[0]!);
   });
 
   it("an assistant-row edit marks the row, re-reads its neighborhood, THEN settles", async () => {
@@ -376,6 +389,8 @@ describe("useAgentTurnActions — local-outcome wiring", () => {
     expect(applyLocalOutcome).toHaveBeenCalledWith({ editedMessageIds: ["m2"] });
     expect(loadAround).toHaveBeenCalledWith("m2");
     expect(onTurnSettled).toHaveBeenCalledWith(true);
+    expect(applyLocalOutcome.mock.invocationCallOrder[0]).toBeLessThan(loadAround.mock.invocationCallOrder[0]!);
+    expect(loadAround.mock.invocationCallOrder[0]).toBeLessThan(onTurnSettled.mock.invocationCallOrder[0]!);
   });
 
   it("a legacy host (no feedOutcome seam) settles exactly as before — no outcome calls", async () => {

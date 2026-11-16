@@ -96,7 +96,10 @@ describe("frame runtime artifact — eval smoke", () => {
     // new Function keeps the eval out of module scope; the IIFE assigns the
     // global, which we read back through the typed twin.
     new Function(EXPERIENCE_FRAME_RUNTIME_SOURCE)();
-    const g = globalThis as unknown as { __vtFrameRuntime?: ExperienceFrameRuntimeApi };
+    // The documented test-driver view (the 7e comparability fact): the eval'd
+    // artifact publishes its global THROUGH an intersection with the real
+    // globalThis — not a bare-and erasure.
+    const g = globalThis as typeof globalThis & { __vtFrameRuntime?: ExperienceFrameRuntimeApi };
     expect(g.__vtFrameRuntime).toBeTruthy();
     const api = g.__vtFrameRuntime;
     if (api === undefined) return;
@@ -226,13 +229,20 @@ describe("frame runtime artifact — eval smoke", () => {
 // invisible). These tests boot the committed artifact with NO driver
 // overrides, against a Chrome-like rAF stub that validates its receiver.
 describe("frame runtime artifact — default-drivers boot", () => {
-  type FrameGlobal = {
+  // The documented test-driver view (the 7e comparability fact): the frame
+  // document's globals as an intersection with the real globalThis — the
+  // artifact writes these members, this suite reads them — not a bare-and
+  // erasure. `requestAnimationFrame` is OMITTED from the base before the
+  // re-typed member is added: a bare intersection of the two signatures would
+  // demand BOTH return types on every write (the global's rAF returns a
+  // number; the Chrome-like stub's handle id rides the same contract).
+  type FrameGlobal = Omit<typeof globalThis, "requestAnimationFrame"> & {
     __vtFrameRuntime?: ExperienceFrameRuntimeApi;
     __vtLoopBooted?: boolean;
     __vtLoopHandle?: { stop(): void };
-    requestAnimationFrame?: (cb: (now: number) => void) => void;
+    requestAnimationFrame?: (cb: (now: number) => void) => number;
   };
-  const fg = globalThis as unknown as FrameGlobal;
+  const fg = globalThis as FrameGlobal;
 
   /** Eval the artifact if a filtered run skipped the smoke block above. */
   function ensureRuntime(): ExperienceFrameRuntimeApi {
@@ -309,10 +319,11 @@ describe("frame runtime artifact — default-drivers boot", () => {
     // every receiver so the regression pins WHAT the loop actually calls.
     const receivers: unknown[] = [];
     const driven: Array<(now: number) => void> = [];
-    const chromeLike = function (this: unknown, cb: (now: number) => void): void {
+    const chromeLike = function (this: unknown, cb: (now: number) => void): number {
       if (this !== globalThis) throw new TypeError("Illegal invocation");
       receivers.push(this);
       driven.push(cb);
+      return driven.length;
     };
     const original = fg.requestAnimationFrame;
     fg.requestAnimationFrame = chromeLike;

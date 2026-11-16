@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { buildCoauthorReviewEnvelope, coauthorReviewActivityFromResult, coauthorReviewEnvelopeSchema, type CoauthorReviewActivity } from "./coauthor-review.js";
+import { buildCoauthorReviewEnvelope, coauthorReviewActivityFromResult, coauthorReviewEnvelopeSchema, type CoauthorReviewActivity } from "../src/coauthor-review.js";
 
 const profile = { toolCallId: "profile", toolName: "write_profile", status: "done", target: "profile", proposed: "# PERSONALITY\nNew", summary: "Edited", args: { profileMd: "# PERSONALITY\nNew" } } satisfies CoauthorReviewActivity;
 

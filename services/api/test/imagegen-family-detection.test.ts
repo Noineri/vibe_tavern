@@ -27,11 +27,12 @@ import {
 import type { ImageGenModelDetectionMetadata } from "../src/domain/imagegen/imagegen-backend.js";
 import { a1111Factory } from "../src/domain/imagegen/backends/a1111.js";
 import { comfyImageGenFactory } from "../src/domain/imagegen/backends/comfyui.js";
+import { testFetch } from "./test-fetch-seam.js";
 
 /** A fetch double over an in-memory URL router (path prefix → JSON body or
  *  status). Unmatched URLs 404 — an honest miss, never a throw. */
 function civitaiStub(routes: Record<string, unknown>): typeof fetch {
-  return async (input) => {
+  return testFetch(async (input) => {
     const url = new URL(String(input));
     const key = `${url.pathname}${url.search}`;
     for (const [prefix, body] of Object.entries(routes)) {
@@ -40,21 +41,21 @@ function civitaiStub(routes: Record<string, unknown>): typeof fetch {
       }
     }
     return new Response("nope", { status: 404 });
-  };
+  });
 }
 
 /** Every Civitai request this transport saw (path + headers) — the
  *  User-Agent pin below reads these. */
 function civitaiRecorder(): { fetch: typeof fetch; seen: Array<{ path: string; userAgent?: string; accept?: string }> } {
   const seen: Array<{ path: string; userAgent?: string; accept?: string }> = [];
-  const transport: typeof fetch = async (input, init) => {
+  const transport: typeof fetch = testFetch(async (input, init) => {
     const url = new URL(String(input));
     const headers = ((init?.headers ?? {}) as Record<string, string>);
     if (url.origin === "https://civitai.com") {
       seen.push({ path: url.pathname, userAgent: headers["User-Agent"], accept: headers.Accept });
     }
     return new Response("nope", { status: 404 });
-  };
+  });
   return { fetch: transport, seen };
 }
 
@@ -90,10 +91,10 @@ describe("family detection — source (a): backend-native metadata", () => {
     const civitaiCalls: string[] = [];
     const sidecarReads: string[] = [];
     const deps: FamilyDetectionDeps = {
-      civitaiFetch: async (input) => {
+      civitaiFetch: testFetch(async (input) => {
         civitaiCalls.push(String(input));
         return new Response("nope", { status: 404 });
-      },
+      }),
       readSidecarFile: async (path) => {
         sidecarReads.push(path);
         return undefined;
@@ -299,9 +300,9 @@ describe("family detection — source (c): Civitai public by-hash", () => {
     }
     const offline = await run(
       { sha256: "e".repeat(64) },
-      makeDeps({}, async () => {
+      makeDeps({}, testFetch(async () => {
         throw new Error("connect ECONNREFUSED");
-      }),
+      })),
     );
     expect(offline.ok).toBe(false);
     if (!offline.ok) {
@@ -313,7 +314,7 @@ describe("family detection — source (c): Civitai public by-hash", () => {
     // The SDXL flow exercises BOTH requests (by-hash + the model tag
     // corpus follow-up); the recorder pins each one's headers.
     const recorder = civitaiRecorder();
-    const civitai: typeof fetch = async (input, init) => {
+    const civitai: typeof fetch = testFetch(async (input, init) => {
       const url = new URL(String(input));
       const headers = ((init?.headers ?? {}) as Record<string, string>);
       if (url.origin === "https://civitai.com") {
@@ -326,7 +327,7 @@ describe("family detection — source (c): Civitai public by-hash", () => {
         return Response.json({ tags: ["photorealistic"] });
       }
       return new Response("nope", { status: 404 });
-    };
+    });
     const result = await run({ sha256: "g".repeat(64) }, makeDeps({}, civitai));
     expect(result).toEqual({
       ok: true,
@@ -430,7 +431,7 @@ describe("family detection — real backend readers (failure honesty)", () => {
   test("a1111 extension probe: non-2xx throws the typed reason and the ladder records it at source (d)", async () => {
     const backend = a1111Factory({
       endpoint: "http://127.0.0.1:7860",
-      fetch: async (input) => {
+      fetch: testFetch(async (input) => {
         const url = new URL(String(input));
         if (url.pathname.endsWith("/sd-models")) {
           return Response.json([
@@ -438,7 +439,7 @@ describe("family detection — real backend readers (failure honesty)", () => {
           ]);
         }
         return new Response("boom", { status: 500 });
-      },
+      }),
     });
     const result = await detectImageGenFamily({ backend, model: "m", deps: makeDeps() });
     expect(result.ok).toBe(false);
@@ -453,16 +454,16 @@ describe("family detection — real backend readers (failure honesty)", () => {
   test("a1111 extension probe: transport error throws (wrapped); 200+empty base_model stays the empty result", async () => {
     const offline = a1111Factory({
       endpoint: "http://127.0.0.1:7860",
-      fetch: async () => {
+      fetch: testFetch(async () => {
         throw new Error("connect ECONNREFUSED");
-      },
+      }),
     });
     await expect(offline.readModelPresetFromExtension!("X:/ckpt/m.safetensors")).rejects.toThrow(
       "network error",
     );
     const empty = a1111Factory({
       endpoint: "http://127.0.0.1:7860",
-      fetch: async () => Response.json({ source: "preset", base_model: "" }),
+      fetch: testFetch(async () => Response.json({ source: "preset", base_model: "" })),
     });
     await expect(empty.readModelPresetFromExtension!("X:/ckpt/m.safetensors")).resolves.toEqual({});
   });
@@ -470,14 +471,14 @@ describe("family detection — real backend readers (failure honesty)", () => {
   test("comfy reader: a failed folder map records its HTTP reason at source (b), not the structural text", async () => {
     const backend = comfyImageGenFactory({
       endpoint: "http://127.0.0.1:8188",
-      fetch: async (input) => {
+      fetch: testFetch(async (input) => {
         const url = new URL(String(input));
         if (url.pathname === "/models/checkpoints") return Response.json(["m.safetensors"]);
         if (url.pathname === "/models/diffusion_models") return Response.json([]);
         if (url.pathname === "/view_metadata/checkpoints") return new Response("nope", { status: 404 });
         if (url.pathname === "/internal/folder_paths") return new Response("err", { status: 500 });
         return new Response("nope", { status: 404 });
-      },
+      }),
     });
     const result = await detectImageGenFamily({ backend, model: "m.safetensors", deps: makeDeps() });
     expect(result.ok).toBe(false);
@@ -498,7 +499,7 @@ describe("family detection — real backend readers (failure honesty)", () => {
   test("comfy reader: an embedded-metadata failure is carried at source (a) while the folder-map anchor survives for (b)", async () => {
     const backend = comfyImageGenFactory({
       endpoint: "http://127.0.0.1:8188",
-      fetch: async (input) => {
+      fetch: testFetch(async (input) => {
         const url = new URL(String(input));
         if (url.pathname === "/models/checkpoints") return Response.json(["m.safetensors"]);
         if (url.pathname === "/models/diffusion_models") return Response.json([]);
@@ -507,7 +508,7 @@ describe("family detection — real backend readers (failure honesty)", () => {
           return Response.json({ checkpoints: ["R:/ckpt"] });
         }
         return new Response("nope", { status: 404 });
-      },
+      }),
     });
     const result = await detectImageGenFamily({ backend, model: "m.safetensors", deps: makeDeps() });
     expect(result.ok).toBe(false);

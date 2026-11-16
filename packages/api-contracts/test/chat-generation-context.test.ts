@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { chatGenerationContextSchema, type ChatGenerationOperation } from "./chat-generation-context.js";
+import { chatGenerationContextSchema, type ChatGenerationOperation } from "../src/chat-generation-context.js";
 
 const identity = { runId: "run", chatId: "chat", branchId: "branch" };
 

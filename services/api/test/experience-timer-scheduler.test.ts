@@ -19,6 +19,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { createStoreContainer, type StoreContainer } from "@vibe-tavern/db";
+import type { ExperienceCapability } from "@vibe-tavern/domain";
 
 import { ExperienceResourceService } from "../src/domain/interactive/experience-resource-service.js";
 import { ExperienceService } from "../src/domain/interactive/experience-service.js";
@@ -75,18 +76,18 @@ function makeScheduler(onError?: (error: unknown) => void): ExperienceTimerSched
 	return new ExperienceTimerScheduler({ stores, timerEffects, pollIntervalMs: 5, onError });
 }
 
-const GRANTS = ["participants", "model"];
+const GRANTS: ExperienceCapability[] = ["participants", "model"];
 const PARTICIPANTS = [
 	{ id: "human", label: "You", controller: "human" as const },
 	{ id: "model", label: "AI", controller: "model" as const, providerProfileId: "pp1", modelId: "test-model" },
 ];
 
 async function armTimer(): Promise<{ sessionId: string; effectId: string }> {
-	const character = await stores.characters.create({ name: "Aria", description: "Mage." } as never);
-	const chat = await stores.chats.createChat({ characterId: character.id, title: "T" } as never);
-	await stores.personas.create({ name: "Olya", description: "Scholar.", defaultForNewChats: true } as never);
-	const script = await stores.scripts.create({ name: "Rules", scriptKind: "interactive", code: TIMER_SOURCE } as never);
-	await resources.updateConfig(chat.id, { enabled: true, scriptId: script.id, capabilityGrants: GRANTS as never } as never);
+	const character = await stores.characters.create({ name: "Aria", description: "Mage." });
+	const chat = await stores.chats.createChat({ characterId: character.id, title: "T", promptPresetId: null });
+	await stores.personas.create({ name: "Olya", description: "Scholar.", defaultForNewChats: true });
+	const script = await stores.scripts.create({ name: "Rules", scriptKind: "interactive", code: TIMER_SOURCE });
+	await resources.updateConfig(chat.id, { enabled: true, scriptId: script.id, capabilityGrants: GRANTS });
 	const started = await service.startSession({ chatId: chat.id, branchId: chat.activeBranchId as string, settings: {}, participants: PARTICIPANTS });
 	if (!started.ok) throw new Error(`start failed: ${JSON.stringify(started.error)}`);
 	const sid = started.data.sessionId;
@@ -161,11 +162,11 @@ describe("ExperienceTimerScheduler", () => {
 	test("a typed failure on one effect never kills the loop for the others", async () => {
 		const good = await armTimer();
 		// A second session whose timer action type is illegal at fire time.
-		const character = await stores.characters.create({ name: "Villain", description: "Foe." } as never);
-		const chat = await stores.chats.createChat({ characterId: character.id, title: "T2" } as never);
+		const character = await stores.characters.create({ name: "Villain", description: "Foe." });
+		const chat = await stores.chats.createChat({ characterId: character.id, title: "T2", promptPresetId: null });
 		const badSource = TIMER_SOURCE.replace('actionType: "tick"', 'actionType: "detonate"');
-		const script = await stores.scripts.create({ name: "Bad", scriptKind: "interactive", code: badSource } as never);
-		await resources.updateConfig(chat.id, { enabled: true, scriptId: script.id, capabilityGrants: GRANTS as never } as never);
+		const script = await stores.scripts.create({ name: "Bad", scriptKind: "interactive", code: badSource });
+		await resources.updateConfig(chat.id, { enabled: true, scriptId: script.id, capabilityGrants: GRANTS });
 		const started = await service.startSession({ chatId: chat.id, branchId: chat.activeBranchId as string, settings: {}, participants: PARTICIPANTS });
 		if (!started.ok) throw new Error("bad start failed");
 		await service.submitAction(started.data.sessionId, { type: "arm", requestId: "arm_0", expectedRevision: 0, participantId: "human", payload: { text: "hi" } });
@@ -197,10 +198,10 @@ describe("ExperienceTimerScheduler", () => {
 		scheduler.stop();
 
 		// A timer armed AFTER stop is never discovered: no poll fires.
-		const character = await stores.characters.create({ name: "Rogue", description: "Foe." } as never);
-		const chat = await stores.chats.createChat({ characterId: character.id, title: "T3" } as never);
-		const script = await stores.scripts.create({ name: "Rules3", scriptKind: "interactive", code: TIMER_SOURCE } as never);
-		await resources.updateConfig(chat.id, { enabled: true, scriptId: script.id, capabilityGrants: GRANTS as never } as never);
+		const character = await stores.characters.create({ name: "Rogue", description: "Foe." });
+		const chat = await stores.chats.createChat({ characterId: character.id, title: "T3", promptPresetId: null });
+		const script = await stores.scripts.create({ name: "Rules3", scriptKind: "interactive", code: TIMER_SOURCE });
+		await resources.updateConfig(chat.id, { enabled: true, scriptId: script.id, capabilityGrants: GRANTS });
 		const started = await service.startSession({ chatId: chat.id, branchId: chat.activeBranchId as string, settings: {}, participants: PARTICIPANTS });
 		if (!started.ok) throw new Error("start failed");
 		await service.submitAction(started.data.sessionId, { type: "arm", requestId: "arm_0", expectedRevision: 0, participantId: "human", payload: { text: "hi" } });

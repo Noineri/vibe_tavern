@@ -13,7 +13,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { createStoreContainer, type StoreContainer } from "@vibe-tavern/db";
-import { EXPERIENCE_CAPABILITY, EXPERIENCE_CONTEXT_MODE } from "@vibe-tavern/domain";
+import { EXPERIENCE_CAPABILITY, EXPERIENCE_CONTEXT_MODE, type ExperienceCapability } from "@vibe-tavern/domain";
 
 import { ExperienceResourceService } from "../src/domain/interactive/experience-resource-service.js";
 
@@ -45,8 +45,8 @@ beforeEach(async () => {
   stores = await createStoreContainer(join(dataRoot, "test.db"), dataRoot);
   service = new ExperienceResourceService(stores);
 
-  const character = await stores.characters.create({ name: "Hero" } as never);
-  chatId = (await stores.chats.createChat({ characterId: character.id, title: "Test" })).id;
+  const character = await stores.characters.create({ name: "Hero" });
+  chatId = (await stores.chats.createChat({ characterId: character.id, title: "Test", promptPresetId: null })).id;
   const script = await stores.scripts.create({ name: "TTT Rules", scriptKind: "interactive", code: VALID_SOURCE });
   scriptId = script.id;
 });
@@ -283,7 +283,9 @@ describe("ExperienceResourceService — chat configuration", () => {
 
   test("updateConfig rejects unknown capability values", async () => {
     const r = await service.updateConfig(chatId, {
-      capabilityGrants: ["not_a_real_capability" as never],
+      // Hostile input: the value is deliberately out of domain — the service's
+      // isValidCapability runtime guard (not the compiler) must reject it.
+      capabilityGrants: ["not_a_real_capability" as ExperienceCapability],
     });
     expect(r.ok).toBe(false);
     if (r.ok) return;
@@ -293,7 +295,7 @@ describe("ExperienceResourceService — chat configuration", () => {
 
 describe("ExperienceResourceService — prompt overrides", () => {
   test("global + per-character layers; effective prefers character", async () => {
-    const character = await stores.characters.create({ name: "C2" } as never);
+    const character = await stores.characters.create({ name: "C2" });
     await service.setGlobalOverride("be brief");
     await service.setCharacterOverride(character.id, "be vivid");
     expect((await service.getEffectiveOverride(null))?.content).toBe("be brief");

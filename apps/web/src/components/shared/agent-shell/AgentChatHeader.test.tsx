@@ -46,7 +46,7 @@ function renderHeader() {
 }
 
 describe("AgentChatHeader — settings gear", () => {
-	it("names the assistant-settings surface (not the old profiles window)", () => {
+	it("names the assistant-settings surface (not the old profiles window) and omits absent optional slots", () => {
 		const { getByTestId } = renderHeader();
 		const gear = getByTestId("copilot-profile-gear-btn");
 		expect(gear.getAttribute("aria-label")).toBe("agent_settings_title");

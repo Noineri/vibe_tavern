@@ -94,8 +94,6 @@ export function useSidechatOpen(chatId: string | null): readonly [boolean, (upda
 
 // Debug helper — mirrors the window.__ exposure pattern used by the other
 // ephemeral stores. Lets a live Playwright / dev-console session inspect the
-// open flag to diagnose "sidechat did not open" reports.
-if (typeof window !== "undefined") {
-  (window as unknown as { __useSidechatOpenStore?: unknown }).__useSidechatOpenStore =
-    useSidechatOpenStore;
-}
+// open flag to diagnose "sidechat did not open" reports. The member's type
+// lives in lib/debug-globals.d.ts (the debug-window surface's single source).
+if (typeof window !== "undefined") window.__useSidechatOpenStore = useSidechatOpenStore;

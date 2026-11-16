@@ -668,65 +668,67 @@ describe("assemblePrompt", () => {
     it("Dice text is fully token-counted before compaction (not undercounted)", () => {
       // Use char-length token counting so we can reason about budgets precisely.
       setTokenCountFn((text) => text.length);
+      try {
+        const withoutDice = assemblePrompt(baseContext({
+          chat: {
+            recentMessages: [
+              { id: "msg_1", role: "user", content: "I sneak past the guards." },
+              { id: "msg_2", role: "assistant", content: "..." },
+            ],
+          },
+        }));
+        const withDice = assemblePrompt(baseContext({
+          chat: {
+            recentMessages: [
+              { id: "msg_1", role: "user", content: "I sneak past the guards.", diceRolls: [makeRoll()] },
+              { id: "msg_2", role: "assistant", content: "..." },
+            ],
+          },
+        }));
 
-      const withoutDice = assemblePrompt(baseContext({
-        chat: {
-          recentMessages: [
-            { id: "msg_1", role: "user", content: "I sneak past the guards." },
-            { id: "msg_2", role: "assistant", content: "..." },
-          ],
-        },
-      }));
-      const withDice = assemblePrompt(baseContext({
-        chat: {
-          recentMessages: [
-            { id: "msg_1", role: "user", content: "I sneak past the guards.", diceRolls: [makeRoll()] },
-            { id: "msg_2", role: "assistant", content: "..." },
-          ],
-        },
-      }));
-
-      // The Dice block adds tokens to the history layer — it must be counted.
-      const histWithout = withoutDice.layers.find((l) => l.id === "recent_history");
-      const histWith = withDice.layers.find((l) => l.id === "recent_history");
-      expect(histWith!.tokenCount).toBeGreaterThan(histWithout!.tokenCount);
-
-      // Reset the global token fn so other tests are unaffected.
-      setTokenCountFn(() => 0);
+        // The Dice block adds tokens to the history layer — it must be counted.
+        const histWithout = withoutDice.layers.find((l) => l.id === "recent_history");
+        const histWith = withDice.layers.find((l) => l.id === "recent_history");
+        expect(histWith!.tokenCount).toBeGreaterThan(histWithout!.tokenCount);
+      } finally {
+        // Reset the global token fn so other tests are unaffected.
+        setTokenCountFn(() => 0);
+      }
     });
 
     it("low-budget compaction accounts for Dice text (keeps recent pair, drops old)", () => {
       setTokenCountFn((text) => text.length);
+      try {
+        const messages = [
+          { id: "old_1", role: "user" as const, content: "A".repeat(100) },
+          { id: "old_2", role: "assistant" as const, content: "B".repeat(100) },
+          {
+            id: "msg_3",
+            role: "user" as const,
+            content: "I sneak.",
+            diceRolls: [makeRoll()],
+          },
+          { id: "msg_4", role: "assistant" as const, content: "C" },
+        ];
 
-      const messages = [
-        { id: "old_1", role: "user" as const, content: "A".repeat(100) },
-        { id: "old_2", role: "assistant" as const, content: "B".repeat(100) },
-        {
-          id: "msg_3",
-          role: "user" as const,
-          content: "I sneak.",
-          diceRolls: [makeRoll()],
-        },
-        { id: "msg_4", role: "assistant" as const, content: "C" },
-      ];
+        // Budget tight enough to trigger compaction. The Dice block on msg_3
+        // adds ~100 chars of text; if it were undercounted, the budget calc
+        // would be wrong. The compaction summary must exist and the recent
+        // pair (msg_3 with Dice + msg_4) must survive.
+        const unbounded = assemblePrompt(baseContext({ chat: { recentMessages: messages } }));
+        const result = assemblePrompt(baseContext({
+          chat: { recentMessages: messages },
+          config: { contextBudget: unbounded.totalTokenEstimate - 50 },
+        }));
 
-      // Budget tight enough to trigger compaction. The Dice block on msg_3
-      // adds ~100 chars of text; if it were undercounted, the budget calc
-      // would be wrong. The compaction summary must exist and the recent
-      // pair (msg_3 with Dice + msg_4) must survive.
-      const unbounded = assemblePrompt(baseContext({ chat: { recentMessages: messages } }));
-      const result = assemblePrompt(baseContext({
-        chat: { recentMessages: messages },
-        config: { contextBudget: unbounded.totalTokenEstimate - 50 },
-      }));
-
-      expect(result.compactionSummary).toBeDefined();
-      const hist = result.layers.find((l) => l.id === "recent_history");
-      expect(hist!.text).toContain("[Dice]");
-      expect(hist!.text).toContain("Stealth Check");
-      expect(hist!.text).not.toContain("A".repeat(50));
-
-      setTokenCountFn(() => 0);
+        expect(result.compactionSummary).toBeDefined();
+        const hist = result.layers.find((l) => l.id === "recent_history");
+        expect(hist!.text).toContain("[Dice]");
+        expect(hist!.text).toContain("Stealth Check");
+        expect(hist!.text).not.toContain("A".repeat(50));
+      } finally {
+        setTokenCountFn(() => 0);
+      }
     });
   });
 
@@ -824,27 +826,30 @@ describe("assemblePrompt", () => {
 
     it("counts the report text toward compaction tokens (no undercount)", () => {
       setTokenCountFn((text) => (typeof text === "string" ? text.length : 1));
-      const longReport = makeReport({
-        title: "Long",
-        summary: undefined,
-        events: [{ type: "x", detail: "B".repeat(80) }],
-      });
-      const messages = [
-        { id: "msg_1", role: "user" as const, content: "go", experienceReports: [longReport] },
-        { id: "msg_2", role: "assistant" as const, content: "ack" },
-        { id: "msg_3", role: "user" as const, content: "again" },
-        { id: "msg_4", role: "assistant" as const, content: "ack" },
-      ];
-      const unbounded = assemblePrompt(baseContext({ chat: { recentMessages: messages } }));
-      const result = assemblePrompt(baseContext({
-        chat: { recentMessages: messages },
-        config: { contextBudget: unbounded.totalTokenEstimate - 50 },
-      }));
-      expect(result.compactionSummary).toBeDefined();
-      // The long report detail must have been evicted by compaction (it counted).
-      const hist = result.layers.find((l) => l.id === "recent_history");
-      expect(hist!.text).not.toContain("B".repeat(80));
-      setTokenCountFn(() => 0);
+      try {
+        const longReport = makeReport({
+          title: "Long",
+          summary: undefined,
+          events: [{ type: "x", detail: "B".repeat(80) }],
+        });
+        const messages = [
+          { id: "msg_1", role: "user" as const, content: "go", experienceReports: [longReport] },
+          { id: "msg_2", role: "assistant" as const, content: "ack" },
+          { id: "msg_3", role: "user" as const, content: "again" },
+          { id: "msg_4", role: "assistant" as const, content: "ack" },
+        ];
+        const unbounded = assemblePrompt(baseContext({ chat: { recentMessages: messages } }));
+        const result = assemblePrompt(baseContext({
+          chat: { recentMessages: messages },
+          config: { contextBudget: unbounded.totalTokenEstimate - 50 },
+        }));
+        expect(result.compactionSummary).toBeDefined();
+        // The long report detail must have been evicted by compaction (it counted).
+        const hist = result.layers.find((l) => l.id === "recent_history");
+        expect(hist!.text).not.toContain("B".repeat(80));
+      } finally {
+        setTokenCountFn(() => 0);
+      }
     });
   });
 

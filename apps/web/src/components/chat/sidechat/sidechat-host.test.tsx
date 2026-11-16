@@ -4,10 +4,15 @@
  * Drives the REAL generic AgentShell with kind "sidechat-ooc" through the
  * host's real transport (fetch-level router — no mock.module on the api
  * modules, so this file coexists with any other test file sharing the bun
- * worker; the script-agent-host.test.tsx reliability contract). Fetch is
- * swapped per test and restored after each (beforeEach install, afterEach +
- * afterAll restore); every process-global store touched here is re-seeded in
- * beforeEach.
+ * worker; the script-agent-host.test.tsx reliability contract). The
+ * router/seed/reset/drain scaffolding comes from the shared harness
+ * (apps/web/test/agent-shell-harness.ts — ASHU-6, fork #5 of 7): the harness
+ * serves the agent-chats triple over live router state, the copilot context
+ * family, the bootstrap quartet and the fail-loud tail; this file's stateful
+ * routes (feed page, live messages, the SC-23d context-links GET/PATCH) ride
+ * the custom-first escape hatch. Fetch is swapped per test and restored after
+ * each (beforeEach install, afterEach + afterAll restore); every
+ * process-global store touched here is re-seeded in beforeEach.
  *
  * Pins:
  *   - module-load registration: the chat-only host (no editor pane), the
@@ -30,6 +35,7 @@
  * Runner: bun:test with scoped happy-dom.
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { testFetch } from "@vibe-tavern/test-fetch";
 import type { ReactNode } from "react";
 import { agentFeedPageFromMessages } from "../../../../test/agent-feed-page.js";
 import { createInstance } from "i18next";
@@ -42,7 +48,15 @@ import type {
   ExperienceCopilotThreadWire,
 } from "@vibe-tavern/api-contracts";
 import { useDomEnv } from "../../../../test/dom-env.js";
-import { wireUiSettings } from "../../../../test/wire-fixtures.js";
+import {
+  chatThread,
+  flushSessionLoad,
+  jsonResponse,
+  resetShellStores,
+  seedShellStores,
+  shellRouter,
+} from "../../../../test/agent-shell-harness.js";
+import { wireProviderProfile } from "../../../../test/wire-fixtures.js";
 import type { ProviderProfileRecord } from "../../../api/types.js";
 import type { AgentToolActivity } from "../../../stores/agent-turn-store.js";
 import { getAgentHost, registerAgentHost, type AgentHostTransport } from "../../../lib/agent-host-registry.js";
@@ -50,15 +64,16 @@ import { useAgentTurnStore } from "../../../stores/agent-turn-store.js";
 import { useChatStore } from "../../../stores/chat-store.js";
 import { useSidechatMobileStore } from "../../../stores/sidechat-mobile-store.js";
 import { Icons } from "../../shared/icons.js";
-import { useAgentReviewRoundStore } from "../../../stores/agent-review-store.js";
 import { useProviderDataStore } from "../../../stores/provider-data-store.js";
 import { useSnapshotStore } from "../../../stores/snapshot-store.js";
-import { useBootstrapStore } from "../../../stores/api-actions/bootstrap-actions.js";
 import { selectSidechatServedChatModes, SIDECHAT_AGENT_KIND } from "../../../api/agent-kind-served-modes.js";
 import { selectSidechatOwner } from "./sidechat-host.js";
+import { DIRECTOR_MESSAGE_RECORD_TYPES } from "@vibe-tavern/api-contracts";
 import { ObjectiveProposalCard } from "./ObjectiveProposalCard.js";
+import { DirectorMessageProposalCard } from "./director-message-proposal-card.js";
 import { STORY_PLAN_RECORD_TYPE, StoryPlanProposalCard } from "./StoryPlanProposalCard.js";
 import { TRACKER_SCENE_RECORD_TYPE, TrackerSceneProposalCard } from "./TrackerSceneProposalCard.js";
+import { STORY_DECK_RECORD_TYPE, StoryDeckProposalCard } from "./StoryDeckProposalCard.js";
 
 useDomEnv();
 
@@ -66,11 +81,16 @@ useDomEnv();
 let mobileOverride = false;
 
 // ── Fetch-level API router ───────────────────────────────────────────────
-// Same rationale as script-agent-host.test.tsx: mock.module on the api
-// modules is process-global and silently stops applying when another test
-// file shares the bun process, so the transport seam is faked at the FETCH
-// level instead. The REAL hono clients run against a router serving canned
-// payloads.
+// The shared harness router (agent-shell-harness.ts, fork #5 of 7 migrated)
+// serves the agent-chats triple over the live router state (SC-0b chat-owner
+// lifecycle), the copilot context family, the bootstrap quartet and the
+// fail-loud tail; this file's STATEFUL routes (the feed page, the live
+// messages pair, the SC-23d pinned-context-links GET/PATCH) ride the
+// custom-first escape hatch. Same rationale as script-agent-host.test.tsx:
+// mock.module on the api modules is process-global and silently stops
+// applying when another test file shares the bun process, so the transport
+// seam is faked at the FETCH level instead — the REAL hono clients run
+// against a router serving canned payloads.
 interface RouterState {
   activeThread: ExperienceCopilotThreadWire | null;
   messages: ExperienceCopilotMessageWire[];
@@ -78,55 +98,70 @@ interface RouterState {
   newSession: ExperienceCopilotThreadWire;
   /** SC-23d: the pinned-context links served by GET/PATCH …/context-links. */
   contextLinks: ExperienceCopilotContextLink[];
+  /** Park writes at the fetch boundary to reproduce pin/send ordering. */
+  contextLinkWriteGates?: Promise<void>[];
+  streamContextLinks?: ExperienceCopilotContextLink[][];
+  streamBodies?: Record<string, unknown>[];
+  streamFailure?: "sse" | "transport";
 }
-let router: RouterState;
+// A STABLE object the harness reads per-request — beforeEach mutates FIELDS,
+// never reassigns (the harness captures the reference at build time).
+const router: RouterState = {
+  activeThread: null,
+  messages: [],
+  sessions: [],
+  newSession: chatThread({ id: "sidechat-thread-new" }),
+  contextLinks: [],
+};
 
-const jsonResponse = (payload: unknown) =>
-  new Response(JSON.stringify(payload), { status: 200, headers: { "Content-Type": "application/json" } });
-
-const fetchRouter = mock(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-  const path = new URL(String(input), "http://gateway.test").pathname;
-  const method = (init?.method ?? "GET").toUpperCase();
-  const feedThreadId = /\/api\/agent\/threads\/([^/]+)\/feed$/.exec(path)?.[1];
-  if (method === "GET" && feedThreadId) return jsonResponse(agentFeedPageFromMessages(feedThreadId, router.messages));
-  // SC-0b chat-owner lifecycle (the sidechat transport's owner-keyed members).
-  if (method === "GET" && /\/api\/agent\/chats\/[^/]+\/branches\/[^/]+\/[^/]+\/active$/.test(path)) {
-    return jsonResponse(router.activeThread);
-  }
-  if (method === "GET" && /\/api\/agent\/chats\/[^/]+\/branches\/[^/]+\/[^/]+\/sessions$/.test(path)) {
-    return jsonResponse(router.sessions);
-  }
-  if (method === "POST" && /\/api\/agent\/chats\/[^/]+\/branches\/[^/]+\/[^/]+\/session$/.test(path)) {
-    return jsonResponse(router.newSession);
-  }
-  // Per-thread routes (owner-agnostic — the experience client's members).
-  if (method === "GET" && /\/api\/experience-copilot\/[^/]+\/messages$/.test(path)) {
-    return jsonResponse(router.messages);
-  }
-  if (method === "GET" && /\/api\/experience-copilot\/[^/]+\/context$/.test(path)) {
-    return jsonResponse({ metrics: null, autoCompact: true });
-  }
-  if (method === "GET" && /\/api\/experience-copilot\/[^/]+\/context-links$/.test(path)) {
-    return jsonResponse(router.contextLinks);
-  }
-  if (method === "PATCH" && /\/api\/experience-copilot\/[^/]+\/context-links$/.test(path)) {
-    const body = JSON.parse(String(init?.body ?? "{}")) as { links?: ExperienceCopilotContextLink[] };
-    router.contextLinks = body.links ?? [];
-    return jsonResponse(router.contextLinks);
-  }
-  // NOTE: the gateway base resolves to "/null" under happy-dom (unset env
-  // falls back to `String(null)` in build-config) — route on path SUFFIXES,
-  // never exact equality.
-  if (method === "GET" && path.includes("/branches/") && path.endsWith("/plan")) {
-    return jsonResponse({ plan: { goal: "", constraints: [], tasks: [] } });
-  }
-  if (method === "GET" && path.endsWith("/api/personas")) return jsonResponse([]);
-  if (method === "GET" && path.endsWith("/api/lorebooks/all")) return jsonResponse([]);
-  if (method === "GET" && path.endsWith("/api/scripts/all")) return jsonResponse([]);
-  if (method === "GET" && path.endsWith("/api/coauthor/skills")) return jsonResponse({ entries: [], errors: [] });
-  if (method === "GET" && path.endsWith("/model-favorites")) return jsonResponse([]);
-  return new Response(JSON.stringify({ error: { message: `Unhandled fetch in test: ${method} ${path}` } }), { status: 500 });
-});
+const fetchRouter = mock(
+  shellRouter({
+    agentChats: router,
+    custom: ({ path, method, init }) => {
+      // NOTE: the gateway base resolves to "/null" under happy-dom (unset env
+      // falls back to `String(null)` in build-config) — route on path SUFFIXES,
+      // never exact equality.
+      const feedThreadId = /\/api\/agent\/threads\/([^/]+)\/feed$/.exec(path)?.[1];
+      if (method === "GET" && feedThreadId) return jsonResponse(agentFeedPageFromMessages(feedThreadId, router.messages));
+      // Per-thread routes (owner-agnostic — the experience client's members).
+      if (method === "GET" && /\/api\/experience-copilot\/[^/]+\/messages$/.test(path)) {
+        return jsonResponse(router.messages);
+      }
+      if (method === "GET" && /\/api\/experience-copilot\/[^/]+\/context-links$/.test(path)) {
+        return jsonResponse(router.contextLinks);
+      }
+      if (method === "PATCH" && /\/api\/experience-copilot\/[^/]+\/context-links$/.test(path)) {
+        const body = JSON.parse(String(init?.body ?? "{}")) as { links?: ExperienceCopilotContextLink[] };
+        // SC-23d: park writes at the fetch boundary to reproduce pin/send
+        // ordering (dev-side write gates).
+        const gate = router.contextLinkWriteGates?.shift();
+        if (gate) return gate.then(() => {
+          router.contextLinks = body.links ?? [];
+          return jsonResponse(router.contextLinks);
+        });
+        router.contextLinks = body.links ?? [];
+        return jsonResponse(router.contextLinks);
+      }
+      // The answer stream (SC-23d + DMT-24b-era capture hooks): snapshot the
+      // SERVER-side links at POST time, record the request body (the client's
+      // promptAttachments ride it), and honor the streamFailure probes.
+      if (method === "POST" && /\/api\/experience-copilot\/[^/]+\/stream$/.test(path)) {
+        router.streamContextLinks?.push([...router.contextLinks]);
+        const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+        router.streamBodies?.push(body);
+        if (router.streamFailure === "transport") return Promise.reject(new Error("transport unavailable"));
+        if (router.streamFailure === "sse") {
+          router.messages.push({ id: "stored-user", threadId: "sidechat-thread-1", role: "user", content: "Discuss.", toolCallsJson: null, toolCallId: null, reasoning: null, reasoningDurationMs: null, createdAt: "2026-01-01T00:00:00Z", promptAttachments: [{ presetId: "pp1", displayName: "Stored RP", promptText: "<rp_prompt>saved</rp_prompt>" }] });
+          return Promise.resolve(new Response('event: error\ndata: {"message":"failed","category":"server_error"}\n\n', { headers: { "Content-Type": "text/event-stream" } }));
+        }
+        // dev-exact success frame: the named `event: finish` frame drives the
+        // client's onFinish cleanup path (bare `data:` lines do not).
+        return Promise.resolve(new Response('event: finish\ndata: {"finishReason":"stop"}\n\n', { headers: { "Content-Type": "text/event-stream" } }));
+      }
+      return null; // fall through to the harness routes
+    },
+  }),
+);
 
 /** Router fetch calls matching method + path pattern. Strips the "/null"
  *  gateway-base prefix happy-dom produces (unset env falls back to
@@ -143,7 +178,8 @@ function apiCalls(method: string, pattern: RegExp): string[] {
 }
 
 // Radix Tooltip needs a global Provider the isolated render here doesn't mount.
-const realTooltip = await import("../../shared/Tooltip.js");
+// R15: load-time COPY of the real namespace — never spread the live binding.
+const realTooltip = { ...(await import("../../shared/Tooltip.js")) };
 mock.module("../../shared/Tooltip.js", () => ({
   ...realTooltip,
   CustomTooltip: ({ children }: { children: ReactNode }) => <>{children}</>,
@@ -152,7 +188,8 @@ mock.module("../../shared/Tooltip.js", () => ({
 
 // The shell takes isMobile as a prop, but nested surfaces read the hook —
 // override it with the same mutable cell so both halves agree.
-const realMobile = await import("../../../hooks/use-mobile.js");
+// R15: load-time COPY of the real namespace — never spread the live binding.
+const realMobile = { ...(await import("../../../hooks/use-mobile.js")) };
 mock.module("../../../hooks/use-mobile.js", () => ({
   ...realMobile,
   useIsMobile: () => mobileOverride,
@@ -184,40 +221,26 @@ afterAll(() => {
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
 
-function chatThread(id: string, chatId: string, branchId: string): ExperienceCopilotThreadWire {
-  return {
-    id,
-    scriptId: null,
-    draftSessionId: null,
-    title: "Sidechat",
-    archivedAt: null,
-    createdAt: "",
-    updatedAt: "",
-    metrics: null,
-    contextLinks: [],
-    todo: [],
-  } as unknown as ExperienceCopilotThreadWire;
-}
-
 // p1 is the ACTIVE provider profile (the RP pair, SC-7); each profile carries
 // one tool-capable cached model so the REAL `useProviderModels` hook serves
-// the model list from cache (no fetch).
-const PROFILES = [
-  {
+// the model list from cache (no fetch). The rows ride the wire factory — the
+// erased literals also hid the required `cachedAt` on `cachedModels`.
+const PROFILES: ProviderProfileRecord[] = [
+  wireProviderProfile({
     id: "p1",
     name: "Active RP provider",
     isActive: true,
     defaultModel: "m1",
-    cachedModels: { models: [{ id: "m1", label: "Model One", contextLength: 128000, capabilities: { tools: true } }] },
-  },
-  {
+    cachedModels: { models: [{ id: "m1", label: "Model One", contextLength: 128000, capabilities: { tools: true } }], cachedAt: "2026-01-01T00:00:00.000Z" },
+  }),
+  wireProviderProfile({
     id: "p2",
     name: "Other provider",
     isActive: false,
     defaultModel: "m2",
-    cachedModels: { models: [{ id: "m2", label: "Model Two", contextLength: 200000, capabilities: { tools: true } }] },
-  },
-] as unknown as ProviderProfileRecord[];
+    cachedModels: { models: [{ id: "m2", label: "Model Two", contextLength: 200000, capabilities: { tools: true } }], cachedAt: "2026-01-01T00:00:00.000Z" },
+  }),
+];
 
 function kindEntry(kind: string, providerProfileId: string | null, modelName: string | null): AgentKindSettingsWire {
   return {
@@ -231,39 +254,26 @@ function kindEntry(kind: string, providerProfileId: string | null, modelName: st
   };
 }
 
+/** File-local seeding delta on the harness seedShellStores (the shared agent-kind map + this suite's profiles and prompt presets). */
 function seedStores(map: Record<string, AgentKindSettingsWire>, presets: PromptPresetDto[] = []): void {
-  useBootstrapStore.setState({
-    data: {
-      initialChatId: null,
-      snapshot: null,
-      isFirstRun: false,
-      allCharacters: [],
-      promptPresets: presets,
-      uiSettings: wireUiSettings(),
-      agentKindSettings: map,
-      isArmServer: false,
-    },
-  });
-  useProviderDataStore.setState({ profiles: PROFILES });
+  seedShellStores({ agentKinds: map, profiles: PROFILES, promptPresets: presets });
 }
 
 const CHAT_OWNER: AgentThreadOwner = { kind: "chat", chatId: "chat-1", branchId: "branch-1", agentKind: SIDECHAT_AGENT_KIND };
 
 beforeEach(() => {
   mobileOverride = false;
-  globalThis.fetch = fetchRouter as unknown as typeof fetch;
-  useAgentTurnStore.setState({ turnsByThread: {}, todoByThread: {} });
-  useAgentReviewRoundStore.setState({ roundsByThread: {} });
+  globalThis.fetch = testFetch(fetchRouter);
+  resetShellStores();
   useSnapshotStore.setState({ allCharacters: [] });
   localStorage.clear();
   seedStores({});
-  router = {
-    activeThread: null,
-    messages: [],
-    sessions: [],
-    newSession: chatThread("sidechat-thread-new", "chat-1", "branch-1"),
-    contextLinks: [],
-  };
+  // Field mutation, never reassignment — the harness holds the reference.
+  router.activeThread = null;
+  router.messages = [];
+  router.sessions = [];
+  router.newSession = chatThread({ id: "sidechat-thread-new" });
+  router.contextLinks = [];
   fetchRouter.mockClear();
 });
 
@@ -295,24 +305,10 @@ function withIsolatedI18n(node: ReactNode) {
   return <I18nextProvider i18n={makeIsolatedI18n()}>{node}</I18nextProvider>;
 }
 
-/**
- * Drain the chained async `loadSession` microtasks (and React's scheduler
- * macrotasks) inside `act`, so its `setThreadId`/`setMessages` updates are
- * captured and do not emit React 19 "not wrapped in act" warnings. Mirrors
- * the bounded drain in `test/dom-env.ts`.
- */
-async function flushSessionLoad() {
-  await act(async () => {
-    for (let i = 0; i < 5; i++) {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    }
-  });
-}
-
 // ── Registration + selectors ────────────────────────────────────────────────
 
 describe("sidechat-host — registration (SC-13b)", () => {
-  it("registers the chat-only host with the kind's nine toggles and chat assignment", () => {
+  it("registers the chat-only host with the kind's thirteen toggles and chat assignment", () => {
     const host = getAgentHost(SIDECHAT_AGENT_KIND);
     expect(host.kind).toBe("sidechat-ooc");
     // Chat-only: no editor pane (the shell renders its chat pane).
@@ -321,6 +317,14 @@ describe("sidechat-host — registration (SC-13b)", () => {
     // appended (owner ruling 2026-10-27, DIRECTOR_MODE_PLAN DR-4b ruling B —
     // off in the OOC seed, on in the director seed), basis: the wire
     // contract (SIDECHAT_OOC_TOOL_KEYS) gained the key.
+    // Behavior change (DMT-34): was 9 → now 12 — the three director message
+    // tools joined the wire contract (on in the director seed, absent from
+    // the OOC seed and the kind default), basis: SIDECHAT_OOC_TOOL_KEYS
+    // gained the keys.
+    // Behavior change (DK-5a): was 12 → now 13 — `propose_deck` joined the
+    // wire contract (the DMT-34 land-together pattern; on in the director
+    // seed, absent from the OOC seed and the kind default), basis:
+    // SIDECHAT_OOC_TOOL_KEYS gained the key.
     expect([...host.toolKeys].sort()).toEqual(
       [
         "propose_objective",
@@ -332,6 +336,10 @@ describe("sidechat-host — registration (SC-13b)", () => {
         "search_context",
         "todo",
         "ask_user",
+        "propose_message_edit",
+        "propose_message_variant",
+        "request_message_swipe",
+        "propose_deck",
       ].sort(),
     );
     expect(host.profileAssignment).toEqual({ target: "chat" });
@@ -341,13 +349,31 @@ describe("sidechat-host — registration (SC-13b)", () => {
     // `recordType: "objective"` in place; the story-plan card renders the
     // `propose_plan` tool's record type and the tracker-scene card
     // `propose_tracker_template`'s (the web-side pins of the proposal
-    // domain's constants).
-    expect(Object.keys(host.recordProposalRenderers)).toEqual(["objective", "story-plan", "tracker-scene"]);
+    // domain's constants). DMT-33: ONE card serves BOTH Director message
+    // record types, keyed off the SHARED contract constants (the DMT-11
+    // schema module — the host consumes the keys, never local literals).
+    // DK-8: the story-deck card renders `propose_deck`'s record type.
+    expect(Object.keys(host.recordProposalRenderers)).toEqual([
+      "objective",
+      "story-plan",
+      "tracker-scene",
+      DIRECTOR_MESSAGE_RECORD_TYPES.messageEdit,
+      DIRECTOR_MESSAGE_RECORD_TYPES.messageVariant,
+      "story-deck",
+    ]);
     expect(host.recordProposalRenderers.objective).toBe(ObjectiveProposalCard);
     expect(host.recordProposalRenderers["story-plan"]).toBe(StoryPlanProposalCard);
     expect(host.recordProposalRenderers["tracker-scene"]).toBe(TrackerSceneProposalCard);
+    expect(host.recordProposalRenderers[DIRECTOR_MESSAGE_RECORD_TYPES.messageEdit]).toBe(DirectorMessageProposalCard);
+    expect(host.recordProposalRenderers[DIRECTOR_MESSAGE_RECORD_TYPES.messageVariant]).toBe(DirectorMessageProposalCard);
+    expect(host.recordProposalRenderers[STORY_DECK_RECORD_TYPE]).toBe(StoryDeckProposalCard);
     expect(STORY_PLAN_RECORD_TYPE).toBe("story-plan");
+    expect(STORY_DECK_RECORD_TYPE).toBe("story-deck");
     expect(TRACKER_SCENE_RECORD_TYPE).toBe("tracker-scene");
+    // The shared contract's keys ARE the wire spellings (the web-side pin of
+    // the DMT-11 recordType constants).
+    expect(DIRECTOR_MESSAGE_RECORD_TYPES.messageEdit).toBe("message-edit");
+    expect(DIRECTOR_MESSAGE_RECORD_TYPES.messageVariant).toBe("message-variant");
   });
 
   it("carries the branch plan owner and the six meter labels", () => {
@@ -409,7 +435,7 @@ describe("sidechat-host — owner and served modes (SC-13b)", () => {
 describe("sidechat-host — sessions scoped to chat+branch (SC-13b)", () => {
   it("the lifecycle members call the chat routes with chat+branch+kind", async () => {
     const host = getAgentHost(SIDECHAT_AGENT_KIND);
-    router.activeThread = chatThread("sidechat-thread-1", "chat-1", "branch-1");
+    router.activeThread = chatThread({ id: "sidechat-thread-1" });
     router.sessions = [router.activeThread];
 
     await host.transport.getActiveThread(CHAT_OWNER);
@@ -602,7 +628,7 @@ describe("sidechat-host — copy to composer (SC-16)", () => {
 describe("sidechat-host — chat-only shell render (SC-13b)", () => {
   it("a chat owner mounts the chat pane with the empty hint and no editor pane", async () => {
     const owner: AgentThreadOwner = { ...CHAT_OWNER, branchId: "chat-only-branch" };
-    router.activeThread = chatThread("sidechat-thread-1", "chat-1", "chat-only-branch");
+    router.activeThread = chatThread({ id: "sidechat-thread-1" });
     const { getByText, getByTestId, queryByTestId } = render(
       withIsolatedI18n(<AgentShell kind={SIDECHAT_AGENT_KIND} owner={owner} isMobile={false} />),
     );
@@ -679,7 +705,7 @@ function mentionOptions(): HTMLElement[] {
 const OTHER_KIND = "sc23d-other-assistant";
 
 function otherTransport(): AgentHostTransport {
-  const thread = chatThread("other-thread-1", "chat-1", "branch-1");
+  const thread = chatThread({ id: "other-thread-1" });
   return {
     sendStream: async () => ({ finishReason: "stop", metrics: null }),
     answerAsk: async () => ({ finishReason: "stop", metrics: null }),
@@ -708,8 +734,8 @@ function otherTransport(): AgentHostTransport {
 }
 
 describe("sidechat-host — prompt preset pins (SC-23d)", () => {
-  function renderSidechat() {
-    router.activeThread = chatThread("sidechat-thread-1", "chat-1", "branch-1");
+  function renderSidechat(links: ExperienceCopilotContextLink[] = []) {
+    router.activeThread = { ...chatThread({ id: "sidechat-thread-1" }), contextLinks: links };
     return render(
       withIsolatedI18n(<AgentShell kind={SIDECHAT_AGENT_KIND} owner={CHAT_OWNER} isMobile={false} />),
     );
@@ -817,10 +843,34 @@ describe("sidechat-host — prompt preset pins (SC-23d)", () => {
     );
   });
 
+  it("reloads pending links and renders confirmed snapshots without resurrecting consumed chips", async () => {
+    seedStores({}, [presetFixture("pp1", "Deep RP")]);
+    const first = renderSidechat();
+    await flushSessionLoad();
+    const ta = openMention(first.getByTestId, "@Deep");
+    await waitFor(() => expect(mentionOptions()).toHaveLength(1));
+    fireEvent.keyDown(ta, { key: "Enter" });
+    await waitFor(() => expect(router.contextLinks).toEqual([{ targetType: "prompt_preset", targetId: "pp1" }]));
+    first.unmount();
+
+    const pending = renderSidechat(router.contextLinks);
+    await waitFor(() => expect(pending.getByTestId("copilot-context-pill-prompt_preset-pp1")).toBeTruthy());
+    pending.unmount();
+
+    // The server has consumed the pending link and returned the persisted message.
+    router.contextLinks = [];
+    router.messages = [{ id: "stored-user", threadId: "sidechat-thread-1", role: "user", content: "Discuss.", toolCallsJson: null, toolCallId: null, reasoning: null, reasoningDurationMs: null, createdAt: "2026-01-01T00:00:00Z", promptAttachments: [{ presetId: "pp1", displayName: "Stored RP", promptText: "<rp_prompt>saved</rp_prompt>" }] }];
+    const confirmed = renderSidechat(router.contextLinks);
+    await waitFor(() => expect(confirmed.getByText("Stored RP")).toBeTruthy());
+    expect(confirmed.queryByTestId("copilot-context-pill-prompt_preset-pp1")).toBeNull();
+    fireEvent.click(confirmed.getByRole("button", { name: /prompt_attachment_view/ }));
+    await waitFor(() => expect(confirmed.getByTestId("sent-file-summary-scroll").textContent).toBe("<rp_prompt>saved</rp_prompt>"));
+  });
+
   it("unpinning a preset PATCHes the filtered set and removes its chip", async () => {
     seedStores({}, [presetFixture("pp1", "Deep RP")]);
     router.activeThread = {
-      ...chatThread("sidechat-thread-1", "chat-1", "branch-1"),
+      ...chatThread({ id: "sidechat-thread-1" }),
       contextLinks: [{ targetType: "prompt_preset", targetId: "pp1" }],
     };
     const { getByTestId, queryByTestId } = render(
@@ -838,4 +888,115 @@ describe("sidechat-host — prompt preset pins (SC-23d)", () => {
     expect(patchBodies(pattern)[0]).toEqual({ links: [] });
     await waitFor(() => expect(queryByTestId("copilot-context-pill-prompt_preset-pp1")).toBeNull());
   });
+
+  it("sends the preset identity and clears it on finish even while its PATCH is parked", async () => {
+    seedStores({}, [presetFixture("pp1", "Deep RP")]);
+    let releaseWrite!: () => void;
+    router.contextLinkWriteGates = [new Promise<void>((resolve) => { releaseWrite = resolve; })];
+    router.streamContextLinks = [];
+    router.streamBodies = [];
+    const { getByTestId, queryByTestId } = renderSidechat();
+    await flushSessionLoad();
+
+    try {
+      const ta = openMention(getByTestId, "@Deep");
+      await waitFor(() => expect(mentionOptions()).toHaveLength(1));
+      fireEvent.keyDown(ta, { key: "Enter" });
+      await waitFor(() => expect(getByTestId("copilot-context-pill-prompt_preset-pp1")).toBeTruthy());
+      await waitFor(() => expect(patchBodies(/\/context-links$/)).toHaveLength(1));
+
+      fireEvent.change(ta, { target: { value: "Discuss the attached preset." } });
+      fireEvent.click(getByTestId("copilot-send-btn"));
+      await waitFor(() => expect(router.streamContextLinks).toHaveLength(1));
+      // The real shell sent while the server still had NO pinned preset.
+      expect(router.streamContextLinks).toEqual([[]]);
+      expect(router.contextLinks).toEqual([]);
+      expect(router.streamBodies?.[0]?.promptAttachments).toEqual([{ presetId: "pp1" }]);
+      await waitFor(() => expect(queryByTestId("copilot-context-pill-prompt_preset-pp1")).toBeNull());
+    } finally {
+      await act(async () => { releaseWrite(); });
+    }
+    await waitFor(() => expect(router.contextLinks).toEqual([{ targetType: "prompt_preset", targetId: "pp1" }]));
+  });
+
+  it("sends both visible identities despite out-of-order full replacements", async () => {
+    seedStores({}, [presetFixture("pp1", "Deep RP"), presetFixture("pp2", "Other RP")]);
+    let releaseFirstWrite!: () => void;
+    router.contextLinkWriteGates = [new Promise<void>((resolve) => { releaseFirstWrite = resolve; })];
+    router.streamBodies = [];
+    const { getByTestId, queryByTestId } = renderSidechat();
+    await flushSessionLoad();
+
+    try {
+      const first = openMention(getByTestId, "@Deep");
+      await waitFor(() => expect(mentionOptions()).toHaveLength(1));
+      fireEvent.keyDown(first, { key: "Enter" });
+      await waitFor(() => expect(patchBodies(/\/context-links$/)).toHaveLength(1));
+
+      const second = openMention(getByTestId, "@Other");
+      await waitFor(() => expect(mentionOptions()).toHaveLength(1));
+      fireEvent.keyDown(second, { key: "Enter" });
+      await waitFor(() => expect(router.contextLinks).toHaveLength(2));
+    } finally {
+      await act(async () => { releaseFirstWrite(); });
+    }
+
+    await waitFor(() => expect(router.contextLinks).toEqual([{ targetType: "prompt_preset", targetId: "pp1" }]));
+    expect(getByTestId("copilot-context-pill-prompt_preset-pp1")).toBeTruthy();
+    expect(getByTestId("copilot-context-pill-prompt_preset-pp2")).toBeTruthy();
+    const ta = getByTestId("copilot-chat-input");
+    fireEvent.change(ta, { target: { value: "Discuss both." } });
+    fireEvent.click(getByTestId("copilot-send-btn"));
+    await waitFor(() => expect(router.streamBodies).toHaveLength(1));
+    expect(router.streamBodies?.[0]?.promptAttachments).toEqual([{ presetId: "pp1" }, { presetId: "pp2" }]);
+    await waitFor(() => expect(queryByTestId("copilot-context-pill-prompt_preset-pp2")).toBeNull());
+  });
+
+  it("clears only submitted presets and keeps character pins", async () => {
+    seedStores({}, [presetFixture("pp1", "Deep RP")]);
+    router.streamBodies = [];
+    const { getByTestId, queryByTestId } = renderSidechat([
+      { targetType: "prompt_preset", targetId: "pp1" },
+      { targetType: "character", targetId: "character-1" },
+    ]);
+    await flushSessionLoad();
+    await waitFor(() => expect(getByTestId("copilot-context-pill-prompt_preset-pp1")).toBeTruthy());
+    fireEvent.change(getByTestId("copilot-chat-input"), { target: { value: "Discuss." } });
+    fireEvent.click(getByTestId("copilot-send-btn"));
+    await waitFor(() => expect(queryByTestId("copilot-context-pill-prompt_preset-pp1")).toBeNull());
+    expect(getByTestId("copilot-context-pill-character-character-1")).toBeTruthy();
+  });
+
+  for (const failure of ["sse", "transport"] as const) {
+    it(`keeps the pending preset on ${failure} failure`, async () => {
+      seedStores({}, [presetFixture("pp1", "Deep RP")]);
+      router.streamFailure = failure;
+      router.streamBodies = [];
+      const { getByTestId } = renderSidechat();
+      await flushSessionLoad();
+      const ta = openMention(getByTestId, "@Deep");
+      await waitFor(() => expect(mentionOptions()).toHaveLength(1));
+      fireEvent.keyDown(ta, { key: "Enter" });
+      await waitFor(() => expect(getByTestId("copilot-context-pill-prompt_preset-pp1")).toBeTruthy());
+      fireEvent.change(ta, { target: { value: "Discuss." } });
+      fireEvent.click(getByTestId("copilot-send-btn"));
+      await waitFor(() => expect(router.streamBodies).toHaveLength(1));
+      await flushSessionLoad();
+      expect(router.streamBodies?.[0]?.promptAttachments).toEqual([{ presetId: "pp1" }]);
+      expect(getByTestId("copilot-context-pill-prompt_preset-pp1")).toBeTruthy();
+      if (failure === "sse") {
+        await waitFor(() => expect(getByTestId("copilot-error-card-retry")).toBeTruthy());
+        expect(document.body.textContent).toContain("Stored RP");
+        router.streamFailure = undefined;
+        fireEvent.click(getByTestId("copilot-error-card-retry"));
+        await waitFor(() => expect(router.streamBodies).toHaveLength(2));
+        expect(router.streamBodies?.[1]?.regenerate).toBe(true);
+        expect(router.messages).toHaveLength(1);
+        expect(router.messages[0]?.promptAttachments).toHaveLength(1);
+        expect(getByTestId("copilot-context-pill-prompt_preset-pp1")).toBeTruthy();
+      }
+      // A blind resend after a post-write drop can duplicate the whole message,
+      // a generic transport race shared with content-only sends.
+    });
+  }
 });

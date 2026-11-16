@@ -6,6 +6,13 @@ import type { Character, Message as DbMessage, Chat as DbChat } from "@vibe-tave
 import { serializeProfileMd } from "@vibe-tavern/db";
 import { trackerTemplateSchema } from "@vibe-tavern/api-contracts";
 import type { CoauthorEditorState } from "@vibe-tavern/api-contracts";
+import { brandId } from "@vibe-tavern/domain";
+import type { ChatBranchId, ChatId } from "@vibe-tavern/domain";
+import type { PromptAssemblyService } from "../src/domain/prompt/prompt-assembly-service.js";
+import { makeCharacterRow } from "./copilot-test-builders.js";
+import { makeChatRow, makeMessageRow } from "./insights-test-builders.js";
+import { coauthorToolInputSchema } from "./provider-boundary-test-builders.js";
+import { strictTestDouble } from "./strict-test-double.js";
 
 /**
  * Co-Author assembly characterization. Pins what the model + frontend can
@@ -27,37 +34,22 @@ function makeLoaders(overrides?: Partial<{
   userModules: Array<Omit<import("@vibe-tavern/api-contracts").CoauthorModule, "isBuiltIn">>;
   skillCatalog: import("../src/domain/coauthor/skills/skill-scanner.js").SkillCatalogEntry[];
 }>): ChatModeAssembleLoaders {
-  const character: Character = {
-    id: "char_test",
-    slug: "test",
+  // The complete stored character row, built through the standing row
+  // builder (the erased literal carried two non-column members —
+  // `avatarCrop`/`hasFileOnDisk` — the cast silently dropped; every field
+  // the assembly reads keeps its fixture value).
+  const character = makeCharacterRow("char_test", {
     name: "Test",
     description: "desc",
-    personalitySummary: null,
-    defaultScenario: null,
     firstMessage: "The opener.",
-    mesExample: null,
     mesExampleMode: "depth",
     mesExampleDepth: 4,
     alternateGreetings: ["An alt opener."],
-    postHistoryInstructions: null,
-    creatorNotes: null,
-    characterBook: null,
-    depthPrompt: null,
-    depthPromptDepth: null,
-    depthPromptRole: null,
-    extensions: {},
-    systemPrompt: null,
-    tags: [],
-    avatarAssetId: null,
-    avatarFullAssetId: null,
-    avatarCrop: null,
-    avatarExt: null,
-    hasFileOnDisk: true,
     ...overrides?.character,
-  } as unknown as Character;
+  });
 
   return {
-    getChat: async () => (overrides?.chat ?? { id: "chat_test", coauthorModuleId: null }) as any,
+    getChat: async () => makeChatRow(overrides?.chat ?? { id: "chat_test" }),
     getMessages: async () => overrides?.messages ?? [],
     getCharacter: async () => character,
     getProfileMdText: async () => overrides?.profileMd ?? "---\nname: Test\n---\n# PERSONALITY\nA test character.\n",
@@ -71,8 +63,10 @@ function makeLoaders(overrides?: Partial<{
 
 function makeInput(loaders: ChatModeAssembleLoaders, partial?: Partial<ChatModeAssembleInput>): ChatModeAssembleInput {
   return {
-    promptService: {} as never,
-    chatId: "chat_test" as never,
+    // The co-author assembly never dereferences the RP prompt service — the
+    // strict double throws loudly if a future path starts reading it.
+    promptService: strictTestDouble<PromptAssemblyService>({}, "coauthor-prompt.test promptService"),
+    chatId: brandId<ChatId>("chat_test"),
     model: "test-model",
     loaders,
     ...partial,
@@ -99,9 +93,9 @@ describe("assembleCoauthorPrompt", () => {
   test("assembles system + history + tools/maxSteps", async () => {
     const loaders = makeLoaders({
       messages: [
-        { role: "user", content: "make the personality deeper" } as never,
-        { role: "assistant", content: "on it" } as never,
-        { role: "system", content: "filtered out" } as never,
+        makeMessageRow({ id: "msg_1", role: "user", content: "make the personality deeper" }),
+        makeMessageRow({ id: "msg_2", role: "assistant", content: "on it" }),
+        makeMessageRow({ id: "msg_3", role: "system", content: "filtered out" }),
       ],
     });
     const result = await assembleCoauthorPrompt(makeInput(loaders));
@@ -153,10 +147,11 @@ describe("assembleCoauthorPrompt", () => {
       histRow("user", "continue"),
     ];
     const withLore = await assembleCoauthorPrompt(makeInput(makeLoaders({ messages: loreTurn })));
-    const withLoreTools = withLore.tools as unknown as { create_lore_entry: { inputSchema: { shape: Record<string, unknown>; safeParse(value: unknown): { success: boolean } } } };
-    expect(Object.keys(withLoreTools.create_lore_entry.inputSchema.shape)).toContain("stickyWindow");
+    if (!withLore.tools) throw new Error("withLore turn carried no toolset — the probe contract is broken");
+    const withLoreTools = coauthorToolInputSchema(withLore.tools, "create_lore_entry");
+    expect(Object.keys(withLoreTools.shape)).toContain("stickyWindow");
     expect(
-      withLoreTools.create_lore_entry.inputSchema.safeParse({ lorebookId: "lb", stickyWindow: 3, summary: "s" }).success,
+      withLoreTools.safeParse({ lorebookId: "lb", stickyWindow: 3, summary: "s" }).success,
     ).toBe(true);
 
     // Same shape WITHOUT a lore call (a profile-only turn) → the basic view:
@@ -167,14 +162,15 @@ describe("assembleCoauthorPrompt", () => {
       histRow("user", "thanks"),
     ];
     const withoutLore = await assembleCoauthorPrompt(makeInput(makeLoaders({ messages: profileTurn })));
-    const withoutLoreTools = withoutLore.tools as unknown as { create_lore_entry: { inputSchema: { shape: Record<string, unknown>; safeParse(value: unknown): { success: boolean } } } };
-    expect(Object.keys(withoutLoreTools.create_lore_entry.inputSchema.shape)).not.toContain("stickyWindow");
+    if (!withoutLore.tools) throw new Error("withoutLore turn carried no toolset — the probe contract is broken");
+    const withoutLoreTools = coauthorToolInputSchema(withoutLore.tools, "create_lore_entry");
+    expect(Object.keys(withoutLoreTools.shape)).not.toContain("stickyWindow");
     expect(
-      withoutLoreTools.create_lore_entry.inputSchema.safeParse({ lorebookId: "lb", stickyWindow: 3, summary: "s" }).success,
+      withoutLoreTools.safeParse({ lorebookId: "lb", stickyWindow: 3, summary: "s" }).success,
     ).toBe(false);
     // The starter fields are still there — lore work can begin this turn.
     for (const field of ["lorebookId", "title", "constant", "position", "depth", "logic", "enabled", "summary"]) {
-      expect(Object.keys(withoutLoreTools.create_lore_entry.inputSchema.shape), `${field} must stay in the basic view`).toContain(field);
+      expect(Object.keys(withoutLoreTools.shape), `${field} must stay in the basic view`).toContain(field);
     }
   });
 
@@ -328,7 +324,7 @@ describe("assembleCoauthorPrompt", () => {
 
   test("CTX-S4: renders the skill catalog (metadata only) and exposes read_skill_file; no eager skill body", async () => {
     const loaders = makeLoaders({
-      messages: [{ role: "user", content: "hello" } as never],
+      messages: [makeMessageRow({ id: "msg_1", role: "user", content: "hello" })],
     });
     const result = await assembleCoauthorPrompt(makeInput(loaders));
     const system = (result.prompt.finalPayload as { messages: Array<{ content: string }> }).messages[0].content;
@@ -349,7 +345,7 @@ describe("assembleCoauthorPrompt", () => {
 
   test("promptTraceDraft carries coauthor preset name and no RP-pipeline layers", async () => {
     const loaders = makeLoaders();
-    const result = await assembleCoauthorPrompt(makeInput(loaders, { branchId: "br_1" as never }));
+    const result = await assembleCoauthorPrompt(makeInput(loaders, { branchId: brandId<ChatBranchId>("br_1") }));
     // The chat has no module set (coauthorModuleId: null) → resolves to the
     // default seed module ("Character Workshop"); its NAME is baked as the
     // draft's presetName so the message-meta badge shows the module, not a
@@ -493,8 +489,8 @@ describe("assembleCoauthorPrompt", () => {
   test("CS-0d: honours excludeMessageIds in prompt assembly", async () => {
     const loaders = makeLoaders({
       messages: [
-        { id: "msg_1", role: "user", content: "hello" } as never,
-        { id: "msg_2", role: "assistant", content: "on it" } as never,
+        makeMessageRow({ id: "msg_1", role: "user", content: "hello" }),
+        makeMessageRow({ id: "msg_2", role: "assistant", content: "on it" }),
       ],
     });
     const result = await assembleCoauthorPrompt(makeInput(loaders, { excludeMessageIds: ["msg_2"] }));
@@ -508,19 +504,19 @@ describe("assembleCoauthorPrompt", () => {
   test("CS-4: includes tool messages and assistant toolCalls in history assembly", async () => {
     const loaders = makeLoaders({
       messages: [
-        { id: "msg_1", role: "user", content: "rewrite it" } as never,
-        { 
-          id: "msg_2", 
-          role: "assistant", 
+        makeMessageRow({ id: "msg_1", role: "user", content: "rewrite it" }),
+        makeMessageRow({
+          id: "msg_2",
+          role: "assistant",
           content: "calling tool",
           toolCalls: [{
             id: "call_1",
             name: "edit_personality",
             args: { content: "Bold." },
             providerOptions: { google: { thoughtSignature: "sig_google_1" } },
-          }]
-        } as never,
-        { id: "msg_3", role: "tool", toolCallId: "call_1", content: "Success" } as never,
+          }],
+        }),
+        makeMessageRow({ id: "msg_3", role: "tool", toolCallId: "call_1", content: "Success" }),
       ],
     });
     const result = await assembleCoauthorPrompt(makeInput(loaders));
@@ -562,8 +558,8 @@ describe("assembleCoauthorPrompt", () => {
     // (the model would then lose the file content it just asked for).
     const loaders = makeLoaders({
       messages: [
-        { id: "msg_1", role: "user", content: "use general-writing" } as never,
-        {
+        makeMessageRow({ id: "msg_1", role: "user", content: "use general-writing" }),
+        makeMessageRow({
           id: "msg_2",
           role: "assistant",
           content: "",
@@ -573,14 +569,14 @@ describe("assembleCoauthorPrompt", () => {
             args: { path: "general-writing/SKILL.md" },
             providerOptions: { google: { thoughtSignature: "sig_read" } },
           }],
-        } as never,
-        {
+        }),
+        makeMessageRow({
           id: "msg_3",
           role: "tool",
           toolCallId: "call_read",
           // Persisted tool-result content is the JSON-stringified read result.
           content: JSON.stringify({ path: "general-writing/SKILL.md", content: "# General Writing" }),
-        } as never,
+        }),
       ],
     });
     const result = await assembleCoauthorPrompt(makeInput(loaders));
@@ -615,23 +611,23 @@ describe("assembleCoauthorPrompt", () => {
     // response turn comes immediately after a function call turn". The window
     // must come from the provider budget (planHistoryCompaction), never a
     // hard message count.
-    const rows = [
-      { id: "m0", role: "assistant", content: "Let's develop {{char}} together" },
-      { id: "m1", role: "user", content: "прочитай скилл антислоп для начал" },
-      {
+    const rows: DbMessage[] = [
+      makeMessageRow({ id: "m0", role: "assistant", content: "Let's develop {{char}} together" }),
+      makeMessageRow({ id: "m1", role: "user", content: "прочитай скилл антислоп для начал" }),
+      makeMessageRow({
         id: "m2",
         role: "assistant",
         content: "",
         toolCalls: [{ id: "call_857157", name: "read_skill_file", args: { path: "janitor-card-antislop/SKILL.md" } }],
-      },
-      { id: "m3", role: "tool", toolCallId: "call_857157", content: "{\"path\":\"janitor-card-antislop/SKILL.md\"}" },
+      }),
+      makeMessageRow({ id: "m3", role: "tool", toolCallId: "call_857157", content: "{\"path\":\"janitor-card-antislop/SKILL.md\"}" }),
       ...Array.from({ length: 18 }, (_, i) =>
         i % 2 === 0
-          ? { id: `m${4 + i}`, role: "user", content: `filler ${i}` }
-          : { id: `m${4 + i}`, role: "assistant", content: `filler ${i}` },
+          ? makeMessageRow({ id: `m${4 + i}`, role: "user", content: `filler ${i}` })
+          : makeMessageRow({ id: `m${4 + i}`, role: "assistant", content: `filler ${i}` }),
       ),
-      { id: "m22", role: "user", content: "да, давай смешаем." },
-    ] as never[]; // 23 rows, positions 0..22 — same shape as the live chat
+      makeMessageRow({ id: "m22", role: "user", content: "да, давай смешаем." }),
+    ]; // 23 rows, positions 0..22 — same shape as the live chat
 
     const base = makeLoaders({ messages: rows });
     // Mimic the REAL loader (session-runtime.ts buildChatModeLoaders):
@@ -641,7 +637,7 @@ describe("assembleCoauthorPrompt", () => {
     const loaders: ChatModeAssembleLoaders = {
       ...base,
       getMessages: async (_chatId, _branchId, limit) =>
-        limit && limit > 0 ? rows.slice(-limit) as never[] : rows,
+        limit && limit > 0 ? rows.slice(-limit) : rows,
     };
     const result = await assembleCoauthorPrompt(makeInput(loaders));
     const history = (result.prompt.finalPayload as { messages: Array<Record<string, unknown>> }).messages;
@@ -671,22 +667,26 @@ describe("assembleCoauthorPrompt", () => {
   test("compacts when response reserve makes an otherwise fitting prompt exceed context", async () => {
     const { setTokenCountFn } = await import("@vibe-tavern/prompt-pipeline");
     setTokenCountFn((text: string) => text.length);
-    const loaders = makeLoaders({
-      messages: [
-        { id: "msg_1", role: "user", content: "Old user message." } as never,
-        { id: "msg_2", role: "assistant", content: "Old assistant message." } as never,
-        { id: "msg_3", role: "user", content: "Recent user message." } as never,
-        { id: "msg_4", role: "assistant", content: "Recent assistant message." } as never,
-      ],
-    });
-    const unbounded = await assembleCoauthorPrompt(makeInput(loaders));
-    const result = await assembleCoauthorPrompt(makeInput(loaders, {
-      contextBudget: unbounded.prompt.tokenAccounting.total + 5,
-      responseReserve: 10,
-    }));
+    try {
+      const loaders = makeLoaders({
+        messages: [
+          makeMessageRow({ id: "msg_1", role: "user", content: "Old user message." }),
+          makeMessageRow({ id: "msg_2", role: "assistant", content: "Old assistant message." }),
+          makeMessageRow({ id: "msg_3", role: "user", content: "Recent user message." }),
+          makeMessageRow({ id: "msg_4", role: "assistant", content: "Recent assistant message." }),
+        ],
+      });
+      const unbounded = await assembleCoauthorPrompt(makeInput(loaders));
+      const result = await assembleCoauthorPrompt(makeInput(loaders, {
+        contextBudget: unbounded.prompt.tokenAccounting.total + 5,
+        responseReserve: 10,
+      }));
 
-    expect(result.promptTraceDraft.compactionSummary).toBeDefined();
-    expect(result.prompt.tokenAccounting.recentHistory).toBeLessThan(4);
+      expect(result.promptTraceDraft.compactionSummary).toBeDefined();
+      expect(result.prompt.tokenAccounting.recentHistory).toBeLessThan(4);
+    } finally {
+      setTokenCountFn(() => 0);
+    }
   });
 
   describe("CED-3: edit/write tool routing per module", () => {
@@ -708,7 +708,7 @@ describe("assembleCoauthorPrompt", () => {
     });
 
     test("profile-editor module exposes all section edit+write tools (incl. EXAMPLES), no greetings", async () => {
-      const loaders = makeLoaders({ chat: { id: "chat_test", coauthorModuleId: "profile-editor" } as never });
+      const loaders = makeLoaders({ chat: { id: "chat_test", coauthorModuleId: "profile-editor" } });
       const result = await assembleCoauthorPrompt(makeInput(loaders));
       const names = new Set(Object.keys(result.tools));
       expect(names.has("edit_personality")).toBe(true);
@@ -721,7 +721,7 @@ describe("assembleCoauthorPrompt", () => {
     });
 
     test("dialogue-writer module exposes only EXAMPLES edit+write + greetings (no PERSONALITY/SCENARIO)", async () => {
-      const loaders = makeLoaders({ chat: { id: "chat_test", coauthorModuleId: "dialogue-writer" } as never });
+      const loaders = makeLoaders({ chat: { id: "chat_test", coauthorModuleId: "dialogue-writer" } });
       const result = await assembleCoauthorPrompt(makeInput(loaders));
       const names = new Set(Object.keys(result.tools));
       expect(names.has("edit_examples")).toBe(true);
@@ -752,34 +752,37 @@ describe("assembleCoauthorPrompt", () => {
     // Inject a fake token counter for this test so estimateTokens doesn't return 0
     const { setTokenCountFn } = await import("@vibe-tavern/prompt-pipeline");
     setTokenCountFn((text: string) => text.length);
+    try {
+      const loaders = makeLoaders({
+        messages: [
+          makeMessageRow({ id: "msg_0", role: "user", content: "very old message ".repeat(2000) }),
+          makeMessageRow({ id: "msg_1", role: "user", content: "rewrite it" }),
+          makeMessageRow({
+            id: "msg_2",
+            role: "assistant",
+            content: "calling tool",
+            toolCalls: [{ id: "call_1", name: "edit_personality", args: { content: "Bold." } }],
+          }),
+          makeMessageRow({ id: "msg_3", role: "tool", toolCallId: "call_1", content: "Success" }),
+        ],
+      });
+      // System prompt size + recent messages ~ some characters.
+      // Budget 15000 allows system + msg_1,2,3 but drops msg_0 (which is ~34000 chars)
+      const result = await assembleCoauthorPrompt(makeInput(loaders, { contextBudget: 15000 }));
+      const messages = (result.prompt.finalPayload as { messages: Array<{ role: string; content: unknown }> }).messages;
 
-    const loaders = makeLoaders({
-      messages: [
-        { id: "msg_0", role: "user", content: "very old message ".repeat(2000) } as never,
-        { id: "msg_1", role: "user", content: "rewrite it" } as never,
-        { 
-          id: "msg_2", 
-          role: "assistant", 
-          content: "calling tool",
-          toolCalls: [{ id: "call_1", name: "edit_personality", args: { content: "Bold." } }]
-        } as never,
-        { id: "msg_3", role: "tool", toolCallId: "call_1", content: "Success" } as never,
-      ],
-    });
-    // System prompt size + recent messages ~ some characters. 
-    // Budget 15000 allows system + msg_1,2,3 but drops msg_0 (which is ~34000 chars)
-    const result = await assembleCoauthorPrompt(makeInput(loaders, { contextBudget: 15000 }));
-    const messages = (result.prompt.finalPayload as { messages: Array<{ role: string; content: unknown }> }).messages;
-    
-    // We expect system + msg_1 + msg_2 + msg_3
-    expect(messages.length).toBe(4);
-    expect(messages[1].content).toBe("rewrite it");
-    expect(messages[2].role).toBe("assistant");
-    expect(messages[3].role).toBe("tool");
+      // We expect system + msg_1 + msg_2 + msg_3
+      expect(messages.length).toBe(4);
+      expect(messages[1].content).toBe("rewrite it");
+      expect(messages[2].role).toBe("assistant");
+      expect(messages[3].role).toBe("tool");
 
-    expect(result.prompt.tokenAccounting?.recentHistory).toBe(3);
-    expect(result.promptTraceDraft.compactionSummary).toBeDefined();
-    expect(result.promptTraceDraft.compactionSummary).toContain("Kept 3 of 4 recent messages");
+      expect(result.prompt.tokenAccounting?.recentHistory).toBe(3);
+      expect(result.promptTraceDraft.compactionSummary).toBeDefined();
+      expect(result.promptTraceDraft.compactionSummary).toContain("Kept 3 of 4 recent messages");
+    } finally {
+      setTokenCountFn(() => 0);
+    }
   });
 });
 
@@ -791,7 +794,7 @@ describe("assembleCoauthorPrompt", () => {
  * regression in any .md is caught here.
  */
 async function assembleForModule(moduleId: string): Promise<string> {
-  const loaders = makeLoaders({ chat: { id: "chat_test", coauthorModuleId: moduleId } as never });
+  const loaders = makeLoaders({ chat: { id: "chat_test", coauthorModuleId: moduleId } });
   const result = await assembleCoauthorPrompt(makeInput(loaders));
   return (result.prompt.finalPayload as { messages: Array<{ content: string }> }).messages[0].content;
 }

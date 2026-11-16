@@ -49,6 +49,12 @@ describe("ContentStore folder primitives", () => {
 		await content.writeEntityFile(PERSONAS, "per_1", "persona", { name: "v1" });
 		await content.writeEntityFile(PERSONAS, "per_1", "persona", { name: "v2" });
 		expect(await content.readEntityFile(PERSONAS, "per_1", "persona")).toEqual({ name: "v2" });
+
+		const raw = await Bun.file(join(dir, "personas", "per_1", "persona.json")).text();
+		expect(JSON.parse(raw)).toEqual({ name: "v2" });
+
+		const fresh = new ContentStore({ fileStore: createFileStore(dir) });
+		expect(await fresh.readEntityFile(PERSONAS, "per_1", "persona")).toEqual({ name: "v2" });
 	});
 
 	test("writeBinary / readBinary round-trip avatar bytes; null when missing", async () => {
@@ -161,7 +167,13 @@ describe("ContentStore legacy flat-file helpers", () => {
 		await content.writeEntity(CHARS, "char_1", { a: 1 });
 
 		expect(await content.migrateFlatToFolder(CHARS, "char_1", "card")).toBe(true);
+		await content.writeEntityFile(CHARS, "char_1", "card", { a: 2 });
+
 		expect(await content.migrateFlatToFolder(CHARS, "char_1", "card")).toBe(false);
+		expect(await content.readEntityFile(CHARS, "char_1", "card")).toEqual({ a: 2 });
+		const fresh = new ContentStore({ fileStore: createFileStore(dir) });
+		expect(await fresh.readEntityFile(CHARS, "char_1", "card")).toEqual({ a: 2 });
+		expect(JSON.parse(await Bun.file(join(dir, "characters", "char_1.json")).text())).toEqual({ a: 1 });
 	});
 
 	test("migrateFlatToFolder returns false when there is no legacy source", async () => {

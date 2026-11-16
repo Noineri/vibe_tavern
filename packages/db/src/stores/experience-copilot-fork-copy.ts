@@ -155,6 +155,7 @@ export async function forkChatThreadToBranch(
         // CA-4a2: verbatim copy SHARES asset ids with the source thread.
         // Attachment deletion must check references before removing an asset.
         attachmentsJson: row.attachmentsJson,
+        promptAttachmentsJson: row.promptAttachmentsJson,
         seq: row.seq,
         createdAt: row.createdAt,
       });

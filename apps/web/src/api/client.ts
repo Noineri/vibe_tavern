@@ -59,7 +59,7 @@ function isOurApiUrl(rawUrl: string): boolean {
 }
 
 /** True when the request already carries an Authorization header (any shape). */
-function hasAuthorization(input: RequestInfo | URL, init?: RequestInit): boolean {
+function hasAuthorization(input: Parameters<typeof fetch>[0], init?: RequestInit): boolean {
   const source = init?.headers ?? (input instanceof Request ? input.headers : undefined);
   if (!source) return false;
   if (source instanceof Headers) return source.has("Authorization");
@@ -73,7 +73,7 @@ function hasAuthorization(input: RequestInfo | URL, init?: RequestInit): boolean
  * send headers use `?token=` via appendTokenQuery (lib/mobile-token.ts) —
  * they keep raw fetch and are exempted in the bare-fetch guard by marker.
  */
-export async function apiFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+export async function apiFetch(input: Parameters<typeof fetch>[0], init?: RequestInit): Promise<Response> {
   let url: string;
   if (typeof input === "string") url = input;
   else if (input instanceof URL) url = input.href;
@@ -97,7 +97,9 @@ export async function apiFetch(input: RequestInfo | URL, init?: RequestInit): Pr
 }
 
 export const client = hc<AppType>(getGatewayBaseUrl(), {
-  fetch: apiFetch as unknown as typeof fetch,
+  // apiFetch's declared signature IS `typeof fetch` (same params, same
+  // Promise<Response>) — hono's ClientOptions.fetch accepts it directly.
+  fetch: apiFetch,
 });
 
 export { getGatewayBaseUrl, getMobileToken };

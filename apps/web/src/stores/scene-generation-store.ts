@@ -76,8 +76,6 @@ export function isVariantSceneGenerating(variantId: string): boolean {
 
 // Debug helper — mirrors the window.__ exposure pattern used by the other
 // ephemeral stores. Lets a live Playwright / dev-console session inspect which
-// variants are generating to diagnose "header stuck loading".
-if (typeof window !== "undefined") {
-  (window as unknown as { __useSceneGenerationStore?: unknown }).__useSceneGenerationStore =
-    useSceneGenerationStore;
-}
+// variants are generating to diagnose "header stuck loading". The member's type
+// lives in lib/debug-globals.d.ts (the debug-window surface's single source).
+if (typeof window !== "undefined") window.__useSceneGenerationStore = useSceneGenerationStore;

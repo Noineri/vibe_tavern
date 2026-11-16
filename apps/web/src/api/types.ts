@@ -5,7 +5,7 @@
  * derive from the api-contracts schemas. Hand-written interfaces remain only
  * where no route or schema declares the shape.
  */
-import type { Attachment, ChatBranch, Message, MessageVariant, PromptTraceRecordDto, SceneTrackerRecord } from "@vibe-tavern/domain";
+import type { Attachment, ChatBranch, Message, MessageVariant, SceneTrackerRecord } from "@vibe-tavern/domain";
 import type { DiceActorType, DiceAttempt, DiceCheckDefinition, DiceMode, DiceRollSnapshot } from "@vibe-tavern/domain";
 import type {
 	ExperienceActionDescriptor,
@@ -101,6 +101,9 @@ export type {
 
 /** The full session snapshot as the server serializes it (bootstrap carries every field). */
 type WireSessionSnapshot = NonNullable<RpcData<Api["bootstrap"]["$get"]>["snapshot"]>;
+
+/** The serialized trace shared by snapshot and history consumers, not the server-domain record. */
+export type AppPromptTrace = NonNullable<WireSessionSnapshot["promptTrace"]>;
 
 /** Message with variant data. `sceneTracker` mirrors the selected variant (swapped
  *  locally on selection); `diceRolls` / `experienceReports` are inferred public

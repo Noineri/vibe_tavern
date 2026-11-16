@@ -48,8 +48,13 @@ export function useAgentCallDirector({
 	const pending = useSidechatCallDirectorStore((s) => Boolean(s.pending[ownerKey]));
 	useEffect(() => {
 		if (!pending || threadId === null || sessionLoading || isSending) return;
+		// DK-6: the queued call carries its own i18n message key (the deck's
+		// refill action passes one; the story strip's default rides
+		// `queuedMessageKey`) — read BEFORE the remove-first consume, which
+		// deletes both the entry and its key (see the store's doc).
+		const messageKey = useSidechatCallDirectorStore.getState().queuedMessageKey(ownerKey);
 		// Remove-first: only the taker sends (see the module doc).
 		if (!useSidechatCallDirectorStore.getState().consume(ownerKey)) return;
-		send(t("story_plan_call_director_message"));
+		send(t(messageKey));
 	}, [pending, threadId, sessionLoading, isSending, ownerKey, send, t]);
 }

@@ -102,18 +102,37 @@ describe("tts-playback-store", () => {
     expect(narr?.status).toBe("complete");
     expect(narr?.total).toBe(2);
 
-    // Start another narration then stop
-    const slowSynthesize = (text: string, _p: TtsProfileRecord, _v: string): Promise<{ blob: Blob; mime: string }> =>
-      new Promise<{ blob: Blob; mime: string }>((resolve) => {
-        setTimeout(() => resolve({ blob: new Blob([text], { type: "audio/mpeg" }), mime: "audio/mpeg" }), 50);
+    // Start another narration on a parked synthesis gate, then stop mid-flight.
+    let synthCalls = 0;
+    let signalStarted!: () => void;
+    const firstStarted = new Promise<void>((resolve) => { signalStarted = resolve; });
+    let resolveSynth!: (v: { blob: Blob; mime: string }) => void;
+    const slowSynthesize = (_text: string, _p: TtsProfileRecord, _v: string): Promise<{ blob: Blob; mime: string }> => {
+      synthCalls += 1;
+      return new Promise<{ blob: Blob; mime: string }>((resolve) => {
+        resolveSynth = resolve;
+        signalStarted();
       });
+    };
     __setTtsPlaybackDepsForTests({ player: createFakePlayer(), synthesize: slowSynthesize });
     const p = useTtsPlaybackStore.getState().startNarration("m2", "A.\n\nB.\n\nC.", profile());
-    // Stop quickly before it completes
+    await firstStarted;
+    expect(useTtsPlaybackStore.getState().lastStarted?.messageId).toBe("m2");
+
     useTtsPlaybackStore.getState().stopNarration();
+    expect(useTtsPlaybackStore.getState().lastStarted).toBeNull();
+    expect("m2" in useTtsPlaybackStore.getState().progress).toBe(false);
+    expect(useTtsPlaybackStore.getState().advanceTo).toBeNull();
+
+    resolveSynth({ blob: new Blob(["A."], { type: "audio/mpeg" }), mime: "audio/mpeg" });
     await p;
-    const narr2 = useTtsPlaybackStore.getState().narrations["m2"];
+    const state = useTtsPlaybackStore.getState();
+    const narr2 = state.narrations["m2"];
     expect(narr2?.status).toBe("complete");
+    expect(synthCalls).toBe(1);
+    expect(state.lastStarted).toBeNull();
+    expect("m2" in state.progress).toBe(false);
+    expect(state.advanceTo).toBeNull();
   });
 
   test("setRate updates store rate", () => {

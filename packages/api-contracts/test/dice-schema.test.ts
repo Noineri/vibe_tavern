@@ -95,7 +95,9 @@ describe("diceAttemptSchema (per-face arithmetic)", () => {
   });
 
   it("rejects a subtotal that does not equal sum(faces)", () => {
-    expectReject(diceAttemptSchema.safeParse(validAttempt({ subtotal: 99 })));
+    const res = diceAttemptSchema.safeParse(validAttempt({ subtotal: 99, total: 101 }));
+    expectReject(res);
+    expect(res.success ? [] : res.error.issues.map((i) => i.path)).toEqual([["subtotal"]]);
   });
 
   it("rejects a total that does not equal subtotal + modifier", () => {
@@ -103,15 +105,30 @@ describe("diceAttemptSchema (per-face arithmetic)", () => {
   });
 
   it("rejects a face above the max sides bound", () => {
-    expectReject(diceAttemptSchema.safeParse(validAttempt({ faces: [3, 5, 999] })));
+    const res = diceAttemptSchema.safeParse(
+      validAttempt({ faces: [3, 5, 999], subtotal: 1007, total: 1009 }),
+    );
+    expectReject(res);
+    expect(res.success ? [] : res.error.issues.map((i) => i.path)).toEqual([["faces", 2]]);
   });
 
   it("rejects a face below 1", () => {
-    expectReject(diceAttemptSchema.safeParse(validAttempt({ faces: [3, 0, 6], subtotal: 9 })));
+    const res = diceAttemptSchema.safeParse(
+      validAttempt({ faces: [3, 0, 6], subtotal: 9, total: 11 }),
+    );
+    expectReject(res);
+    expect(res.success ? [] : res.error.issues.map((i) => i.path)).toEqual([["faces", 1]]);
   });
 
   it("rejects a non-integer face", () => {
-    expectReject(diceAttemptSchema.safeParse(validAttempt({ faces: [3.5] })));
+    const res = diceAttemptSchema.safeParse(
+      validAttempt({ faces: [3.5, 4.5, 6], subtotal: 14, total: 16 }),
+    );
+    expectReject(res);
+    expect(res.success ? [] : res.error.issues.map((i) => i.path)).toEqual([
+      ["faces", 0],
+      ["faces", 1],
+    ]);
   });
 
   it("rejects an empty faces array (min 1)", () => {
@@ -255,18 +272,21 @@ describe("diceRollSnapshotSchema (choose policy)", () => {
   });
 
   it("rejects a choose policy where finalAttemptId does not match the chosen attempt", () => {
-    expectReject(
-      diceRollSnapshotSchema.safeParse(
-        validRollSnapshot({
-          resolution: "narrative",
-          mode: "immersive",
-          policy: "choose",
-          final: undefined,
-          finalAttemptId: "att_other",
-          attempts: [validAttempt({ chosenFinal: true })],
-        }),
-      ),
+    const res = diceRollSnapshotSchema.safeParse(
+      validRollSnapshot({
+        resolution: "narrative",
+        mode: "immersive",
+        policy: "choose",
+        final: undefined,
+        finalAttemptId: "att_other",
+        attempts: [
+          validAttempt({ chosenFinal: true }),
+          validAttempt({ attemptId: "att_other", chosenFinal: false }),
+        ],
+      }),
     );
+    expectReject(res);
+    expect(res.success ? [] : res.error.issues.map((i) => i.path)).toEqual([["finalAttemptId"]]);
   });
 });
 
@@ -292,9 +312,11 @@ describe("diceRollSnapshotSchema (bounds + shape)", () => {
   });
 
   it("rejects an empty attempts array (min 1)", () => {
-    expectReject(
-      diceRollSnapshotSchema.safeParse(validRollSnapshot({ attempts: [] })),
+    const res = diceRollSnapshotSchema.safeParse(
+      validRollSnapshot({ attempts: [], finalAttemptId: null }),
     );
+    expectReject(res);
+    expect(res.success ? [] : res.error.issues.map((i) => i.path)).toEqual([["attempts"]]);
   });
 });
 
@@ -314,21 +336,29 @@ describe("diceRollRequestSchema", () => {
     ).toBe(true);
   });
 
-  it("rejects a request that tries to submit authoritative faces", () => {
-    // Faces are not part of the request contract — extra keys are stripped
-    // (non-strict), but a MISSING required field is the real guard. Here the
-    // required requestId is omitted.
-    const { requestId, ...noId } = {
+  it("strips client-supplied authoritative fields such as faces and total (non-strict schema)", () => {
+    const parsed = expectData(
+      diceRollRequestSchema.safeParse({
+        scriptId: "script_1",
+        checkId: "check_attack",
+        actorType: "character",
+        actorId: "char_1",
+        mode: "normal",
+        requestId: "req_1",
+        faces: [6, 6, 6],
+        total: 18,
+      }),
+    ) as Record<string, unknown>;
+    expect(parsed).toEqual({
       scriptId: "script_1",
       checkId: "check_attack",
       actorType: "character",
       actorId: "char_1",
       mode: "normal",
       requestId: "req_1",
-      faces: [6, 6, 6],
-    };
-    void requestId;
-    expectReject(diceRollRequestSchema.safeParse(noId));
+    });
+    expect("faces" in parsed).toBe(false);
+    expect("total" in parsed).toBe(false);
   });
 
   it("rejects an unknown mode", () => {

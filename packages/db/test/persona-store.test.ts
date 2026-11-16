@@ -39,10 +39,24 @@ describe("PersonaStore folder storage (B2)", () => {
 	});
 
 	test("getById is idempotent", async () => {
-		const { store } = await setup();
+		const { dataRoot, db, store } = await setup();
 		const created = await store.create({ name: "Alex" });
-		expect((await store.getById(created.id))?.name).toBe("Alex");
-		expect((await store.getById(created.id))?.name).toBe("Alex");
+		const personaDir = join(dataRoot, PERSONAS, created.id);
+		const filePath = join(personaDir, "persona.json");
+		const beforeDisk = await Bun.file(filePath).text();
+		const beforeDirEntries = (await readdir(personaDir)).sort();
+		const beforeRootEntries = (await readdir(join(dataRoot, PERSONAS))).sort();
+		const beforeDbRow = await db.select().from(personasTable).where(eq(personasTable.id, created.id)).get();
+
+		const firstRead = await store.getById(created.id);
+		const secondRead = await store.getById(created.id);
+		expect(firstRead).toEqual(created);
+		expect(secondRead).toEqual(created);
+
+		expect(await Bun.file(filePath).text()).toBe(beforeDisk);
+		expect((await readdir(personaDir)).sort()).toEqual(beforeDirEntries);
+		expect((await readdir(join(dataRoot, PERSONAS))).sort()).toEqual(beforeRootEntries);
+		expect(await db.select().from(personasTable).where(eq(personasTable.id, created.id)).get()).toEqual(beforeDbRow);
 	});
 
 	test("update rewrites {id}/persona.json", async () => {

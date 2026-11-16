@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { useDomEnv } from "../../../test/dom-env.js";
-import type { Window as HappyWindow } from "happy-dom";
+import type { DetachedWindowAPI } from "happy-dom";
 
 useDomEnv({ failOnNetwork: true });
 
@@ -30,7 +30,11 @@ const initialBootstrap = useBootstrapStore.getState();
 const openSpy = spyOn(window, "open").mockImplementation(() => null);
 const initialSections = getSettingsSections();
 const initialWidth = window.innerWidth;
-const browser = window as unknown as HappyWindow;
+// The happy-dom global registered by useDomEnv(): lib.dom's Window type
+// cannot express the test driver's happyDOM member, so the view is a
+// documented narrowing (the registered window really carries it).
+type HappyDomTestWindow = typeof window & { happyDOM: DetachedWindowAPI };
+const browser = window as HappyDomTestWindow;
 const UPDATE_CACHE_KEY = "vibe-tavern.update-check.v3";
 const disposers: Array<() => void> = [];
 

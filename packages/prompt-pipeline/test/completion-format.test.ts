@@ -4,7 +4,7 @@
  * `completionFormat` — exported like `prefill` so the orchestrator can thread
  * it to the TC completion seam. Absent preset / absent field → null (auto).
  */
-import { describe, it, expect, beforeAll } from "bun:test";
+import { describe, it, expect, beforeAll, afterAll } from "bun:test";
 import { assemblePrompt } from "../src/assemble.ts";
 import { setTokenCountFn } from "../src/compaction.ts";
 import type { PromptAssemblyContext } from "../src/types.ts";
@@ -39,6 +39,7 @@ const MANUAL_FORMAT: GenerationFormat = {
 
 describe("assemblePrompt — completionFormat threading (LS-3b)", () => {
   beforeAll(() => setTokenCountFn((text: string) => text.length));
+  afterAll(() => setTokenCountFn(() => 0));
 
   it("a preset generationFormat rides the result as completionFormat", () => {
     const result = assemblePrompt(baseContext({

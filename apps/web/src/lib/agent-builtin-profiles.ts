@@ -2,7 +2,7 @@
  * Sidechat built-in profile presentation (DIRECTOR_MODE_PLAN DR-7) — the
  * ONE web-side derivation for everything a sidechat built-in profile adds
  * over the host's own defaults: its localized display name, its empty-state
- * presentation (its own four starters + title/subtitle keys), and the
+ * presentation (its own starter list + title/subtitle keys), and the
  * hand-off row to the director (mockup §3).
  *
  * Scope is deliberately NARROW: only the TWO sidechat built-ins
@@ -70,9 +70,12 @@ export const BUILTIN_DIRECTOR_PROFILE_ID = "builtin-director";
 
 /** A built-in profile's own empty-state presentation (DR-7, mockup §3). */
 export interface AgentBuiltinProfilePresentation {
-	/** The profile's four starter chips (the AP-18 tuple shape — exactly
-	 *  four, resolved through `t`, click = composer prefill, never sent). */
-	starterKeys: readonly [AgentI18nKey, AgentI18nKey, AgentI18nKey, AgentI18nKey];
+	/** The profile's starter chips (resolved through `t`, click = composer
+	 *  prefill, never sent). DK-5b widened the AP-18 fixed four-tuple to a
+	 *  LIST generically — a profile may carry any number of starters; every
+	 *  consumer here and in the shell already reads a list, and the hand-off
+	 *  row keeps pinning the FIRST key as its prefill. */
+	starterKeys: readonly AgentI18nKey[];
 	/** The empty state's title key — the built-in's localized display name. */
 	titleKey: AgentI18nKey;
 	/** The empty state's subtitle key (mockup §3, the director's line). */
@@ -88,13 +91,15 @@ export interface AgentBuiltinProfileHandoff {
 	prefillKey: AgentI18nKey;
 }
 
-/** The director built-in's own empty state (mockup §3, left column). */
+/** The director built-in's own empty state (mockup §3, left column; DK-5b
+ *  appended the twist-deck starter after the original four). */
 const DIRECTOR_PRESENTATION: AgentBuiltinProfilePresentation = {
 	starterKeys: [
 		"agent_starter_director_plan",
 		"agent_starter_director_character_card",
 		"agent_starter_director_scene_tracker",
 		"agent_starter_director_recap",
+		"agent_starter_director_deck",
 	],
 	titleKey: "agent_profile_name_builtin_director",
 	subKey: "agent_director_empty_sub",

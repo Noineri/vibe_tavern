@@ -26,7 +26,9 @@ const stableTDynamic = (key: string, opts?: Record<string, unknown>) => {
 const realTooltip = await import("../../shared/Tooltip.js");
 
 const listMock = mock(async () => ({ profiles: [] as ServicePromptProfile[], activeProfileId: null as string | null }));
-const getDetailMock = mock(async (_id: string) => null as unknown as Awaited<ReturnType<typeof realApi.getServicePromptProfileDetail>>);
+// Typed to the API's own return (detail | null): the default answers the
+// "not found" null member, and tests re-implement full details on it.
+const getDetailMock = mock(async (_id: string): Promise<Awaited<ReturnType<typeof realApi.getServicePromptProfileDetail>>> => null);
 const createMock = mock(async (body: { name: string; overrides: Record<string, string> }) => ({ id: "new_id", name: body.name, isDefault: false, sortOrder: 1, overrides: body.overrides, createdAt: "", updatedAt: "" } as ServicePromptProfile));
 const updateMock = mock(async (id: string, body: { name?: string; overrides?: Record<string, string> }) => ({ id, name: body.name ?? "Renamed", isDefault: false, sortOrder: 0, overrides: body.overrides ?? {}, createdAt: "", updatedAt: "" } as ServicePromptProfile));
 const deleteMock = mock(async (_id: string) => undefined);
@@ -575,7 +577,12 @@ describe("ServicePromptsPane", () => {
 		getDetailMock.mockResolvedValue({ profile: def, resolved: makeResolved() });
 		const { getByTestId } = render(<Harness active={true} />);
 		await waitFor(() => expect(getByTestId("service-row-p2")).toBeTruthy());
-		expect(getByTestId("service-row-p2").querySelector(".bg-success")).toBeTruthy();
+		const liveRow = getByTestId("service-row-p2");
+		expect(liveRow.querySelector(".bg-success")).toBeTruthy();
+		expect(liveRow.className).not.toContain("bg-success");
+		const idleRow = getByTestId("service-row-default");
+		expect(idleRow.querySelector(".bg-success")).toBeNull();
+		expect(idleRow.querySelector(".bg-danger")).toBeNull();
 	});
 
 	test("row titles wrap instead of truncating", async () => {

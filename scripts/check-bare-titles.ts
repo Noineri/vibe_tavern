@@ -35,7 +35,10 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 
 /** Snapshot of the tree on 2026-11-05 — the step-1 inventory table lives in
- *  plan repo BARE_TITLE_TOOLTIPS_REPORT. Lower after cleanups, never raise. */
+ *  plan repo BARE_TITLE_TOOLTIPS_REPORT. Lower after cleanups, never raise.
+ *
+ *  0 (2026-11-16, feat←dev merge): dev's themed-tooltip campaign reached 0/0
+ *  and its conversions merged in; the merged tree carries no bare titles. */
 export const BARE_TITLE_BUDGET = 0;
 
 const ROOT = join(import.meta.dir, "..");

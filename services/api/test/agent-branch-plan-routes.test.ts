@@ -124,6 +124,13 @@ describe("PUT /api/agent/chats/:chatId/branches/:branchId/plan → GET round tri
 	});
 
 	test("branch plans and script plans coexist — each owner keeps its own", async () => {
+		// Seed both owners locally so the pin is order-independent.
+		const seedBranch = await putPlan(chat.id, chat.activeBranchId, {
+			goal: "Branch initial",
+			constraints: [],
+			tasks: [],
+		});
+		expect(seedBranch.status).toBe(200);
 		const scriptRes = await app.request(`/api/scripts/${scriptId}/agent-plan`, {
 			method: "PUT",
 			headers: jsonHeaders,
@@ -133,7 +140,19 @@ describe("PUT /api/agent/chats/:chatId/branches/:branchId/plan → GET round tri
 		});
 		expect(scriptRes.status).toBe(200);
 
-		// The branch write above must not have touched the script's plan.
+		// Writing the script plan did not overwrite the branch plan.
+		const branchAfterScript = ((await (
+			await app.request(planUrl(chat.id, chat.activeBranchId))
+		).json()) as { plan: WirePlan }).plan;
+		expect(branchAfterScript.goal).toBe("Branch initial");
+
+		// Mutating the branch plan while the script plan exists leaves the script plan untouched.
+		const mutateBranch = await putPlan(chat.id, chat.activeBranchId, {
+			goal: "Branch updated",
+			constraints: [],
+			tasks: [],
+		});
+		expect(mutateBranch.status).toBe(200);
 		const scriptBack = ((await (
 			await app.request(`/api/scripts/${scriptId}/agent-plan`)
 		).json()) as { plan: WirePlan }).plan;
@@ -141,7 +160,7 @@ describe("PUT /api/agent/chats/:chatId/branches/:branchId/plan → GET round tri
 		const branchBack = ((await (
 			await app.request(planUrl(chat.id, chat.activeBranchId))
 		).json()) as { plan: WirePlan }).plan;
-		expect(branchBack.goal).toBe("Discuss the plot");
+		expect(branchBack.goal).toBe("Branch updated");
 	});
 });
 
@@ -194,6 +213,11 @@ describe("unknown or foreign owners are 404s on both routes", () => {
 	});
 
 	test("a branch belonging to a DIFFERENT chat → 404 (never a cross-owner leak)", async () => {
+		await putPlan(chat.id, chat.activeBranchId, {
+			goal: "Owner plan stays intact",
+			constraints: [],
+			tasks: [],
+		});
 		// chat's branch id under otherChat's path: exists, but not there.
 		const getRes = await app.request(planUrl(otherChat.id, chat.activeBranchId));
 		expect(getRes.status).toBe(404);
@@ -208,18 +232,33 @@ describe("unknown or foreign owners are 404s on both routes", () => {
 		const untouched = ((await (
 			await app.request(planUrl(chat.id, chat.activeBranchId))
 		).json()) as { plan: WirePlan }).plan;
-		expect(untouched.goal).toBe("Discuss the plot");
+		expect(untouched.goal).toBe("Owner plan stays intact");
 	});
 });
 
 describe("typed client", () => {
-	test("the web client's exact chains resolve through AppType inference", () => {
-		// The `AppType` import is type-only (erased at runtime): this pins at
-		// compile time that the mounted router actually serves the branch-plan
-		// path shape (SC-0i's web client will drive it).
-		const typed = hc<AppType>("http://localhost");
+	test("the web client's exact chains resolve through AppType inference and drive the mounted route", async () => {
+		const typed = hc<AppType>("http://localhost", {
+			fetch: (input: Parameters<typeof app.request>[0], init?: Parameters<typeof app.request>[1]) =>
+				Promise.resolve(app.request(input, init)),
+		});
 		const branch = typed.api.agent.chats[":chatId"].branches[":branchId"].plan;
 		expect(typeof branch.$get).toBe("function");
 		expect(typeof branch.$put).toBe("function");
+
+		const putRes = await branch.$put({
+			param: { chatId: chat.id, branchId: chat.activeBranchId },
+			json: { plan: { goal: "Typed branch goal", constraints: [], tasks: [] } },
+		});
+		expect(putRes.status).toBe(200);
+		const putBody = await putRes.json();
+		if (!("plan" in putBody)) throw new Error("unexpected validation error response");
+		expect(putBody.plan.goal).toBe("Typed branch goal");
+
+		const getRes = await branch.$get({
+			param: { chatId: chat.id, branchId: chat.activeBranchId },
+		});
+		expect(getRes.status).toBe(200);
+		expect((await getRes.json()).plan.goal).toBe("Typed branch goal");
 	});
 });

@@ -129,6 +129,49 @@ export async function rejectStoryPlanProposal(
   return unwrapProposal(response);
 }
 
+// ─── The Director message arm (DIRECTOR_MESSAGE_TOOLS_PLAN DMT-33) ──────────
+// Same routes, same envelope/typed-409 handling as the three arms above (the
+// backend dispatches by the row's recordType — the DMT-22 registry). Both
+// calls stay BODY-LESS: the whole reviewed payload lives in the addressed row.
+// The response's `message` companion (DMT-22) is the TARGET-SCOPED refreshed
+// message view — the affected message row + its full variant list post-write,
+// scoped by chat/branch — carried only by an ACCEPTED message-edit /
+// message-variant resolution; the card ingests it through the canonical
+// `ingestMessageCompanionAction` (never an unscoped full snapshot).
+
+/** The DMT-22 target-scoped message companion, derived from the apply/reject
+ *  responses' optional `message` field — the route's inferred wire type is the
+ *  ONE source for the shape (the producing domain type is unreachable from the
+ *  web app); a second hand-written copy would be a defect from copy #2. */
+export type SidechatProposalMessageCompanion = NonNullable<
+  ObjectiveProposalResolveResponse["message"]
+>;
+
+/** Apply one pending Director message proposal (either record type — the
+ *  `message-edit` guarded edit or the `message-variant` separate-swipe save;
+ *  the server dispatches by the row). */
+export async function applyDirectorMessageProposal(
+  threadId: string,
+  toolCallId: string,
+): Promise<ObjectiveProposalResolveResponse> {
+  const response = await client.api.agent.threads[":threadId"].proposals[":toolCallId"].apply.$post({
+    param: { threadId, toolCallId },
+  });
+  return unwrapProposal(response);
+}
+
+/** Reject one pending Director message proposal: nothing is written to the
+ *  RP chat — only the proposal row's status. */
+export async function rejectDirectorMessageProposal(
+  threadId: string,
+  toolCallId: string,
+): Promise<ObjectiveProposalResolveResponse> {
+  const response = await client.api.agent.threads[":threadId"].proposals[":toolCallId"].reject.$post({
+    param: { threadId, toolCallId },
+  });
+  return unwrapProposal(response);
+}
+
 // ─── The tracker-scene arm (DIRECTOR_MODE_PLAN DR-10b) ─────────────────────
 // Same routes, same envelope/typed-409 handling as the objective pair above
 // (the backend dispatches by the row's recordType — DR-5). Both calls stay

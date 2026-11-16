@@ -3,8 +3,20 @@ import { toast } from "sonner";
 import type { AgentPlanOwner } from "@vibe-tavern/domain";
 import { useT } from "../../../i18n/context.js";
 import { useAgentPlan } from "../../../hooks/use-agent-plan.js";
-import { AgentPlanPanel } from "../agent-plan/AgentPlanPanel.js";
+import { useStorySceneClock } from "../../../hooks/use-story-scene-clock.js";
+import {
+  countRemaining,
+  AgentPlanPanel,
+} from "../agent-plan/AgentPlanPanel.js";
 import { AgentPlanEditorModal } from "../agent-plan/AgentPlanEditorModal.js";
+import { StoryCurtainTabs } from "../agent-plan/StoryCurtainTabs.js";
+import { StoryDeckView } from "../agent-plan/StoryDeckView.js";
+import { StoryCalendarView } from "../agent-plan/StoryCalendarView.js";
+import {
+  DEFAULT_STORY_CURTAIN_TAB,
+  STORY_CURTAIN_TABS,
+  useStoryCurtainTabStore,
+} from "../../../stores/story-curtain-tab-store.js";
 
 /**
  * AgentPlanSection (PM-6, EXPERIENCE_COPILOT_PLAN_MODE_PLAN; AS-6b2 moved
@@ -28,6 +40,17 @@ import { AgentPlanEditorModal } from "../agent-plan/AgentPlanEditorModal.js";
  * desktop sidechat drops the section entirely, P1, and the chat column's
  * strip becomes the story plan's desktop home, DR-11). Script/mini-app
  * owners pass no presentation props: today's inline panel, byte-identical.
+ *
+ * DK-6 (mockup §1/§7): the branch curtain gains its second header row — the
+ * tab strip (events/deck/calendar with muted counts, remembered per chat,
+ * default events) — and the per-tab bodies: the events tab keeps the
+ * default body (the premise + the task list, byte-identical), the deck tab
+ * renders `StoryDeckView`, the calendar tab `StoryCalendarView` (DK-9; its
+ * chips open the editor here, focused on the clicked event). The tab row
+ * lives HERE (not in the strip) because the curtain has TWO mounts — the
+ * strip (desktop + the mobile Chat pane) and this section's AgentChatPane
+ * mount (the mobile sidechat pane) — and the deck renders on BOTH
+ * (responsive dual-mode canon).
  */
 export function AgentPlanSection({
   owner,
@@ -36,6 +59,7 @@ export function AgentPlanSection({
   headerActionsBefore,
   showEditorInCollapsedRow,
   flashTitle,
+  flashTone,
 }: {
   owner: AgentPlanOwner;
   locked: boolean;
@@ -54,11 +78,64 @@ export function AgentPlanSection({
   /** DR-11: forwarded — the passed-check flash (§4, `agent_plan_story_flash_done`)
    *  on the success tint while set (curtain presentation only). */
   flashTitle?: string | null;
+  /** DK-9: forwarded — the flash's tone (§6's accent promotion tone; the
+   *  success tone is the default). */
+  flashTone?: "success" | "accent";
 }) {
   const { t } = useT();
   const { plan, save } = useAgentPlan(owner);
   const [editorOpen, setEditorOpen] = useState(false);
+  // DK-9: a calendar CHIP opens the editor AT that event — the focus rides
+  // into the editor modal (scroll + accent ring on the row); the plain
+  // editor button clears it.
+  const [editorFocusTaskId, setEditorFocusTaskId] = useState<string | null>(null);
+  const openEventAt = (taskId: string) => {
+    setEditorFocusTaskId(taskId);
+    setEditorOpen(true);
+  };
   const story = owner.kind === "chatBranch";
+
+  // DK-10 (mockup §6): the story clock is read HERE — the story-aware
+  // caller — and threaded EXPLICITLY down to the shared panel and editor
+  // modal (they never read the hook themselves: a script plan can render
+  // while the active branch has a readable clock, and it must stay
+  // byte-identical, so a script owner passes null whatever the active
+  // branch reads). The hook call is unconditional (hook rules); its value
+  // is simply not shared with script owners.
+  const { clock: branchClock } = useStorySceneClock();
+  const storyClock = story ? branchClock : null;
+
+  // ── DK-6: the story curtain's tabs + bodies (curtain-only) ───────────────
+  // The tab choice is remembered per chat in the plain tab store (default
+  // events — the events body IS today's curtain). The events tab passes
+  // NO body override (the panel renders its default premise + task list,
+  // byte-identical); deck and calendar pass their bodies. The deck tab's
+  // view needs the streaming lock (the director call disables while a
+  // sidechat turn streams — the DR-12 rule).
+  const chatId = story ? owner.chatId : null;
+  const branchId = story ? owner.branchId : null;
+  const tab = useStoryCurtainTabStore((s) =>
+    chatId !== null ? (s.tabsByChat[chatId] ?? DEFAULT_STORY_CURTAIN_TAB) : DEFAULT_STORY_CURTAIN_TAB,
+  );
+  const curtainTabs =
+    chatId !== null && branchId !== null ? (
+      <StoryCurtainTabs chatId={chatId} branchId={branchId} eventsCount={countRemaining(plan.tasks)} />
+    ) : undefined;
+  const curtainBody =
+    chatId === null || branchId === null
+      ? undefined
+      : tab === STORY_CURTAIN_TABS.deck
+        ? <StoryDeckView chatId={chatId} branchId={branchId} locked={locked} />
+        : tab === STORY_CURTAIN_TABS.calendar
+          ? (
+            <StoryCalendarView
+              chatId={chatId}
+              branchId={branchId}
+              locked={locked}
+              onOpenEvent={openEventAt}
+            />
+          )
+          : undefined;
 
   // R4 (mockup §5): the revert-to-work write — the completed event becomes
   // the ONE active event, the currently-active one steps back to pending;
@@ -86,7 +163,10 @@ export function AgentPlanSection({
     <>
       <AgentPlanPanel
         plan={plan}
-        onOpenEditor={() => setEditorOpen(true)}
+        onOpenEditor={() => {
+          setEditorFocusTaskId(null);
+          setEditorOpen(true);
+        }}
         locked={locked}
         presentation={story ? "curtain" : undefined}
         onRevertTask={revertTask}
@@ -94,10 +174,22 @@ export function AgentPlanSection({
         headerActionsBefore={headerActionsBefore}
         showEditorInCollapsedRow={showEditorInCollapsedRow}
         flashTitle={flashTitle}
+        flashTone={flashTone}
+        curtainTabs={curtainTabs}
+        curtainBody={curtainBody}
+        storyClock={storyClock}
       />
       {/* The editor locks (fields + save) while a turn streams so the model's
-          rewrite and the user's edit can never race. */}
-      <AgentPlanEditorModal owner={owner} open={editorOpen} onClose={() => setEditorOpen(false)} locked={locked} />
+          rewrite and the user's edit can never race. DK-10: the story clock
+          rides along — the editor's when-row shows only while it reads. */}
+      <AgentPlanEditorModal
+        owner={owner}
+        open={editorOpen}
+        onClose={() => setEditorOpen(false)}
+        locked={locked}
+        focusTaskId={editorFocusTaskId}
+        storyClock={storyClock}
+      />
     </>
   );
 }

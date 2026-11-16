@@ -19,7 +19,8 @@ import { tmpdir } from "node:os";
 import { createRuntimeStore } from "../src/runtime/session/session-runtime-store.js";
 import { SessionRuntime } from "../src/runtime/session/session-runtime.js";
 import { setTokenCountFn } from "@vibe-tavern/prompt-pipeline";
-import type { ChatId } from "@vibe-tavern/domain";
+import { brandId } from "@vibe-tavern/domain";
+import type { ChatId, CharacterId } from "@vibe-tavern/domain";
 
 async function createTestRuntime(): Promise<{
 	runtime: SessionRuntime;
@@ -48,14 +49,17 @@ async function createTestRuntime(): Promise<{
 		runtime,
 		characterId: seedChat!.characterId,
 		stores,
-		cleanup: async () => { try { await rm(tmpDir, { recursive: true, force: true }); } catch {} },
+		cleanup: async () => { try { await rm(tmpDir, { recursive: true, force: true }); } catch { /* best-effort teardown: the test has finished asserting; a locked or already-removed tmp dir must not fail it */ } },
 	};
 }
 
 describe("Co-Author chat API (CA-4)", () => {
 	let env: Awaited<ReturnType<typeof createTestRuntime>>;
 	beforeAll(() => setTokenCountFn((text: string) => text.length));
-	afterAll(async () => { if (env) await env.cleanup(); });
+	afterAll(async () => {
+		setTokenCountFn(() => 0);
+		if (env) await env.cleanup();
+	});
 
 	it("createChatForCharacter persists mode; listCoauthorChats scopes by character+mode", async () => {
 		env = await createTestRuntime();
@@ -74,7 +78,7 @@ describe("Co-Author chat API (CA-4)", () => {
 		await env.runtime.chatLifecycle.createChatForCharacter(env.characterId, "coauthor");
 		await env.runtime.chatLifecycle.createChatForCharacter(env.characterId, "coauthor");
 
-		const coauthor = await env.runtime.listCoauthorChats(env.characterId as never);
+		const coauthor = await env.runtime.listCoauthorChats(brandId<CharacterId>(env.characterId));
 		// 1 (first coCreated) + 2 = 3 co-author chats. The rp chat + the seed
 		// chat from createFromScratch are excluded.
 		expect(coauthor.length).toBe(3);

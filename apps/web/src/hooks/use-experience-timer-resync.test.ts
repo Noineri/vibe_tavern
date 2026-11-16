@@ -9,7 +9,7 @@
  * getState override), so the hook's exact call into the store is what is
  * asserted — no HTTP, no other store machinery.
  */
-import { describe, expect, it, mock, beforeEach, afterEach } from "bun:test";
+import { describe, expect, it, mock, beforeEach, afterEach, type Mock } from "bun:test";
 
 import type { ExperienceEffectRow } from "@vibe-tavern/db";
 
@@ -41,14 +41,17 @@ function makeEffect(over: Partial<ExperienceEffectRow> = {}): ExperienceEffectRo
 const realGetState = useExperienceStore.getState.bind(useExperienceStore);
 
 describe("useExperienceTimerResync", () => {
-  let rehydrateMock: ReturnType<typeof mock>;
+  // Typed mock (the 8a idiom): the generic matches the store slice's real
+  // `rehydrate` signature, so the getState double below is assignable
+  // cast-free (the spread already carries the full real state).
+  let rehydrateMock: Mock<(chatId: string, branchId: string) => Promise<void>>;
 
   beforeEach(() => {
-    rehydrateMock = mock(async () => {});
+    rehydrateMock = mock(async (_chatId: string, _branchId: string) => {});
     useExperienceStore.getState = mock(() => ({
       ...realGetState(),
       rehydrate: rehydrateMock,
-    })) as unknown as typeof useExperienceStore.getState;
+    }));
   });
 
   afterEach(() => {

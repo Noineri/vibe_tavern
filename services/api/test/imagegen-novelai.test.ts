@@ -22,6 +22,7 @@ import { createImagePromptProfileRoutes } from "../src/api/routes/image-prompt-p
 import { AssetService } from "../src/domain/asset/asset-service.js";
 import { domainErrorToJson, httpStatusForDomainError, isDomainError } from "../src/shared/errors.js";
 import { DomainError } from "../src/shared/errors.js";
+import { testFetch } from "./test-fetch-seam.js";
 
 interface RecordedCall {
   url: string;
@@ -33,10 +34,10 @@ function makeTransport(respond: (url: string, init?: RequestInit) => Response): 
   calls: RecordedCall[];
 } {
   const calls: RecordedCall[] = [];
-  const transport: typeof fetch = (url, init) => {
+  const transport: typeof fetch = testFetch((url, init) => {
     calls.push({ url: String(url), init });
     return Promise.resolve(respond(String(url), init));
-  };
+  });
   return { transport, calls };
 }
 
@@ -325,13 +326,13 @@ describe("NovelAI qualityToggle through the generate route (NAI-6a)", () => {
 
   async function setup() {
     const bodies: Record<string, unknown>[] = [];
-    const transport: typeof fetch = (url, init) => {
+    const transport: typeof fetch = testFetch((url, init) => {
       if (String(url).endsWith("/ai/generate-image")) {
         bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
         return Promise.resolve(jsonResponse(generatedImage(), 201));
       }
       return Promise.resolve(jsonResponse({}, 200));
-    };
+    });
     const { app, promptProfiles, stores } = await makeApp(transport);
     const character = await stores.characters.create({ name: "Test" });
     const chatId = (

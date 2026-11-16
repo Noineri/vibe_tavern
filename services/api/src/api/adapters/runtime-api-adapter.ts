@@ -41,6 +41,7 @@ import { COAUTHOR_SKILL_LIBRARY } from "../contract/skill-contracts.js";
 import type { AgentKindId } from "../../domain/agent/agent-kind.js";
 import { CopilotProfileAdapter } from "./copilot-profile-adapter.js";
 import { AgentPlanAdapter } from "./agent-plan-adapter.js";
+import { StoryDeckAdapter } from "./story-deck-adapter.js";
 import type { StoryPlanSync } from "../../domain/director/story-plan-sync.js";
 import { SamplerSetAdapter } from "./sampler-set-adapter.js";
 import { FormatTemplateAdapter } from "./format-template-adapter.js";
@@ -52,6 +53,9 @@ import { ExperienceAdapter } from "./experience-adapter.js";
 import { ExperienceCopilotAdapter } from "./experience-copilot-adapter.js";
 import { AgentThreadProposalAdapter } from "./agent-thread-proposal-adapter.js";
 import { AgentFeedAdapter } from "./agent-feed-adapter.js";
+import { runDirectorMessageEditorDelegate } from "../../domain/director/director-message-editor-delegate.js";
+import { createDirectorSwipeGenerationDelegate } from "../../domain/director/director-swipe-delegate.js";
+import { createAiAssistantDeps } from "../../domain/ai-assistant/ai-assistant-deps.js";
 import { brandId, type ChatBranchId, type ChatId } from "@vibe-tavern/domain";
 import { notFound } from "../../shared/errors.js";
 import type { SkillLibraryService } from "../../domain/coauthor/skills/skill-library.js";
@@ -100,6 +104,7 @@ export class RuntimeApiAdapter implements RuntimeApi {
 	readonly copilotSkills: CopilotSkillsByKindRuntimeApi;
 	readonly copilotProfiles: CopilotProfileAdapter;
 	readonly agentPlan: AgentPlanAdapter;
+	readonly storyDeck: StoryDeckAdapter;
 	readonly samplerSets: SamplerSetAdapter;
 	readonly formatTemplates: FormatTemplateAdapter;
 	readonly aiInstructionTemplates: AiInstructionTemplateAdapter;
@@ -144,11 +149,12 @@ export class RuntimeApiAdapter implements RuntimeApi {
 		attachmentAssetLoader: AttachmentAssetLoader = (assetId) => assetService.loadBuffer(assetId),
 		/** DR-3b: the story-plan sync the branch-plan PUT delegates to
 		 * (StoryPlanSync.applyPlan — normalize-or-422 + save + ACTIVE-branch
-		 * projection), and DR-5's proposal apply reuses for the next-event
-		 * insert (insertNextEvent). Optional: harnesses without it keep the
+		 * projection), DR-5's proposal apply reuses for the next-event
+		 * insert (insertNextEvent), and DK-4a's deck play route delegates to
+		 * for playCard. Optional: harnesses without it keep the
 		 * plain store save / the unavailability 404; production
 		 * (server-runtime) always injects the real sync. */
-		storyPlanSync?: Pick<StoryPlanSync, "applyPlan" | "insertNextEvent">,
+		storyPlanSync?: Pick<StoryPlanSync, "applyPlan" | "insertNextEvent" | "playCard">,
 		/** SM-6: the server's data directory for the system adapter's
 		 * open-in-file-manager action. Optional so harnesses can omit it — the
 		 * adapter then answers `{ available: false }`. */
@@ -213,6 +219,7 @@ export class RuntimeApiAdapter implements RuntimeApi {
 		);
 		this.copilotProfiles = new CopilotProfileAdapter(stores);
 		this.agentPlan = new AgentPlanAdapter(stores, storyPlanSync);
+		this.storyDeck = new StoryDeckAdapter(stores, storyPlanSync);
 		this.samplerSets = new SamplerSetAdapter(stores);
 		this.formatTemplates = new FormatTemplateAdapter(stores);
 		this.aiInstructionTemplates = new AiInstructionTemplateAdapter(stores);
@@ -261,6 +268,57 @@ export class RuntimeApiAdapter implements RuntimeApi {
 			applyTrackerScene: (chatId, scene) => this.insights.applyTrackerSceneTemplate(chatId, scene),
 			readInsightsPatch: (chatId) =>
 				sessionRuntime.buildConfigPatchResponse(brandId<ChatId>(chatId), { activeChat: true }),
+			// DMT-22: the message-edit / message-variant handlers run the
+			// ordinary ChatApplicationService members — the guarded edit WITH
+			// the reviewed base content, and the add-variant path (source
+			// checks; a Director save passes no provenance). Plain string ids:
+			// the chat application service is domain-level, brands enter at
+			// route edges.
+			editMessage: (messageId, content, expectedVariantId, expectedBaseContent) =>
+				sessionRuntime.chatApp.editMessage(messageId, content, expectedVariantId, expectedBaseContent),
+			addEditorVariant: (messageId, input) => sessionRuntime.chatApp.addEditorVariant(messageId, input),
 		});
+		// DMT-24: the Director message-tool delegates — the ONE composition of
+		// the editor task and the branch-pinned swipe regeneration over THIS
+		// adapter graph, injected into the copilot adapter's delegate slot
+		// (post-construction: the chat adapter needs the copilot's shared run
+		// registry). Exported below so tests wire the identical closures.
+		wireDirectorMessageDelegates({ stores, sessionRuntime, chat: this.chat, experienceCopilot: this.experienceCopilot });
 	}
+}
+
+/**
+ * DMT-24 (DIRECTOR_MESSAGE_TOOLS_PLAN): wire the Director message-tool
+ * delegates into the experience-copilot adapter's slot — the runtime
+ * composition the production server AND the permission tests both call, so
+ * the tested closures are byte-identical to the served ones.
+ *
+ * - The EDITOR delegate runs the DMT-14 `runDirectorMessageEditorDelegate`
+ *   over the ordinary assistant deps (`createAiAssistantDeps` — the same
+ *   seams the public editor request path uses; one derivation) and the saved
+ *   editor settings (`getUiSettings` — the shared pair rule). Built lazily
+ *   per tool call, so a turn that never edits pays nothing.
+ * - The SWIPE delegate is the DMT-24 domain module bound over the real
+ *   message store and the chat adapter's `runBranchPinnedRegeneration` (the
+ *   normal `chat:<chatId>` reservation, the thread's branch, the ordinary
+ *   streaming regenerate with the DMT-13 `requestInstruction`). Resolved
+ *   lazily per allowed request (the DMT-23 seam's contract).
+ */
+export function wireDirectorMessageDelegates(deps: {
+	readonly stores: StoreContainer;
+	readonly sessionRuntime: SessionRuntime;
+	readonly chat: ChatAdapter;
+	readonly experienceCopilot: ExperienceCopilotAdapter;
+}): void {
+	deps.experienceCopilot.configureDirectorMessageDelegates({
+		buildMessageEditorDelegate: async () => {
+			const editorDeps = {
+				...createAiAssistantDeps(deps.stores, deps.sessionRuntime),
+				getUiSettings: () => deps.stores.uiSettings.get(),
+			};
+			return (input) => runDirectorMessageEditorDelegate(input, editorDeps);
+		},
+		buildSwipeGenerationDelegate: async () =>
+			createDirectorSwipeGenerationDelegate({ messages: deps.stores.messages, generation: deps.chat }),
+	});
 }

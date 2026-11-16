@@ -141,6 +141,30 @@ describe("stripLabels", () => {
     expect(dsl.gate.tone).toBe("danger");
     expect(dsl.gate.toneBy).toEqual({ Ruined: "danger" });
   });
+
+  it("keeps the semantic clock marker on marked string and number nodes (DK-2)", () => {
+    const dsl: SceneTrackerDsl = {
+      story_day: { $type: "number", min: 1, max: 999, clock: "day", label: "Story day" },
+      story_time: { $type: "string", clock: "part", tone: "accent" },
+      caption: { $type: "string", clock: "label" },
+    };
+    expect(stripLabels(dsl)).toEqual({
+      story_day: { $type: "number", min: 1, max: 999, clock: "day" },
+      story_time: { $type: "string", clock: "part" },
+      caption: { $type: "string", clock: "label" },
+    });
+  });
+
+  it("projects an unmarked schema exactly as before (the marker is additive, not a reshuffle)", () => {
+    const dsl: SceneTrackerDsl = {
+      mood: { $type: "string" },
+      hp: { $type: "number", min: 0, max: 100, label: "HP" },
+    };
+    expect(stripLabels(dsl)).toEqual({
+      mood: { $type: "string" },
+      hp: { $type: "number", min: 0, max: 100 },
+    });
+  });
 });
 
 describe("computeSceneSchemaHash (label invariance)", () => {
@@ -168,12 +192,24 @@ describe("computeSceneSchemaHash (label invariance)", () => {
 
   it("changes when the actual structure (key/type/bounds) changes", () => {
     const before = computeSceneSchemaHash(base);
-    const after = computeSceneSchemaHash({
+    const changedKey = computeSceneSchemaHash({
+      vibe: { $type: "string" },
+      hp: { $type: "number", min: 0, max: 100 },
+      npc: { $type: "object", properties: { trust: { $type: "number", min: 0, max: 10 } } },
+    });
+    const changedType = computeSceneSchemaHash({
+      mood: { $type: "string" },
+      hp: { $type: "boolean" },
+      npc: { $type: "object", properties: { trust: { $type: "number", min: 0, max: 10 } } },
+    });
+    const changedBounds = computeSceneSchemaHash({
       mood: { $type: "string" },
       hp: { $type: "number", min: 0, max: 100, label: "HP" }, // label-only → same
       npc: { $type: "object", properties: { trust: { $type: "number", min: 0, max: 5 } } }, // bounds changed
     });
-    expect(after).not.toBe(before);
+    expect(changedKey).not.toBe(before);
+    expect(changedType).not.toBe(before);
+    expect(changedBounds).not.toBe(before);
   });
 });
 
@@ -201,6 +237,45 @@ describe("computeSceneSchemaHash (tone invariance)", () => {
     const bare = computeSceneSchemaHash({ gate: { $type: "string" } });
     expect(computeSceneSchemaHash({ gate: { $type: "string", tone: "danger", toneBy: { Ruined: "danger" } } })).toBe(bare);
     expect(computeSceneSchemaHash({ gate: { $type: "string", tone: "success", toneBy: { Ruined: "warning" } } })).toBe(bare);
+  });
+
+  it("is unchanged when a label is added to a clock-marked node (presentation still never dims records)", () => {
+    const marked: SceneTrackerDsl = { story_day: { $type: "number", clock: "day" } };
+    const markedWithLabel: SceneTrackerDsl = { story_day: { $type: "number", clock: "day", label: "Story day" } };
+    expect(computeSceneSchemaHash(markedWithLabel)).toBe(computeSceneSchemaHash(marked));
+  });
+});
+
+describe("computeSceneSchemaHash (clock marker sensitivity, DK-2)", () => {
+  it("changes when a clock marker is added — the marker is semantic, not presentation", () => {
+    const unmarked = computeSceneSchemaHash({ story_day: { $type: "number" } });
+    expect(computeSceneSchemaHash({ story_day: { $type: "number", clock: "day" } })).not.toBe(unmarked);
+  });
+
+  it("changes when a marker moves between fields or changes value", () => {
+    const onDay = computeSceneSchemaHash({
+      a: { $type: "number", clock: "day" },
+      b: { $type: "string" },
+    });
+    const onB = computeSceneSchemaHash({
+      a: { $type: "number" },
+      b: { $type: "string", clock: "day" },
+    });
+    expect(onB).not.toBe(onDay);
+    expect(computeSceneSchemaHash({ a: { $type: "string", clock: "part" } })).not.toBe(
+      computeSceneSchemaHash({ a: { $type: "string", clock: "label" } }),
+    );
+  });
+
+  it("never collides with the unmarked schema's hash (no shared record cache for semantically different schemas)", () => {
+    const schemas = [
+      { a: { $type: "number" } },
+      { a: { $type: "number", clock: "day" } },
+      { a: { $type: "string", clock: "part" } },
+      { a: { $type: "string", clock: "label" } },
+    ] as const;
+    const hashes = new Set(schemas.map((schema) => computeSceneSchemaHash(schema)));
+    expect(hashes.size).toBe(schemas.length);
   });
 });
 
@@ -236,33 +311,35 @@ describe("findInvalidXmlKeys", () => {
   });
 
   it("flags root keys that are not valid XML names (space / leading digit / sigil)", () => {
+    // Invalid XML keys are perfectly valid SceneTrackerDsl keys (the DSL is a
+    // plain Record — the XML check is a separate validator concern).
     const dsl: SceneTrackerDsl = {
       "first name": { $type: "string" },
       "123abc": { $type: "number" },
       "$sigil": { $type: "boolean" },
       ok: { $type: "string" },
-    } as unknown as SceneTrackerDsl;
+    };
     expect(findInvalidXmlKeys(dsl)).toEqual(["first name", "123abc", "$sigil"]);
   });
 
   it("recurses into nested object properties with dotted paths", () => {
     const dsl: SceneTrackerDsl = {
       location: { $type: "object", properties: { room: { $type: "string" }, "bad key": { $type: "string" } } },
-    } as unknown as SceneTrackerDsl;
+    };
     expect(findInvalidXmlKeys(dsl)).toEqual(["location.bad key"]);
   });
 
   it("recurses into array item object properties", () => {
     const dsl: SceneTrackerDsl = {
       party: { $type: "array", items: { $type: "object", properties: { name: { $type: "string" }, "bad key": { $type: "string" } } } },
-    } as unknown as SceneTrackerDsl;
+    };
     expect(findInvalidXmlKeys(dsl)).toEqual(["party.bad key"]);
   });
 
-  it("returns nothing for JSON-irrelevant schemas (any key is JSON-valid)", () => {
+  it("flags JSON-valid keys when called directly because the helper is XML-only (callers gate on promptFormat)", () => {
     // The check is XML-only; this just confirms the helper is pure and does not
     // depend on any promptFormat — the caller gates on format.
-    const dsl: SceneTrackerDsl = { "totally fine for json": { $type: "string" } } as unknown as SceneTrackerDsl;
+    const dsl: SceneTrackerDsl = { "totally fine for json": { $type: "string" } };
     expect(findInvalidXmlKeys(dsl)).toEqual(["totally fine for json"]);
   });
 });

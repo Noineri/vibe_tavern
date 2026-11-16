@@ -45,6 +45,12 @@ import {
 import { runExperienceTest } from "../src/domain/interactive/experience-tester.js";
 import { ExperienceChatterService } from "../src/domain/interactive/experience-chatter-service.js";
 import type { ProviderProfileService } from "../src/domain/providers/provider-profile-service.js";
+import { strictTestDouble } from "./strict-test-double.js";
+import { execResult } from "./insights-test-builders.js";
+import { makeProviderProfileRow } from "./copilot-test-builders.js";
+import type { HttpErrorBody } from "./routes-test-builders.js";
+import type { ExperiencePlaygroundData } from "../src/domain/interactive/experience-playground.js";
+import type { ExperienceDefinition } from "../src/domain/interactive/experience-kernel.js";
 import type { StoredProviderProfileRecord } from "@vibe-tavern/domain";
 
 // ─── Shared rules sources (real, runnable experience bodies) ─────────────────
@@ -874,17 +880,16 @@ describe("no-write invariant — zero persistence/binding/DB involvement", () =>
       "./experience-payload-schema.js",
       "@vibe-tavern/domain",
     ]);
-    // Collect every `from "..."` target that appears on an `import` line ONLY
-    // (the module's doc comment legitimately names the banned modules in prose
-    // to explain what it does NOT import — scanning the whole source would
-    // false-positive on that prose, exactly the `as never`/"was never" trap).
+    // Collect every module specifier across static multi-line `import` blocks
+    // and bare side-effect imports — ignoring doc comments that merely mention
+    // forbidden module names in prose without `import ... from "..."` syntax.
     const importTargets: string[] = [];
-    for (const line of source.match(/^import .+$/gm) ?? []) {
-      for (const m of line.matchAll(/from\s+"([^"]+)"/g)) {
-        importTargets.push(m[1]!);
-      }
+    for (const m of source.matchAll(/^\s*import\b(?:[\s\S]*?\bfrom\s+)?"([^"]+)"/gm)) {
+      importTargets.push(m[1]!);
     }
-    expect(importTargets.length).toBeGreaterThan(0);
+    expect(importTargets.length).toBeGreaterThanOrEqual(7);
+    expect(importTargets).toContain("./experience-shared.js");
+    expect(importTargets).toContain("./experience-tester.js");
     for (const target of importTargets) {
       expect(allowedImports.has(target)).toBe(true);
     }
@@ -912,18 +917,23 @@ describe("no-write invariant — zero persistence/binding/DB involvement", () =>
 
     // Spy on the experience store's mutating methods. The driver never receives
     // a store, so this confirms the adapter's playground methods (which DO hold
-    // a store via the lifecycle service) do not delegate to persistence.
+    // a store via the lifecycle service) do not delegate to persistence. The
+    // two real write paths a start+advance loop could hit are wrapped with
+    // typed delegating wrappers (the erased Record probe checked the third
+    // name — `appendJournalEntry` — for existence at runtime; it is not a
+    // member of the experience store).
     const writeCalls: string[] = [];
-    const target = stores.experiences as unknown as Record<string, (...args: unknown[]) => unknown>;
-    for (const method of ["applyTransition", "createSession", "appendJournalEntry"]) {
-      const original = target[method];
-      if (typeof original === "function") {
-        target[method] = (...args: unknown[]) => {
-          writeCalls.push(method);
-          return original(...args);
-        };
-      }
-    }
+    const experiences = stores.experiences;
+    const applyTransitionOriginal = experiences.applyTransition.bind(experiences);
+    const createSessionOriginal = experiences.createSession.bind(experiences);
+    experiences.applyTransition = async (data) => {
+      writeCalls.push("applyTransition");
+      return applyTransitionOriginal(data);
+    };
+    experiences.createSession = async (data) => {
+      writeCalls.push("createSession");
+      return createSessionOriginal(data);
+    };
 
     const adapter = buildAdapter(stores);
     const started = await adapter.startExperiencePlayground({
@@ -1048,7 +1058,13 @@ function mount(runtime: ReturnType<typeof buildAdapter>) {
   return app;
 }
 
-async function jsonBody(res: Response): Promise<any> {
+/** Typed JSON wire read: the type argument IS the pinned response shape
+ *  (JSON.parse itself carries no type). */
+/** The /start wire: the turn envelope carries the validated definition on
+ *  start; /advance omits it, so the advance read uses the plain DTO. */
+type PlaygroundStartWire = ExperiencePlaygroundData & { definition: ExperienceDefinition };
+
+async function jsonBody<T>(res: Response): Promise<T> {
   return JSON.parse(await res.text());
 }
 
@@ -1091,7 +1107,7 @@ describe("Experience playground routes — integration (real adapter + kernel)",
       }),
     });
     expect(startRes.status).toBe(200);
-    const started = await jsonBody(startRes);
+    const started = await jsonBody<PlaygroundStartWire>(startRes);
     expect(started.definition.manifest.id).toBe("counter");
     expect(started.revision).toBe(0);
     expect(started.stopReason).toBe("awaiting_human");
@@ -1106,7 +1122,7 @@ describe("Experience playground routes — integration (real adapter + kernel)",
       }),
     });
     expect(advanceRes.status).toBe(200);
-    const advanced = await jsonBody(advanceRes);
+    const advanced = await jsonBody<ExperiencePlaygroundData>(advanceRes);
     expect(advanced.revision).toBe(1);
     expect(advanced.state).toEqual({ count: 1 });
     expect(advanced.events.map((e: { type: string }) => e.type)).toEqual(["inc"]);
@@ -1115,7 +1131,7 @@ describe("Experience playground routes — integration (real adapter + kernel)",
 
   test("a stale expectedRevision is 409 stale_revision with currentRevision", async () => {
     const app = await setupPlaygroundApp();
-    const started = await jsonBody(
+    const started = await jsonBody<PlaygroundStartWire>(
       await app.request("/api/experience/playground/start", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -1139,14 +1155,14 @@ describe("Experience playground routes — integration (real adapter + kernel)",
       }),
     });
     expect(res.status).toBe(409);
-    const body = await jsonBody(res);
+    const body = await jsonBody<HttpErrorBody>(res);
     expect(body.error.details.code).toBe("stale_revision");
     expect(body.error.details.currentRevision).toBe(1);
   });
 
   test("an illegal action is 422 illegal_action", async () => {
     const app = await setupPlaygroundApp();
-    const started = await jsonBody(
+    const started = await jsonBody<PlaygroundStartWire>(
       await app.request("/api/experience/playground/start", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -1162,7 +1178,7 @@ describe("Experience playground routes — integration (real adapter + kernel)",
       }),
     });
     expect(res.status).toBe(422);
-    expect((await jsonBody(res)).error.details.code).toBe("illegal_action");
+    expect((await jsonBody<HttpErrorBody>(res)).error.details.code).toBe("illegal_action");
   });
 
   test("an over-granted capability is 422 capability_denied", async () => {
@@ -1177,7 +1193,7 @@ describe("Experience playground routes — integration (real adapter + kernel)",
       }),
     });
     expect(res.status).toBe(422);
-    expect((await jsonBody(res)).error.details.code).toBe("capability_denied");
+    expect((await jsonBody<HttpErrorBody>(res)).error.details.code).toBe("capability_denied");
   });
 
   test("a vm_error is 422 and surfaces the console on the error path", async () => {
@@ -1188,7 +1204,7 @@ describe("Experience playground routes — integration (real adapter + kernel)",
       body: JSON.stringify({ rulesCode: "(((", participants: [], capabilityGrants: [] }),
     });
     expect(res.status).toBe(422);
-    const body = await jsonBody(res);
+    const body = await jsonBody<HttpErrorBody>(res);
     expect(body.error.details.code).toBe("vm_error");
     expect(body.error.details.kind).toBe("syntax");
     expect(Array.isArray(body.error.details.console)).toBe(true);
@@ -1252,7 +1268,7 @@ const chatterModelSeat = {
 };
 
 function makeChatterProfile(): StoredProviderProfileRecord {
-  return {
+  return makeProviderProfileRow({
     id: "pp_chatter", name: "Chatter Test", providerPreset: "ollama", endpoint: "http://x", apiKey: null,
     defaultModel: "m_chatter", contextBudget: 8000, pinContextBudget: false, bindPerModel: false,
     modelFreeOnly: false, modelGroupByOwner: false, maxTokens: 4096, temperature: 1, topP: 1, topK: 0,
@@ -1260,9 +1276,9 @@ function makeChatterProfile(): StoredProviderProfileRecord {
     dryMultiplier: 0, dryBase: 0, dryAllowedLength: 0, drySequenceBreakers: [], xtcThreshold: 0,
     xtcProbability: 0, frequencyPenalty: 0, presencePenalty: 0, repetitionPenalty: 1, stopSequences: [],
     logitBias: [], seed: null, reasoningEffort: "medium", showReasoning: false, streamResponse: true,
-    customSamplers: false, proxyMode: "off", proxyId: null, isActive: true, visionModel: null,
+    customSamplers: false, proxyId: null, isActive: true, visionModel: null,
     createdAt: "2024-01-01T00:00:00Z", updatedAt: "2024-01-01T00:00:00Z",
-  } as StoredProviderProfileRecord;
+  });
 }
 
 /** Build a REAL ExperienceChatterService with a mock provider-profile service +
@@ -1277,11 +1293,13 @@ function makeChatterService(replyText: string): { service: ExperienceChatterServ
   };
   let calls = 0;
   const service = new ExperienceChatterService({
-    providerProfiles: providerProfiles as unknown as ProviderProfileService,
-    execute: (async () => {
+    // The strict double keeps the three provided members compiler-checked;
+    // a member the chatter starts reading throws a labeled miss.
+    providerProfiles: strictTestDouble<ProviderProfileService>(providerProfiles, "ProviderProfileService (playground chatter)"),
+    execute: async () => {
       calls += 1;
-      return { text: replyText };
-    }) as never,
+      return execResult(replyText);
+    },
   });
   return { service, executeCalls: () => calls };
 }

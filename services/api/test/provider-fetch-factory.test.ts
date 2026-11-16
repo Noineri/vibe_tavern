@@ -18,6 +18,7 @@ import {
 	ProviderProxyError,
 	type ProxyLookup,
 } from "../src/domain/providers/provider-fetch-factory.js";
+import { testFetch } from "./test-fetch-seam.js";
 
 // ─── Stub proxy lookup ─────────────────────────────────────────────────────
 
@@ -247,7 +248,7 @@ describe("resolveProviderFetch", () => {
 describe("createProxiedFetch", () => {
 	it("keeps fetch.preconnect as a no-op so proxy intent cannot preconnect directly", () => {
 		let directPreconnects = 0;
-		const fakeFetch = (async () => new Response("ok")) as typeof fetch;
+		const fakeFetch = testFetch(async () => new Response("ok"));
 		fakeFetch.preconnect = () => { directPreconnects += 1; };
 		const proxied = createProxiedFetch("http://127.0.0.1:8080", fakeFetch);
 		proxied.preconnect("https://provider.example");

@@ -89,19 +89,18 @@ describe("createPlaygroundModelDeps — executor boundary", () => {
 		expect(spy.calls[0]!.model).toBe("gpt-test");
 	});
 
-	test("prompt includes the private view and instruction but not hidden state", async () => {
+	test("prompt includes the serialized projected view and package instruction", async () => {
 		const { spy, execute } = makeExecuteSpy("reply");
 		const deps = createPlaygroundModelDeps({
 			providerProfiles: mockProviderProfiles() as ProviderProfileService,
 			execute,
 		});
 
-		await deps.resolveModelReply(textInput({
-			projectedView: { messages: [{ from: "you", text: "Hello!" }], secretScore: 42 },
-		}));
+		await deps.resolveModelReply(textInput());
 
 		const promptText = JSON.stringify(spy.calls[0]!.prompt);
-		// The private view (projected state) is included.
+		// The projected view is serialized verbatim; hidden-state stripping belongs
+		// to the upstream projection/kernel boundary.
 		expect(promptText).toContain("Hello!");
 		// The package instruction is included.
 		expect(promptText).toContain("Reply in character.");

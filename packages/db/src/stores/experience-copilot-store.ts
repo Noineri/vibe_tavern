@@ -2,7 +2,7 @@ import { and, eq, isNull, desc, asc } from 'drizzle-orm';
 import { experienceCopilotThreads, experienceCopilotMessages, agentThreadContextEvents } from '../db-schema.js';
 import type { AppDb, DbTransaction } from '../db-connection.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
-import { brandId, type Attachment, type AttachmentPatch, type ExperienceCopilotThreadId, type ExperienceCopilotMessageId, type AgentThreadContextEventId } from '@vibe-tavern/domain';
+import { brandId, type Attachment, type AttachmentPatch, type PromptAttachment, type ExperienceCopilotThreadId, type ExperienceCopilotMessageId, type AgentThreadContextEventId } from '@vibe-tavern/domain';
 import { parseContextLinks, type CopilotContextMetrics, type CopilotContextLink, type CopilotTodoItem } from './experience-copilot-row-parse.js';
 import { mapThread, mapMessage, mapEvent } from './experience-copilot-row-mappers.js';
 import { compareTimelineEntries, parseFrontier, type AgentThreadContextEvent, type AgentThreadContextEventKind, type AgentThreadRpFrontier, type AgentThreadTimelineEntry, type RpSyncWritePlan } from './agent-thread-context-events.js';
@@ -25,6 +25,8 @@ export interface AppendMessageInput {
   role: string;
   /** CA-4a2: absent or empty stores NULL, like RP message attachments. */
   attachments?: Attachment[];
+  /** Server-resolved snapshots; absent or empty stores NULL. */
+  promptAttachments?: PromptAttachment[];
   /** Defaults to '' when omitted, mirroring the column default. */
   content?: string;
   /** Serialized tool-call payload (nullable). */
@@ -94,6 +96,8 @@ export interface ExperienceCopilotMessage {
   content: string;
   /** Full stored set, including excluded items; absent when empty. */
   attachments?: Attachment[];
+  /** Frozen prompt snapshots; absent when none were recorded. */
+  promptAttachments?: PromptAttachment[];
   toolCallsJson: string | null;
   toolCallId: string | null;
   /** AP-28: the turn's reasoning (first assistant row of the turn only);
@@ -401,6 +405,7 @@ export class ExperienceCopilotStore {
           reasoning: input.reasoning ?? null,
           reasoningDurationMs: input.reasoningDurationMs ?? null,
           attachmentsJson: input.attachments?.length ? JSON.stringify(input.attachments) : null,
+          promptAttachmentsJson: input.promptAttachments?.length ? JSON.stringify(input.promptAttachments) : null,
           seq,
           createdAt: now,
         })

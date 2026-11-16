@@ -114,7 +114,7 @@ import type { ImportStreamEvent } from "../../shared/st-directory-scanner.js";
 	 * - {@link PromptAssemblyService} — loads context from DB and calls assemblePrompt()
 	 */
 	export class SessionRuntime {
-	private readonly stores: StoreContainer;
+	readonly stores: StoreContainer;
 	private readonly resolver: StaticPromptResolver;
 	readonly chatApp: ChatApplicationService;
 	private readonly promptService: PromptAssemblyService;
@@ -589,11 +589,11 @@ import type { ImportStreamEvent } from "../../shared/st-directory-scanner.js";
 		return await importExportModule.mirrorPromptTrace(this.importExportDeps, traceId);
 	}
 
-	async importJson(input: { fileName: string; jsonText?: string; monolithText?: string; chatId?: string; skipExisting?: boolean; lean?: boolean; importEmbeddedBook?: boolean }): Promise<ImportResult> {
+	async importJson(input: { fileName: string; jsonText?: string; monolithText?: string; chatId?: string; skipExisting?: boolean; lean?: boolean; importEmbeddedBook?: boolean; enableImportedRegexProfile?: boolean }): Promise<ImportResult> {
 		return importExportModule.importJson(this.importExportDeps, input);
 	}
 
-	async importJsonBatch(input: { items: Array<{ fileName: string; jsonText?: string; monolithText?: string; chatId?: string; skipExisting?: boolean }>; lean?: boolean }): Promise<BatchImportResult> {
+	async importJsonBatch(input: { items: Array<{ fileName: string; jsonText?: string; monolithText?: string; chatId?: string; skipExisting?: boolean; enableImportedRegexProfile?: boolean }>; lean?: boolean }): Promise<BatchImportResult> {
 		return importExportModule.importJsonBatch(this.importExportDeps, input);
 	}
 

@@ -23,8 +23,14 @@
  * import path, so the pinned behavior is the current (post-Wave-1) contract.
  */
 import { test, expect, mock, describe } from "bun:test";
-import type { ImportExportModuleDeps } from "../src/runtime/session/session-runtime-import-export.js";
+import type { CreateCharacterData, CreateLorebookData, CreateLoreEntryData } from "@vibe-tavern/db";
+import type { CreateChatRequest } from "../src/domain/chat/chat-application-types.js";
+import type { ChatId, PersonaId, PromptPresetId } from "@vibe-tavern/domain";
+import { brandId } from "@vibe-tavern/domain";
 import { importJson } from "../src/runtime/session/session-runtime-import-export.js";
+import { makeImportExportDeps } from "./import-test-builders.js";
+import { makeCharacterRow } from "./copilot-test-builders.js";
+import { makeLorebookRow, makeSessionSnapshot } from "./insights-test-builders.js";
 
 // Minimal V2 card — real importCharacterCardV3Json parses it and synthesizes
 // a deterministic character id from the name, so `getById` returns null below
@@ -37,54 +43,40 @@ const V2_CARD = {
 
 /** Builds a fresh stub deps with a call-counting getSnapshot mock. */
 function makeDeps() {
-  const getSnapshot = mock((_chatId: unknown) =>
-    Promise.resolve({ chats: [], messages: [] }) as never,
+  const getSnapshot = mock((_chatId: ChatId) => Promise.resolve(makeSessionSnapshot()));
+  const createLorebook = mock(async (_data: CreateLorebookData) =>
+    makeLorebookRow({ id: "lore_test_123" }),
   );
-  const createLorebook = mock(async (_data: unknown) => ({ id: "lore_test_123" }));
-  const bulkCreateEntries = mock(async (_id: unknown, _entries: unknown) => 1);
-  const addLink = mock(async (_id: unknown, _type: unknown, _target: unknown) => undefined);
-  const deps = {
-    stores: {
+  const bulkCreateEntries = mock(async (_lorebookId: string, _entries: CreateLoreEntryData[]) => 1);
+  const addLink = mock(async (_lorebookId: string, _targetType: string, _targetId: string) => undefined);
+  const deps = makeImportExportDeps(
+    {
       characters: {
-        getById: mock((_id: string) => Promise.resolve(null)),
-        create: mock((_data: unknown) =>
-          Promise.resolve({ id: "char_test_123" }) as never,
+        create: mock((_data: CreateCharacterData) =>
+          Promise.resolve(makeCharacterRow("char_test_123")),
         ),
-        update: mock((_id: string, _patch: unknown) => Promise.resolve() as never),
-        resolveFolderName: mock((id: string) => Promise.resolve(id)),
-        listAll: mock(() => Promise.resolve([])),
+        update: mock((_id: string, _patch: unknown) => Promise.resolve(makeCharacterRow("char_updated"))),
       },
-      lorebooks: { createLorebook, bulkCreateEntries, addLink },
       content: {
         writeEntity: mock((_folder: unknown, _id: string, _data: unknown) =>
-          Promise.resolve("stub/path") as never,
+          Promise.resolve("stub/path"),
         ),
       },
-    },
-    chatApp: {
-      createChat: mock((_input: unknown) =>
-        Promise.resolve({ id: "chat_test_456", activeBranchId: "br_test_789" }) as never,
+      chatApp: {
+        createChat: mock((_input: CreateChatRequest) =>
+          Promise.resolve({ id: brandId<ChatId>("chat_test_456"), activeBranchId: "br_test_789" }),
+        ),
+      },
+      resolveDefaultPersonaId: mock(() => Promise.resolve(brandId<PersonaId>("persona_default"))),
+      resolveDefaultPromptPresetId: mock(() => Promise.resolve(brandId<PromptPresetId>("preset_default"))),
+      seedImportedOpening: mock((_chatId: unknown, _first: string, _alts?: string[]) =>
+        Promise.resolve(),
       ),
+      lorebooks: { createLorebook, bulkCreateEntries, addLink },
+      getSnapshot,
     },
-    chatOrder: {
-      add: mock((_id: unknown) => {}),
-    },
-    resolveDefaultPersonaId: mock(() => Promise.resolve("persona_default" as never)),
-    resolveDefaultPromptPresetId: mock(() => Promise.resolve("preset_default" as never)),
-    seedImportedOpening: mock((_chatId: unknown, _first: string, _alts?: string[]) =>
-      Promise.resolve() as never,
-    ),
-    getSnapshot,
-    // Export-only deps — not exercised by importJson; left as throwing stubs so
-    // any accidental use surfaces immediately rather than returning undefined.
-    resolver: {
-      getCharacter: () => { throw new Error("resolver.getCharacter should not be called by importJson"); },
-      getPersona: () => { throw new Error("resolver.getPersona should not be called by importJson"); },
-    },
-    fileStore: {
-      resolvePath: () => { throw new Error("fileStore should not be called by importJson"); },
-    },
-  } as unknown as ImportExportModuleDeps;
+    "ImportExportModuleDeps (import-lean)",
+  );
   return { deps, getSnapshot, createLorebook, bulkCreateEntries, addLink };
 }
 
@@ -146,7 +138,7 @@ describe("importJson — lean mass-import path (MASS_IMPORT Wave 1)", () => {
       scopeType: "entity",
       name: "Embedded",
     });
-    expect("characterId" in (withFlag.createLorebook.mock.calls[0][0] as Record<string, unknown>)).toBe(false);
+    expect("characterId" in withFlag.createLorebook.mock.calls[0][0]).toBe(false);
     expect(withFlag.addLink.mock.calls[0]).toEqual(["lore_test_123", "character", "char_test_123"]);
   });
 
@@ -161,7 +153,7 @@ describe("importJson — lean mass-import path (MASS_IMPORT Wave 1)", () => {
 
     // Single-card path still pays for the snapshot (and the frontend uses it).
     expect(getSnapshot).toHaveBeenCalledTimes(1);
-    expect(getSnapshot.mock.calls[0][0]).toBe("chat_test_456");
+    expect(getSnapshot.mock.calls[0][0]).toBe(brandId<ChatId>("chat_test_456"));
 
     // characterId is also present on the full path (benign; lets the frontend
     // read one field regardless of mode), but the snapshot is the load-bearing

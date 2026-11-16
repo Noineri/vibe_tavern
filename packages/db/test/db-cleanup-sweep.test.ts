@@ -12,8 +12,7 @@
  *    file (run 34748163545, attributed to profile-md.test.ts, which has no
  *    hooks of its own).
  */
-import { afterAll, describe, expect, test } from "bun:test";
-import { describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, spyOn, test } from "bun:test";
 import { mkdir, mkdtemp, rm, utimes } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -54,16 +53,34 @@ describe("closeAllDbs temp-dir sweep", () => {
 	});
 
 	test("honors sweepDeadlineMs: an expired deadline removes nothing and returns", async () => {
-		const now = Date.now();
-		const fresh = await makePrefixedDir(`vt-sweep-deadline-${now}`, new Date(now));
+		const realNow = Date.now();
+		const fresh = await makePrefixedDir(`vt-sweep-deadline-${realNow}`, new Date(realNow));
 		created.push(fresh);
 
-		// Deadline already elapsed at entry: the sweep must not start removing
-		// (the unbounded version ground on through rm-retry passes until the
-		// afterAll hook itself timed out on the windows runner).
-		await closeAllDbs({ sweepSince: now - 60_000, sweepDeadlineMs: 1 });
+		// Drive closeAllDbs's Date.now() reads deterministically past a positive
+		// deadline (50 ms budget) so pass 0 aborts immediately without depending on
+		// real timer drift over the 700 ms handle-release grace.
+		let nowCalls = 0;
+		const nowSpy = spyOn(Date, "now").mockImplementation(() => {
+			nowCalls += 1;
+			return nowCalls === 1 ? realNow : realNow + 5_000;
+		});
+		const warnSpy = spyOn(console, "warn").mockImplementation(() => {});
+		let warnCalls: string[] = [];
+		const startedAt = performance.now();
+		try {
+			await closeAllDbs({ sweepSince: realNow - 60_000, sweepDeadlineMs: 50 });
+			warnCalls = warnSpy.mock.calls.map((args) => String(args[0] ?? ""));
+		} finally {
+			nowSpy.mockRestore();
+			warnSpy.mockRestore();
+		}
+		const elapsedMs = performance.now() - startedAt;
 
 		expect(await exists(fresh)).toBe(true);
+		expect(warnCalls).toHaveLength(1);
+		expect(warnCalls[0]).toContain("sweep deadline hit");
+		expect(elapsedMs).toBeLessThan(2_500);
 	});
 
 	afterAll(async () => {

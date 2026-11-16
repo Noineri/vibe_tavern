@@ -5,7 +5,7 @@
  * WHAT THIS PROVES
  *   - `resolveAssistantPrefillSupport` mirrors the backend protocol registry's
  *     `capabilities.prefill` flags exactly (inverted): anthropic / google /
- *     google_interactions / koboldcpp are OFF; the OpenAI-compat family
+ *     google_interactions / koboldcpp / novelai are OFF; the OpenAI-compat family
  *     (cloud AND local ids), llamacpp, ollama, unsloth are ON. This gates the
  *     Continue button (a continuation IS a prefill of the existing text).
  *   - `resolvePerSendPrefillSupport` is the LOCAL-only strip gate (owner
@@ -22,7 +22,7 @@ import {
 
 describe("resolveAssistantPrefillSupport", () => {
   it("denies the no-prefill-channel presets (mirrors the protocol registry)", () => {
-    for (const preset of ["anthropic", "google", "google_interactions", "koboldcpp"]) {
+    for (const preset of ["anthropic", "google", "google_interactions", "koboldcpp", "novelai"]) {
       const result = resolveAssistantPrefillSupport(preset);
       expect(result.supported).toBe(false);
     }
@@ -38,6 +38,7 @@ describe("resolveAssistantPrefillSupport", () => {
     expect(resolveAssistantPrefillSupport(null).supported).toBe(true);
     expect(resolveAssistantPrefillSupport(undefined).supported).toBe(true);
     expect(resolveAssistantPrefillSupport("").supported).toBe(true);
+    expect(resolveAssistantPrefillSupport("some-unknown-id").supported).toBe(true);
   });
 });
 

@@ -1,11 +1,17 @@
 import { describe, expect, it } from "bun:test";
+import { brandId, type ExperienceCopilotThreadId } from "@vibe-tavern/domain";
 import type {
   ExperienceCopilotStore,
   ExperienceCopilotThread,
   ExperienceCopilotMessage,
   StoreContainer,
+  AppDb,
+  ChatAgentSettingsStore,
+  ChatStore,
 } from "@vibe-tavern/db";
 import { ExperienceCopilotAdapter } from "../src/api/adapters/experience-copilot-adapter.js";
+import { makeExperienceCopilotStore } from "./copilot-test-builders.js";
+import { strictTestDouble } from "./strict-test-double.js";
 
 // ─── Domain fixtures ─────────────────────────────────────────────────────────
 
@@ -58,22 +64,25 @@ function makeStore(overrides: StoreOverrides = {}) {
     startNewSession: [],
     renameSession: [],
   };
-  const store = {
-    getActive: overrides.getActive ?? (async () => null),
-    listMessages: overrides.listMessages ?? (async () => []),
-    startNewSession:
-      overrides.startNewSession ??
-      (async (scriptId: string, title?: string, autoCompact?: boolean) => {
-        calls.startNewSession.push({ scriptId, title, autoCompact });
-        return makeThread({ scriptId, title: title ?? "" });
-      }),
-    renameSession:
-      overrides.renameSession ??
-      (async (sessionId: string, title: string) => {
-        calls.renameSession.push({ sessionId, title });
-        return makeThread({ id: sessionId, title });
-      }),
-  } as unknown as ExperienceCopilotStore;
+  const store = makeExperienceCopilotStore(
+    {
+      getActive: overrides.getActive ?? (async () => null),
+      listMessages: overrides.listMessages ?? (async () => []),
+      startNewSession:
+        overrides.startNewSession ??
+        (async (scriptId: string, title?: string, autoCompact?: boolean) => {
+          calls.startNewSession.push({ scriptId, title, autoCompact });
+          return makeThread({ scriptId, title: title ?? "" });
+        }),
+      renameSession:
+        overrides.renameSession ??
+        (async (sessionId: string, title: string) => {
+          calls.renameSession.push({ sessionId, title });
+          return makeThread({ id: brandId<ExperienceCopilotThreadId>(sessionId), title });
+        }),
+    },
+    "ExperienceCopilotStore (lifecycle)",
+  );
   return { store, calls };
 }
 
@@ -100,7 +109,21 @@ function makeAdapter(store: ExperienceCopilotStore): ExperienceCopilotAdapter {
       };
     },
   };
-  return new ExperienceCopilotAdapter({ experienceCopilot: store, scripts, agentKindSettings } as unknown as StoreContainer);
+  // The strict double keeps the provided store members compiler-checked; an
+  // unprovided member throws a labeled miss. `chatAgentSettings`/`chats` are
+  // the ctor's eager construction-reference reads (6a makeCopilotStores
+  // precedent) — inert doubles; the exercised paths never call them.
+  return new ExperienceCopilotAdapter(strictTestDouble<StoreContainer>(
+    {
+      experienceCopilot: store,
+      scripts,
+      agentKindSettings,
+      chatAgentSettings: strictTestDouble<ChatAgentSettingsStore>({}, "chatAgentSettings (construction ref)"),
+      db: strictTestDouble<AppDb>({}, "db (construction ref)"),
+      chats: strictTestDouble<ChatStore>({}, "chats (construction ref)"),
+    },
+    "ExperienceCopilotAdapter stores (lifecycle)",
+  ));
 }
 
 // ═════════════════════════════════════════════════════════════════════════════

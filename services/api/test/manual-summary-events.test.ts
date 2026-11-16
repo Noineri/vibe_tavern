@@ -9,6 +9,7 @@ import { SessionRuntime } from "../src/runtime/session/session-runtime.js";
 import { ChatSummaryService } from "../src/domain/chat/chat-summary-service.js";
 import type { ProviderProfileService } from "../src/domain/providers/provider-profile-service.js";
 import type { nonstreamingProviderExecute } from "../src/infrastructure/ai/nonstreaming-provider-executor.js";
+import { makeProviderProfilesFixture, makeProviderProfileRow } from "./copilot-test-builders.js";
 
 type Execute = typeof nonstreamingProviderExecute;
 const scratch: string[] = [];
@@ -41,10 +42,14 @@ async function setup(execute: Execute = async () => result()) {
   const events = new EventBus();
   const notifications: ChatNotification[] = [];
   events.on("chat.notification", (notification) => { notifications.push(notification); });
-  const profiles = {
-    getProviderProfile: async () => ({ id: "profile", providerPreset: "openai", defaultModel: "summary-model", bindPerModel: false }),
-    getProviderModelSettings: async () => null,
-  } as unknown as ProviderProfileService;
+  const profiles = makeProviderProfilesFixture(
+    {
+      getProviderProfile: async () =>
+        makeProviderProfileRow({ id: "profile", providerPreset: "openai", defaultModel: "summary-model", bindPerModel: false }),
+      getProviderModelSettings: async () => null,
+    },
+    "ProviderProfileService (manual-summary-events)",
+  );
   const service = new ChatSummaryService(stores, runtime, profiles, events, execute);
   const input = { chatId: chat.id, providerProfileId: "profile", summarizedFrom: 1, summarizedTo: 2, label: "Manual memory" };
   return { service, stores, chat, input, notifications };

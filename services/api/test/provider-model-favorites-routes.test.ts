@@ -2,13 +2,14 @@ import { describe, expect, test } from "bun:test";
 import { MODEL_FAVORITE_SCOPE, type ModelFavoriteScope } from "@vibe-tavern/domain";
 import { createProviderRoutes } from "../src/api/routes/provider.js";
 import type { ProviderRuntimeApi } from "../src/api/contract/runtime-api.js";
+import { strictTestDouble } from "./strict-test-double.js";
 
 function mockRuntime(overrides: Partial<Pick<ProviderRuntimeApi,
   "listFavoriteProviderModels" |
   "addFavoriteProviderModel" |
   "removeFavoriteProviderModel"
 >> = {}): ProviderRuntimeApi {
-  return { ...overrides } as unknown as ProviderRuntimeApi;
+  return strictTestDouble<ProviderRuntimeApi>(overrides, "ProviderRuntimeApi (model-favorites)");
 }
 
 const favorite = (scope: ModelFavoriteScope) => ({

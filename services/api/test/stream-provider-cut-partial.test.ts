@@ -17,7 +17,7 @@ import type { ChatModeAssembleResult, ChatModeStrategy } from "../src/domain/cha
 import { LiveChatOrchestrator } from "../src/domain/chat/live-chat-orchestrator.js";
 import { userMessageSavedFlag } from "../src/domain/chat/user-message-saved.js";
 import type { ProviderOrchestrator } from "../src/domain/providers/provider-orchestrator.js";
-import type { SessionSnapshot } from "../src/api/contract/session-types.js";
+import { makeSessionSnapshot } from "./insights-test-builders.js";
 import { nonstreamingProviderExecute } from "../src/infrastructure/ai/nonstreaming-provider-executor.js";
 import { streamProviderExecutor } from "../src/infrastructure/ai/stream-provider-executor.js";
 
@@ -31,9 +31,12 @@ import { streamProviderExecutor } from "../src/infrastructure/ai/stream-provider
 // keeps it the same way, and the error event says so (`partialSaved`) so the
 // client reloads the chat instead of restoring the draft.
 //
-// Harness forked from regex-reasoning.test.ts (real ChatRuntime + real
-// stores; provider executors through the orchestrator's `executors`
-// constructor seam — no mock.module).
+// fork #3 of services/api/test/dice-send-stream-nonstream.test.ts (harness
+// forked via regex-reasoning.test.ts; source carries `forks: 3`). Same real
+// ChatRuntime + real stores + orchestrator `executors` constructor seam (no
+// mock.module); deviates by adding `model` to `fakeAssembleResult`, using
+// `unusedDep` for unused branch/chat builders, dropping `RegexHookService` and
+// `strictTestDouble`, and driving mid-stream provider-cut executor stubs.
 // ════════════════════════════════════════════════════════════════════════════
 
 // Per-test stub state (reset in beforeEach): what streams before the cut.
@@ -162,8 +165,9 @@ function makeHarness(chat: TestChat): InstanceType<typeof LiveChatOrchestrator> 
     // Typed stubs (the hygiene budget forbids new never-casts): the response
     // builders the append paths call return minimal valid shapes; the rest
     // must never run here. prepareLiveTurn's snapshot is read only for
-    // `messages.length` — a full SessionSnapshot fixture would be noise.
-    getSnapshot: async () => ({ messages: [] }) as unknown as SessionSnapshot,
+    // `messages.length` — the standing builder's snapshot keeps that list
+    // empty (the SessionSnapshot import goes with the erased stub).
+    getSnapshot: async () => makeSessionSnapshot(),
     buildMessageResponse: async () => ({ messages: [], promptTrace: null }),
     buildVariantResponse: async () => ({ messages: [] }),
     buildBranchResponse: unusedDep,

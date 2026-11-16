@@ -151,7 +151,10 @@ describe("parseDiceNotation", () => {
   });
 
   it("rejects a non-string input", () => {
-    expect(() => parseDiceNotation(123 as unknown as string)).toThrow(DiceNotationError);
+    // Hostile wire value: a malformed request body is exactly how a NUMBER
+    // reaches a string parameter in production (JSON.parse("123") → any);
+    // the single narrowing names that boundary.
+    expect(() => parseDiceNotation(JSON.parse("123") as string)).toThrow(DiceNotationError);
   });
 });
 
@@ -303,6 +306,7 @@ describe("toPromptFormatterInput", () => {
     expect(projected.attempts.length).toBe(1);
     expect(projected.attempts[0].attemptId).toBe("att_1");
     expect(projected.attempts[0].faces).toEqual([3, 5, 6]);
+    expect(projected.attempts[0].modifier).toBe(2);
     expect(projected.attempts[0].total).toBe(16);
   });
 });

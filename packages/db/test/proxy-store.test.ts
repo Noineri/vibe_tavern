@@ -1,4 +1,5 @@
 import { describe, expect, test, beforeEach } from "bun:test";
+import { sql } from "drizzle-orm";
 
 import { createDb, ProxyStore, ProviderStore, type CreateProviderData } from "../src/index.js";
 import type { StoreClock, StoreIdGenerator } from "../src/persistence.js";
@@ -10,6 +11,7 @@ const testIdGen: StoreIdGenerator = { next: (prefix: string) => `${prefix}_test_
 async function makeStores() {
   const db = await createDb(":memory:");
   return {
+    db,
     proxies: new ProxyStore(db, { clock: testClock, idGenerator: testIdGen }),
     providers: new ProviderStore(db, { clock: testClock, idGenerator: testIdGen, content: null }),
   };
@@ -120,12 +122,25 @@ describe("ProxyStore — atomic deletion fallback", () => {
     expect(directUpdated!.proxyMode).toBe("direct");
   });
 
-  test("delete is atomic — non-existent proxy does not change providers", async () => {
-    const { proxies, providers } = await makeStores();
-    const provider = await providers.create({ ...baseProvider, proxyMode: "inherit" });
+  test("delete is atomic — non-existent proxy leaves providers untouched and late delete failure rolls back default and re-homed providers", async () => {
+    const { db, proxies, providers } = await makeStores();
+    const inheritProvider = await providers.create({ ...baseProvider, proxyMode: "inherit" });
     await expect(proxies.delete("ghost")).rejects.toThrow(/not found/i);
-    const unchanged = await providers.getById(provider.id);
-    expect(unchanged!.proxyMode).toBe("inherit");
+    expect((await providers.getById(inheritProvider.id))!.proxyMode).toBe("inherit");
+
+    const proxy = await proxies.create({ name: "P", url: "http://p:8080" });
+    await proxies.setDefaultProxyId(proxy.id);
+    const linked = await providers.create({ ...baseProvider, name: "Linked", proxyMode: "proxy", proxyId: proxy.id });
+
+    // Trigger fails step 3 (DELETE FROM proxy_profiles) AFTER steps 1-2 cleared default and re-homed providers.
+    db.run(sql`CREATE TRIGGER fail_proxy_delete BEFORE DELETE ON proxy_profiles BEGIN SELECT RAISE(ABORT, 'injected proxy delete failure'); END`);
+    await expect(proxies.delete(proxy.id)).rejects.toThrow("injected proxy delete failure");
+
+    expect((await proxies.getById(proxy.id))?.id).toBe(proxy.id);
+    expect(await proxies.getDefaultProxyId()).toBe(proxy.id);
+    const linkedAfter = await providers.getById(linked.id);
+    expect(linkedAfter!.proxyMode).toBe("proxy");
+    expect(linkedAfter!.proxyId).toBe(proxy.id);
   });
 });
 
@@ -178,11 +193,19 @@ describe("ProxyStore — provider proxy policy persistence + duplication", () =>
   });
 
   test("update changes proxy mode/id", async () => {
-    const { providers } = await makeStores();
+    const { proxies, providers } = await makeStores();
+    const proxy = await proxies.create({ name: "P", url: "http://p:8080" });
     const created = await providers.create(baseProvider);
-    await providers.update(created.id, { proxyMode: "direct" });
-    const updated = await providers.getById(created.id);
-    expect(updated!.proxyMode).toBe("direct");
+
+    await providers.update(created.id, { proxyMode: "proxy", proxyId: proxy.id });
+    const withProxy = await providers.getById(created.id);
+    expect(withProxy!.proxyMode).toBe("proxy");
+    expect(withProxy!.proxyId).toBe(proxy.id);
+
+    await providers.update(created.id, { proxyMode: "direct", proxyId: null });
+    const direct = await providers.getById(created.id);
+    expect(direct!.proxyMode).toBe("direct");
+    expect(direct!.proxyId).toBeNull();
   });
 
   test("duplicate preserves proxy mode/id", async () => {

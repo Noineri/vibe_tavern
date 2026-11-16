@@ -5,10 +5,13 @@
  * under Bun to the exact workspace TypeScript source it is supposed to — the
  * same set of aliases declared in `apps/web/tsconfig.json`.
  *
- * Bun resolves these through the workspace `exports` maps (not tsconfig paths),
- * so this test is the runtime counterpart to the compiler's path aliases: if a
- * package's `exports` map drifts from the tsconfig aliases, or the `db/codecs`
- * browser-safe subpath stops pointing at the leaf codec entry, this fails.
+ * Package roots resolve through the workspace `exports`/`main` maps; the
+ * subpath aliases (`db/codecs`, `domain/builtins`, `domain/script-safety`,
+ * `test-fetch`) ride Bun's tsconfig-paths support (packages/domain ships no
+ * `exports` map at all, so node-style subpath resolution could never serve
+ * them) — this test pins both mechanisms: if a package's `exports` map drifts
+ * from the tsconfig aliases, or any subpath stops pointing at its tsconfig
+ * target, this fails.
  *
  * `@vibe-tavern/db/codecs` is asserted separately from `@vibe-tavern/db` on
  * purpose: the root barrel walks into `bun:sqlite`/`node:fs` (server-only),
@@ -26,8 +29,11 @@ const EXPECTED: Record<string, string> = {
 	"@vibe-tavern/db": "packages/db/src/index.ts",
 	"@vibe-tavern/db/codecs": "packages/db/src/codecs.ts",
 	"@vibe-tavern/domain": "packages/domain/src/index.ts",
+	"@vibe-tavern/domain/builtins": "packages/domain/src/builtin-experiences.ts",
+	"@vibe-tavern/domain/script-safety": "packages/domain/src/script-safety.ts",
 	"@vibe-tavern/import-export": "packages/import-export/src/index.ts",
 	"@vibe-tavern/prompt-pipeline": "packages/prompt-pipeline/src/index.ts",
+	"@vibe-tavern/test-fetch": "services/api/test/test-fetch-seam.ts",
 };
 
 describe("@vibe-tavern/* alias resolution under Bun", () => {

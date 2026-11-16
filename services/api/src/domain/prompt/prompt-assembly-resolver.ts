@@ -12,6 +12,37 @@ import type {
 } from "@vibe-tavern/domain";
 import type { MacroVariableScope } from "@vibe-tavern/prompt-pipeline";
 
+/** Input of `listActiveLoreEntries` — the ONE derivation of this shape (the
+ *  seam contract below and StaticPromptResolver's implementation in
+ *  prompt-resolver.ts previously carried two inline structural copies that
+ *  drifted into per-platform same-named type instances under tsgo and
+ *  TS2719'd — the CI-TTG-1 lesson, 2026-11-10). */
+export interface LoreScanInput {
+    chatId: ChatId;
+    branchId: ChatBranchId;
+    recentText: string;
+    /** Assembly-derived branch messages to scan for lore activation. */
+    scanMessages: Array<{ role: string; content: string }>;
+    /** Effective preset Author's Note, resolved by this assembly. */
+    authorsNote?: string;
+    /** Enabled summary texts from the same set injected into prompt memory. */
+    summaries?: string[];
+    /** One-shot quiet-prompt text to scan after the global sources. */
+    quietPrompt?: string;
+    /** Turn clock for sticky/cooldown windows — the FULL branch message count,
+     * not the post-exclusion scan count (P13 changes scan input only; timed
+     * windows must not shift when the prompt excludes messages). */
+    currentTurn?: number;
+    /** Resolve active entries without changing branch timed state. */
+    dryRun?: boolean;
+    /** Max context tokens of the active model. Needed for percent-of-context
+     * token-budget mode on lorebooks. Optional — when absent, percent-mode
+     * lorebooks silently fall back to their fixed `tokenBudget`. */
+    maxContextTokens?: number;
+    /** One assembly-scoped variable namespace shared with prompt assembly. */
+    macroVariableScope?: MacroVariableScope;
+}
+
 /**
  * The prompt-assembly resolver seam — the contract `PromptAssemblyService`
  * consumes and `StaticPromptResolver` (prompt-resolver.ts) implements.
@@ -80,31 +111,7 @@ export interface PromptAssemblyResolver {
       customInjections: CustomInjection[];
       promptOrder: PromptOrderEntry[];
     } | null>;
-  listActiveLoreEntries(input: {
-    chatId: ChatId;
-    branchId: ChatBranchId;
-    recentText: string;
-    /** Assembly-derived branch messages to scan for lore activation. */
-    scanMessages: Array<{ role: string; content: string }>;
-    /** Effective preset Author's Note, resolved by this assembly. */
-    authorsNote?: string;
-    /** Enabled summary texts from the same set injected into prompt memory. */
-    summaries?: string[];
-    /** One-shot quiet-prompt text to scan after the global sources. */
-    quietPrompt?: string;
-    /** Turn clock for sticky/cooldown windows — the FULL branch message count,
-     * not the post-exclusion scan count (P13 changes scan input only; timed
-     * windows must not shift when the prompt excludes messages). */
-    currentTurn?: number;
-    /** Resolve active entries without changing branch timed state. */
-    dryRun?: boolean;
-    /** Max context tokens of the active model. Needed for percent-of-context
-     * token-budget mode on lorebooks. Optional — when absent, percent-mode
-     * lorebooks silently fall back to their fixed `tokenBudget`. */
-    maxContextTokens?: number;
-    /** One assembly-scoped variable namespace shared with prompt assembly. */
-    macroVariableScope?: MacroVariableScope;
-  }): Promise<ActiveLoreEntriesResult>;
+  listActiveLoreEntries(input: LoreScanInput): Promise<ActiveLoreEntriesResult>;
   listRetrievedMemories(input: {
     chatId: ChatId;
     branchId: ChatBranchId;

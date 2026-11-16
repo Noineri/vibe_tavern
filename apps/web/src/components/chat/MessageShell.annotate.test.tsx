@@ -16,7 +16,11 @@ mock.module("../../hooks/use-mobile.js", () => ({
 const { MessageShell } = await import("./MessageShell.js");
 const { fireEvent, render, cleanup } = await import("@testing-library/react");
 const Tooltip = await import("@radix-ui/react-tooltip");
-const TooltipProvider = (Tooltip as unknown as { Provider: React.ComponentType<{ children: React.ReactNode }> }).Provider ?? (Tooltip as unknown as { TooltipProvider: React.ComponentType<{ children: React.ReactNode }> }).TooltipProvider ?? (({ children }: { children: React.ReactNode }) => React.createElement(React.Fragment, null, children));
+// @radix-ui/react-tooltip@1.4.1 exports `Provider` as a typed alias of
+// TooltipProvider (index.d.ts:97) — the real export IS the provider, so the
+// old multi-shape probe (Provider ?? TooltipProvider ?? passthrough) was dead
+// defensive code against imagined package shapes. Read the typed export.
+const TooltipProvider = Tooltip.Provider;
 
 function makeProps(overrides: Partial<Parameters<typeof MessageShell>[0]> = {}): Parameters<typeof MessageShell>[0] {
   return {
@@ -54,11 +58,11 @@ function makeProps(overrides: Partial<Parameters<typeof MessageShell>[0]> = {}):
       tokenCount: 0,
       createdAt: new Date().toISOString(),
       diceRolls: [],
-    } as never,
+    },
     copied: false,
     slotExtras: {},
     variantControlsOverlay: null,
-    variantControlsRef: { current: null } as never,
+    variantControlsRef: { current: null },
     children: React.createElement("div", null, "hello"),
     actions: {
       onCopy: () => {},
@@ -70,11 +74,11 @@ function makeProps(overrides: Partial<Parameters<typeof MessageShell>[0]> = {}):
       onAiEdit: () => {},
     },
     ...overrides,
-  } as never;
+  };
 }
 
 function renderWithTooltip(ui: React.ReactElement) {
-  return render(React.createElement(TooltipProvider as never, null, ui));
+  return render(React.createElement(TooltipProvider, null, ui));
 }
 
 describe("MessageShell annotate button (TPE-14)", () => {
@@ -116,8 +120,8 @@ describe("MessageShell annotate button (TPE-14)", () => {
       isGreeting: false,
       canAiEdit: true,
     })));
-    // No annotate button…
     expect(container.querySelector('[data-testid="desktop-annotate-btn"]')).toBeNull();
+    expect(container.querySelector('button[aria-label="message_ai_editor_tooltip"]')).not.toBeNull();
     cleanup();
   });
 });

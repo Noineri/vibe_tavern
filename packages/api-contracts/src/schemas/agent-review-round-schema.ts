@@ -23,14 +23,32 @@ export const agentAskStateSchema = z.object({
 });
 export type AgentAskState = z.infer<typeof agentAskStateSchema>;
 
-/** Permission-card material is carried in the activity, not fetched by the UI. */
+/**
+ * Permission-card material is carried in the activity, not fetched by the UI.
+ *
+ * DMT-11: `kind` distinguishes the two permission families — `"prompt_read"`
+ * (the legacy `read_message_prompt` request) and `"swipe"` (the Director's
+ * `request_message_swipe`). OPTIONAL so legacy persisted activities (every
+ * pre-DMT-11 row is a prompt read) still parse unchanged; producers set it
+ * through the ONE decoder (`agent-permission-state.ts`), which derives it from
+ * the TOOL NAME — never from payload fields, so a client-sent `instruction`
+ * cannot turn a prompt read into a swipe. The remaining new fields carry the
+ * swipe family's material: the frozen target identity (`messageId`/
+ * `variantId`) and the instruction (`instruction` — the PROPOSED draft while
+ * awaiting, the FINAL user-approved text once granted). The prompt-read
+ * decoder simply never reads those fields, so its states are unchanged.
+ */
 export const agentPermissionStateSchema = z.object({
   status: z.enum(["awaiting_permission", "granted", "denied"]),
+  kind: z.enum(["prompt_read", "swipe"]).optional(),
   position: z.number().optional(),
   variantNumber: z.number().optional(),
   replyFirstLine: z.string().optional(),
   promptTokens: z.number().optional(),
   presetName: z.string().optional(),
+  messageId: z.string().optional(),
+  variantId: z.string().optional(),
+  instruction: z.string().optional(),
 });
 export type AgentPermissionState = z.infer<typeof agentPermissionStateSchema>;
 

@@ -145,6 +145,7 @@ import {
   type PlaygroundErrorView,
   type PlaygroundSeat,
 } from "./experience-playground-model.js";
+import { reportedLaunchContext, startLaunchEnvelope } from "./experience-playground-launch-context.js";
 
 // ─── Local constants ─────────────────────────────────────────────────────────
 
@@ -183,7 +184,11 @@ interface ExperiencePlaygroundProps {
   onSendToCopilot?: (digest: CopilotDigest) => void;
   /** SS-7B4: opens the Rules editor at a finding from this inline Try surface. */
   onShowInCode?: (line: number) => void;
-  /** Latest roster/grants/settings/seed for copilot diagnostics. */
+  /** Latest roster/grants/settings/seed for copilot diagnostics. While a
+   *  playground session is live this reports the START-captured session
+   *  envelope instead of the live config (ER-14) — the captured-at-start
+   *  contract the launch-context vocabulary documents in
+   *  experience-copilot-digest.ts (CopilotPlaygroundLogDigestInput). */
   onLaunchContextChange?: (context: ExperienceCopilotLaunchContext) => void;
 }
 
@@ -263,9 +268,12 @@ export function ExperiencePlayground({ code, visualSource, scriptId, script, onS
   // buildPlaygroundLogDigest.
   const [sessionLog, setSessionLog] = useState<PlaygroundSessionLog>(EMPTY_SESSION_LOG);
   /** Grounding step 6: the launch context the CURRENT session was started
-   *  with (the exact roster/grants/seed sent) — captured at start so the log
-   *  describes how the session RAN, not the since-edited live config. Cleared
-   *  on Reset alongside the log. */
+   *  with (the exact roster/grants/settings/seed sent) — captured at start so
+   *  the log describes how the session RAN, not the since-edited live config.
+   *  ER-14: also the launch context reported to the copilot shell (via
+   *  onLaunchContextChange) while this session is live — the debounced
+   *  auto-derive landing after start must not re-describe the running
+   *  session. Cleared on Reset alongside the log. */
   const [logLaunchContext, setLogLaunchContext] = useState<ExperienceCopilotLaunchContext | null>(null);
   const [appliedCount, setAppliedCount] = useState(0);
   // RM-9: the discovered manifest's realtime signal (tickMs). Null = turn
@@ -371,21 +379,15 @@ export function ExperiencePlayground({ code, visualSource, scriptId, script, onS
 
   useEffect(() => {
     if (onLaunchContextChange === undefined) return;
-    const parsed = parseOptionalJsonDiagnosed(settingsJson);
-    const parsedSettings = parsed.ok
-      ? parsed.present
-        ? asSettingsObject(parsed.value)
-        : {}
-      : null;
-    const activeSeed = randomStart ? lastUsedSeed.trim() : seed.trim();
-    onLaunchContextChange({
-      participants,
-      capabilityGrants: [...grants],
-      ...(parsedSettings !== null ? { settings: parsedSettings } : {}),
-      ...(activeSeed !== "" ? { seed: activeSeed } : {}),
-      ...(humanSeatId !== "" ? { humanSeatId } : {}),
-    });
-  }, [participants, grants, settingsJson, seed, lastUsedSeed, randomStart, humanSeatId, onLaunchContextChange]);
+    // ER-14 (CI_WEB_TIMING_FLAKES_REPORT): the shell receives the START-
+    // captured session envelope while a session is live (the debounced
+    // auto-derive landing after start must not re-describe the running
+    // session); without a session the live config. Derivation + precedence:
+    // experience-playground-launch-context.ts.
+    onLaunchContextChange(reportedLaunchContext(logLaunchContext, {
+      participants, grants, settingsJson, seed, lastUsedSeed, randomStart, humanSeatId,
+    }));
+  }, [participants, grants, settingsJson, seed, lastUsedSeed, randomStart, humanSeatId, logLaunchContext, onLaunchContextChange]);
 
   const updateSeat = (index: number, patch: Partial<PlaygroundSeat>) => {
     setSeatsTouched(true);
@@ -766,14 +768,11 @@ export function ExperiencePlayground({ code, visualSource, scriptId, script, onS
       setExpectedRevision(String(data.revision));
       // Grounding step 6: the log starts from THIS session's start envelope
       // (start carries every event so far) and the launch context is captured
-      // as actually sent — the exact roster/grants/seed the session ran with.
+      // as actually sent — the exact roster/grants/settings/seed the session
+      // ran with (startLaunchEnvelope projects settings the way the shell
+      // reporting path does).
       setSessionLog({ events: data.events, effects: data.effects, console: data.console, turns: 0 });
-      setLogLaunchContext({
-        participants,
-        capabilityGrants: [...grants],
-        ...(launchSeed !== "" ? { seed: launchSeed } : {}),
-        ...(humanSeatId !== "" ? { humanSeatId } : {}),
-      });
+      setLogLaunchContext(startLaunchEnvelope({ participants, grants, settings: settings.value, launchSeed, humanSeatId }));
       // RM-9: realtime mode latches the frame loop config — from here the
       // round runs entirely INSIDE the sandboxed frame (no advance/timer
       // round-trips; the server start above only ran `create` in the real

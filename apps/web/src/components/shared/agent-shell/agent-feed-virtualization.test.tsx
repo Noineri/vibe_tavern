@@ -65,7 +65,7 @@ function message(id: string, role: "user" | "assistant" = "user"): ExperienceCop
 }
 
 describe("real agent feed virtualization", () => {
-  it("characterizes the existing short-feed event, text and live handover boundary before the port", () => {
+  it("keeps short-feed text, live stream caption handover, and first-message identity across settle", () => {
     const messages = [message("u"), message("a", "assistant")];
     const view = render(<AgentMessageList kind="experience" threadId="thread" messages={messages} pendingUserContent="" />);
     const first = view.getByText("Body u");

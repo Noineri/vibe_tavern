@@ -24,6 +24,7 @@ import {
 	resetTokenCountCache,
 	waitForTokenWarmIdle,
 } from "../src/infrastructure/ai/token-count-cache.js";
+import { testFetch } from "./test-fetch-seam.js";
 
 const originalFetch = globalThis.fetch;
 const ORIGINAL_CONFIG = { ttlMs: 30 * 60_000, capacity: 512, warmQueueMax: 64, offlineCooldownMs: 60_000 };
@@ -38,7 +39,7 @@ let calls: CapturedCall[] = [];
 const EXACT = (text: string) => 1000 + text.length;
 
 function stubTokenizeFetch(overrides?: { fail?: boolean; status?: number }) {
-	globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+	globalThis.fetch = testFetch(async (url: string | URL | Request, init?: RequestInit) => {
 		const urlText = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
 		const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
 		calls.push({ url: urlText, body });
@@ -48,7 +49,7 @@ function stubTokenizeFetch(overrides?: { fail?: boolean; status?: number }) {
 			status: overrides?.status ?? 200,
 			headers: { "Content-Type": "application/json" },
 		});
-	}) as typeof fetch;
+	});
 }
 
 function ctxFor(baseUrl: string): ProviderTokenContext {

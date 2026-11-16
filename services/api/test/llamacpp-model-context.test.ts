@@ -1,4 +1,5 @@
 import { describe, it, expect, mock, beforeEach, afterEach, afterAll } from "bun:test";
+import { testFetch } from "./test-fetch-seam.js";
 import { listLlamaCppModels } from "../src/domain/providers/llamacpp-adapter.js";
 import { listProviderModels } from "../src/domain/providers/provider-gateway.js";
 
@@ -18,7 +19,7 @@ function mockFetch(url: string | URL | Request): Response {
 
 beforeEach(() => {
 	route = () => undefined;
-	globalThis.fetch = mock(mockFetch) as unknown as typeof fetch;
+	globalThis.fetch = testFetch(mock(mockFetch));
 });
 
 afterEach(() => {

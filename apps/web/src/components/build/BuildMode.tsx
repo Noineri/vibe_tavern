@@ -3,8 +3,8 @@ import { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { buildCharacterDraftSchema, type BuildCharacterDraft } from "@vibe-tavern/api-contracts";
-import type { AssemblePromptResponse, PromptTraceRecordDto } from "@vibe-tavern/domain";
-import type { AppCharacter } from "../../api/types.js";
+import type { AssemblePromptResponse } from "@vibe-tavern/domain";
+import type { AppCharacter, AppPromptTrace } from "../../api/types.js";
 import { cn } from "../../lib/cn.js";
 import { DropdownSelect } from "../shared/DropdownSelect.js";
 import { ScrollArea } from "../shared/scroll-area.js";
@@ -62,7 +62,7 @@ export function BuildMode() {
   const setSelectedTraceId = useChatStore((s) => s.setSelectedTraceId);
   const promptPayloadText = JSON.stringify(activeTrace?.finalPayload ?? {}, null, 2);
   const promptTraceCount = promptTraceHistory.length;
-  const currentTraceIndex = activeTrace && 'id' in activeTrace ? promptTraceHistory.findIndex((t) => t.id === (activeTrace as PromptTraceRecordDto).id) : -1;
+  const currentTraceIndex = activeTrace && 'id' in activeTrace ? promptTraceHistory.findIndex((t) => t.id === activeTrace.id) : -1;
 
   let imageAttachmentsCount = 0;
   if (activeTrace?.finalPayload && typeof activeTrace.finalPayload === 'object') {
@@ -124,12 +124,12 @@ interface BuildModeInnerProps {
   character: AppCharacter;
   isSaving: boolean;
   buildTab: BuildTab;
-  activeTrace: PromptTraceRecordDto | AssemblePromptResponse | null;
+  activeTrace: AppPromptTrace | AssemblePromptResponse | null;
   promptTraceCount: number;
   currentTraceIndex: number;
   imageAttachmentsCount: number;
   setSelectedTraceId: (id: string | null) => void;
-  promptTraceHistory: PromptTraceRecordDto[];
+  promptTraceHistory: AppPromptTrace[];
   traceFetchStatus: TraceHistoryStatus;
   traceFetchError: string | null;
   onRefetchTraceHistory: () => void;
@@ -319,7 +319,7 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptTrac
                 }}
               >‹</button>
               <DropdownSelect
-                value={(trace as PromptTraceRecordDto).id}
+                value={trace.id}
                 onChange={setSelectedTraceId}
                 searchable={false}
                 className="h-10 min-w-0 rounded-md bg-s2 px-3 py-0 text-[calc(var(--ui-fs)-1px)]"

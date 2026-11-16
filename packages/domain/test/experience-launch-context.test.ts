@@ -130,6 +130,7 @@ describe("compareLaunchContext", () => {
         human,
         { id: "ai", label: "AI", controller: EXPERIENCE_CONTROLLER.model },
         { id: "ai2", label: "Second AI", controller: EXPERIENCE_CONTROLLER.model, providerProfileId: "profile-1" },
+        { id: "ai4", label: "Model Only AI", controller: EXPERIENCE_CONTROLLER.model, modelId: "gpt-4o" },
         { ...modelSeat, id: "ai3", label: "Ready AI" },
       ],
       grants,
@@ -138,11 +139,12 @@ describe("compareLaunchContext", () => {
     expect(result.modelSeatsWithoutModel).toEqual([
       { id: "ai", label: "AI" },
       { id: "ai2", label: "Second AI" },
+      { id: "ai4", label: "Model Only AI" },
     ]);
     expect(result.missingModelSeat).toBe(false);
   });
 
-  test("reports all four findings together", () => {
+  test("reports all three compatible findings together (missing grants, undeclared grants, missing model seat)", () => {
     const result = compareLaunchContext(
       [EXPERIENCE_CAPABILITY.participants, EXPERIENCE_CAPABILITY.model],
       [human],

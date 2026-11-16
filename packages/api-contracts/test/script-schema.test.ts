@@ -75,13 +75,18 @@ describe("createScriptSchema", () => {
       ...validCreateScript(),
       description: "d",
       code: "console.log(1)",
-      characterId: "c1",
-      personaId: "p1",
+      scriptKind: "dice" as const,
+      creationIntentId: "intent_1",
+      links: [
+        { targetType: "character" as const, targetId: "c1" },
+        { targetType: "persona" as const, targetId: "p1" },
+      ],
       chatId: "ch1",
       enabled: false,
       sortOrder: 7,
+      origin: "imported" as const,
     };
-    expect(createScriptSchema.safeParse(payload).success).toBe(true);
+    expect(createScriptSchema.parse(payload)).toEqual(payload);
   });
 
   it("rejects an empty payload (missing required name + scopeType)", () => {
@@ -102,8 +107,47 @@ describe("createScriptSchema", () => {
     expectReject(createScriptSchema.safeParse({ name: "s", scopeType: 2 }));
   });
 
-  it("accepts omitted characterId/personaId/chatId (all optional)", () => {
-    expect(createScriptSchema.safeParse(validCreateScript()).success).toBe(true);
+  it("omits optional chatId/creationIntentId/origin by default, binds owners via links, and strips deprecated characterId/personaId", () => {
+    const minimal = expectData(createScriptSchema.safeParse(validCreateScript())) as Record<string, unknown>;
+    expect(minimal).toEqual({
+      name: "Greeter",
+      scopeType: "entity",
+      description: "",
+      code: "",
+      scriptKind: "prompt",
+      links: [],
+      enabled: true,
+      sortOrder: 0,
+    });
+    expect("chatId" in minimal).toBe(false);
+    expect("creationIntentId" in minimal).toBe(false);
+    expect("origin" in minimal).toBe(false);
+
+    const stripped = expectData(
+      createScriptSchema.safeParse({
+        ...validCreateScript(),
+        characterId: "c1",
+        personaId: "p1",
+        links: [{ targetType: "character", targetId: "c2" }],
+        chatId: "ch1",
+      }),
+    ) as Record<string, unknown>;
+    expect(stripped).toEqual({
+      name: "Greeter",
+      scopeType: "entity",
+      description: "",
+      code: "",
+      scriptKind: "prompt",
+      links: [{ targetType: "character", targetId: "c2" }],
+      chatId: "ch1",
+      enabled: true,
+      sortOrder: 0,
+    });
+    expect("characterId" in stripped).toBe(false);
+    expect("personaId" in stripped).toBe(false);
+
+    expectReject(createScriptSchema.safeParse({ ...validCreateScript(), links: [{ targetType: "preset", targetId: "x" }] }));
+    expectReject(createScriptSchema.safeParse({ ...validCreateScript(), links: [{ targetType: "character", targetId: "" }] }));
   });
 });
 
@@ -438,22 +482,29 @@ describe("scriptTestResultSchema (prompt | dice | interactive)", () => {
   // IR-70F: the wire test-result schema carries a validated setup descriptor
   // automatically through the experienceDefinitionSchema it embeds.
   it("accepts an interactive result whose definition carries a setup descriptor", () => {
-    const result = scriptTestResultSchema.safeParse({
-      kind: "interactive",
+    const payload = {
+      kind: "interactive" as const,
       definition: {
         apiVersion: 1,
         manifest: { id: "ttt", name: "Tic-Tac-Toe" },
         declaredCapabilities: [],
         setup: {
           fields: [
-            { kind: "select", id: "strength", label: "Strength", default: "easy",
+            { kind: "select" as const, id: "strength", label: "Strength", default: "easy",
               options: [{ value: "easy", label: "Easy" }] },
           ],
         },
       },
       discoveryError: null,
+    };
+    const data = expectData(scriptTestResultSchema.safeParse(payload));
+    expect(data).toEqual({
+      ...payload,
+      definition: {
+        ...payload.definition,
+        manifest: { ...payload.definition.manifest, mode: "turn" },
+      },
     });
-    expect(result.success).toBe(true);
   });
 
   it("rejects an interactive result whose setup is malformed", () => {

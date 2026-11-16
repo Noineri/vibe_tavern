@@ -87,10 +87,25 @@ describe("transcribeSttAudio", () => {
 	});
 });
 
+function sttProfileWire(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+	return {
+		id: "stt_1",
+		name: "W",
+		backend: "whisper-browser",
+		config: {},
+		hasStoredApiKey: false,
+		emotionAnnotation: false,
+		isDefault: false,
+		createdAt: "2026-01-01T00:00:00Z",
+		updatedAt: "2026-01-01T00:00:00Z",
+		...overrides,
+	};
+}
+
 describe("STT profile CRUD helpers", () => {
 	it("listAllSttProfiles unwraps the RPC envelope", async () => {
 		globalThis.fetch = mockFetch(async () =>
-			new Response(JSON.stringify([{ id: "stt_1", name: "W" }]), { status: 200 }),
+			new Response(JSON.stringify([sttProfileWire()]), { status: 200 }),
 		);
 		const profiles = await sttApi.listAllSttProfiles();
 		expect(profiles.length).toBe(1);
@@ -111,7 +126,7 @@ describe("STT profile CRUD helpers", () => {
 		globalThis.fetch = mockFetch(async () =>
 			new Response(JSON.stringify({ error: "validation failed" }), { status: 400 }),
 		);
-		await expect(sttApi.createSttProfile({ name: "x", backend: "whisper-browser" })).rejects.toThrow(
+		await expect(sttApi.createSttProfile({ name: "x", backend: "whisper-browser", config: {} })).rejects.toThrow(
 			"validation failed",
 		);
 	});
@@ -142,7 +157,7 @@ describe("STT set-default client", () => {
 		globalThis.fetch = mockFetch(async (input, init) => {
 			capturedUrl = String(input);
 			capturedInit = init;
-			return new Response(JSON.stringify({ id: "stt-1", name: "W", isDefault: true }), { status: 200 });
+			return new Response(JSON.stringify(sttProfileWire({ id: "stt-1", isDefault: true })), { status: 200 });
 		});
 
 		const updated = await sttApi.setSttDefault("stt-1");

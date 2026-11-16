@@ -26,6 +26,7 @@
 import { beforeEach, describe, expect, it, mock } from "bun:test";
 
 import { useDomEnv } from "../../test/dom-env.js";
+import { wireProviderProfile } from "../../test/wire-fixtures.js";
 
 useDomEnv();
 
@@ -72,39 +73,28 @@ mock.module("../api/provider-api.js", () => ({
 const { useProviderDataStore } = await import("../stores/provider-data-store.js");
 const { useProviderProfiles } = await import("./use-provider-profiles.js");
 
-function makeProfile(over: Record<string, unknown> = {}): ProviderProfileRecord {
-  return {
+function makeProfile(over: Partial<ProviderProfileRecord> = {}): ProviderProfileRecord {
+  // THE wire-profile derivation (wire-fixtures) + this suite's pinned values.
+  // The erased literal carried `coauthorTransport: "chatCompletions"` — not a
+  // member of the production CoauthorTransport union ("chat_completions" |
+  // "responses") — a value the product can never produce; the wire default is
+  // the real member and no assertion in this suite reads the transport.
+  return wireProviderProfile({
     id: "p1",
     name: "Quick Switch Profile",
-    providerPreset: "openaiCompat",
-    coauthorTransport: "chatCompletions",
-    generationMode: "chat",
     endpoint: "http://localhost:1234/v1",
     defaultModel: "m-a",
-    visionModel: null,
     contextBudget: 32000,
-    pinContextBudget: false,
-    tokenPadding: 0,
-    bindPerModel: false,
-    modelFreeOnly: false,
-    modelGroupByOwner: false,
     maxTokens: 2000,
     temperature: 0.8,
-    topP: 0.95, minP: 0.05, topK: 40, topA: 0, typicalP: 1, tfsZ: 1,
-    adaptiveTarget: -1, adaptiveDecay: 0.9, dynatempRange: 0, dynatempExponent: 1,
-    topNSigma: 0, smoothingFactor: 0, repeatLastN: 0,
-    mirostat: 0, mirostatTau: 5, mirostatEta: 0.1,
-    dryMultiplier: 0, dryBase: 1.75, dryAllowedLength: 2, dryPenaltyLastN: -1, drySequenceBreakers: [],
-    xtcThreshold: 0.1, xtcProbability: 0,
-    frequencyPenalty: 0, presencePenalty: 0, repetitionPenalty: 1,
-    stopSequences: [], bannedStrings: [], logitBias: [],
-    seed: null, reasoningEffort: "auto", showReasoning: false, streamResponse: true,
-    customSamplers: false, proxyMode: "inherit", proxyId: null,
-    isActive: true, samplerSetId: null, generationFormat: null,
+    topP: 0.95, minP: 0.05, topK: 40,
+    repeatLastN: 0,
+    reasoningEffort: "auto",
+    showReasoning: false,
+    isActive: true,
     createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z",
-    hasStoredApiKey: true,
     ...over,
-  } as unknown as ProviderProfileRecord;
+  });
 }
 
 function seed(profile: ProviderProfileRecord, overlays: Record<string, Record<string, unknown>>): void {

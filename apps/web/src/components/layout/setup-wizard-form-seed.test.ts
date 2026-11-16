@@ -7,7 +7,8 @@
 import { describe, expect, it } from "bun:test";
 
 import { PROVIDER_PROFILE_GENERATION_DEFAULTS } from "@vibe-tavern/domain";
-import type { ProviderProfileRecord } from "../../api/types.js";
+import { wireProviderProfile } from "../../../test/wire-fixtures.js";
+import type { FormState } from "../modals/ProviderModal.js";
 import { buildWizardFormSeed } from "./setup-wizard-form-seed.js";
 
 const D = PROVIDER_PROFILE_GENERATION_DEFAULTS;
@@ -19,7 +20,9 @@ describe("buildWizardFormSeed", () => {
     for (const [key, value] of Object.entries(generationDefaults)) {
       // Fields the wizard form does not seed (e.g. thinkingMode, unified*) are skipped.
       if (!(key in seed)) continue;
-      expect([key, (seed as unknown as Record<string, unknown>)[key]]).toEqual([key, value]);
+      // The `in` guard above is the runtime proof for this key narrowing: the
+      // reflective loop reads one dynamically-checked member of the seed.
+      expect([key, seed[key as keyof FormState]]).toEqual([key, value]);
     }
     expect(seed.contextBudget).toBe(16000);
     expect(seed.maxTokens).toBe(2000);
@@ -28,9 +31,14 @@ describe("buildWizardFormSeed", () => {
   });
 
   it("lets an existing profile's own values win", () => {
-    const seed = buildWizardFormSeed({
-      id: "p1", name: "Mine", temperature: 0.3, maxTokens: 777, contextBudget: 4096, reasoningEffort: "high", stopSequences: ["x"],
-    } as unknown as ProviderProfileRecord);
+    // The complete wire row (the ONE ProviderProfileRecord derivation) with
+    // the pins the erased partial literal carried — the fields this function
+    // reads are exactly the overridden ones, so the boundary is unchanged.
+    const seed = buildWizardFormSeed(
+      wireProviderProfile({
+        id: "p1", name: "Mine", temperature: 0.3, maxTokens: 777, contextBudget: 4096, reasoningEffort: "high", stopSequences: ["x"],
+      }),
+    );
     expect(seed.temperature).toBe(0.3);
     expect(seed.maxTokens).toBe(777);
     expect(seed.contextBudget).toBe(4096);

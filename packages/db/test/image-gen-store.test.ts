@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import { IMAGE_GEN_BACKENDS, IMAGE_GEN_TARGET_TYPE } from '@vibe-tavern/domain';
 import type { ImageGenCapabilityFlags } from '@vibe-tavern/domain';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 
 import { createDb } from '../src/db-connection.js';
 import { imageGenLinks, imageGenModelSettings, imageGenProfiles } from '../src/db-schema.js';
@@ -136,16 +136,42 @@ describe('ImageGenStore CRUD', () => {
 		expect(born.defaultParamsSetId).toBe('igset_test_1');
 	});
 
-	test('apiKey round-trips on create but never inside JSON columns', async () => {
-		const { store } = await setup();
-		const created = await store.create(baseInput({ apiKey: 'sk-secret' }));
+	test('apiKey round-trips on create and smuggled apiKey never lands in raw JSON columns', async () => {
+		const { store, db } = await setup();
+		const dirtyDefaultParams: CreateImageGenProfileData['defaultParams'] & { apiKey?: string } = {
+			steps: 20,
+			apiKey: 'sk-smuggled-params',
+		};
+		const dirtyModeSizePresets: CreateImageGenProfileData['modeSizePresets'] & { apiKey?: string } = {
+			portrait: { width: 832, height: 1216 },
+			apiKey: 'sk-smuggled-sizes',
+		};
+		const created = await store.create(
+			baseInput({
+				apiKey: 'sk-secret',
+				defaultParams: dirtyDefaultParams,
+				modeSizePresets: dirtyModeSizePresets,
+			}),
+		);
 		expect(created.apiKey).toBe('sk-secret');
 
 		const loaded = await store.getById(created.id);
 		expect(loaded?.apiKey).toBe('sk-secret');
-		// The key must not leak into the JSON blobs (IG-1/ST-1 strip rule).
-		expect(JSON.stringify(loaded?.defaultParams)).not.toContain('sk-secret');
-		expect(JSON.stringify(loaded?.modeSizePresets)).not.toContain('sk-secret');
+		// Inspect raw SQLite JSON columns (not only the stripped read projection).
+		const raw = await db
+			.select({
+				defaultParamsJson: imageGenProfiles.defaultParamsJson,
+				modeSizePresetsJson: imageGenProfiles.modeSizePresetsJson,
+				capabilitiesJson: imageGenProfiles.capabilitiesJson,
+			})
+			.from(imageGenProfiles)
+			.where(eq(imageGenProfiles.id, created.id))
+			.get();
+		expect(raw?.defaultParamsJson).toBe(JSON.stringify({ steps: 20 }));
+		expect(raw?.modeSizePresetsJson).toBe(JSON.stringify({ portrait: { width: 832, height: 1216 } }));
+		expect(raw?.defaultParamsJson).not.toContain('sk-');
+		expect(raw?.modeSizePresetsJson).not.toContain('sk-');
+		expect(raw?.capabilitiesJson).not.toContain('sk-');
 	});
 
 	test('update patch: undefined apiKey keeps the stored key, "" clears it, new value replaces it', async () => {
@@ -187,7 +213,15 @@ describe('ImageGenStore CRUD', () => {
 	});
 
 	test('update applies params/sizes/capabilities patches and bumps updatedAt order', async () => {
-		const { store } = await setup();
+		const db = await createDb(':memory:');
+		let tick = 0;
+		const steppingClock: StoreClock = {
+			now: () => {
+				tick += 1;
+				return new Date(Date.parse('2026-09-14T00:00:00.000Z') + tick * 1_000).toISOString();
+			},
+		};
+		const store = new ImageGenStore(db, { clock: steppingClock, idGenerator: idGen });
 		const created = await store.create(baseInput());
 		const updated = await store.update(created.id, {
 			defaultParams: { steps: 30, cfgScale: 7, sampler: 'DPM++ 2M', clipSkip: 2 },
@@ -197,6 +231,8 @@ describe('ImageGenStore CRUD', () => {
 		expect(updated?.defaultParams).toEqual({ steps: 30, cfgScale: 7, sampler: 'DPM++ 2M', clipSkip: 2 });
 		expect(updated?.modeSizePresets).toEqual({ 'scene-background': { width: 1536, height: 640 } });
 		expect(updated?.capabilities).toEqual(openaiImagesCapabilities);
+		expect(updated?.createdAt).toBe(created.createdAt);
+		expect(updated!.updatedAt > created.updatedAt).toBe(true);
 	});
 
 	test('IG-20a: user size entries persist on create, replace on update, and absent column reads as none', async () => {
@@ -363,7 +399,7 @@ describe('ImageGenStore family + quality fields (IPT-2)', () => {
 
 describe('ImageGenStore links (character bindings)', () => {
 	test('setLinks replaces the set atomically; getLinks/listAllLinks read back', async () => {
-		const { store } = await setup();
+		const { store, db } = await setup();
 		const profile = await store.create(baseInput());
 		const other = await store.create(baseInput());
 
@@ -376,6 +412,27 @@ describe('ImageGenStore links (character bindings)', () => {
 		// Replace: old bindings vanish, new land.
 		await store.setLinks(profile.id, [{ targetType: IMAGE_GEN_TARGET_TYPE.Character, targetId: 'char_3' }]);
 		expect((await store.getLinks(profile.id)).map((l) => l.targetId)).toEqual(['char_3']);
+
+		// A mid-replace insert failure rolls back the preceding delete so char_3 survives.
+		await db.run(sql.raw(`
+			CREATE TRIGGER inject_image_gen_link_fail
+			BEFORE INSERT ON image_gen_links
+			WHEN NEW.target_id = 'char_boom'
+			BEGIN
+				SELECT RAISE(ABORT, 'inject_link_fail');
+			END
+		`));
+		try {
+			await expect(
+				store.setLinks(profile.id, [
+					{ targetType: IMAGE_GEN_TARGET_TYPE.Character, targetId: 'char_ok' },
+					{ targetType: IMAGE_GEN_TARGET_TYPE.Character, targetId: 'char_boom' },
+				]),
+			).rejects.toThrow('inject_link_fail');
+			expect((await store.getLinks(profile.id)).map((l) => l.targetId)).toEqual(['char_3']);
+		} finally {
+			await db.run(sql.raw('DROP TRIGGER IF EXISTS inject_image_gen_link_fail'));
+		}
 
 		await store.addLink(other.id, IMAGE_GEN_TARGET_TYPE.Character, 'char_1');
 		const all = await store.listAllLinks();
@@ -392,7 +449,11 @@ describe('ImageGenStore links (character bindings)', () => {
 			{ targetType: IMAGE_GEN_TARGET_TYPE.Character, targetId: 'char_1' },
 			{ targetType: IMAGE_GEN_TARGET_TYPE.Character, targetId: 'char_1' },
 		]);
-		expect(await store.getLinks(profile.id)).toHaveLength(1);
+		const links = await store.getLinks(profile.id);
+		expect(links).toHaveLength(1);
+		expect(String(links[0]?.imageGenProfileId)).toBe(profile.id);
+		expect(links[0]?.targetType).toBe(IMAGE_GEN_TARGET_TYPE.Character);
+		expect(links[0]?.targetId).toBe('char_1');
 	});
 
 	test('unknown targetType rows are skipped on read, not thrown', async () => {
@@ -420,10 +481,28 @@ describe('ImageGenStore links (character bindings)', () => {
 			const { store } = await setup();
 			const a = await store.create(baseInput());
 			const b = await store.create(baseInput());
-			await store.addModelFavorite(a.id, { modelId: 'sd_xl' });
-			await store.addModelFavorite(b.id, { modelId: 'sd_xl' });
-			expect(await store.listModelFavorites(a.id)).toHaveLength(1);
-			expect(await store.listModelFavorites(b.id)).toHaveLength(1);
+			await store.addModelFavorite(a.id, { modelId: 'sd_xl', label: 'A XL' });
+			await store.addModelFavorite(a.id, { modelId: 'flux_dev', label: 'A Flux' });
+			await store.addModelFavorite(b.id, { modelId: 'sd_xl', label: 'B XL' });
+			expect(
+				(await store.listModelFavorites(a.id))
+					.map((r) => ({
+						profileId: String(r.imageGenProfileId),
+						modelId: r.modelId,
+						label: r.label,
+					}))
+					.sort((x, y) => x.modelId.localeCompare(y.modelId)),
+			).toEqual([
+				{ profileId: a.id, modelId: 'flux_dev', label: 'A Flux' },
+				{ profileId: a.id, modelId: 'sd_xl', label: 'A XL' },
+			]);
+			expect(
+				(await store.listModelFavorites(b.id)).map((r) => ({
+					profileId: String(r.imageGenProfileId),
+					modelId: r.modelId,
+					label: r.label,
+				})),
+			).toEqual([{ profileId: b.id, modelId: 'sd_xl', label: 'B XL' }]);
 		});
 
 		test('un-starring removes only that row; a no-op on an unstarred model', async () => {
@@ -479,19 +558,33 @@ describe('ImageGenStore links (character bindings)', () => {
 		});
 
 		test('an apiKey smuggled into an overlay is stripped on write (IG-1 secret rule)', async () => {
-			const { store } = await setup();
+			const { store, db } = await setup();
 			const profile = await store.create(baseInput());
-			// Simulate a caller that stuffs the key into the JSON blob.
-			const dirty = { steps: 30, apiKey: 'sk-secret' } as unknown as import('@vibe-tavern/domain').ImageGenModelSettingsOverlay;
+			// Simulate a caller that stuffs the key into the JSON blob: the smuggled
+			// member is NOT part of the overlay type, so the typed view carries it
+			// explicitly — the exact hostile wire shape, compiler-visible.
+			const dirty: import('@vibe-tavern/domain').ImageGenModelSettingsOverlay & { apiKey?: string } = {
+				steps: 30,
+				apiKey: 'sk-secret',
+			};
 			await store.upsertModelSettings(profile.id, 'sd_xl', dirty);
 			const row = await store.getModelSettings(profile.id, 'sd_xl');
 			expect(row?.settings).toEqual({ steps: 30 });
+			// Verify the write boundary via the raw stored settings_json column.
+			const raw = await db
+				.select({ settingsJson: imageGenModelSettings.settingsJson })
+				.from(imageGenModelSettings)
+				.where(eq(imageGenModelSettings.imageGenProfileId, profile.id))
+				.get();
+			expect(raw?.settingsJson).toBe(JSON.stringify({ steps: 30 }));
+			expect(raw?.settingsJson).not.toContain('sk-secret');
+			expect(raw?.settingsJson).not.toContain('apiKey');
 		});
 	});
 
 	describe('setDefault (MR-12 — the TTS/STT isDefault twin)', () => {
 		test('moves the exclusive flag between profiles transactionally', async () => {
-			const { store } = await setup();
+			const { store, db } = await setup();
 			const a = await store.create(baseInput());
 			const b = await store.create(baseInput());
 			expect((await store.getById(a.id))?.isDefault).toBe(false);
@@ -499,6 +592,24 @@ describe('ImageGenStore links (character bindings)', () => {
 			expect(first?.isDefault).toBe(true);
 			let rows = await store.listAll();
 			expect(rows.filter((r) => r.isDefault).map((r) => r.id)).toEqual([a.id]);
+
+			// Abort AFTER clearing previous flags when trying to promote b: a must survive as default.
+			await db.run(sql.raw(`
+				CREATE TRIGGER inject_image_gen_default_fail
+				BEFORE UPDATE ON image_gen_profiles
+				WHEN NEW.id = '${b.id}' AND NEW.is_default = 1
+				BEGIN
+					SELECT RAISE(ABORT, 'inject_default_fail');
+				END
+			`));
+			try {
+				await expect(store.setDefault(b.id)).rejects.toThrow('inject_default_fail');
+				const afterAbort = await store.listAll();
+				expect(afterAbort.filter((r) => r.isDefault).map((r) => r.id)).toEqual([a.id]);
+			} finally {
+				await db.run(sql.raw('DROP TRIGGER IF EXISTS inject_image_gen_default_fail'));
+			}
+
 			const second = await store.setDefault(b.id);
 			expect(second?.isDefault).toBe(true);
 			rows = await store.listAll();

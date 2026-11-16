@@ -617,10 +617,24 @@ describe("MessageStore — variant (swipe) semantics", () => {
   });
 
   test("addMessagesBatch with empty array is a no-op", async () => {
-    await messageStore.addMessagesBatch([]);
-    const rows = await db.select().from(schema.messages)
+    await messageStore.addMessage({
+      chatId: "chat_1", branchId: "brnch_1",
+      role: "user", authorType: "user", content: "existing",
+    });
+    const beforeMessages = await db.select().from(schema.messages)
       .where(eq(schema.messages.branchId, "brnch_1")).all();
-    expect(rows.length).toBe(0);
+    const beforeVariants = await db.select().from(schema.messageVariants)
+      .where(eq(schema.messageVariants.messageId, beforeMessages[0]!.id)).all();
+    expect(beforeMessages).toHaveLength(1);
+
+    await messageStore.addMessagesBatch([]);
+
+    const afterMessages = await db.select().from(schema.messages)
+      .where(eq(schema.messages.branchId, "brnch_1")).all();
+    const afterVariants = await db.select().from(schema.messageVariants)
+      .where(eq(schema.messageVariants.messageId, beforeMessages[0]!.id)).all();
+    expect(afterMessages).toEqual(beforeMessages);
+    expect(afterVariants).toEqual(beforeVariants);
   });
 });
 
@@ -696,10 +710,14 @@ describe("MessageStore — variant preset_name (Q2)", () => {
     );
 
     const rows = await messageStore.getVariants(msg.id);
-    const presets = rows.map((r) => r.presetName);
-    // Exactly one variant carries the preset name; the others are null.
-    expect(presets.filter((p) => p === "My Preset")).toEqual(["My Preset"]);
-    expect(rows.find((r) => r.variantIndex === queued.variantIndex)!.presetName).toBe("My Preset");
+    const ordered = [...rows].sort((a, b) => a.variantIndex - b.variantIndex);
+    // Exactly index 2 (queued) carries the preset name; earlier variants remain null.
+    expect(queued.variantIndex).toBe(2);
+    expect(ordered.map((r) => ({ variantIndex: r.variantIndex, presetName: r.presetName }))).toEqual([
+      { variantIndex: 0, presetName: null },
+      { variantIndex: 1, presetName: null },
+      { variantIndex: 2, presetName: "My Preset" },
+    ]);
   });
 });
 
@@ -755,19 +773,20 @@ describe("ChatStore — mode column", () => {
   });
 
   test("listByCharacterAndMode is isolated per character", async () => {
-    // Second character + its co-author chat.
+    const co1 = await store.createChat({ characterId: "char_1", title: "co-first", promptPresetId: "preset_1", mode: "coauthor" });
+    // Second character + both an RP chat (must be excluded) and its co-author chat.
     db.insert(schema.characters).values({
       id: "char_2", name: "OtherChar", description: "",
       alternateGreetingsJson: "[]", extensionsJson: "{}", tagsJson: "[]",
       status: "active", createdAt: FIXED_NOW, updatedAt: FIXED_NOW,
     }).run();
-    await store.createChat({ characterId: "char_2", title: "co-other", promptPresetId: "preset_1", mode: "coauthor" });
+    await store.createChat({ characterId: "char_2", title: "rp-other", promptPresetId: "preset_1" });
+    const co2 = await store.createChat({ characterId: "char_2", title: "co-other", promptPresetId: "preset_1", mode: "coauthor" });
 
     const forChar1 = await store.listByCharacterAndMode("char_1", "coauthor");
     const forChar2 = await store.listByCharacterAndMode("char_2", "coauthor");
-    expect(forChar1.every((c) => c.characterId === "char_1")).toBe(true);
-    expect(forChar2.every((c) => c.characterId === "char_2")).toBe(true);
-    expect(forChar2).toHaveLength(1);
+    expect(forChar1.map((c) => c.id)).toEqual([co1.id]);
+    expect(forChar2.map((c) => c.id)).toEqual([co2.id]);
   });
 });
 
@@ -961,14 +980,39 @@ describe("ChatStore — scene tracker config (SCN-2)", () => {
   });
 
   test("a schema PATCH replaces the whole DSL and recomputes schemaHash atomically with the revision bump", async () => {
+    const initialDsl: SceneTrackerDsl = { intensity: { $type: "number", min: 1, max: 5 } };
     const dsl: SceneTrackerDsl = { tension: { $type: "number", min: 0, max: 10 } };
     const chat = await store.createChat({ characterId: "char_1", title: "c", promptPresetId: "preset_1" });
+    await store.updateSceneTrackerConfig(chat.id, { schema: initialDsl });
+
     const updated = await store.updateSceneTrackerConfig(chat.id, { schema: dsl });
     const tracker = normalizeSceneTrackerConfig(updated.insightsConfig.tracker);
     expect(tracker.schema).toEqual(dsl);
     expect(tracker.schemaHash).toBe(computeSceneSchemaHash(dsl));
-    expect(tracker.schemaHash).not.toBe(computeSceneSchemaHash({}));
-    expect(tracker.revision).toBe(1);
+    expect(tracker.schemaHash).not.toBe(computeSceneSchemaHash(initialDsl));
+    expect(tracker.revision).toBe(2);
+
+    db.$client.exec(`
+      CREATE TEMP TRIGGER abort_tracker_patch
+      BEFORE UPDATE ON chats
+      WHEN NEW.id = '${chat.id}'
+      BEGIN
+        SELECT RAISE(ABORT, 'abort tracker update');
+      END;
+    `);
+    try {
+      await expect(
+        store.updateSceneTrackerConfig(chat.id, { schema: initialDsl }),
+      ).rejects.toThrow(/abort tracker update/);
+    } finally {
+      db.$client.exec("DROP TRIGGER IF EXISTS abort_tracker_patch;");
+    }
+
+    const persisted = await store.getById(chat.id);
+    const persistedTracker = normalizeSceneTrackerConfig(persisted!.insightsConfig.tracker);
+    expect(persistedTracker.schema).toEqual(dsl);
+    expect(persistedTracker.schemaHash).toBe(computeSceneSchemaHash(dsl));
+    expect(persistedTracker.revision).toBe(2);
   });
 
   test("normalization recovers defaults from a corrupt/partial stored tracker before merging", async () => {

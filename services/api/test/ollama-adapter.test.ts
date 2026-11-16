@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { streamText } from "ai";
 import type { LanguageModelV3StreamPart } from "@ai-sdk/provider";
 import { createOllamaModel, fetchOllamaModels, tokenizeOllama } from "../src/domain/providers/ollama-adapter.js";
+import { testFetch } from "./test-fetch-seam.js";
 
 const originalFetch = globalThis.fetch;
 let mockFetch: ReturnType<typeof mock>;
@@ -11,7 +12,7 @@ function mockJson(response: unknown, status = 200) {
     status,
     headers: { "Content-Type": "application/json" },
   }));
-  globalThis.fetch = mockFetch as typeof fetch;
+  globalThis.fetch = testFetch(mockFetch);
 }
 
 function mockNdjson(lines: unknown[], status = 200) {
@@ -19,7 +20,7 @@ function mockNdjson(lines: unknown[], status = 200) {
     status,
     headers: { "Content-Type": "application/x-ndjson" },
   }));
-  globalThis.fetch = mockFetch as typeof fetch;
+  globalThis.fetch = testFetch(mockFetch);
 }
 
 // Byte-level control over the wire: the adapter owns line reassembly and UTF-8
@@ -37,7 +38,7 @@ function mockByteChunks(chunks: readonly (string | Uint8Array)[], status = 200) 
     }),
     { status, headers: { "Content-Type": "application/x-ndjson" } },
   ));
-  globalThis.fetch = mockFetch as typeof fetch;
+  globalThis.fetch = testFetch(mockFetch);
 }
 
 // Splits text at a byte offset that falls INSIDE a multi-byte character, so
@@ -121,7 +122,7 @@ describe("Ollama adapter — doGenerate", () => {
 
   it("throws on HTTP errors", async () => {
     mockFetch = mock(async () => new Response("bad", { status: 500 }));
-    globalThis.fetch = mockFetch as typeof fetch;
+    globalThis.fetch = testFetch(mockFetch);
     const model = createOllamaModel({ baseURL: "http://localhost:11434", modelId: "gemma3:4b" });
 
     await expect(model.doGenerate({
@@ -293,7 +294,7 @@ describe("Ollama adapter — doStream", () => {
       }),
       { status: 200, headers: { "Content-Type": "application/x-ndjson" } },
     ));
-    globalThis.fetch = mockFetch as typeof fetch;
+    globalThis.fetch = testFetch(mockFetch);
     const model = createOllamaModel({ baseURL: "http://localhost:11434", modelId: "gemma3:4b" });
     const result = await model.doStream({
       prompt: [{ role: "user", content: [{ type: "text", text: "Hi" }] }],

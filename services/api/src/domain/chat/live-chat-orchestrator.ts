@@ -24,6 +24,7 @@ import { resolveProtocol } from "../providers/protocol-registry.js";
 import { validation } from "../../shared/errors.js";
 import type { LiveChatSendInput } from "./live-chat-send-input.js";
 import { assembleReplyPrompt } from "./live-chat-reply-prompt.js";
+import { regenerationPromptOptions } from "./live-chat-regeneration-prompt.js";
 import { startProviderStream } from "./live-chat-stream-start.js";
 import { notifyAssistantAppended, notifyUserMessageCreated } from "./live-chat-events.js";
 import { visionExecutionOptions, replyExecutionOptions, historyAttachmentDescriptions } from "./live-chat-media.js";
@@ -265,14 +266,13 @@ export class LiveChatOrchestrator {
   }> {
     const provider = await this.resolveProvider(input);
     logSendDebug("live.regenerate.start", { chatId: input.chatId, messageId: input.messageId, model: provider.model });
+    // Shared regeneration prompt derivation (DMT-13): target exclusion, the
+    // per-request preset override and the optional one-shot request
+    // instruction — derived in live-chat-regeneration-prompt.ts so both
+    // regeneration paths cannot drift. The token context still scopes the
+    // assembly (LS-1c).
     const prompt = await this.withTokenContext(provider, () =>
-      this.chatRuntime.assemblePromptPreview(brandId<ChatId>(input.chatId), {
-        excludeMessageId: brandId<MessageId>(input.messageId),
-        model: provider.model,
-        contextBudget: effectiveContextBudget(provider.profile.contextBudget, provider.profile.tokenPadding),
-        responseReserve: provider.profile.maxTokens,
-        presetId: input.presetId,
-      }),
+      this.chatRuntime.assemblePromptPreview(brandId<ChatId>(input.chatId), regenerationPromptOptions(input, provider)),
     );
     logSendDebug("live.regenerate.prompt.ready", {
       chatId: input.chatId,
@@ -470,14 +470,11 @@ export class LiveChatOrchestrator {
   async *regenerateMessageStream(input: LiveChatRegenerateInput): AsyncGenerator<{ event: string; data: string }> {
     const provider = await this.resolveProvider(input);
     logSendDebug("live.regenerate-stream.start", { chatId: input.chatId, messageId: input.messageId, model: provider.model });
+    // Same shared regeneration prompt derivation as the non-streaming path
+    // (DMT-13, live-chat-regeneration-prompt.ts) — token context still scoped
+    // (LS-1c).
     const prompt = await this.withTokenContext(provider, () =>
-      this.chatRuntime.assemblePromptPreview(brandId<ChatId>(input.chatId), {
-        excludeMessageId: brandId<MessageId>(input.messageId),
-        model: provider.model,
-        contextBudget: effectiveContextBudget(provider.profile.contextBudget, provider.profile.tokenPadding),
-        responseReserve: provider.profile.maxTokens,
-        presetId: input.presetId,
-      }),
+      this.chatRuntime.assemblePromptPreview(brandId<ChatId>(input.chatId), regenerationPromptOptions(input, provider)),
     );
     // Resolved again here for drainStream's echo seam; startStream applies the
     // same gate to the executor input (LS-4).

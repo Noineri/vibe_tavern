@@ -1,6 +1,15 @@
 import { describe, it, expect } from "bun:test";
 import { resolveEffectiveSettings, type StoredProviderProfileRecord, type ModelSettingsOverlay } from "@vibe-tavern/domain";
+import type { StoreContainer } from "@vibe-tavern/db";
+import type { AssetService } from "../src/domain/asset/asset-service.js";
+import type { ChatSummaryService } from "../src/domain/chat/chat-summary-service.js";
+import type { LiveChatOrchestrator } from "../src/domain/chat/live-chat-orchestrator.js";
+import type { ProviderProfileService } from "../src/domain/providers/provider-profile-service.js";
+import type { SessionRuntime } from "../src/runtime/session/session-runtime.js";
+import { ChatAdapter } from "../src/api/adapters/chat-adapter.js";
 import { buildSamplerConfig } from "../src/infrastructure/ai/sampler-mapper.js";
+import { makeProviderProfileRow } from "./copilot-test-builders.js";
+import { strictTestDouble } from "./strict-test-double.js";
 
 /**
  * Generation-boundary integration test for per-model binding.
@@ -17,7 +26,7 @@ import { buildSamplerConfig } from "../src/infrastructure/ai/sampler-mapper.js";
  */
 
 function makeBase(over: Partial<StoredProviderProfileRecord> = {}): StoredProviderProfileRecord {
-  return {
+  return makeProviderProfileRow({
     id: "prov_1", name: "base", providerPreset: "openaiCompat",
     endpoint: "http://localhost", apiKey: "sk-test",
     defaultModel: "gpt-4o",
@@ -31,16 +40,17 @@ function makeBase(over: Partial<StoredProviderProfileRecord> = {}): StoredProvid
     customSamplers: true, isActive: true, visionModel: null,
     createdAt: "0", updatedAt: "0",
     ...over,
-  };
+  });
 }
 
 describe("generation-boundary: overlay reaches buildSamplerConfig", () => {
-  it("overlay temperature + contextBudget override base at the executor", () => {
+  it("overlay overrides base contextBudget on effective profile and temperature reaches SamplerConfig", () => {
     const base = makeBase({ temperature: 1, contextBudget: 16000 });
     const overlay: ModelSettingsOverlay = { temperature: 0.3, contextBudget: 8000 };
     const effective = resolveEffectiveSettings(base, overlay);
     const config = buildSamplerConfig(effective);
-    expect(config.temperature).toBe(0.3); // overlay won
+    expect(effective.contextBudget).toBe(8000); // overlay won on effective profile
+    expect(config.temperature).toBe(0.3); // overlay won at executor
   });
 
   it("absent overlay fields inherit the base (topP not overridden)", () => {
@@ -86,13 +96,51 @@ describe("generation-boundary: overlay reaches buildSamplerConfig", () => {
     expect(effective.defaultModel).toBe("gpt-4o");
   });
 
-  it("bindPerModel=false path: adapter skips overlay entirely (base reaches executor)", () => {
-    // Documents the toggle-OFF contract: when bindPerModel is false, the adapter
-    // returns base unchanged (resolveEffectiveProfileOrThrow early-returns).
+  it("bindPerModel=false path: adapter skips overlay entirely (base reaches executor)", async () => {
+    // Drives the real ChatAdapter resolver with a bound overlay seeded for the
+    // model: bindPerModel=false must skip getProviderModelSettings completely so
+    // the base temperature reaches buildSamplerConfig unchanged.
     const base = makeBase({ bindPerModel: false, temperature: 0.8 });
-    // Adapter does: if (!profile.bindPerModel) return profile; — no overlay lookup.
-    const effective = base; // simulate the early-return
+    const requestedFor: string[] = [];
+    const service = strictTestDouble<ProviderProfileService>(
+      {
+        resolveActiveProviderProfile: async () => base,
+        getProviderModelSettings: async (_providerProfileId, modelId) => {
+          requestedFor.push(modelId);
+          return {
+            id: `pms_${modelId}`,
+            providerProfileId: base.id,
+            modelId,
+            settings: { temperature: 0.1 },
+            createdAt: "0",
+            updatedAt: "0",
+          };
+        },
+      },
+      "effective-settings ProviderProfileService",
+    );
+    const adapter = new ChatAdapter(
+      strictTestDouble<StoreContainer>({}, "ChatAdapter stores (bindPerModel=false test)"),
+      strictTestDouble<SessionRuntime>({}, "ChatAdapter sessionRuntime (bindPerModel=false test)"),
+      strictTestDouble<LiveChatOrchestrator>({}, "ChatAdapter liveChatOrchestrator (bindPerModel=false test)"),
+      strictTestDouble<ChatSummaryService>({}, "ChatAdapter chatSummaryService (bindPerModel=false test)"),
+      service,
+      strictTestDouble<AssetService>({}, "ChatAdapter assetService (bindPerModel=false test)"),
+      async () => {
+        throw new Error("transcribeSttAudio unused");
+      },
+    );
+    const resolveEffectiveProfileOrThrow: (options?: {
+      chatId?: string;
+      modelOverride?: string | null;
+    }) => Promise<{ profile: StoredProviderProfileRecord }> = Reflect.get(
+      ChatAdapter.prototype,
+      "resolveEffectiveProfileOrThrow",
+    );
+
+    const { profile: effective } = await resolveEffectiveProfileOrThrow.call(adapter);
     const config = buildSamplerConfig(effective);
+    expect(requestedFor).toEqual([]);
     expect(config.temperature).toBe(0.8);
   });
 });

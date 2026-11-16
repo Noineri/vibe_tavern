@@ -11,12 +11,12 @@ const logger = log.tag('preset-db');
 
 // ─── FK-delete diagnostics (PRESET_COPY_DELETE_CORRUPTION bug 2) ───────────────
 
-/** Reach the raw `bun:sqlite` handle off the drizzle wrapper. `AppDb` is
- *  `ReturnType<typeof drizzle>`; the `$client` intersection isn't surfaced in
- *  every overload resolution (see db-connection-fk-rebuild.test using the same
- *  cast), so reach it this way for pragmas. */
+/** Reach the raw `bun:sqlite` handle off the drizzle wrapper, for pragmas and
+ *  FK diagnostics. The bun-sqlite `drizzle()` factory surfaces the raw client
+ *  directly on its return type (`BunSQLiteDatabase & { $client: Database }`,
+ *  the same accessor db-connection.ts uses for the TS-1 template path). */
 function rawClient(db: AppDb): Database {
-  return (db as unknown as { $client: Database }).$client;
+  return db.$client;
 }
 
 /** Narrow an unknown thrown value to a SQLite foreign-key constraint failure.

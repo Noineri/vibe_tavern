@@ -11,6 +11,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock,
 import { useDomEnv } from "../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
 import { wireProviderProfile, wireUiSettings } from "../../../test/wire-fixtures.js";
+import { strictTestDouble } from "../../../test/strict-test-double.js";
 import { brandId, type ChatId } from "@vibe-tavern/domain";
 import { TooltipProvider } from "../shared/Tooltip.js";
 import type { CoauthorInputAreaData } from "./use-coauthor-input-area.js";
@@ -54,9 +55,12 @@ function restore() {
   // crashes on `.then` of undefined (only in hand-bundled multi-file runs;
   // the official runner isolates files). Re-prime it; per-file this is a
   // no-op — the real action fn has no `.mockImplementation` slot.
-  const listFn = chatActions.listCoauthorModulesAction as unknown as {
+  // The probe asks whether the live action fn currently carries bun's mock
+  // slot; an intersection with the optional slot annotates that without a cast
+  // (a function object is assignable to its own type plus optional members).
+  const listFn: typeof chatActions.listCoauthorModulesAction & {
     mockImplementation?: (impl: () => Promise<unknown[]>) => unknown;
-  };
+  } = chatActions.listCoauthorModulesAction;
   if (typeof listFn?.mockImplementation === "function") {
     listFn.mockImplementation(async () => []);
   }
@@ -73,7 +77,10 @@ afterAll(restore);
 // Every spy/store restored; no paths, real i18n init, sleeps or DB setup.
 function setupComposer() {
   const handleSend = mock(async () => {});
-  spies.push(spyOn(controller, "useChatController").mockReturnValue({ handleSend, handleCancelGeneration: () => {} } as unknown as ReturnType<typeof controller.useChatController>));
+  spies.push(spyOn(controller, "useChatController").mockReturnValue(strictTestDouble<ReturnType<typeof controller.useChatController>>(
+    { handleSend, handleCancelGeneration: () => {} },
+    "useChatController(coauthor mobile composer)",
+  )));
   spies.push(spyOn(chatActions, "listCoauthorModulesAction").mockResolvedValue([]));
   useBootstrapStore.setState({ data: {
     initialChatId: null, snapshot: null, isFirstRun: false, allCharacters: [], promptPresets: [], agentKindSettings: {}, isArmServer: false,
@@ -137,32 +144,41 @@ describe("CoauthorMobileInputArea attachments (CA-3b)", () => {
 
 /** Minimal CoauthorInputAreaData — only the fields this component reads. */
 function makeData(draft = "hello world") {
-  const handleSend = mock();
-  const data = {
-    t: (k: string) => k,
-    chat: { handleSend, handleCancelGeneration: mock() },
-    draft,
-    setDraft: mock(),
-    isSending: false,
-    activeChatId: "chat-1",
-    canUseLiveApi: true,
-    canSend: true,
-    fileInputRef: { current: null }, accept: "image/png,.md", draftAttachments: [],
-    onFileInputChange: mock(), handlePaste: mock(), remove: mock(), attachmentOverflow: null,
-    activeProfileId: "p1",
-    favorites: [],
-    activeModelId: "m1",
-    handleSelectModel: mock(),
-    sendLabel: "Send",
-    sendButtonText: "Send",
-    buckets: { moduleTokens: 0, skillTokens: 0, profileTokens: 0, context: 0, memory: 0, history: 0 },
-    inputTokens: 6000,
-    permanent: 0,
-    contextSize: 8192,
-    maxTokens: 1024,
-    availableBudget: 7168,
-    tokenState: "mid",
-  } as unknown as CoauthorInputAreaData;
+  const handleSend = mock(async () => {});
+  const data = strictTestDouble<CoauthorInputAreaData>(
+    {
+      t: (k: string) => k,
+      chat: { handleSend, handleCancelGeneration: mock() },
+      draft,
+      setDraft: mock(),
+      isSending: false,
+      activeChatId: brandId<ChatId>("chat-1"),
+      canUseLiveApi: true,
+      canSend: true,
+      fileInputRef: { current: null }, accept: "image/png,.md", draftAttachments: [],
+      onFileInputChange: mock(), handlePaste: mock(), remove: mock(),
+      // The real member is `{…} | undefined` (never null) — the erased literal's
+      // null read identically falsy through `data.attachmentOverflow?.overflow`.
+      attachmentOverflow: undefined,
+      // The erased literal omitted this member; the component reads it on every
+      // render, and `false` is the same falsy path the `undefined` took.
+      attachmentVisionWarning: false,
+      activeProfileId: "p1",
+      favorites: [],
+      activeModelId: "m1",
+      handleSelectModel: mock(),
+      sendLabel: "Send",
+      sendButtonText: "Send",
+      buckets: { moduleTokens: 0, skillTokens: 0, profileTokens: 0, context: 0, memory: 0, history: 0 },
+      inputTokens: 6000,
+      permanent: 0,
+      contextSize: 8192,
+      maxTokens: 1024,
+      availableBudget: 7168,
+      tokenState: "mid",
+    },
+    "CoauthorInputAreaData(mobile input)",
+  );
   return { data, handleSend };
 }
 

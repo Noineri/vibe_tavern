@@ -31,8 +31,12 @@
  * the REAL timer, remembers the ~6 s callback, and fires it manually.
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { testFetch } from "@vibe-tavern/test-fetch";
+import { brandId, normalizeInsightsConfig, normalizeObjectiveState, type ChatBranchId, type ChatId, type MessageVariantId } from "@vibe-tavern/domain";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
+import { wireChat, wireMessage, wireVariant } from "../../../../test/wire-fixtures.js";
+import type { AppMessage } from "../../../api/types.js";
 import type { AgentPlan, AgentPlanTask } from "@vibe-tavern/api-contracts";
 import en from "../../../i18n/locales/en.json";
 import ru from "../../../i18n/locales/ru.json";
@@ -41,7 +45,6 @@ useDomEnv();
 const { act, fireEvent, render, waitFor } = await import("@testing-library/react");
 import { useSnapshotStore } from "../../../stores/snapshot-store.js";
 import { useAgentStreamingStore } from "../../../stores/agent-streaming-store.js";
-import type { AppSnapshot } from "../../../api/types.js";
 
 const mocks = {
   checkObjectiveCompletionAction: mock(),
@@ -49,9 +52,10 @@ const mocks = {
 };
 const realChatActions = await import("../../../stores/api-actions/chat-actions.js");
 
-// The flash label interpolates the model's event title — pin the rendered
-// "Done: <title>" line; every other key echoes raw (the house pattern).
-installI18nContextSeam({ interpolateKeys: ["agent_plan_story_flash_done"] });
+// The flash labels interpolate the model's event title — pin the rendered
+// "Done: <title>" (the success tone) and "It is time: <event>" (the DK-9
+// accent tone) lines; every other key echoes raw (the house pattern).
+installI18nContextSeam({ interpolateKeys: ["agent_plan_story_flash_done", "story_cal_flash_promoted"] });
 
 mock.module("../../../stores/api-actions/chat-actions.js", () => ({
   ...realChatActions,
@@ -76,8 +80,8 @@ beforeAll(async () => {
 
 // ─── Fixtures ───────────────────────────────────────────────────────────────
 
-function task(id: string, title: string, body: string, status: AgentPlanTask["status"]): AgentPlanTask {
-  return { id, title, body, status };
+function task(id: string, title: string, body: string, status: AgentPlanTask["status"], at?: AgentPlanTask["at"]): AgentPlanTask {
+  return { id, title, body, status, ...(at !== undefined ? { at } : {}) };
 }
 
 const EMPTY_PLAN: AgentPlan = { goal: "", constraints: [], tasks: [] };
@@ -104,16 +108,16 @@ const PLAN_V2: AgentPlan = {
 };
 
 /** Seed the ACTIVE chat the strip reads ids and the tracker state from
- *  (the StoryPlanProposalCard seed pattern — a minimal wire double through
- *  `ingestSnapshot`; the double-cast form keeps the hygiene `as-never`
- *  ratchet at its budget). */
+ *  (the StoryPlanProposalCard seed pattern — the wire factory through
+ *  `ingestSnapshot`; the objective state rides the domain's persisted-column
+ *  seam). */
 function seedChat(branchId: string, goals: Array<{ id: string; status: string }>): void {
   useSnapshotStore.getState().ingestSnapshot({
-    activeChat: {
-      id: "chat-1",
-      activeBranchId: branchId,
-      insightsConfig: { objectiveEnabled: true, trackerEnabled: false },
-      insightsObjectiveState: {
+    activeChat: wireChat({
+      id: brandId<ChatId>("chat-1"),
+      activeBranchId: brandId<ChatBranchId>(branchId),
+      insightsConfig: normalizeInsightsConfig({ objectiveEnabled: true, trackerEnabled: false }),
+      insightsObjectiveState: normalizeObjectiveState({
         mode: "goals",
         objectiveDescription: "",
         tasks: [],
@@ -126,9 +130,9 @@ function seedChat(branchId: string, goals: Array<{ id: string; status: string }>
         generatePrompt: "",
         checkPrompt: "",
         injectPrompt: "",
-      },
-    } as unknown as AppSnapshot["activeChat"],
-  } as unknown as AppSnapshot);
+      }),
+    }),
+  });
 }
 
 // ─── The plan GET through the real use-agent-plan seam ──────────────────────
@@ -141,7 +145,7 @@ const planGetUrls: string[] = [];
 beforeEach(() => {
   plansByBranch.clear();
   planGetUrls.length = 0;
-  globalThis.fetch = (async (input: RequestInfo | URL): Promise<Response> => {
+  globalThis.fetch = testFetch(async (input: RequestInfo | URL): Promise<Response> => {
     const url = String(input);
     if (url.includes("/plan")) {
       planGetUrls.push(url);
@@ -152,7 +156,7 @@ beforeEach(() => {
       });
     }
     return new Response(JSON.stringify({}), { status: 200, headers: { "content-type": "application/json" } });
-  }) as unknown as typeof fetch;
+  });
   mocks.checkObjectiveCompletionAction.mockReset();
   mocks.callDirector.mockReset();
   mocks.callDirector.mockResolvedValue(undefined);
@@ -344,6 +348,207 @@ describe("StoryPlanStrip (DR-11)", () => {
   });
 });
 
+// ─── The clock-promotion flash (DK-9, mockup §6) ──────────────────────────────
+
+describe("StoryPlanStrip — the «Наступило» promotion flash (DK-9)", () => {
+  // The sceneTracker rides the message's WIRE record type (scene-zone's local
+  // alias shape).
+  type SceneTrackerRecord = NonNullable<AppMessage["sceneTracker"]>;
+
+  // SCN-12 (the 7a derivation): the tracker config derives through the
+  // domain's persisted-column seam — normalizeInsightsConfig recomputes
+  // `schemaHash` from the schema and never accepts it as input, so the erased
+  // literal's self-consistent "clock-h1" was fake on BOTH sides; the record
+  // below reads the derived hash so the freshness match is real.
+  const CLOCK_TRACKER_CONFIG = normalizeInsightsConfig({
+    objectiveEnabled: true,
+    trackerEnabled: true,
+    tracker: {
+      schema: {
+        story_day: { $type: "number", clock: "day", label: "Story day" },
+        story_time: { $type: "string", clock: "part", label: "Part of day" },
+        story_date: { $type: "string", clock: "label", label: "Date label" },
+      },
+      revision: 2,
+      injectLastN: 1,
+    },
+  });
+
+  /** A clocked chat: the tracker schema marks the three clock fields, the
+   *  latest assistant message carries a record at day 3, evening. The
+   *  sceneState rides the wire record's own JSON-value shape. */
+  function seedClockChat(branchId: string, goals: Array<{ id: string; status: string }>, sceneState: SceneTrackerRecord["sceneState"]): void {
+    useSnapshotStore.getState().ingestSnapshot({
+      activeChat: wireChat({
+        id: brandId<ChatId>("chat-1"),
+        activeBranchId: brandId<ChatBranchId>(branchId),
+        insightsConfig: { ...CLOCK_TRACKER_CONFIG, objectiveEnabled: true, trackerEnabled: true },
+        insightsObjectiveState: normalizeObjectiveState({
+          mode: "goals",
+          objectiveDescription: "",
+          tasks: [],
+          longTermGoal: null,
+          shortTermGoals: goals.map((goal) => ({ id: goal.id, description: goal.id, status: goal.status })),
+          autoCheckFrequency: 1,
+          autoCheckEventCount: 0,
+          contextWindow: 6,
+          injectionDepth: 1,
+          generatePrompt: "",
+          checkPrompt: "",
+          injectPrompt: "",
+        }),
+      }),
+      messages: [wireMessage("m1", {
+        role: "assistant",
+        branchId: brandId<ChatBranchId>(branchId),
+        content: "content m1",
+        variants: [wireVariant("m1", 0, { content: "content m1", isSelected: true })],
+        selectedVariantIndex: 0,
+        sceneTracker: {
+          variantId: brandId<MessageVariantId>("m1-v0"),
+          schemaHash: CLOCK_TRACKER_CONFIG.tracker?.schemaHash ?? "",
+          configRevision: CLOCK_TRACKER_CONFIG.tracker?.revision ?? 2,
+          sourceHash: "s1",
+          sceneState,
+          modelId: null,
+          generatedAt: "2026-01-01T00:00:00.000Z",
+        },
+      })],
+    });
+  }
+
+  const AT = { day: 3, part: "evening" as const };
+  /** Before: the fridge raid is current (undated), House rules waits, dated. */
+  const PROMO_V1: AgentPlan = {
+    goal: "A stray cat became a young man overnight",
+    constraints: [],
+    tasks: [
+      task("ev1", "The fridge raid", "", "active"),
+      task("ev2", "House rules", "", "pending", AT),
+      task("ev3", "The neighbour noticed", "", "pending"),
+    ],
+  };
+  /** After the clock moved to day 3 evening: the server PROMOTED ev2
+   *  (promoteStoryEvent — it takes the current slot, ev1 steps back). */
+  const PROMO_V2: AgentPlan = {
+    goal: PROMO_V1.goal,
+    constraints: [],
+    tasks: [
+      task("ev2", "House rules", "", "active", AT),
+      task("ev1", "The fridge raid", "", "pending"),
+      task("ev3", "The neighbour noticed", "", "pending"),
+    ],
+  };
+
+  it("the clock promoted a due dated event: «Наступило: <event>» on the ACCENT tint for the parked ~6 s, instant (no transition), then the plain current event", async () => {
+    const flashTimerBox: { current: { delay: number; fire: () => void } | null } = { current: null };
+    globalThis.setTimeout = ((callback: () => void, delay?: number, ...rest: unknown[]) => {
+      const handle = originalSetTimeout(callback, delay, ...rest);
+      if (delay === STORY_PLAN_FLASH_MS) flashTimerBox.current = { delay, fire: callback };
+      return handle;
+    }) as typeof setTimeout;
+
+    plansByBranch.set("b9p", PROMO_V1);
+    seedClockChat("b9p", [
+      { id: "ev1", status: "active" },
+      { id: "ev2", status: "pending" },
+      { id: "ev3", status: "pending" },
+    ], { story_day: 3, story_time: "evening" });
+    const view = render(<StoryPlanStrip />);
+    await waitFor(() => expect(view.getByTestId("agent-plan-panel").textContent).toContain("The fridge raid"));
+
+    // The clock moved server-side: the projection wrote the promotion's goal
+    // statuses and the follow-back saved the promoted plan row.
+    plansByBranch.set("b9p", PROMO_V2);
+    await act(async () => {
+      seedClockChat("b9p", [
+        { id: "ev1", status: "pending" },
+        { id: "ev2", status: "active" },
+        { id: "ev3", status: "pending" },
+      ], { story_day: 3, story_time: "evening" });
+    });
+
+    // The ACCENT tone: the tinted collapsed row (the panel root's first
+    // child) re-tints bg-accent-dim (never the success tint), the clock
+    // glyph rides it, and the label is the promoted event («Наступило:
+    // House rules»).
+    const row = await waitFor(() => view.getByTestId("agent-plan-panel").firstElementChild as HTMLElement);
+    await waitFor(() => expect(row.textContent).toContain("It is time: House rules"));
+    expect(row.className).toContain("bg-accent-dim");
+    expect(row.className).not.toContain("bg-success-dim");
+    // Instant under reduced motion: the tone swap is a plain class change —
+    // no transition utility on the row at all.
+    expect(row.className).not.toContain("transition");
+    // The parked timer: ~6 s, then the plain current event returns.
+    expect(flashTimerBox.current?.delay).toBe(STORY_PLAN_FLASH_MS);
+    act(() => flashTimerBox.current?.fire());
+    await waitFor(() => expect(view.getByTestId("agent-plan-panel").textContent).toContain("House rules"));
+    expect(view.queryByText("It is time: House rules")).toBeNull();
+    expect((view.getByTestId("agent-plan-panel").firstElementChild as HTMLElement).className).not.toContain("bg-accent-dim");
+  });
+
+  it("one tone per change: a completion keeps the SUCCESS tone — a promoted dated event arriving with the success flash live never stacks the accent tone", async () => {
+    const flashTimerBox: { current: { delay: number; fire: () => void } | null } = { current: null };
+    globalThis.setTimeout = ((callback: () => void, delay?: number, ...rest: unknown[]) => {
+      const handle = originalSetTimeout(callback, delay, ...rest);
+      if (delay === STORY_PLAN_FLASH_MS) flashTimerBox.current = { delay, fire: callback };
+      return handle;
+    }) as typeof setTimeout;
+
+    // Same board, but the change is the tracker's check COMPLETING ev1 —
+    // ev2 (dated, due) becomes current in the same refreshed plan.
+    const COMPLETION_V1: AgentPlan = {
+      goal: PROMO_V1.goal,
+      constraints: [],
+      tasks: [
+        task("ev1", "The fridge raid", "", "active"),
+        task("ev2", "House rules", "", "pending", AT),
+        task("ev3", "The neighbour noticed", "", "pending"),
+      ],
+    };
+    const COMPLETION_V2: AgentPlan = {
+      goal: PROMO_V1.goal,
+      constraints: [],
+      tasks: [
+        task("ev1", "The fridge raid", "", "completed"),
+        task("ev2", "House rules", "", "active", AT),
+        task("ev3", "The neighbour noticed", "", "pending"),
+      ],
+    };
+    plansByBranch.set("b9q", COMPLETION_V1);
+    seedClockChat("b9q", [
+      { id: "ev1", status: "active" },
+      { id: "ev2", status: "pending" },
+      { id: "ev3", status: "pending" },
+    ], { story_day: 3, story_time: "evening" });
+    const view = render(<StoryPlanStrip />);
+    await waitFor(() => expect(view.getByTestId("agent-plan-panel").textContent).toContain("The fridge raid"));
+
+    plansByBranch.set("b9q", COMPLETION_V2);
+    await act(async () => {
+      seedClockChat("b9q", [
+        { id: "ev1", status: "completed" },
+        { id: "ev2", status: "active" },
+        { id: "ev3", status: "pending" },
+      ], { story_day: 3, story_time: "evening" });
+    });
+
+    // The SUCCESS tone stands (the completion was the user-visible cause);
+    // the promotion never stacks its accent tone on the same change.
+    const row = await waitFor(() => view.getByTestId("agent-plan-panel").firstElementChild as HTMLElement);
+    await waitFor(() => expect(view.getByText("Done: The fridge raid")).toBeDefined());
+    expect(row.className).toContain("bg-success-dim");
+    expect(row.className).not.toContain("bg-accent-dim");
+    expect(view.queryByText("It is time: House rules")).toBeNull();
+    act(() => flashTimerBox.current?.fire());
+    await waitFor(() => expect(view.getByTestId("agent-plan-panel").textContent).toContain("House rules"));
+    // After the success flash expires the row is plain (the promotion was
+    // skipped, not deferred).
+    expect(view.queryByText("It is time: House rules")).toBeNull();
+    expect(row.className).not.toContain("bg-accent-dim");
+  });
+});
+
 // ─── The RU canon (mock §4/§5/§9 + plan bullets, byte-exact) ────────────────
 
 describe("StoryPlanStrip — locale canon (DR-11)", () => {
@@ -356,5 +561,30 @@ describe("StoryPlanStrip — locale canon (DR-11)", () => {
     expect(en.story_plan_check_now).toBe("Check now");
     expect(en.agent_plan_story_done).toBe("Story plan complete");
     expect(en.agent_plan_story_flash_done).toBe("Done: {title}");
+  });
+
+  it("DK-9 canon: the promotion flash + the calendar strings the mockup draws verbatim (§5/§6/§8)", () => {
+    expect(ru.story_cal_flash_promoted).toBe("Наступило: {event}");
+    expect(en.story_cal_flash_promoted).toBe("It is time: {event}");
+    expect(ru.story_cal_next_part).toBe("→ Дальше");
+    expect(ru.story_cal_add_day).toBe("+1 день");
+    expect(ru.story_cal_no_record_hint).toBe("Время появится после первого ответа с трекером сцены");
+    expect(ru.story_cal_day_column).toBe("День {day}");
+    expect(ru.story_cal_day_today).toBe("День {day} · сегодня");
+    expect(ru.story_clock_part_morning).toBe("утро");
+    expect(ru.story_clock_part_day).toBe("день");
+    expect(ru.story_clock_part_evening).toBe("вечер");
+    expect(ru.story_clock_part_night).toBe("ночь");
+    expect(ru.story_cal_undated_title).toBe("Без даты — идут по порядку");
+    expect(ru.story_cal_assign_title).toBe("Назначить на день {day}, {part}");
+    expect(ru.story_cal_off_title).toBe("Время истории не отслеживается");
+    expect(ru.story_cal_off_hint).toBe("Трекер сцены будет вести день и время суток по ответам модели. События плана можно будет назначить на день — они наступят сами.");
+    expect(ru.story_cal_enable).toBe("Включить время");
+    expect(ru.story_cal_enable_tracker_hint).toBe("Трекер сцены будет обновлять сцену после каждого ответа — это его обычный вызов модели.");
+    expect(ru.story_cal_inject_off).toBe("Модель не видит время: подстановка трекера сцены выключена.");
+    expect(en.story_cal_next_part).toBe("→ Next");
+    expect(en.story_cal_add_day).toBe("+1 day");
+    expect(en.story_cal_off_title).toBe("Story time is not tracked");
+    expect(en.story_cal_enable).toBe("Enable time");
   });
 });

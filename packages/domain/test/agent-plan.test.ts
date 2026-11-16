@@ -74,3 +74,84 @@ describe("normalizeAgentPlan", () => {
     expect(plan?.tasks[0]?.body).toBe(body);
   });
 });
+
+describe("normalizeAgentPlan task `at` stamps (DK-1)", () => {
+  test("keeps a valid at", () => {
+    const plan = normalizeAgentPlan({
+      goal: "G",
+      constraints: [],
+      tasks: [{ id: "task_1", title: "T", body: "", status: "pending", at: { day: 2, part: "evening" } }],
+    });
+
+    expect(plan?.tasks[0]?.at).toEqual({ day: 2, part: "evening" });
+  });
+
+  test("keeps a valid at with a null part", () => {
+    const plan = normalizeAgentPlan({
+      goal: "G",
+      constraints: [],
+      tasks: [{ id: "task_1", title: "T", body: "", status: "pending", at: { day: 3, part: null } }],
+    });
+
+    expect(plan?.tasks[0]?.at).toEqual({ day: 3, part: null });
+  });
+
+  test("drops an invalid at but keeps the task", () => {
+    const plan = normalizeAgentPlan({
+      goal: "G",
+      constraints: [],
+      tasks: [{ id: "task_1", title: "T", body: "", status: "pending", at: { day: 0, part: "morning" } }],
+    });
+
+    expect(plan?.tasks[0]?.id).toBe("task_1");
+    expect("at" in (plan?.tasks[0] ?? {})).toBe(false);
+  });
+
+  test("drops a non-integer or negative day", () => {
+    for (const day of [1.5, -2, "2", undefined]) {
+      const plan = normalizeAgentPlan({
+        goal: "G",
+        constraints: [],
+        tasks: [{ id: "task_1", title: "T", body: "", status: "pending", at: { day, part: "morning" } }],
+      });
+
+      expect(plan?.tasks[0]?.id).toBe("task_1");
+      expect("at" in (plan?.tasks[0] ?? {})).toBe(false);
+    }
+  });
+
+  test("drops an unknown part word", () => {
+    const plan = normalizeAgentPlan({
+      goal: "G",
+      constraints: [],
+      tasks: [{ id: "task_1", title: "T", body: "", status: "pending", at: { day: 2, part: "dusk" } }],
+    });
+
+    expect(plan?.tasks[0]?.id).toBe("task_1");
+    expect("at" in (plan?.tasks[0] ?? {})).toBe(false);
+  });
+
+  test("drops an at that is not an object", () => {
+    for (const bad of ["day 2", 7, null, true, [2, "morning"]]) {
+      const plan = normalizeAgentPlan({
+        goal: "G",
+        constraints: [],
+        tasks: [{ id: "task_1", title: "T", body: "", status: "pending", at: bad }],
+      });
+
+      expect(plan?.tasks[0]?.id).toBe("task_1");
+      expect("at" in (plan?.tasks[0] ?? {})).toBe(false);
+    }
+  });
+
+  test("a plan without at anywhere normalizes exactly as before (no at key added)", () => {
+    const plan = normalizeAgentPlan({
+      goal: "G",
+      constraints: [],
+      tasks: [{ id: "task_1", title: "T", body: "b", status: "active" }],
+    });
+
+    expect(plan?.tasks[0]).toEqual({ id: "task_1", title: "T", body: "b", status: "active" });
+    expect("at" in (plan?.tasks[0] ?? {})).toBe(false);
+  });
+});

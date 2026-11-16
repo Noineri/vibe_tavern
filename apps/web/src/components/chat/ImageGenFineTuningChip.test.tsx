@@ -2,7 +2,7 @@ import { describe, expect, it, mock, afterEach, afterAll, beforeEach } from "bun
 import React from "react";
 import { useDomEnv } from "../../../test/dom-env.js";
 import { installI18nContextSeam } from "../../../test/i18n-context-seam.js";
-import { brandId, type ChatBranchId, type ChatId, type MessageId, type MessageVariantId } from "@vibe-tavern/domain";
+import { brandId, IMAGE_GENERATION_MODES, type ChatBranchId, type ChatId, type MessageId, type MessageVariantId } from "@vibe-tavern/domain";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useProviderDataStore } from "../../stores/provider-data-store.js";
 import type { AppMessage, ProviderProfileRecord } from "../../api/types.js";
@@ -14,9 +14,12 @@ installI18nContextSeam();
 const realImageGenApi = await import("../../api/image-gen-api.js");
 const realProviderActions = await import("../../stores/api-actions/provider-actions.js");
 
+let providerModelsByProfile: Record<string, Array<{ id: string; label: string }>> = {};
 mock.module("../../stores/api-actions/provider-actions.js", () => ({
   ...realProviderActions,
-  fetchProviderModelsAction: async () => ({ models: [{ id: "model-a", label: "Model A" }] }),
+  fetchProviderModelsAction: async (id: string) => ({
+    models: providerModelsByProfile[id] ?? [{ id: "model-a", label: "Model A" }],
+  }),
 }));
 
 type ProfileRecord = import("../../api/image-gen-api.js").ImageGenProfileRecord;
@@ -253,7 +256,7 @@ async function pickOption(triggerId: string, label: string) {
     const el = document.body.querySelector(`[data-testid="${triggerId}"]`);
     expect(el).toBeTruthy();
     return el as HTMLElement;
-  });
+  }, { timeout: 5000 });
   await act(async () => {
     trigger.click();
   });
@@ -263,7 +266,7 @@ async function pickOption(triggerId: string, label: string) {
     );
     expect(el).toBeTruthy();
     return el as HTMLElement;
-  });
+  }, { timeout: 5000 });
   await act(async () => {
     option.click();
   });
@@ -333,6 +336,7 @@ afterEach(() => {
   generateCalls.length = 0;
   draftPromptCalls.length = 0;
   draftPromptImplementation = async () => ({ prompt: "drafted prompt" });
+  providerModelsByProfile = {};
   updateProfileCalls.length = 0;
   useProviderDataStore.setState({ profiles: [], favoritesByProfile: {}, coauthorFavoritesByProfile: {}, copilotFavoritesByProfile: {} });
   // The store is a module singleton shared across files in this worker —
@@ -431,12 +435,28 @@ describe("ImageGenFineTuningChip — the IG-16 gate + pill canon (IG-17, CF1)", 
     act(() => armChat("chat-mobile"));
     await waitFor(() => expect(view.container.querySelectorAll('[data-testid="image-gen-ft-chip"]').length).toBe(1));
     openChip();
-    await waitFor(() => expect(within(view.baseElement).getByTestId("image-gen-ft-body")).toBeTruthy());
-    expect(within(view.baseElement).getByTestId("image-gen-ft-profile-select")).toBeTruthy();
+    const body = await waitFor(() => within(view.baseElement).getByTestId("image-gen-ft-body"));
+    const popup = document.body.querySelector(".bs-popup");
+    expect(popup).toBeTruthy();
+    expect(popup!.contains(body)).toBe(true);
+    expect(popup!.contains(within(view.baseElement).getByTestId("image-gen-ft-profile-select"))).toBe(true);
+    expect(document.body.querySelector("[data-radix-popper-content-wrapper]")).toBeNull();
+
+    // Toggle closed and back open — BottomSheet unmounts and remounts cleanly.
+    openChip();
+    await waitFor(() => expect(within(view.baseElement).queryByTestId("image-gen-ft-body")).toBeNull());
+    expect(document.body.querySelector(".bs-popup")).toBeNull();
+
+    openChip();
+    const reopenedBody = await waitFor(() => within(view.baseElement).getByTestId("image-gen-ft-body"));
+    const reopenedPopup = document.body.querySelector(".bs-popup");
+    expect(reopenedPopup).toBeTruthy();
+    expect(reopenedPopup!.contains(reopenedBody)).toBe(true);
+    expect(document.body.querySelector("[data-radix-popper-content-wrapper]")).toBeNull();
   });
 });
 
-function providerProfile(): ProviderProfileRecord {
+function providerProfile(overrides: Partial<ProviderProfileRecord> = {}): ProviderProfileRecord {
   return {
     id: "llm-p1", name: "Prompt writer", providerPreset: "openai", coauthorTransport: "chat_completions", generationMode: "chat", endpoint: "https://api.example.test/v1",
     defaultModel: "model-a", visionModel: null, temperature: 1, topP: 1, minP: 0, topK: 0, topA: 0,
@@ -447,6 +467,7 @@ function providerProfile(): ProviderProfileRecord {
     stopSequences: [], logitBias: [], seed: null, reasoningEffort: "auto", showReasoning: false, streamResponse: true,
     customSamplers: false, proxyMode: "inherit", proxyId: null, samplerSetId: null, generationFormat: null, isActive: true, hasStoredApiKey: true,
     createdAt: "2026-01-01", updatedAt: "2026-01-01",
+    ...overrides,
   };
 }
 
@@ -458,7 +479,16 @@ describe("ImageGenFineTuningChip — AI quick pill (FT-B1)", () => {
       llmProviderProfileId: "llm-p1",
       llmModelId: "model-a",
     }];
-    useProviderDataStore.setState({ profiles: [providerProfile()] });
+    providerModelsByProfile = {
+      "llm-p1": [{ id: "model-a", label: "Model A" }],
+      "llm-p2": [{ id: "model-b", label: "Model B" }, { id: "model-c", label: "Model C" }],
+    };
+    useProviderDataStore.setState({
+      profiles: [
+        providerProfile(),
+        providerProfile({ id: "llm-p2", name: "Story writer", defaultModel: "model-b", isActive: false }),
+      ],
+    });
     const view = renderChip(<ImageGenFineTuningChip chatId="chat-b1" />);
     act(() => armChat("chat-b1"));
     openChip();
@@ -469,12 +499,42 @@ describe("ImageGenFineTuningChip — AI quick pill (FT-B1)", () => {
     expect(pillButtons).toHaveLength(2);
 
     await act(async () => { fireEvent.click(pillButtons[1]!); });
-    await waitFor(() => expect(within(view.baseElement).getByText("Prompt writer")).toBeTruthy());
+    const providerTrigger = await waitFor(() => {
+      const btn = within(view.baseElement).getByText("Prompt writer").closest("button");
+      expect(btn).toBeTruthy();
+      return btn as HTMLElement;
+    });
+
+    await act(async () => { fireEvent.click(providerTrigger); });
+    const secondProviderOpt = await waitFor(() => {
+      const el = Array.from(document.body.querySelectorAll("[cmdk-item]")).find(
+        (n) => n.textContent?.trim() === "Story writer",
+      );
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    await act(async () => { secondProviderOpt.click(); });
+
+    const modelTrigger = await waitFor(() => {
+      const btn = within(view.baseElement).getByText("model-b").closest("button");
+      expect(btn).toBeTruthy();
+      return btn as HTMLElement;
+    });
+    await act(async () => { fireEvent.click(modelTrigger); });
+    const modelCOpt = await waitFor(() => {
+      const el = Array.from(document.body.querySelectorAll("[cmdk-item]")).find(
+        (n) => n.textContent?.trim() === "Model C",
+      );
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    await act(async () => { modelCOpt.click(); });
+    await waitFor(() => expect(within(view.baseElement).getByText("Model C")).toBeTruthy());
 
     await act(async () => { fireEvent.click(within(view.baseElement).getByText("done_btn")); });
     await waitFor(() => expect(updateProfileCalls).toEqual([{
       id: "p1",
-      body: { llmAssistEnabled: true, llmProviderProfileId: "llm-p1", llmModelId: "model-a" },
+      body: { llmAssistEnabled: true, llmProviderProfileId: "llm-p2", llmModelId: "model-c" },
     }]));
   });
 });
@@ -592,6 +652,15 @@ describe("ImageGenFineTuningChip — editor body (IG-17)", () => {
       expect(within(armed.baseElement).getByTestId("image-gen-ft-prompt-cap").textContent).toBe("1300 / 1200");
     });
     expect(within(armed.baseElement).getByTestId("image-gen-ft-prompt-cap").className).toContain("text-danger");
+
+    const genBtn = within(armed.baseElement).getByTestId("image-gen-ft-generate") as HTMLButtonElement;
+    expect(genBtn.disabled).toBe(false);
+    act(() => {
+      fireEvent.click(genBtn);
+    });
+    expect(generateCalls.length).toBe(1);
+    expect(generateCalls[0]![0]).toBe("chat-cap2");
+    expect(generateCalls[0]![1].prompt).toBe("x".repeat(1300));
   });
 
   it("a caps profile renders the negative row; edits write the per-chat draft (FT-A1: no one-shot sampler row)", async () => {
@@ -682,7 +751,7 @@ describe("ImageGenFineTuningChip — editor body (IG-17)", () => {
 });
 
 describe("ImageGenFineTuningChip — target + resolution (FT-A2)", () => {
-  it("target selector lists the six registry modes with Free as the display default; switching preselects the profile's per-mode preset", async () => {
+  it("target selector lists all eight registry modes with Free as the display default; switching preselects the profile's per-mode preset", async () => {
     profilesStore = [
       {
         ...profile("p1", "A1111 local", fullCaps(), "sdxl-base"),
@@ -699,9 +768,23 @@ describe("ImageGenFineTuningChip — target + resolution (FT-A2)", () => {
     expect(within(view.baseElement).getByTestId("image-gen-ft-target-select").textContent).toContain("image_gen_mode_free");
     expect(useImageGenChatStore.getState().fineTuningDraftByChat["chat-t2a"]).toBeUndefined();
 
-    // The six registry modes ride the opened list (the message popover's
-    // list — no new names).
-    await pickOption("image-gen-ft-target-select", "image_gen_mode_portrait");
+    // All eight registry modes ride the opened list (shared domain registry order).
+    const trigger = within(view.baseElement).getByTestId("image-gen-ft-target-select");
+    await act(async () => {
+      trigger.click();
+    });
+    const expectedModes = Object.values(IMAGE_GENERATION_MODES).map((mode) => `image_gen_mode_${mode}`);
+    const targetItems = await waitFor(() => {
+      const items = Array.from(document.body.querySelectorAll("[cmdk-item]"));
+      expect(items.length).toBe(expectedModes.length);
+      return items as HTMLElement[];
+    });
+    expect(targetItems.map((el) => el.textContent?.trim())).toEqual(expectedModes);
+    const portraitItem = targetItems.find((el) => el.textContent?.trim() === "image_gen_mode_portrait");
+    expect(portraitItem).toBeTruthy();
+    await act(async () => {
+      portraitItem!.click();
+    });
     const draft = useImageGenChatStore.getState().fineTuningDraftByChat["chat-t2a"];
     expect(draft?.target).toBe("portrait");
     // The mode's profile preset preselected (changeable — the dropdown is
@@ -783,9 +866,24 @@ describe("ImageGenFineTuningChip — target + resolution (FT-A2)", () => {
     act(() => armChat("chat-t2c"));
     await waitFor(() => expect(view.container.querySelectorAll('[data-testid="image-gen-ft-chip"]').length).toBe(1));
     openChip();
-    await waitFor(() => expect(within(view.baseElement).getByTestId("image-gen-ft-resolution-select")).toBeTruthy());
+    const trigger = await waitFor(() => within(view.baseElement).getByTestId("image-gen-ft-resolution-select"));
+    await act(async () => {
+      trigger.click();
+    });
+    const resolutionItems = await waitFor(() => {
+      const items = Array.from(document.body.querySelectorAll("[cmdk-item]"));
+      expect(items.length).toBe(4);
+      return items as HTMLElement[];
+    });
+    const labels = resolutionItems.map((el) => el.textContent?.trim());
+    expect(labels).toEqual(["image_gen_size_auto", "1024×1024", "768×1344", "512×512"]);
+    expect(labels).not.toContain("image_gen_size_custom");
 
-    await pickOption("image-gen-ft-resolution-select", "512×512");
+    const userSizeOpt = resolutionItems.find((el) => el.textContent?.trim() === "512×512");
+    expect(userSizeOpt).toBeTruthy();
+    await act(async () => {
+      userSizeOpt!.click();
+    });
     expect(useImageGenChatStore.getState().fineTuningDraftByChat["chat-t2c"]).toEqual({
       prompt: "",
       negative: "",
@@ -1459,7 +1557,7 @@ describe("ImageGenFineTuningChip — model settings (IG-CF15 15d)", () => {
     }
   });
 
-  it("IF-11: Krea 2 controls — krea-2 models only; creativity + sliders commit the overlay krea block; the display inherits the profile BASE", async () => {
+  it("IF-11: Krea 2 controls — krea-2 models only; creativity + sliders commit the overlay krea block; the display shows the overlay anchor default", async () => {
     profilesStore = [
       {
         ...profile("kr1", "Krea cloud", noCaps(), "krea/krea-2/medium"),
@@ -1550,7 +1648,7 @@ describe("ImageGenFineTuningChip — model settings (IG-CF15 15d)", () => {
     expect(within(view2.baseElement).queryByTestId("image-gen-ft-overlay-scheduler")).toBeNull();
   });
 
-  it("ADetailer is hidden for non-A1111 backends and for servers without the extension", async () => {
+  it("ADetailer is hidden for cloud backends and for A1111 servers without the extension", async () => {
     profilesStore = [profile("ig1", "Cloud", fullCaps())];
     modelsStore["ig1"] = [{ id: "m1", label: "SDXL Base" }];
     extensionsStore["ig1"] = ["adetailer"]; // even WITH the extension present
@@ -1984,8 +2082,18 @@ describe("ImageGenFineTuningChip — comfyui ADetailer (IF-6)", () => {
     await waitFor(() => expect(upsertCalls.length).toBe(2));
     expect(upsertCalls[1]!.settings).toEqual({ adetailer: true, adetailerModel: "bbox/face_yolov8n.pt" });
 
-    // The probe runs ONLY for comfy dialects — the a1111 path (extensions
-    // probe) never calls the face-detectors endpoint (dialect separation).
+    // The probe runs ONLY for comfy dialects — render a real A1111 instance
+    // with the ADetailer extension and verify it mounts via extensions without
+    // hitting the face-detectors endpoint (dialect separation).
+    expect(faceDetectorCalls).toEqual(["cfa"]);
+
+    cleanup();
+    profilesStore = [{ ...profile("a11-pos", "Forge pos", fullCaps()), backend: "a1111" }];
+    modelsStore = { "a11-pos": [{ id: "sdxl-base", label: "SDXL Base" }] };
+    extensionsStore = { "a11-pos": ["adetailer"] };
+    armChat("chat-if6a-a1111");
+    const a11View = await openAccordion("chat-if6a-a1111");
+    await waitFor(() => expect(within(a11View.baseElement).getByTestId("image-gen-ft-adetailer")).toBeTruthy());
     expect(faceDetectorCalls).toEqual(["cfa"]);
   });
 

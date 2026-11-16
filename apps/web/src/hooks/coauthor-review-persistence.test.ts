@@ -3,6 +3,7 @@ import { afterAll, beforeEach, expect, test } from "bun:test";
 import { brandId, type ChatId } from "@vibe-tavern/domain";
 import { buildCoauthorReviewEnvelope, type CoauthorReviewEnvelope } from "@vibe-tavern/api-contracts";
 import { useDomEnv } from "../../test/dom-env.js";
+import { testFetch } from "@vibe-tavern/test-fetch";
 useDomEnv();
 const { act, renderHook, waitFor } = await import("@testing-library/react");
 const { useCoauthorReviewPersistence } = await import("./use-coauthor-review-persistence.js");
@@ -34,7 +35,7 @@ beforeEach(() => {
   useChatStore.setState({ activeChatId: id, generations: {} });
   useSnapshotStore.setState({ activeChat: { id, mode: "coauthor" } as NonNullable<ReturnType<typeof useSnapshotStore.getState>["activeChat"]> });
   useCoauthorTurnStore.setState({ turnsByChat: {} });
-  globalThis.fetch = (async (input, init) => {
+  globalThis.fetch = testFetch(async (input, init) => {
     const url = new URL(String(input), "http://gateway.test");
     const path = url.pathname.slice(url.pathname.indexOf("/api/")), method = init?.method ?? "GET";
     requests.push(`${method} ${path}`);
@@ -46,7 +47,7 @@ beforeEach(() => {
     }
     if (method === "DELETE") { remote = null; return Response.json({ ok: true }); }
     return delayedGet && method === "GET" ? delayedGet() : Response.json(remote);
-  }) as typeof fetch;
+  });
 });
 afterAll(restore);
 

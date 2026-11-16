@@ -1,4 +1,7 @@
 import type { ProbeOutcome, TtsTargetType } from "@vibe-tavern/domain";
+import type { z } from "zod";
+import type { createTtsProfileSchema } from "@vibe-tavern/api-contracts";
+import type { UpdateTtsProfileInput } from "@vibe-tavern/api-contracts";
 import { client } from "./client.js";
 import { unwrapRpc, unwrapError } from "./unwrap.js";
 import { getGatewayBaseUrl } from "../gateway-client.js";
@@ -76,41 +79,23 @@ export async function getTtsProfile(id: string): Promise<TtsProfileRecord | null
   return unwrapRpc(response);
 }
 
-export async function createTtsProfile(body: {
-  name: string;
-  backend: string;
-  config?: Record<string, unknown>;
-  /** Write-only API key (TE2-16): non-empty = set, absent = none. Never
-   *  returned by a read. */
-  apiKey?: string;
-  /** Optional providerProfiles.id link (server-side key resolution). */
-  providerRef?: string;
-  voiceId?: string;
-  narratorVoiceId?: string | null;
-  lang?: string;
-  sortOrder?: number;
-}): Promise<TtsProfileRecord> {
-  const response = await client.api.tts.profiles.$post({ json: body as never });
+/** Create-call body — the INPUT side of the create schema (`z.input`, the
+ *  CreateImageGenProfileBody precedent): the server-side `.default()` fields
+ *  (config/voiceId/narratorVoiceId/lang/sortOrder) stay optional for the
+ *  caller while the z.infer output type keeps them required. One derivation —
+ *  the hand-written shape copy is retired; field docs live on the schema. */
+export type CreateTtsProfileBody = z.input<typeof createTtsProfileSchema>;
+
+export async function createTtsProfile(body: CreateTtsProfileBody): Promise<TtsProfileRecord> {
+  const response = await client.api.tts.profiles.$post({ json: body });
   return unwrapRpc(response);
 }
 
 export async function updateTtsProfile(
   id: string,
-  body: Partial<{
-    name: string;
-    backend: string;
-    config: Record<string, unknown>;
-    /** Write-only tri-state (TE2-16): undefined = keep, "" = clear,
-     *  non-empty = set. */
-    apiKey: string;
-    providerRef: string;
-    voiceId: string;
-    narratorVoiceId: string | null;
-    lang: string;
-    sortOrder: number;
-  }>,
+  body: UpdateTtsProfileInput,
 ): Promise<TtsProfileRecord> {
-  const response = await client.api.tts.profiles[":id"].$patch({ param: { id }, json: body as never });
+  const response = await client.api.tts.profiles[":id"].$patch({ param: { id }, json: body });
   return unwrapRpc(response);
 }
 
@@ -128,7 +113,7 @@ export async function setTtsDefault(id: string): Promise<TtsProfileRecord> {
 export async function reorderTtsProfiles(
   updates: Array<{ id: string; sortOrder: number }>,
 ): Promise<TtsProfileRecord[]> {
-  const response = await client.api.tts.profiles.reorder.$patch({ json: { updates } as never });
+  const response = await client.api.tts.profiles.reorder.$patch({ json: { updates } });
   return unwrapRpc(response);
 }
 

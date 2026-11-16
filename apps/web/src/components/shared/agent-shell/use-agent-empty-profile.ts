@@ -54,7 +54,7 @@ export interface AgentEmptyProfileResult {
 	 *  title/subtitle/icon stay the host's). */
 	emptyPresentation: AgentBuiltinProfilePresentation | undefined;
 	/** DR-7b: the effective profile's STARTER keys — the built-in's own
-	 *  (same four as `emptyPresentation.starterKeys` when that exists) or,
+	 *  (the same list as `emptyPresentation.starterKeys` when that exists) or,
 	 *  for a user profile duplicated from a built-in, the SOURCE's starters.
 	 *  undefined = the host's `starterPromptKeys`. */
 	starterKeys: readonly AgentI18nKey[] | undefined;

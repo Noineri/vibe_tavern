@@ -14,7 +14,7 @@ import {
   ProviderProfileList,
   ProviderEditHeader,
   ProviderViewHeader,
-  ProviderModelSelector,
+  ProviderVisionModelSelector,
   ProviderModalModelSelector,
   ProviderCapabilityPanel,
   ProviderGenerationModePanel,
@@ -728,12 +728,10 @@ export function ProviderModal({
 
                   {showVisionFallback && (
                     <div className="mt-4 border-t border-border2 pt-2">
-                      <ProviderModelSelector
+                      <ProviderVisionModelSelector
                         value={form.visionModel}
                         onChange={(value) => autoSaveField("visionModel", value)}
-                        options={models.filter((model) => model.capabilities?.vision)}
-                        label={t("vision_fallback_model")}
-                        placeholder={t("select_vision_model")}
+                        options={models}
                         fetching={fetching}
                         fetchError={fetchError}
                         onRefreshOptions={handleFetchModels}
@@ -742,8 +740,6 @@ export function ProviderModal({
                         freeOnly={{ checked: form.modelFreeOnly, onChange: (value) => autoSaveField("modelFreeOnly", value) }}
                         groupByOwner={{ checked: form.modelGroupByOwner, onChange: (value) => autoSaveField("modelGroupByOwner", value) }}
                         requiresAuthForModels={selectedPreset?.requiresAuthForModels ?? false}
-                        showRefreshButton={false}
-                        showContextLength={false}
                       />
                     </div>
                   )}
