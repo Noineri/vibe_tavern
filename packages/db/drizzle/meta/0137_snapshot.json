@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "7a06ab6b-77d1-4a53-a561-9d443c151d99",
+  "id": "1053b8b8-526e-4c2a-877e-caf2b07a0374",
   "prevId": "337eba85-b4be-4a50-bf3e-ba587381737b",
   "tables": {
     "agent_branch_plans": {
@@ -2780,6 +2780,13 @@
         },
         "attachments_json": {
           "name": "attachments_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "prompt_attachments_json": {
+          "name": "prompt_attachments_json",
           "type": "text",
           "primaryKey": false,
           "notNull": false,
@@ -8433,94 +8440,6 @@
           "name": "skill_orders_library_skill_id_pk"
         }
       },
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
-    "story_branch_decks": {
-      "name": "story_branch_decks",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "chat_id": {
-          "name": "chat_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "branch_id": {
-          "name": "branch_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "content_json": {
-          "name": "content_json",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {
-        "idx_story_branch_decks_chat_branch": {
-          "name": "idx_story_branch_decks_chat_branch",
-          "columns": [
-            "chat_id",
-            "branch_id"
-          ],
-          "isUnique": true
-        }
-      },
-      "foreignKeys": {
-        "story_branch_decks_chat_id_chats_id_fk": {
-          "name": "story_branch_decks_chat_id_chats_id_fk",
-          "tableFrom": "story_branch_decks",
-          "tableTo": "chats",
-          "columnsFrom": [
-            "chat_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "story_branch_decks_branch_id_chat_branches_id_fk": {
-          "name": "story_branch_decks_branch_id_chat_branches_id_fk",
-          "tableFrom": "story_branch_decks",
-          "tableTo": "chat_branches",
-          "columnsFrom": [
-            "branch_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "checkConstraints": {}
     },

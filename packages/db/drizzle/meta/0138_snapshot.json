@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "1053b8b8-526e-4c2a-877e-caf2b07a0374",
-  "prevId": "7a06ab6b-77d1-4a53-a561-9d443c151d99",
+  "id": "7a06ab6b-77d1-4a53-a561-9d443c151d99",
+  "prevId": "1053b8b8-526e-4c2a-877e-caf2b07a0374",
   "tables": {
     "agent_branch_plans": {
       "name": "agent_branch_plans",
