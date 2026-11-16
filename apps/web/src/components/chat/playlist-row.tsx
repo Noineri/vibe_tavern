@@ -276,7 +276,7 @@ export function PlaylistRow(input: {
             finished recording is the noise the owner cut. Badges above
             stay in both states. */}
           {isFetchIncomplete(row.live) && (
-            <span className="flex min-w-0 flex-1 items-center gap-1.5" title={t("narration_playlist_fetching", { received: row.live.received, total: row.live.total })}>
+            <span className="flex min-w-0 flex-1 items-center gap-1.5">
               <span className="h-1 min-w-8 flex-1 overflow-hidden rounded-full bg-s3">
                 <span className="block h-full rounded-full bg-accent" style={{ width: `${progress ?? 0}%` }} />
               </span>

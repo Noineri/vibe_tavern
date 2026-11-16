@@ -186,6 +186,8 @@ export function DesktopMessageActions(props: {
 export function MobileMessageActions(props: {
   aiEditTooltip: string;
   canAiEdit: boolean;
+  aiAnnotateTooltip?: string;
+  canAiAnnotate?: boolean;
   branchLabel: string;
   canBranch: boolean;
   canContinue?: boolean;
@@ -207,6 +209,7 @@ export function MobileMessageActions(props: {
   variantCount: number;
   variantControls?: ReactNode;
   onAiEdit: () => void;
+  onAiAnnotate?: () => void;
   onBranch: () => void;
   onContinue?: () => void;
   onNarrate?: () => void;
@@ -217,36 +220,43 @@ export function MobileMessageActions(props: {
   onResend: () => void;
 }) {
   const {
-    aiEditTooltip, canAiEdit,
+    aiEditTooltip, canAiEdit, aiAnnotateTooltip, canAiAnnotate,
     branchLabel, canBranch, canContinue, continueTooltip, canRegenerate, canResend, canSwitchVariant,
     imageMenu, discussMenu,
     isBusy, isBranching, isGreeting, isUser, regenLabel, resendLabel,
     variantControls,
-    onAiEdit, onBranch, onContinue, onNarrate, narrating, narrateTooltip, narrateStopTooltip, onRegenerate, onResend,
+    onAiEdit, onAiAnnotate, onBranch, onContinue, onNarrate, narrating, narrateTooltip, narrateStopTooltip, onRegenerate, onResend,
   } = props;
 
   // SC-18c (owner 2026-10-21): the assistant row fits the swipe switcher plus
   // at most three 44px buttons — branch / narrate / AI editor / annotate /
   // discuss move to the "..." sheet, continue joins the row from the sheet.
   // User rows keep their existing controls untouched.
+  // The right group carries pr-4 so its buttons clear the mobile rail's 24px
+  // edge handle lane (scroll-rail.tsx: right-0 w-6) — without it the lane
+  // swallows the right ~12px of «регенерация» taps (owner report 2026-11-06).
   if (!isUser) {
     return (
       <div className="mt-2 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
         <div className="flex min-w-0 justify-start">
           {!isGreeting && canSwitchVariant && variantControls}
         </div>
-        <div className="flex justify-end gap-1">
+        <div className="flex justify-end gap-1 pr-4">
           {/* IG-16: image generation menu (icon button + sheet; Stop while running). */}
           {imageMenu}
           {canContinue && onContinue && (
-            <button type="button" aria-label={continueTooltip} disabled={isBusy} data-testid="mobile-continue-btn" className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-lg text-t3 active:bg-s2 disabled:cursor-default disabled:opacity-40 [&_svg]:h-5 [&_svg]:w-5" onClick={() => { if (!isBusy) onContinue(); }} title={continueTooltip}>
-              <Icons.fastForward />
-            </button>
+            <CustomTooltip content={continueTooltip}>
+              <button type="button" aria-label={continueTooltip} disabled={isBusy} data-testid="mobile-continue-btn" className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-lg text-t3 active:bg-s2 disabled:cursor-default disabled:opacity-40 [&_svg]:h-5 [&_svg]:w-5" onClick={() => { if (!isBusy) onContinue(); }}>
+                <Icons.fastForward />
+              </button>
+            </CustomTooltip>
           )}
           {canRegenerate && (
-            <button type="button" className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-lg text-t3 active:bg-s2 [&_svg]:h-5 [&_svg]:w-5" onClick={() => { if (!isBusy) onRegenerate(); }} title={regenLabel}>
-              <Icons.Regen />
-            </button>
+            <CustomTooltip content={regenLabel}>
+              <button type="button" aria-label={regenLabel} className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-lg text-t3 active:bg-s2 [&_svg]:h-5 [&_svg]:w-5" onClick={() => { if (!isBusy) onRegenerate(); }}>
+                <Icons.Regen />
+              </button>
+            </CustomTooltip>
           )}
         </div>
       </div>
@@ -257,38 +267,57 @@ export function MobileMessageActions(props: {
     <div className="mt-2 grid grid-cols-[44px_minmax(0,1fr)_auto] items-center gap-2">
       <div className="flex justify-start">
         {canBranch && (
-          <button type="button" className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-lg text-t3 active:bg-s2 [&_svg]:h-5 [&_svg]:w-5" aria-busy={isBranching} onClick={() => { if (!isBusy) onBranch(); }} title={branchLabel}>
-            {isBranching ? <span className="h-5 w-5 animate-spin rounded-full border-2 border-current border-t-transparent" /> : <Icons.Branch />}
-          </button>
+          <CustomTooltip content={branchLabel}>
+            <button type="button" aria-label={branchLabel} className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-lg text-t3 active:bg-s2 [&_svg]:h-5 [&_svg]:w-5" aria-busy={isBranching} onClick={() => { if (!isBusy) onBranch(); }}>
+              {isBranching ? <span className="h-5 w-5 animate-spin rounded-full border-2 border-current border-t-transparent" /> : <Icons.Branch />}
+            </button>
+          </CustomTooltip>
         )}
       </div>
       <div className="flex min-w-0 justify-center">
         {!isUser && !isGreeting && canSwitchVariant && variantControls}
       </div>
-      <div className="flex justify-end gap-1">
+      {/* Same rail-lane clearance pr-4 as the assistant row above. */}
+      <div className="flex justify-end gap-1 pr-4">
         {/* IG-16: image generation menu (icon button + sheet; Stop while running). */}
         {imageMenu}
         {onNarrate && (
-          <button type="button" aria-label={narrating ? narrateStopTooltip : narrateTooltip} data-testid="mobile-narrate-btn" className={cn("flex h-11 w-11 cursor-pointer items-center justify-center rounded-lg active:bg-s2 [&_svg]:h-5 [&_svg]:w-5", narrating ? "text-accent animate-pulse" : "text-t3")} onClick={() => { if (!isBusy) onNarrate(); }} title={narrating ? narrateStopTooltip : narrateTooltip}>
-            {narrating ? <Icons.stopSquare /> : <Icons.speaker />}
-          </button>
+          <CustomTooltip content={narrating ? narrateStopTooltip : narrateTooltip}>
+            <button type="button" aria-label={narrating ? narrateStopTooltip : narrateTooltip} data-testid="mobile-narrate-btn" className={cn("flex h-11 w-11 cursor-pointer items-center justify-center rounded-lg active:bg-s2 [&_svg]:h-5 [&_svg]:w-5", narrating ? "text-accent animate-pulse" : "text-t3")} onClick={() => { if (!isBusy) onNarrate(); }}>
+              {narrating ? <Icons.stopSquare /> : <Icons.speaker />}
+            </button>
+          </CustomTooltip>
         )}
         {canAiEdit && (
-          <button type="button" aria-label={aiEditTooltip} disabled={isBusy} className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-lg text-t3 active:bg-s2 disabled:cursor-default disabled:opacity-40 [&_svg]:h-5 [&_svg]:w-5" onClick={() => { if (!isBusy) onAiEdit(); }} title={aiEditTooltip}>
-            <Icons.Sparkles />
-          </button>
+          <CustomTooltip content={aiEditTooltip}>
+            <button type="button" aria-label={aiEditTooltip} disabled={isBusy} className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-lg text-t3 active:bg-s2 disabled:cursor-default disabled:opacity-40 [&_svg]:h-5 [&_svg]:w-5" onClick={() => { if (!isBusy) onAiEdit(); }}>
+              <Icons.Sparkles />
+            </button>
+          </CustomTooltip>
+        )}
+        {/* TPE-14: greeting-only "prepare for narration" entry (mobile row). */}
+        {canAiAnnotate && onAiAnnotate && (
+          <CustomTooltip content={aiAnnotateTooltip}>
+            <button type="button" aria-label={aiAnnotateTooltip} data-testid="mobile-annotate-btn" disabled={isBusy} className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-lg text-t3 active:bg-s2 disabled:cursor-default disabled:opacity-40 [&_svg]:h-5 [&_svg]:w-5" onClick={() => { if (!isBusy) onAiAnnotate(); }}>
+              <Icons.Sparkles />
+            </button>
+          </CustomTooltip>
         )}
         {/* SC-18: «Discuss in the sidechat» sits next to the AI-editor button. */}
         {discussMenu}
         {canResend && (
-          <button type="button" className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-lg text-t3 active:bg-s2 [&_svg]:h-5 [&_svg]:w-5" onClick={() => { if (!isBusy) onResend(); }} title={resendLabel}>
-            <Icons.Regen />
-          </button>
+          <CustomTooltip content={resendLabel}>
+            <button type="button" aria-label={resendLabel} className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-lg text-t3 active:bg-s2 [&_svg]:h-5 [&_svg]:w-5" onClick={() => { if (!isBusy) onResend(); }}>
+              <Icons.Regen />
+            </button>
+          </CustomTooltip>
         )}
         {canRegenerate && (
-          <button type="button" className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-lg text-t3 active:bg-s2 [&_svg]:h-5 [&_svg]:w-5" onClick={() => { if (!isBusy) onRegenerate(); }} title={regenLabel}>
-            <Icons.Regen />
-          </button>
+          <CustomTooltip content={regenLabel}>
+            <button type="button" aria-label={regenLabel} className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-lg text-t3 active:bg-s2 [&_svg]:h-5 [&_svg]:w-5" onClick={() => { if (!isBusy) onRegenerate(); }}>
+              <Icons.Regen />
+            </button>
+          </CustomTooltip>
         )}
       </div>
     </div>

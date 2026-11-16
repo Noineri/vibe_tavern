@@ -37,12 +37,9 @@ import { join, relative } from "node:path";
 /** Snapshot of the tree on 2026-11-05 — the step-1 inventory table lives in
  *  plan repo BARE_TITLE_TOOLTIPS_REPORT. Lower after cleanups, never raise.
  *
- *  103 (2026-11-10, TQ-1 removal unit 5d0e72623): 1 title died WITH its
- *  construct — the unreachable user-row annotate button in MobileMessageActions
- *  (message-shell-actions.tsx) carried a native title and was removed. NOTE:
- *  the report's dev-branch campaign reached 0/0 (97ef0c9f0, branch `dev`);
- *  this feat branch predates it and keeps its own ratchet. */
-export const BARE_TITLE_BUDGET = 103;
+ *  0 (2026-11-16, feat←dev merge): dev's themed-tooltip campaign reached 0/0
+ *  and its conversions merged in; the merged tree carries no bare titles. */
+export const BARE_TITLE_BUDGET = 0;
 
 const ROOT = join(import.meta.dir, "..");
 const WEB_SRC = join(ROOT, "apps", "web", "src");

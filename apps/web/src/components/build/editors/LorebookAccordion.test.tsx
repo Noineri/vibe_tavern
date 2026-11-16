@@ -24,7 +24,6 @@ const listLoreEntries = mock((_lorebookId: string) => Promise.resolve<LoreEntryR
 const realLorebookApi = await import("../../../api/lorebook-api.js");
 const realLoreEntryList = await import("./LoreEntryList.js");
 const realLinkBindingPopover = await import("../../shared/LinkBindingPopover.js");
-const realTooltip = await import("../../shared/Tooltip.js");
 
 // Identity i18n — assertion strings match keys verbatim.
 installI18nContextSeam();
@@ -79,14 +78,6 @@ mock.module("../../shared/LinkBindingPopover.js", () => ({
   ),
 }));
 
-// CustomTooltip needs a Radix TooltipProvider context irrelevant here;
-// passthrough children, drop the `content` prop.
-mock.module("../../shared/Tooltip.js", () => ({
-	...realTooltip,
-  CustomTooltip: ({ children }: { children: ReactNode }) => children,
-  TooltipProvider: ({ children }: { children: ReactNode }) => children,
-}));
-
 // countTokens is irrelevant to the search suites; stubbed to keep them fast
 // + isolated. The LC-5 suite swaps in the REAL countTokens (with its LRU)
 // through the same seam — `countTokensImpl` — so the two worlds never share
@@ -98,12 +89,16 @@ let countTokensImpl: (text: string) => number = () => 0;
 mock.module("../../../utils/tokenizer.js", () => ({ ...realTokenizer, countTokens: (text: string) => countTokensImpl(text) }));
 
 let LorebookAccordion: typeof import("./LorebookAccordion.js").LorebookAccordion;
-let render: typeof import("@testing-library/react").render;
+let rtlRender: typeof import("@testing-library/react").render;
+const { TooltipProvider } = await import("../../shared/Tooltip.js");
+function render(ui: ReactNode) {
+  return rtlRender(ui, { wrapper: ({ children }) => <TooltipProvider delayDuration={0}>{children}</TooltipProvider> });
+}
 let fireEvent: typeof import("@testing-library/react").fireEvent;
 let waitFor: typeof import("@testing-library/react").waitFor;
 let userEvent: typeof import("@testing-library/user-event").default;
 beforeAll(async () => {
-	({ render, fireEvent, waitFor } = await import("@testing-library/react"));
+	({ render: rtlRender, fireEvent, waitFor } = await import("@testing-library/react"));
 	({ default: userEvent } = await import("@testing-library/user-event"));
 	({ LorebookAccordion } = await import("./LorebookAccordion.js"));
 });
@@ -390,6 +385,8 @@ describe("LorebookAccordion book-level group scoring (LG-7)", () => {
     // Disclosure content only renders when expanded.
     await fixed.findByText("lore_scan_depth");
     expect(fixed.queryByText("lore_token_budget_cap")).toBeNull(); // fixed mode → no cap field
+    fireEvent.pointerMove(fixed.getByText("lore_token_budget_mode_fixed"), { pointerType: "mouse" });
+    expect((await fixed.findByRole("tooltip")).textContent).toBe("lore_token_budget_switch_to_percent");
     // The mode button in fixed mode is labeled "Tokens" and switches to percent.
     fireEvent.click(fixed.getByText("lore_token_budget_mode_fixed"));
     expect(onUpdateMeta).toHaveBeenCalledWith({ tokenBudgetPercent: 25 });
@@ -400,6 +397,10 @@ describe("LorebookAccordion book-level group scoring (LG-7)", () => {
       onUpdateMeta,
     });
     await pct.findByText("lore_token_budget_cap");
+    fireEvent.pointerMove(pct.getByText("lore_token_budget_mode_percent"), { pointerType: "mouse" });
+    expect((await pct.findByRole("tooltip")).textContent).toBe("lore_token_budget_switch_to_fixed");
+    fireEvent.click(pct.getByText("lore_token_budget_mode_percent"));
+    expect(onUpdateMeta).toHaveBeenCalledWith({ tokenBudgetPercent: null });
     // Scope to the cap control's wrapper (three NumberInputs live in this row).
     const capScope = pct.getByText("lore_token_budget_cap").closest("div") as HTMLElement;
     const capInput = capScope.querySelector("input") as HTMLInputElement;
@@ -733,7 +734,9 @@ describe("LorebookAccordion token total (LC-5)", () => {
 
   it("header total = the sum of per-entry counts, not one joined encode", async () => {
     const view = renderAccordion();
-    await waitFor(() => expect(view.getByTitle(`3 · ${LC5_SUM.toLocaleString()} tokens_label`)).toBeDefined());
+    await view.findAllByTestId("entry-row");
+    fireEvent.pointerMove(view.getByText("3").closest("span")!, { pointerType: "mouse" });
+    expect((await view.findByRole("tooltip")).textContent).toBe(`3 · ${LC5_SUM.toLocaleString()} tokens_label`);
     // every entry content encoded exactly once; no joined-string encode
     expect([...encodedTexts].sort()).toEqual(LC5_ENTRIES.map((e) => e.content).sort());
     view.unmount();
@@ -741,7 +744,9 @@ describe("LorebookAccordion token total (LC-5)", () => {
 
   it("editing one entry re-encodes only that entry — the others hit the cache", async () => {
     const first = renderAccordion();
-    await waitFor(() => expect(first.getByTitle(`3 · ${LC5_SUM.toLocaleString()} tokens_label`)).toBeDefined());
+    await first.findAllByTestId("entry-row");
+    fireEvent.pointerMove(first.getByText("3").closest("span")!, { pointerType: "mouse" });
+    expect((await first.findByRole("tooltip")).textContent).toBe(`3 · ${LC5_SUM.toLocaleString()} tokens_label`);
     expect(encodedTexts).toHaveLength(3);
     first.unmount();
 
@@ -754,7 +759,9 @@ describe("LorebookAccordion token total (LC-5)", () => {
     const second = renderAccordion();
     const editedSum =
       LC5_SUM - realEncode("beta lore two").length + realEncode(editedContent).length;
-    await waitFor(() => expect(second.getByTitle(`3 · ${editedSum.toLocaleString()} tokens_label`)).toBeDefined());
+    await second.findAllByTestId("entry-row");
+    fireEvent.pointerMove(second.getByText("3").closest("span")!, { pointerType: "mouse" });
+    expect((await second.findByRole("tooltip")).textContent).toBe(`3 · ${editedSum.toLocaleString()} tokens_label`);
     // exactly the edited entry's new content was encoded — no joined string,
     // no re-encode of the untouched entries
     expect(encodedTexts).toEqual([editedContent]);

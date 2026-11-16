@@ -118,11 +118,12 @@ export function ScriptAgentEditorTabs({
     ? (
       <span className="inline-flex items-center gap-1.5">
         {t("agent_code")}
-        <span
-          data-testid="copilot-outer-dot-code"
-          title={t("copilot_review_pending_badge")}
-          className="h-1.5 w-1.5 rounded-full bg-accent"
-        />
+        <CustomTooltip content={t("copilot_review_pending_badge")}>
+          <span
+            data-testid="copilot-outer-dot-code"
+            className="h-1.5 w-1.5 rounded-full bg-accent"
+          />
+        </CustomTooltip>
       </span>
     )
     : t("agent_code");

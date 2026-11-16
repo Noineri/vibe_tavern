@@ -48,7 +48,9 @@ mock.module("../../api/chat-api.js", () => ({
 
 const { ImageBlock } = await import("./ImageBlock.js");
 const { AttachmentGrid } = await import("./AttachmentGrid.js");
-const { act, fireEvent, render, cleanup, waitFor } = await import("@testing-library/react");
+const { fireEvent, render: renderBase, cleanup, act, waitFor } = await import("@testing-library/react");
+const { TooltipProvider } = await import("../shared/Tooltip.js");
+const render = (ui: React.ReactElement) => renderBase(ui, { wrapper: ({ children }) => <TooltipProvider delayDuration={0}>{children}</TooltipProvider> });
 
 import type { Attachment } from "@vibe-tavern/domain";
 
@@ -228,7 +230,12 @@ describe("ImageBlock — prompt accordion (MR-8)", () => {
   // a quiet suffix — non-uppercase, normal weight, t4 — and NEVER renders
   // for template/user-authored prompts (the note is an AI-authorship
   // signal, not a generation marker).
-  it("captionAuthor: the author model rides the collapsed header as a quiet suffix; absent for template/user prompts", () => {
+  it("captionAuthor: the author model rides the collapsed header as a quiet suffix; absent for template/user prompts", async () => {
+    const scrollWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollWidth");
+    const clientWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth");
+    Object.defineProperty(HTMLElement.prototype, "scrollWidth", { configurable: true, get: () => 300 });
+    Object.defineProperty(HTMLElement.prototype, "clientWidth", { configurable: true, get: () => 100 });
+    try {
     const withAuthor = render(
       <ImageBlock images={[{ src: "/api/assets/a3", alt: "gen", caption: "written by the llm", captionAuthor: "gemini-writer" }]} />,
     );
@@ -236,12 +243,14 @@ describe("ImageBlock — prompt accordion (MR-8)", () => {
     expect(author.textContent).toContain("gemini-writer");
     // The quiet dialect: the header row is font-semibold uppercase t3 — the
     // suffix must NOT inherit any of that.
-    expect(author.className).toContain("text-t4");
-    expect(author.className).toContain("font-normal");
-    expect(author.className).toContain("normal-case");
+    const text = author.querySelector("span")!;
+    expect(text.className).toContain("text-t4");
+    expect(text.className).toContain("font-normal");
+    expect(text.className).toContain("normal-case");
     // Model ids are user data in an identification context — the full value
     // stays reachable on the tooltip.
-    expect(author.getAttribute("title")).toBe("gemini-writer");
+    fireEvent.pointerMove(text, { pointerType: "mouse" });
+    expect((await withAuthor.findByRole("tooltip")).textContent).toBe("· gemini-writer");
     // The header keeps its label + the prompt text stays hidden at rest.
     const caption = withAuthor.getByTestId("image-block-caption");
     expect(caption.textContent).toContain("image_block_prompt_row");
@@ -255,6 +264,12 @@ describe("ImageBlock — prompt accordion (MR-8)", () => {
       <ImageBlock images={[{ src: "/api/assets/a4", alt: "gen", caption: "template text" }]} />,
     );
     expect(withoutAuthor.queryByTestId("image-block-caption-author")).toBeNull();
+    } finally {
+      if (scrollWidth) Object.defineProperty(HTMLElement.prototype, "scrollWidth", scrollWidth);
+      else delete (HTMLElement.prototype as { scrollWidth?: number }).scrollWidth;
+      if (clientWidth) Object.defineProperty(HTMLElement.prototype, "clientWidth", clientWidth);
+      else delete (HTMLElement.prototype as { clientWidth?: number }).clientWidth;
+    }
   });
 });
 

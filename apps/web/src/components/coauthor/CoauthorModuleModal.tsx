@@ -1,3 +1,4 @@
+import { CustomTooltip } from "../shared/Tooltip.js";
 // forks: 1 — AgentProfileModal (apps/web/src/components/shared/agent-shell/AgentProfileModal.tsx)
 // is fork #1 (the profile modal frame-clones this module modal's shell +
 // detail/editor + footer matrix; AP-24). Both lists render through the shared
@@ -605,10 +606,8 @@ function ModuleEditor({ draft, skills, t, onUpdate, onToggleSkill, onToggleTool 
 						{skills.map((skill) => {
 							const active = draft.skillIds.includes(skill.id);
 							return (
-								<button
-									key={skill.id}
+								<CustomTooltip key={skill.id} content={skill.description}><button
 									type="button"
-									title={skill.description}
 									className={cn(
 										"cursor-pointer rounded-full border px-2.5 py-0.5 font-mono text-[calc(var(--ui-fs)-3px)] transition-colors",
 										active ? "border-accent bg-accent-dim text-accent-t" : "border-border text-t3 hover:text-t1",
@@ -616,7 +615,7 @@ function ModuleEditor({ draft, skills, t, onUpdate, onToggleSkill, onToggleTool 
 									onClick={() => onToggleSkill(skill.id)}
 								>
 									{skill.name}
-								</button>
+								</button></CustomTooltip>
 							);
 						})}
 						{/* Orphan bindings: skillIds the module holds that are no longer in the
@@ -625,16 +624,14 @@ function ModuleEditor({ draft, skills, t, onUpdate, onToggleSkill, onToggleTool 
 						{draft.skillIds
 							.filter((id) => !skills.some((s) => s.id === id))
 							.map((orphanId) => (
-								<button
-									key={`orphan:${orphanId}`}
+								<CustomTooltip key={`orphan:${orphanId}`} content={t("coauthor.module.skill_orphan_title")}><button
 									type="button"
 									data-testid={`module-skill-orphan-${orphanId}`}
-									title={t("coauthor.module.skill_orphan_title")}
 									className="cursor-pointer rounded-full border border-dashed border-danger/50 px-2.5 py-0.5 font-mono text-[calc(var(--ui-fs)-3px)] text-danger-text line-through transition-colors hover:bg-danger-dim"
 									onClick={() => onToggleSkill(orphanId)}
 								>
 									{orphanId}
-								</button>
+								</button></CustomTooltip>
 							))}
 					</div>
 				)}

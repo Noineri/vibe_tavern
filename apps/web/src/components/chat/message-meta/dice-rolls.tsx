@@ -1,3 +1,4 @@
+import { CustomTooltip } from "../../shared/Tooltip.js";
 // ────────────────────────────────────────────────────────────────────────────
 // Dice rolls message-meta badge (DICE-F10)
 // ────────────────────────────────────────────────────────────────────────────
@@ -151,12 +152,11 @@ function DetailRollCard({ roll }: { roll: DiceRollSnapshot }) {
         <span className="font-mono text-[calc(var(--ui-fs)-3px)] text-t3">{roll.notation}</span>
         <span className="build-tag">{roll.mode === "immersive" ? t("dice_tray_mode_immersive") : t("dice_tray_mode_normal")}</span>
       </div>
-      <div
-        className="mt-0.5 text-[calc(var(--ui-fs)-3px)] text-t3"
-        title={t("dice_meta_captured_rev_title", { revision: roll.scriptRevision })}
-      >
+      <CustomTooltip content={t("dice_meta_captured_rev_title", { revision: roll.scriptRevision })}>
+        <div className="mt-0.5 text-[calc(var(--ui-fs)-3px)] text-t3">
         {roll.actor.actorLabel} · {roll.scriptLabel}
       </div>
+      </CustomTooltip>
       {roll.attempts.map((attempt, index) => (
         <div key={attempt.attemptId} className="mt-2 rounded-md border border-border bg-surface/60 p-2">
           <div className="mb-1.5 flex items-center gap-2 text-[calc(var(--ui-fs)-3px)]">

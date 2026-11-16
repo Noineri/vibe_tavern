@@ -6,6 +6,7 @@ import { useDomEnv } from "../../../test/dom-env.js";
 
 useDomEnv({ failOnNetwork: true });
 const { render, fireEvent, waitFor, act, cleanup } = await import("@testing-library/react");
+const { TooltipProvider } = await import("../shared/Tooltip.js");
 const { default: userEvent } = await import("@testing-library/user-event");
 const en = (await import("../../i18n/locales/en.json")).default;
 const { LocaleProvider } = await import("../../i18n/context.js");
@@ -20,7 +21,7 @@ initI18n("en");
 
 /** Renders inside the real LocaleProvider — see the initI18n note above. */
 function renderWithLocale(ui: ReactElement) {
-  return render(<LocaleProvider>{ui}</LocaleProvider>);
+  return render(<TooltipProvider delayDuration={0}><LocaleProvider>{ui}</LocaleProvider></TooltipProvider>);
 }
 
 const api = await import("../../api/attachment-actions-api.js");
@@ -84,6 +85,23 @@ function deferred<T>() {
 }
 
 describe("sent file actions (CA-2c)", () => {
+  test("clipped file name exposes its full value in a measured tooltip", async () => {
+    const scrollWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollWidth");
+    const clientWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth");
+    Object.defineProperty(HTMLElement.prototype, "scrollWidth", { configurable: true, get: () => 300 });
+    Object.defineProperty(HTMLElement.prototype, "clientWidth", { configurable: true, get: () => 100 });
+    try {
+      const view = grid();
+      fireEvent.pointerMove(view.getByText(file.name), { pointerType: "mouse" });
+      expect((await view.findByRole("tooltip")).textContent).toBe(file.name);
+    } finally {
+      if (scrollWidth) Object.defineProperty(HTMLElement.prototype, "scrollWidth", scrollWidth);
+      else delete (HTMLElement.prototype as { scrollWidth?: number }).scrollWidth;
+      if (clientWidth) Object.defineProperty(HTMLElement.prototype, "clientWidth", clientWidth);
+      else delete (HTMLElement.prototype as { clientWidth?: number }).clientWidth;
+    }
+  });
+
   for (const [label, attachment, expected] of [
     ["plain", file, [en.attachment_summarize, en.attachment_exclude, en.attachment_delete_title]],
     ["summarized", summary, [en.attachment_restore_full_text, en.attachment_show_summary, en.attachment_exclude, en.attachment_delete_title]],
@@ -135,7 +153,7 @@ describe("sent file actions (CA-2c)", () => {
     fireEvent.click(view.getByRole("button", { name: en.cancel }));
     expect(call.mock.calls[0]![3].aborted).toBe(true);
     expect(view.queryByRole("status")).toBeNull();
-    expect(view.getByTitle(file.name).nextElementSibling?.textContent).toBe(en.attachment_tokens.replace("{tokens}", file.tokenCount!.toLocaleString()));
+    expect(view.getByText(file.name).nextElementSibling?.textContent).toBe(en.attachment_tokens.replace("{tokens}", file.tokenCount!.toLocaleString()));
     await act(async () => pending.resolve(summary));
     expect(useSnapshotStore.getState().messagesById.message?.attachments).toEqual([file]);
   });
@@ -204,7 +222,7 @@ describe("sent file actions (CA-2c)", () => {
     const view = grid(summary);
     await choose(view, en.attachment_exclude);
     await waitFor(() => expect(view.queryByText(en.attachment_excluded)).not.toBeNull());
-    expect(view.getByTitle(file.name).className).toContain("line-through");
+    expect(view.getByText(file.name).className).toContain("line-through");
     expect(view.queryByText("Summary · ~800 tok")).toBeNull();
     await choose(view, en.attachment_include);
     await waitFor(() => expect(view.queryByText("Summary · ~800 tok")).not.toBeNull());

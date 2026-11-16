@@ -335,7 +335,9 @@ describe("SidechatOocCompactionService - the transcript carries the span's RP ev
 			makeRpSyncEvent("evt_b", 105, "RP-EVENT-B-MARKER"),
 			makeRpSyncEvent("evt_c", 135, "RP-EVENT-C-MARKER"),
 		];
-		const { store } = makeStore(makeThread(), makeTurnSequence(20), events);
+		const rows = makeTurnSequence(20);
+		rows[0]!.promptAttachments = [{ presetId: "p", displayName: "Preset", promptText: "<rp_prompt>COMPACTED-SNAPSHOT</rp_prompt>" }];
+		const { store } = makeStore(makeThread(), rows, events);
 		const executor = makeExecutor();
 		const service = new SidechatOocCompactionService(store, makeProviderProfiles(), executor.execute);
 
@@ -346,6 +348,7 @@ describe("SidechatOocCompactionService - the transcript carries the span's RP ev
 		// their frozen XML.
 		expect(transcript).toContain("[rp-reference] <rp_sync from=");
 		expect(transcript).toContain("RP-EVENT-A-MARKER");
+		expect(transcript).toContain("<rp_prompt>COMPACTED-SNAPSHOT</rp_prompt>");
 		expect(transcript).toContain("RP-EVENT-B-MARKER");
 		// Outside the span: the tail's event never reaches the summarizer.
 		expect(transcript).not.toContain("RP-EVENT-C-MARKER");

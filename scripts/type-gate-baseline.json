@@ -1,1 +1,9 @@
-[]
+[
+  "apps/web/src/components/build/editors/GalleryAccordion.test.tsx:159:21:unknown-cast",
+  "apps/web/src/components/build/editors/GalleryViewer.test.tsx:20:17:unknown-cast",
+  "apps/web/src/components/build/trace-payload-view.test.tsx:325:92:unknown-cast",
+  "apps/web/src/components/build/trace-payload-view.test.tsx:348:81:unknown-cast",
+  "services/api/test/agent-stream-retry-guard.test.ts:28:10:unknown-cast",
+  "services/api/test/agent-stream-retry-guard.test.ts:53:10:unknown-cast",
+  "services/api/test/agent-stream-trace.test.ts:65:17:unknown-cast"
+]

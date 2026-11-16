@@ -7,6 +7,7 @@ import { AnimatedDisclosure } from "../../shared/AnimatedDisclosure.js";
 import { DestructiveConfirmModal } from "../../shared/destructive-confirm-modal.js";
 import { Ic } from "../../shared/icons.js";
 import { TrackerTemplateSchemaPreview } from "../../shared/tracker-template-schema-preview.js";
+import { CustomTooltip } from "../../shared/Tooltip.js";
 
 interface TrackerTemplateSummaryRowProps {
   template: TrackerTemplate;
@@ -26,15 +27,16 @@ export function TrackerTemplateSummaryRow({ template, onClear }: TrackerTemplate
         <span className="font-ui text-[calc(var(--ui-fs)-1px)] leading-[1.5] text-t2">
           {describeTrackerTemplate(template, t)}
         </span>
-        <button
-          type="button"
-          aria-label={t("character_tracker_template_remove_aria")}
-          title={t("character_tracker_template_remove_aria")}
-          onClick={() => setRemoveOpen(true)}
-          className="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-md border-0 bg-transparent text-danger transition-colors hover:bg-danger/10"
-        >
-          <Ic.del />
-        </button>
+        <CustomTooltip content={t("character_tracker_template_remove_aria")}>
+          <button
+            type="button"
+            aria-label={t("character_tracker_template_remove_aria")}
+            onClick={() => setRemoveOpen(true)}
+            className="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-md border-0 bg-transparent text-danger transition-colors hover:bg-danger/10"
+          >
+            <Ic.del />
+          </button>
+        </CustomTooltip>
       </div>
       <button
         type="button"

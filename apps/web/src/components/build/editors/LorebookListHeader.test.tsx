@@ -1,19 +1,17 @@
-import { describe, expect, it, mock } from "bun:test";
-import { useState, type ReactNode } from "react";
+import { describe, expect, it } from "bun:test";
+import { useState } from "react";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import type { Tab } from "./use-lorebook-editor-state.js";
 
 useDomEnv();
-const { fireEvent, render, waitFor } = await import("@testing-library/react");
+const { fireEvent, render: rtlRender, waitFor } = await import("@testing-library/react");
+const { TooltipProvider } = await import("../../shared/Tooltip.js");
+function render(ui: React.ReactNode) {
+  return rtlRender(ui, { wrapper: ({ children }) => <TooltipProvider delayDuration={0}>{children}</TooltipProvider> });
+}
 
-const realTooltip = await import("../../shared/Tooltip.js");
-mock.module("../../shared/Tooltip.js", () => ({
-  ...realTooltip,
-  CustomTooltip: ({ children }: { children: ReactNode }) => children,
-  TooltipProvider: ({ children }: { children: ReactNode }) => children,
-}));
 
-const { WorldLoreListHeader } = await import("./LorebookListHeader.js");
+const { WorldLoreListHeader, WorldLoreOwnerFilter } = await import("./LorebookListHeader.js");
 
 const itemsByTab = {
   lorebooks: ["Bestiary", "Tavern rules"],
@@ -65,5 +63,31 @@ describe("WorldLoreListHeader mobile search", () => {
 
     await waitFor(() => expect(ui.queryAllByTestId(`${tab}-list-item`)).toHaveLength(2));
     expect(ui.queryByTestId(searchTestId)).toBeNull();
+  });
+});
+
+
+describe("WorldLoreOwnerFilter mobile owner", () => {
+  it("retains the bounded truncation and exposes the full clipped owner name", async () => {
+    const scrollWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollWidth");
+    const clientWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth");
+    Object.defineProperty(HTMLElement.prototype, "scrollWidth", { configurable: true, get: () => 300 });
+    Object.defineProperty(HTMLElement.prototype, "clientWidth", { configurable: true, get: () => 100 });
+    try {
+      const name = "An exceptionally long owner name";
+      const view = render(<WorldLoreOwnerFilter isMobile ownerId="c1" owners={[{ id: "c1", name, kind: "character" }]} onOwnerChange={() => {}} testId="owner" t={(key) => key} />);
+      const label = view.getByText(name);
+      expect(label.className).toContain("truncate");
+      expect(label.className).toContain("max-w-36");
+      expect(label.hasAttribute("title")).toBe(false);
+      fireEvent.pointerMove(label, { pointerType: "mouse" });
+      expect((await view.findByRole("tooltip")).textContent).toBe(name);
+      view.unmount();
+    } finally {
+      if (scrollWidth) Object.defineProperty(HTMLElement.prototype, "scrollWidth", scrollWidth);
+      else delete (HTMLElement.prototype as { scrollWidth?: number }).scrollWidth;
+      if (clientWidth) Object.defineProperty(HTMLElement.prototype, "clientWidth", clientWidth);
+      else delete (HTMLElement.prototype as { clientWidth?: number }).clientWidth;
+    }
   });
 });

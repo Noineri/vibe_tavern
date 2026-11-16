@@ -46,7 +46,6 @@ export function GuideCommandRow({
         role="checkbox"
         aria-checked={checked}
         aria-label={checkLabel}
-        title={checkLabel}
         data-testid={`${testPrefix}-check-${copyId}`}
         onClick={onToggleChecked}
         className={cn(

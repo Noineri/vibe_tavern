@@ -1,3 +1,4 @@
+import { OverflowTooltip } from "../shared/OverflowTooltip.js";
 import { useT } from "../../i18n/context.js";
 import { cn } from "../../lib/cn.js";
 import { Icons } from "../shared/icons.js";
@@ -112,7 +113,7 @@ export function PersonaListRow({
       </div>
       {/* Right column: one metadata line (name + counter + pronouns) above
           the description. Name is the sole flexible element (min-w-0 +
-          truncate + title); counter and pronouns are shrink-0, pushed right
+          truncate + measured overflow hint); counter and pronouns are shrink-0, pushed right
           by the counter's ml-auto — worst RU case the name truncates first.
           D-7: self-stretch + justify-center — the (metadata + description)
           group centers vertically in the height the left column provides,
@@ -120,7 +121,7 @@ export function PersonaListRow({
           content at clamp-5 → ~10px margins). */}
       <div className={cn("flex min-w-0 flex-1 flex-col gap-1 py-0.5", !isMobile && "self-stretch justify-center")}>
         <div className="flex items-baseline gap-2">
-          <div className="min-w-0 truncate font-ui text-[calc(var(--ui-fs)+1px)] font-semibold tracking-tight text-t1" title={persona.name}>{persona.name}</div>
+          <OverflowTooltip asSpan className="min-w-0 font-ui text-[calc(var(--ui-fs)+1px)] font-semibold tracking-tight text-t1" text={persona.name} />
           <TokenCounter text={persona.description} className="ml-auto shrink-0 font-ui text-[calc(var(--ui-fs)-3px)] tabular-nums text-t3" />
           {(() => {
             // For the 'custom' discriminator, show a compact subjective/objective

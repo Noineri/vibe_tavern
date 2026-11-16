@@ -109,6 +109,8 @@ export interface ExperienceCopilotStreamRequest {
    *  Only the `sidechat-ooc` kind reads the field; the other kinds ignore
    *  it entirely. */
   attachedVariants?: { messageId: string; variantId: string }[];
+  /** Sidechat-only preset identities to resolve and freeze on this message. */
+  promptAttachments?: { presetId: string }[];
   /** Latest per-target proposal review outcomes supplied by the editor. */
   reviewSnapshot?: AgentReviewSnapshot;
   /** Whether the live rules buffer has been saved independently of its review outcome. */

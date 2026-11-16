@@ -13,6 +13,7 @@ import type { AgentMessageAction, AgentMessageMarkup } from "../../../lib/agent-
 import { AttachmentGrid } from "../../chat/AttachmentGrid.js";
 import { PENDING_USER_MESSAGE_ID } from "./agent-synthetic-message.js";
 import { AgentFileAttachment } from "./agent-file-attachment.js";
+import { AgentPromptAttachment } from "./agent-prompt-attachment.js";
 import { agentLightboxActions } from "./agent-lightbox-actions.js";
 import { useAgentAttachmentActions } from "./agent-attachment-actions-context.js";
 import { useOptionalAgentFeedRowUiState } from "./agent-feed-ui-state.js";
@@ -153,13 +154,19 @@ export const AgentMessageBlock = memo(function AgentMessageBlock({
   const isUser = message.role === "user";
   const attachments = message.attachments;
   const hasAttachments = attachments !== undefined && attachments.length > 0;
+  const promptAttachments = isUser ? message.promptAttachments ?? [] : [];
 
   // Tool-call carrier assistant turns have empty `content`; their activity is
   // surfaced inline by the message list (`CopilotActivityCard`), so render
   // nothing here (a zero-height bubble would be visually orphaned). CA-4f: a
   // message WITH attachments is never hidden — an attachment-only user row
   // still renders its chips.
-  if (message.content.trim().length === 0 && !hasAttachments) return null;
+  if (message.content.trim().length === 0 && !hasAttachments && promptAttachments.length === 0) return null;
+  const promptAttachmentGrid = promptAttachments.length > 0 ? (
+    <div className="mt-2 flex flex-wrap gap-2">
+      {promptAttachments.map((attachment, index) => <AgentPromptAttachment key={`${attachment.presetId}-${index}`} attachment={attachment} />)}
+    </div>
+  ) : null;
 
   // CA-4f: the sent-attachment grid under the text. The grid gets NO
   // `messageId` — that prop turns on the RP lightbox's chat-route controls;
@@ -253,6 +260,7 @@ export const AgentMessageBlock = memo(function AgentMessageBlock({
         >
           {body}
           {attachmentGrid}
+          {promptAttachmentGrid}
         </div>
       </div>
     );
@@ -287,6 +295,7 @@ export const AgentMessageBlock = memo(function AgentMessageBlock({
           onCancel={closeEditor}
         />
         {attachmentGrid}
+        {promptAttachmentGrid}
       </div>
     );
   }
@@ -333,6 +342,7 @@ export const AgentMessageBlock = memo(function AgentMessageBlock({
         >
           {body}
           {attachmentGrid}
+          {promptAttachmentGrid}
         </div>
         <MessageActionRow actions={userRowActions} text={message.content} />
       </div>
@@ -399,7 +409,6 @@ function MessageActionRow({ actions, text }: { actions: AgentMessageAction[]; te
                 <button
                   type="button"
                   aria-label={label}
-                  title={label}
                   data-testid={action.testId}
                   className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-lg text-t3 active:bg-s2 [&_svg]:h-5 [&_svg]:w-5"
                   onClick={() => action.onSelect(text)}

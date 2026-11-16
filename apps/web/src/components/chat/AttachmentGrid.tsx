@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { isTextMime, splitVoiceTranscript, type Attachment } from "@vibe-tavern/domain";
 import { FileAttachmentChip } from "./file-attachment-chip.js";
@@ -15,6 +16,9 @@ import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useT } from "../../i18n/context.js";
 import { toast } from "sonner";
 import { chatLightboxActions } from "./chat-lightbox-actions.js";
+import { CustomTooltip } from "../shared/Tooltip.js";
+import { ScrollArea } from "../shared/scroll-area.js";
+import { getModalPortal } from "../shared/modal-helpers.js";
 
 /** Audio duration label ("0:07" / "1:23") for the voice bubble meta line. */
 function formatAudioDuration(ms: number): string {
@@ -266,6 +270,10 @@ export function AttachmentGrid({
 
 function Lightbox({ attachments, messageAttachments, actions, initialIndex, onClose }: { attachments: Attachment[]; messageAttachments: Attachment[]; actions?: LightboxImageActions; initialIndex: number; onClose: () => void }) {
   const { t } = useT();
+  // Feed isolation and side-pane transforms must not trap this fullscreen
+  // overlay. Keep an existing modal's portal/focus scope when hosted in one;
+  // capture once so stacked confirmations cannot reparent the open viewer.
+  const [portalContainer] = useState(() => getModalPortal() ?? document.body);
   const [index, setIndex] = useState(initialIndex);
   const [editing, setEditing] = useState(false);
   const [editText, setEditText] = useState("");
@@ -374,7 +382,7 @@ function Lightbox({ attachments, messageAttachments, actions, initialIndex, onCl
 
   if (!att) return null;
 
-  return (
+  return createPortal(
     <div
       className="fixed inset-0 z-[100] flex animate-fade-in items-center justify-center bg-black/90 p-4 backdrop-blur-sm"
       onClick={editing ? undefined : onClose}
@@ -383,39 +391,47 @@ function Lightbox({ attachments, messageAttachments, actions, initialIndex, onCl
       <div className="absolute right-4 top-4 z-10 flex gap-2">
         {!editing && actions !== undefined && att.id && (
           <>
-            <button
-              className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20 active:scale-95"
-              onClick={startEdit}
-              title={currentDescription ? "Edit description" : "Add description"}
-            >
-              <Icons.edit className="h-4 w-4" />
-            </button>
+            <CustomTooltip content={currentDescription ? t("attachment_edit_description") : t("attachment_add_description")}>
+              <button
+                className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20 active:scale-95"
+                onClick={startEdit}
+                aria-label={currentDescription ? t("attachment_edit_description") : t("attachment_add_description")}
+              >
+                <Icons.edit className="h-4 w-4" />
+              </button>
+            </CustomTooltip>
             {att.type === "image" && (
               regenerating ? (
-                <button
-                  className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full bg-danger/80 text-on-danger transition-colors hover:bg-danger active:scale-95"
-                  onClick={cancelRegenerate}
-                  title={t("cancel_regenerate_title")}
-                >
-                  <Icons.Close className="h-4 w-4" />
-                </button>
+                <CustomTooltip content={t("cancel_regenerate_title")}>
+                  <button
+                    className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full bg-danger/80 text-on-danger transition-colors hover:bg-danger active:scale-95"
+                    onClick={cancelRegenerate}
+                    aria-label={t("cancel_regenerate_title")}
+                  >
+                    <Icons.Close className="h-4 w-4" />
+                  </button>
+                </CustomTooltip>
               ) : (
-                <button
-                  className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20 active:scale-95"
-                  onClick={regenerateDescription}
-                  title={t("regenerate_description_title")}
-                >
-                  <Icons.regen />
-                </button>
+                <CustomTooltip content={t("regenerate_description_title")}>
+                  <button
+                    className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20 active:scale-95"
+                    onClick={regenerateDescription}
+                    aria-label={t("regenerate_description_title")}
+                  >
+                    <Icons.regen />
+                  </button>
+                </CustomTooltip>
               )
             )}
-            <button
-              className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-danger active:scale-95"
-              onClick={(event) => { event.stopPropagation(); setConfirmDeleteOpen(true); }}
-              title={t("delete_attachment_title")}
-            >
-              <Icons.del className="h-4 w-4" />
-            </button>
+            <CustomTooltip content={t("delete_attachment_title")}>
+              <button
+                className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-danger active:scale-95"
+                onClick={(event) => { event.stopPropagation(); setConfirmDeleteOpen(true); }}
+                aria-label={t("delete_attachment_title")}
+              >
+                <Icons.del className="h-4 w-4" />
+              </button>
+            </CustomTooltip>
           </>
         )}
         <button
@@ -450,7 +466,12 @@ function Lightbox({ attachments, messageAttachments, actions, initialIndex, onCl
       )}
 
       {/* Image + description */}
-      <div className="flex max-h-full w-full max-w-2xl flex-col items-center gap-3 overflow-y-auto p-2" onClick={(e) => e.stopPropagation()}>
+      <ScrollArea
+        scrollbarSize="thin"
+        className="max-h-full w-full max-w-2xl"
+        contentClassName="flex flex-col items-center gap-3 p-2"
+        onClick={(e) => e.stopPropagation()}
+      >
         {att.type === "image" && (
           <img
             src={`${getGatewayBaseUrl()}/api/assets/${att.assetId}`}
@@ -516,7 +537,7 @@ function Lightbox({ attachments, messageAttachments, actions, initialIndex, onCl
         {att.name && (
           <span className="text-[calc(var(--ui-fs)-2px)] leading-4 text-white/40">{att.name}</span>
         )}
-      </div>
+      </ScrollArea>
 
       {confirmDeleteOpen && (
         <DestructiveConfirmModal
@@ -527,6 +548,7 @@ function Lightbox({ attachments, messageAttachments, actions, initialIndex, onCl
           onCancel={() => setConfirmDeleteOpen(false)}
         />
       )}
-    </div>
+    </div>,
+    portalContainer,
   );
 }

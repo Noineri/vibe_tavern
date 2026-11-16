@@ -13,7 +13,11 @@ import ru from "../../../i18n/locales/ru.json";
 
 useDomEnv();
 
-const { act, fireEvent, render, waitFor } = await import("@testing-library/react");
+const { act, fireEvent, render: rtlRender, waitFor } = await import("@testing-library/react");
+const { TooltipProvider } = await import("../Tooltip.js");
+function render(ui: React.ReactNode) {
+  return rtlRender(ui, { wrapper: ({ children }) => <TooltipProvider delayDuration={0}>{children}</TooltipProvider> });
+}
 const { RecordProposalFallbackCard } = await import("./RecordProposalFallbackCard.js");
 function proposal(over: Partial<RecordProposal>): RecordProposal {
   return {
@@ -59,11 +63,13 @@ describe("RecordProposalFallbackCard (AS-5)", () => {
     );
   });
 
-  it("Accept is disabled with the unsupported-type hint; pending status shows", () => {
-    const { getByTestId } = render(<RecordProposalFallbackCard proposal={proposal({})} threadId="thread-1" />);
+  it("Accept is disabled with the unsupported-type hint; pending status shows", async () => {
+    const { getByTestId, findByRole } = render(<RecordProposalFallbackCard proposal={proposal({})} threadId="thread-1" />);
     const accept = getByTestId("record-proposal-fallback-accept");
     expect(accept.getAttribute("disabled")).not.toBeNull();
-    expect(accept.getAttribute("title")).toBe("agent.record_proposal.hint");
+    expect(accept.parentElement!.getAttribute("tabindex")).toBe("-1");
+    fireEvent.pointerMove(accept.parentElement!, { pointerType: "mouse" });
+    expect((await findByRole("tooltip")).textContent).toBe("agent.record_proposal.hint");
     expect(getByTestId("record-proposal-fallback-hint").textContent).toBe(
       "agent.record_proposal.hint",
     );

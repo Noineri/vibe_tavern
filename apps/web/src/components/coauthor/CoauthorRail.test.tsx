@@ -44,7 +44,7 @@ import { wireCharacter, wireUiSettings } from "../../../test/wire-fixtures.js";
 import { formatRelativeTime } from "../layout/sidebar-utils.js";
 
 useDomEnv();
-const { act, fireEvent, render, within } = await import("@testing-library/react");
+const { act, fireEvent, render: rtlRender, within } = await import("@testing-library/react");
 const { createElement } = await import("react");
 
 installI18nContextSeam({
@@ -54,14 +54,11 @@ installI18nContextSeam({
   },
 });
 
-// Radix Tooltip (ListSortToggle and friends inside the drawer) needs a
-// TooltipProvider ancestor the isolated render lacks — passthrough stub,
-// same pattern as CoauthorTopBar.test.tsx.
-const realTooltip = await import("../shared/Tooltip.js");
-mock.module("../shared/Tooltip.js", () => ({
-  ...realTooltip,
-  CustomTooltip: ({ children }: { children: React.ReactNode }) => children,
-}));
+// The real tooltip provider exercises the rail hints without replacing the triggers.
+const { TooltipProvider } = await import("../shared/Tooltip.js");
+function render(ui: React.ReactNode, options?: Parameters<typeof rtlRender>[1]) {
+  return rtlRender(ui, { wrapper: TooltipProvider, ...options });
+}
 
 const renameChatSpy = mock(async (_chatId: ChatId, _title: string): Promise<void> => {});
 const switchChatSpy = mock(async (_chatId: ChatId): Promise<void> => {});
@@ -121,10 +118,39 @@ describe("CoauthorRail — plug routes to the co-author provider modal (E3)", ()
   beforeEach(resetModals);
 
   it("collapsed strip: Ico plug opens the co-author modal, not the RP one", () => {
-    const { getByTitle } = render(createElement(CoauthorRail));
-    fireEvent.click(getByTitle("provider_settings_tooltip"));
+    const view = render(createElement(CoauthorRail));
+    const plug = view.container.querySelector<HTMLElement>('div[aria-label="provider_settings_tooltip"]');
+    if (!plug) throw new Error("Missing collapsed provider control");
+    fireEvent.click(plug);
     expect(useModalStore.getState().isCoauthorProviderModalOpen).toBe(true);
     expect(useModalStore.getState().isProviderModalOpen).toBe(false);
+  });
+
+  it("collapsed rail icons retain named div triggers and their themed hints", async () => {
+    for (const name of ["provider_settings_tooltip", "create_manual", "import_char_short"]) {
+      const view = render(createElement(CoauthorRail));
+      const trigger = view.container.querySelector<HTMLElement>(`div[aria-label="${name}"]`);
+      if (!trigger) throw new Error(`Missing collapsed control: ${name}`);
+      expect(trigger.className).toContain("h-10");
+      expect(trigger.hasAttribute("tabindex")).toBe(false);
+      fireEvent.pointerMove(trigger, { pointerType: "mouse" });
+      expect((await view.findByRole("tooltip")).textContent).toBe(name);
+      view.unmount();
+    }
+  });
+
+  it("collapsed create and import controls retain their actions", () => {
+    useModalStore.setState({ isCreateCharacterModalOpen: false });
+    openCharacterPicker.mockClear();
+    const view = render(createElement(CoauthorRail));
+    const create = view.container.querySelector<HTMLElement>('div[aria-label="create_manual"]');
+    const importControl = view.container.querySelector<HTMLElement>('div[aria-label="import_char_short"]');
+    if (!create || !importControl) throw new Error("Missing collapsed create/import controls");
+    fireEvent.click(create);
+    expect(useModalStore.getState().isCreateCharacterModalOpen).toBe(true);
+    fireEvent.click(importControl);
+    expect(openCharacterPicker).toHaveBeenCalledTimes(1);
+    useModalStore.setState({ isCreateCharacterModalOpen: false });
   });
 
   it("expanded drawer: NavRow plug opens the co-author modal, not the RP one", async () => {
@@ -136,8 +162,7 @@ describe("CoauthorRail — plug routes to the co-author provider modal (E3)", ()
       useNavigationStore.setState({ railForceOpen: (useNavigationStore.getState().railForceOpen ?? 0) + 1 });
     });
     // The drawer popup renders the NavRow cluster (portalled); the NavRow's
-    // label is a text node (the collapsed-strip Ico carries a title ATTRIBUTE,
-    // so a text query is unambiguous for the drawer row).
+    // label is a text node; collapsed-strip Ico exposes its hint in a tooltip.
     const label = await findByText("provider_settings_tooltip");
     const row = label.closest("div.cursor-pointer") as HTMLElement | null;
     expect(row).not.toBeNull();
@@ -555,11 +580,16 @@ describe("CoauthorRail drawer — the actions reachable before the drill-in", ()
     expect(useCharacterStore.getState().confirmDestroy?.title).toBe("sidebar_delete_chat");
   });
 
-  it("the tablet sheet (collapsed-strip avatar tap) lists the character's Co-Author chats; a chat switches, «+» creates a Co-Author chat", () => {
+  it("the tablet sheet (collapsed-strip avatar tap) lists the character's Co-Author chats; a chat switches, «+» creates a Co-Author chat", async () => {
     seedStores();
     const view = render(createElement(CoauthorRail));
-    const avatar = view.baseElement.querySelector<HTMLElement>('div[title="Aria"]');
-    if (!avatar) throw new Error("no collapsed-strip avatar for Aria");
+    const avatar = view.container.querySelector<HTMLElement>('div[aria-label="Aria"]');
+    if (!avatar) throw new Error("Missing collapsed avatar");
+    expect(avatar.className).toContain("h-10 w-10");
+    expect(avatar.hasAttribute("tabindex")).toBe(false);
+    fireEvent.pointerMove(avatar, { pointerType: "mouse" });
+    expect((await view.findByRole("tooltip")).textContent).toBe("Aria");
+    fireEvent.pointerLeave(avatar);
     fireEvent.click(avatar);
     const sheet = view.baseElement.querySelector<HTMLElement>(".bs-popup");
     if (!sheet) throw new Error("the tablet chats sheet is not mounted");

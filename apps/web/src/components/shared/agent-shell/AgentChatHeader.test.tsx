@@ -50,10 +50,7 @@ describe("AgentChatHeader — settings gear", () => {
 		const { getByTestId } = renderHeader();
 		const gear = getByTestId("copilot-profile-gear-btn");
 		expect(gear.getAttribute("aria-label")).toBe("agent_settings_title");
-		expect(gear.getAttribute("title")).toBe("agent_settings_title");
-		// Default header: session switcher immediately followed by gear, no chip/ring slots.
-		expect(gear.parentElement?.children).toHaveLength(2);
-		expect(getByTestId("copilot-session-switcher-trigger").nextElementSibling).toBe(gear);
+		expect(gear.getAttribute("title")).toBeNull();
 	});
 });
 

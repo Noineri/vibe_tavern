@@ -19,6 +19,7 @@
  * successful retry the row leaves the failed set and the block drops the row
  * (often the whole block) on the next authoritative render.
  */
+import { OverflowTooltip } from "../shared/OverflowTooltip.js";
 import { useState, type ReactNode } from "react";
 import { EXPERIENCE_EFFECT_STATUS } from "@vibe-tavern/domain";
 import type { ExperienceEffectRow } from "../../api/types.js";
@@ -91,10 +92,9 @@ export function ExperienceEffectDiagnostics(props: ExperienceEffectDiagnosticsPr
             {t(STATUS_LABEL_KEY[effect.status] ?? "experience_effect_status_unknown")}
           </span>
           {effect.error && (
-            <span className="min-w-0 flex-1 truncate text-t3" data-testid="experience-effect-error" title={effect.error}>
-              <span className="text-t4">{t("experience_effect_error_label")} </span>
-              {effect.error}
-            </span>
+            <OverflowTooltip asSpan className="min-w-0 flex-1 text-t3" text={effect.error}>
+              <span data-testid="experience-effect-error"><span className="text-t4">{t("experience_effect_error_label")} </span>{effect.error}</span>
+            </OverflowTooltip>
           )}
           <button
             type="button"

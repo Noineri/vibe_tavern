@@ -44,13 +44,15 @@ mock.module("../../stores/index.js", () => ({
 
 let MediaMenu: typeof import("./MediaMenu.js").MediaMenu;
 let FloatingGalleryViewers: typeof import("../build/editors/FloatingGalleryViewers.js").FloatingGalleryViewers;
-let render: typeof import("@testing-library/react").render;
+const { render: renderBase } = await import("@testing-library/react");
+const { TooltipProvider } = await import("../shared/Tooltip.js");
+const render = (ui: import("react").ReactElement) => renderBase(ui, { wrapper: ({ children }) => <TooltipProvider delayDuration={0}>{children}</TooltipProvider> });
 let fireEvent: typeof import("@testing-library/react").fireEvent;
 let useGalleryStore: typeof import("../../stores/gallery-store.js").useGalleryStore;
 let useFloatingGalleryStore: typeof import("../../stores/floating-gallery-store.js").useFloatingGalleryStore;
 
 beforeAll(async () => {
-  ({ render, fireEvent } = await import("@testing-library/react"));
+  ({ fireEvent } = await import("@testing-library/react"));
   ({ MediaMenu } = await import("./MediaMenu.js"));
   ({ FloatingGalleryViewers } = await import("../build/editors/FloatingGalleryViewers.js"));
   ({ useGalleryStore } = await import("../../stores/gallery-store.js"));
@@ -119,6 +121,14 @@ describe("MediaMenu floating viewer across a character switch", () => {
     expect(kept.getAttribute("data-src")).toContain("characters/char-A/assets/row-a1");
     expect(kept.getAttribute("data-src")).not.toContain("char-B");
     expect(kept.getAttribute("data-alt")).toBe("A shot");
+  });
+
+  it("shows the send hint while retaining its accessible name", async () => {
+    const view = render(<MediaMenu characterId="char-A" characterName="A" />);
+    fireEvent.click(view.getByLabelText("media_button"));
+    const send = view.getAllByLabelText("media_send_to_chat")[0]!;
+    fireEvent.pointerMove(send, { pointerType: "mouse" });
+    expect((await view.findByRole("tooltip")).textContent).toBe("media_send_to_chat");
   });
 
   it("opening the same image twice keeps one window", () => {

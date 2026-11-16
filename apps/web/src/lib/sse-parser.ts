@@ -34,6 +34,7 @@ export interface ParseSSEStreamOptions {
    *  fails the stream: the decision was accepted; the consumer decides the
    *  surface (the established generation-failure toast). */
   onSwipeRunOutcome?: (info: { toolCallId: string; outcome: DirectorSwipeRunOutcome }) => void;
+  onFinish?: () => void;
   /** Server-owned chat Stop settles only after producer exhaustion/EOF. */
   waitForStreamEnd?: boolean;
 }
@@ -227,6 +228,7 @@ export async function parseSSEStream(opts: ParseSSEStreamOptions): Promise<{
       } else {
         // Default text-delta (no `event:` field) or any unrecognised event
         // (including `finish`).
+        if (ev.event === "finish") opts.onFinish?.();
         if (parsed.delta !== undefined) opts.onChunk(parsed.delta as string);
         if (parsed.finishReason) finishReason = parsed.finishReason;
         if (parsed.usage) usage = parsed.usage;

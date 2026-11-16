@@ -1,3 +1,6 @@
+// fork #1 of AvatarPanel (../../settings/popovers/AvatarPanel.tsx)
+// Correspondence: DesktopGalleryPanel / MobileLightbox mirror the avatar panel's desktop / mobile paths.
+// Deviations: gallery asset adapter and shared src viewer, larger fit dimensions, frameless styling, themed frame and mobile-close hints.
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useKeyDown } from "../../../hooks/use-key-down.js";
 import { Icons } from "../../shared/icons.js";
@@ -199,6 +202,7 @@ function DesktopGalleryPanel({
   };
 
   return (
+    <CustomTooltip content={t("drag_scroll_zoom")}>
     <div
       ref={(el) => { frameRef.current = el; wheelRef.current = el; }}
       className={[
@@ -215,7 +219,6 @@ function DesktopGalleryPanel({
       }}
       onMouseDown={onMouseDown}
       onDoubleClick={toggleFit}
-      title={t("drag_scroll_zoom")}
     >
       <img
         src={src}
@@ -231,17 +234,18 @@ function DesktopGalleryPanel({
       />
 
       <CustomTooltip content={t("close")}>
-        <button type="button"
-          aria-label={t("close")}
-          className="absolute right-2 top-2 flex h-9 w-9 cursor-pointer items-center justify-center rounded-full bg-black/55 text-white opacity-0 shadow transition-opacity duration-150 hover:bg-black/75 group-hover:opacity-100 [&_svg]:h-4 [&_svg]:w-4"
-          style={closeBtnStyle}
-          onMouseDown={(event) => event.stopPropagation()}
-          onClick={onClose}
-        >
-          <Icons.close />
-        </button>
+          <button type="button"
+            aria-label={t("close")}
+            className="absolute right-2 top-2 flex h-9 w-9 cursor-pointer items-center justify-center rounded-full bg-black/55 text-white opacity-0 shadow transition-opacity duration-150 hover:bg-black/75 group-hover:opacity-100 [&_svg]:h-4 [&_svg]:w-4"
+            style={closeBtnStyle}
+            onMouseDown={(event) => event.stopPropagation()}
+            onClick={onClose}
+          >
+            <Icons.close />
+          </button>
       </CustomTooltip>
     </div>
+    </CustomTooltip>
   );
 }
 
@@ -273,13 +277,15 @@ function MobileLightbox({
       onTouchEnd={touchHandlers.onTouchEnd}
       onTouchCancel={touchHandlers.onTouchCancel}
     >
-      <button type="button"
-        className="absolute right-3 top-3 z-10 flex h-11 w-11 cursor-pointer items-center justify-center rounded-full bg-black/55 text-white active:bg-black/75"
-        onClick={(e) => { e.stopPropagation(); onClose(); }}
-        title={t("close")}
-      >
-        <Icons.close />
-      </button>
+      <CustomTooltip content={t("close")}>
+        <button type="button"
+          className="absolute right-3 top-3 z-10 flex h-11 w-11 cursor-pointer items-center justify-center rounded-full bg-black/55 text-white active:bg-black/75"
+          onClick={(e) => { e.stopPropagation(); onClose(); }}
+          aria-label={t("close")}
+        >
+          <Icons.close />
+        </button>
+      </CustomTooltip>
       <img
         ref={imageRef}
         src={src}

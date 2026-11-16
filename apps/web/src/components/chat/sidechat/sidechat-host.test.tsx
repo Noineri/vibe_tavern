@@ -98,6 +98,11 @@ interface RouterState {
   newSession: ExperienceCopilotThreadWire;
   /** SC-23d: the pinned-context links served by GET/PATCH …/context-links. */
   contextLinks: ExperienceCopilotContextLink[];
+  /** Park writes at the fetch boundary to reproduce pin/send ordering. */
+  contextLinkWriteGates?: Promise<void>[];
+  streamContextLinks?: ExperienceCopilotContextLink[][];
+  streamBodies?: Record<string, unknown>[];
+  streamFailure?: "sse" | "transport";
 }
 // A STABLE object the harness reads per-request — beforeEach mutates FIELDS,
 // never reassigns (the harness captures the reference at build time).
@@ -127,8 +132,31 @@ const fetchRouter = mock(
       }
       if (method === "PATCH" && /\/api\/experience-copilot\/[^/]+\/context-links$/.test(path)) {
         const body = JSON.parse(String(init?.body ?? "{}")) as { links?: ExperienceCopilotContextLink[] };
+        // SC-23d: park writes at the fetch boundary to reproduce pin/send
+        // ordering (dev-side write gates).
+        const gate = router.contextLinkWriteGates?.shift();
+        if (gate) return gate.then(() => {
+          router.contextLinks = body.links ?? [];
+          return jsonResponse(router.contextLinks);
+        });
         router.contextLinks = body.links ?? [];
         return jsonResponse(router.contextLinks);
+      }
+      // The answer stream (SC-23d + DMT-24b-era capture hooks): snapshot the
+      // SERVER-side links at POST time, record the request body (the client's
+      // promptAttachments ride it), and honor the streamFailure probes.
+      if (method === "POST" && /\/api\/experience-copilot\/[^/]+\/stream$/.test(path)) {
+        router.streamContextLinks?.push([...router.contextLinks]);
+        const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+        router.streamBodies?.push(body);
+        if (router.streamFailure === "transport") return Promise.reject(new Error("transport unavailable"));
+        if (router.streamFailure === "sse") {
+          router.messages.push({ id: "stored-user", threadId: "sidechat-thread-1", role: "user", content: "Discuss.", toolCallsJson: null, toolCallId: null, reasoning: null, reasoningDurationMs: null, createdAt: "2026-01-01T00:00:00Z", promptAttachments: [{ presetId: "pp1", displayName: "Stored RP", promptText: "<rp_prompt>saved</rp_prompt>" }] });
+          return Promise.resolve(new Response('event: error\ndata: {"message":"failed","category":"server_error"}\n\n', { headers: { "Content-Type": "text/event-stream" } }));
+        }
+        // dev-exact success frame: the named `event: finish` frame drives the
+        // client's onFinish cleanup path (bare `data:` lines do not).
+        return Promise.resolve(new Response('event: finish\ndata: {"finishReason":"stop"}\n\n', { headers: { "Content-Type": "text/event-stream" } }));
       }
       return null; // fall through to the harness routes
     },
@@ -706,8 +734,8 @@ function otherTransport(): AgentHostTransport {
 }
 
 describe("sidechat-host — prompt preset pins (SC-23d)", () => {
-  function renderSidechat() {
-    router.activeThread = chatThread({ id: "sidechat-thread-1" });
+  function renderSidechat(links: ExperienceCopilotContextLink[] = []) {
+    router.activeThread = { ...chatThread({ id: "sidechat-thread-1" }), contextLinks: links };
     return render(
       withIsolatedI18n(<AgentShell kind={SIDECHAT_AGENT_KIND} owner={CHAT_OWNER} isMobile={false} />),
     );
@@ -815,6 +843,30 @@ describe("sidechat-host — prompt preset pins (SC-23d)", () => {
     );
   });
 
+  it("reloads pending links and renders confirmed snapshots without resurrecting consumed chips", async () => {
+    seedStores({}, [presetFixture("pp1", "Deep RP")]);
+    const first = renderSidechat();
+    await flushSessionLoad();
+    const ta = openMention(first.getByTestId, "@Deep");
+    await waitFor(() => expect(mentionOptions()).toHaveLength(1));
+    fireEvent.keyDown(ta, { key: "Enter" });
+    await waitFor(() => expect(router.contextLinks).toEqual([{ targetType: "prompt_preset", targetId: "pp1" }]));
+    first.unmount();
+
+    const pending = renderSidechat(router.contextLinks);
+    await waitFor(() => expect(pending.getByTestId("copilot-context-pill-prompt_preset-pp1")).toBeTruthy());
+    pending.unmount();
+
+    // The server has consumed the pending link and returned the persisted message.
+    router.contextLinks = [];
+    router.messages = [{ id: "stored-user", threadId: "sidechat-thread-1", role: "user", content: "Discuss.", toolCallsJson: null, toolCallId: null, reasoning: null, reasoningDurationMs: null, createdAt: "2026-01-01T00:00:00Z", promptAttachments: [{ presetId: "pp1", displayName: "Stored RP", promptText: "<rp_prompt>saved</rp_prompt>" }] }];
+    const confirmed = renderSidechat(router.contextLinks);
+    await waitFor(() => expect(confirmed.getByText("Stored RP")).toBeTruthy());
+    expect(confirmed.queryByTestId("copilot-context-pill-prompt_preset-pp1")).toBeNull();
+    fireEvent.click(confirmed.getByRole("button", { name: /prompt_attachment_view/ }));
+    await waitFor(() => expect(confirmed.getByTestId("sent-file-summary-scroll").textContent).toBe("<rp_prompt>saved</rp_prompt>"));
+  });
+
   it("unpinning a preset PATCHes the filtered set and removes its chip", async () => {
     seedStores({}, [presetFixture("pp1", "Deep RP")]);
     router.activeThread = {
@@ -836,4 +888,115 @@ describe("sidechat-host — prompt preset pins (SC-23d)", () => {
     expect(patchBodies(pattern)[0]).toEqual({ links: [] });
     await waitFor(() => expect(queryByTestId("copilot-context-pill-prompt_preset-pp1")).toBeNull());
   });
+
+  it("sends the preset identity and clears it on finish even while its PATCH is parked", async () => {
+    seedStores({}, [presetFixture("pp1", "Deep RP")]);
+    let releaseWrite!: () => void;
+    router.contextLinkWriteGates = [new Promise<void>((resolve) => { releaseWrite = resolve; })];
+    router.streamContextLinks = [];
+    router.streamBodies = [];
+    const { getByTestId, queryByTestId } = renderSidechat();
+    await flushSessionLoad();
+
+    try {
+      const ta = openMention(getByTestId, "@Deep");
+      await waitFor(() => expect(mentionOptions()).toHaveLength(1));
+      fireEvent.keyDown(ta, { key: "Enter" });
+      await waitFor(() => expect(getByTestId("copilot-context-pill-prompt_preset-pp1")).toBeTruthy());
+      await waitFor(() => expect(patchBodies(/\/context-links$/)).toHaveLength(1));
+
+      fireEvent.change(ta, { target: { value: "Discuss the attached preset." } });
+      fireEvent.click(getByTestId("copilot-send-btn"));
+      await waitFor(() => expect(router.streamContextLinks).toHaveLength(1));
+      // The real shell sent while the server still had NO pinned preset.
+      expect(router.streamContextLinks).toEqual([[]]);
+      expect(router.contextLinks).toEqual([]);
+      expect(router.streamBodies?.[0]?.promptAttachments).toEqual([{ presetId: "pp1" }]);
+      await waitFor(() => expect(queryByTestId("copilot-context-pill-prompt_preset-pp1")).toBeNull());
+    } finally {
+      await act(async () => { releaseWrite(); });
+    }
+    await waitFor(() => expect(router.contextLinks).toEqual([{ targetType: "prompt_preset", targetId: "pp1" }]));
+  });
+
+  it("sends both visible identities despite out-of-order full replacements", async () => {
+    seedStores({}, [presetFixture("pp1", "Deep RP"), presetFixture("pp2", "Other RP")]);
+    let releaseFirstWrite!: () => void;
+    router.contextLinkWriteGates = [new Promise<void>((resolve) => { releaseFirstWrite = resolve; })];
+    router.streamBodies = [];
+    const { getByTestId, queryByTestId } = renderSidechat();
+    await flushSessionLoad();
+
+    try {
+      const first = openMention(getByTestId, "@Deep");
+      await waitFor(() => expect(mentionOptions()).toHaveLength(1));
+      fireEvent.keyDown(first, { key: "Enter" });
+      await waitFor(() => expect(patchBodies(/\/context-links$/)).toHaveLength(1));
+
+      const second = openMention(getByTestId, "@Other");
+      await waitFor(() => expect(mentionOptions()).toHaveLength(1));
+      fireEvent.keyDown(second, { key: "Enter" });
+      await waitFor(() => expect(router.contextLinks).toHaveLength(2));
+    } finally {
+      await act(async () => { releaseFirstWrite(); });
+    }
+
+    await waitFor(() => expect(router.contextLinks).toEqual([{ targetType: "prompt_preset", targetId: "pp1" }]));
+    expect(getByTestId("copilot-context-pill-prompt_preset-pp1")).toBeTruthy();
+    expect(getByTestId("copilot-context-pill-prompt_preset-pp2")).toBeTruthy();
+    const ta = getByTestId("copilot-chat-input");
+    fireEvent.change(ta, { target: { value: "Discuss both." } });
+    fireEvent.click(getByTestId("copilot-send-btn"));
+    await waitFor(() => expect(router.streamBodies).toHaveLength(1));
+    expect(router.streamBodies?.[0]?.promptAttachments).toEqual([{ presetId: "pp1" }, { presetId: "pp2" }]);
+    await waitFor(() => expect(queryByTestId("copilot-context-pill-prompt_preset-pp2")).toBeNull());
+  });
+
+  it("clears only submitted presets and keeps character pins", async () => {
+    seedStores({}, [presetFixture("pp1", "Deep RP")]);
+    router.streamBodies = [];
+    const { getByTestId, queryByTestId } = renderSidechat([
+      { targetType: "prompt_preset", targetId: "pp1" },
+      { targetType: "character", targetId: "character-1" },
+    ]);
+    await flushSessionLoad();
+    await waitFor(() => expect(getByTestId("copilot-context-pill-prompt_preset-pp1")).toBeTruthy());
+    fireEvent.change(getByTestId("copilot-chat-input"), { target: { value: "Discuss." } });
+    fireEvent.click(getByTestId("copilot-send-btn"));
+    await waitFor(() => expect(queryByTestId("copilot-context-pill-prompt_preset-pp1")).toBeNull());
+    expect(getByTestId("copilot-context-pill-character-character-1")).toBeTruthy();
+  });
+
+  for (const failure of ["sse", "transport"] as const) {
+    it(`keeps the pending preset on ${failure} failure`, async () => {
+      seedStores({}, [presetFixture("pp1", "Deep RP")]);
+      router.streamFailure = failure;
+      router.streamBodies = [];
+      const { getByTestId } = renderSidechat();
+      await flushSessionLoad();
+      const ta = openMention(getByTestId, "@Deep");
+      await waitFor(() => expect(mentionOptions()).toHaveLength(1));
+      fireEvent.keyDown(ta, { key: "Enter" });
+      await waitFor(() => expect(getByTestId("copilot-context-pill-prompt_preset-pp1")).toBeTruthy());
+      fireEvent.change(ta, { target: { value: "Discuss." } });
+      fireEvent.click(getByTestId("copilot-send-btn"));
+      await waitFor(() => expect(router.streamBodies).toHaveLength(1));
+      await flushSessionLoad();
+      expect(router.streamBodies?.[0]?.promptAttachments).toEqual([{ presetId: "pp1" }]);
+      expect(getByTestId("copilot-context-pill-prompt_preset-pp1")).toBeTruthy();
+      if (failure === "sse") {
+        await waitFor(() => expect(getByTestId("copilot-error-card-retry")).toBeTruthy());
+        expect(document.body.textContent).toContain("Stored RP");
+        router.streamFailure = undefined;
+        fireEvent.click(getByTestId("copilot-error-card-retry"));
+        await waitFor(() => expect(router.streamBodies).toHaveLength(2));
+        expect(router.streamBodies?.[1]?.regenerate).toBe(true);
+        expect(router.messages).toHaveLength(1);
+        expect(router.messages[0]?.promptAttachments).toHaveLength(1);
+        expect(getByTestId("copilot-context-pill-prompt_preset-pp1")).toBeTruthy();
+      }
+      // A blind resend after a post-write drop can duplicate the whole message,
+      // a generic transport race shared with content-only sends.
+    });
+  }
 });

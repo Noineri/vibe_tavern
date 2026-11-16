@@ -25,12 +25,16 @@ import { groupHunks } from "../../../lib/coauthor-hunk-merge.js";
 
 useDomEnv();
 
-let render: typeof import("@testing-library/react").render;
+let rtlRender: typeof import("@testing-library/react").render;
+const { TooltipProvider } = await import("../Tooltip.js");
+function render(ui: React.ReactNode) {
+  return rtlRender(ui, { wrapper: ({ children }) => <TooltipProvider delayDuration={0}>{children}</TooltipProvider> });
+}
 let fireEvent: typeof import("@testing-library/react").fireEvent;
 let act: typeof import("@testing-library/react").act;
 
 beforeAll(async () => {
-  ({ render, fireEvent, act } = await import("@testing-library/react"));
+  ({ render: rtlRender, fireEvent, act } = await import("@testing-library/react"));
 });
 
 const BASE = "a\nb\nc";

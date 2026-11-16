@@ -27,23 +27,21 @@ import { buildContextMetrics, type AgentTokenAccounting } from "./agent-context-
 import type { ProviderFetch } from "../providers/provider-fetch-factory.js";
 import { resolveProviderFetchForProfile } from "../providers/provider-fetch-factory.js";
 import { createMappedStream, mapFinish } from "../../infrastructure/ai/stream-helpers.js";
-import { asToolProviderOptions } from "../../infrastructure/ai/tool-call-provider-options.js";
 import type { ProviderStreamChunk } from "../../infrastructure/ai/provider-execution-types.js";
 import { classifyProviderError } from "../../infrastructure/ai/provider-error-classifier.js";
 import { extractProviderErrorMessage } from "../../infrastructure/ai/provider-error-message.js";
 import { logSendDebug } from "../../shared/send-debug-log.js";
+import { createAgentTransportTrace } from "../../shared/agent-transport-trace.js";
 import { notFound, validation } from "../../shared/errors.js";
-import { promptVisibleAttachments, type Attachment, type AttachmentPatch } from "@vibe-tavern/domain";
+import { promptVisibleAttachments, type Attachment, type AttachmentPatch, type PromptAttachment } from "@vibe-tavern/domain";
 import { prepareAgentModelMessages, type AgentVisionAssets } from "./agent-attachments.js";
 import { resolveTurnOwnModel, type AgentOwnModelBinding } from "./agent-own-model.js";
 import { resolveDigestBoundary, type AgentHistoryMessage } from "./agent-prompt.js";
+import { storeMessagesToHistory } from "./agent-history-conversion.js";
+export { storeMessagesToHistory } from "./agent-history-conversion.js";
 import {
   applyAgentTurnAnswer,
   DEFAULT_WAIT_STOP_CONDITIONS,
-  renderWaitToolOutputWireText,
-  stringifyObjectWireText,
-  type AgentPersistedToolCall,
-  type AgentPersistedToolResult,
   type AgentTurnAnswer,
   type AgentPermissionContinuation,
 } from "./agent-split-turn.js";
@@ -84,6 +82,7 @@ export interface AgentStreamStoredMessage {
   role: string;
   content: string;
   attachments?: Attachment[];
+  promptAttachments?: PromptAttachment[];
   toolCallId: string | null;
   toolCallsJson: string | null;
 }
@@ -250,6 +249,8 @@ export interface AgentStreamSeams<
   readonly assembleDebugFields?: (kindContext: CTX) => Record<string, unknown>;
   /** Load the kind's turn context, in parallel with the stored history. */
   readonly loadContext: (thread: THREAD) => Promise<CTX>;
+  /** Kind-resolved immutable snapshots for the current user row. */
+  readonly userPromptAttachments?: (context: CTX) => PromptAttachment[];
   /** Resolve the kind's agent profile (base prompt + tool toggles + budget).
    *  DR-2 (M1): resolved at the TOP of the turn (before the provider/model
    *  resolution) so its own model can take precedence — see
@@ -304,93 +305,10 @@ export interface AgentStreamSeams<
 }
 
 // ─── History conversion (store ↔ prompt ↔ SDK) ───────────────────────────────
-
-/** Convert stored agent messages into the history shape the assembly expects.
- *  Round-trips the `toModelMessages` serialization: assistant rows carry
- *  parsed `toolCalls`; tool rows carry a reconstructed `ToolResultPart`.
- *  Exported (CM-5) so the compaction service reuses the SAME conversion for its
- *  tool-pair-safe boundary walk and post-compaction token estimate. */
-export function storeMessagesToHistory<M extends AgentStreamStoredMessage>(
-  messages: readonly M[],
-): AgentHistoryMessage[] {
-  return messages.map((m): AgentHistoryMessage => {
-    if (m.role === "digest") {
-      // A compaction digest (CM-3) round-trips as a plain digest message — the
-      // assembler lifts it out of the history flow.
-      return { role: "digest", content: m.content };
-    }
-    if (m.role === "tool") {
-      // Reconstruct the ToolResultPart from the stored payload. The store row
-      // carries the serialized `{ toolName, output }` wrapper in `content` +
-      // `toolCallId`; the SDK ToolResultPart.output is a discriminated union,
-      // so the output is wrapped as a text value (the model reads it as text,
-      // same as the co-author history round-trip).
-      let toolName = "";
-      let outputText = m.content;
-      try {
-        const parsed = JSON.parse(m.content) as AgentPersistedToolResult;
-        toolName = parsed.toolName ?? "";
-        outputText = stringifyObjectWireText(parsed.output);
-        // TAG-5 + SC-23e: a WAIT tool's result carries the CONVERSATION or
-        // the user's permission decision, not telemetry — the model reads
-        // the answer / skip / never-answered note / prompt / denial through
-        // self-describing keys, never the marker JSON (the whole wire string
-        // parses to a JSON object — Struct contract for translation proxies).
-        const waitWireText = renderWaitToolOutputWireText(toolName, parsed.output);
-        if (waitWireText !== undefined) outputText = waitWireText;
-      } catch {
-        // Invalid JSON — use the raw content as the output text.
-      }
-      return {
-        role: "tool",
-        content: [
-          {
-            type: "tool-result",
-            toolCallId: m.toolCallId ?? "",
-            toolName,
-            output: { type: "text", value: outputText },
-          },
-        ],
-      };
-    }
-    const msg: Extract<AgentHistoryMessage, { role: "user" | "assistant" }> = {
-      role: m.role === "assistant" ? "assistant" : "user",
-      content: m.content,
-    };
-    if (msg.role === "user") {
-      const attachments = promptVisibleAttachments(m.attachments ?? []);
-      if (attachments.length) msg.attachments = attachments;
-    }
-    if (m.toolCallsJson) {
-      try {
-        const parsed = JSON.parse(m.toolCallsJson) as unknown;
-        if (Array.isArray(parsed)) {
-          // Narrow the stored replay metadata through the shared helper (the
-          // same one the Co-Author converter uses): a valid object passes
-          // through, anything else (absent field, primitive, array) drops to
-          // absent — never an empty object on the replayed part.
-          msg.toolCalls = parsed.map((call): ToolCallPart => {
-            const c = call as AgentPersistedToolCall;
-            const providerOptions = asToolProviderOptions(c.providerOptions);
-            return {
-              type: "tool-call",
-              toolCallId: c.toolCallId,
-              toolName: c.toolName,
-              input: c.input,
-              ...(providerOptions ? { providerOptions } : {}),
-            };
-          });
-        }
-      } catch {
-        // Invalid JSON — skip tool calls for this message.
-      }
-    }
-    return msg;
-  });
-}
-
-// (`toModelMessages` — the assembled prompt → SDK `ModelMessage[]` fold —
-// moved to the sibling `agent-model-messages.ts`, DMT-23 extraction.)
+// Both folds live in siblings: `storeMessagesToHistory` in
+// `agent-history-conversion.ts` (dev extraction; carries the prompt-attachments
+// pass-through) and `toModelMessages` in `agent-model-messages.ts` (DMT-23
+// extraction). Re-export seams above keep `agent-stream.js` importers stable.
 
 // ─── Turn persistence (TF-3) lives in the sibling `agent-turn-persist.ts` ────
 // (AP-28 extraction: the segment vocabulary + the persist walk + the reasoning
@@ -427,9 +345,24 @@ export async function* streamAgentTurn<
   seams: AgentStreamSeams<REQ, THREAD, CTX, PROFILE, ASM>,
   signal?: AbortSignal,
 ): AsyncGenerator<AgentStreamEvent> {
-  const debug = (event: string, data: Record<string, unknown>) =>
+  const debug = (event: string, data: Record<string, unknown>) => {
     logSendDebug(`${seams.logChannelPrefix}.${event}`, data);
+    trace?.record(`debug.${event}`, data);
+  };
 
+  const trace = createAgentTransportTrace({
+    threadId: request.threadId,
+    operation: request.regenerate ? "regenerate" : request.answer ? "answer" : "send",
+    content: request.content,
+  });
+  const persistStore = trace ? {
+    appendMessage: async (threadId: string, input: AgentTurnAppendInput) => {
+      const row = await deps.store.appendMessage(threadId, input);
+      trace.record("persisted.row", { threadId, input, row });
+      return row;
+    },
+  } : deps.store;
+  try {
   // ── 1. Load thread ──
   const thread = await deps.store.getById(request.threadId);
   if (!thread) {
@@ -496,6 +429,7 @@ export async function* streamAgentTurn<
   // still be awaiting in THIS thread) so a stale or foreign toolCallId can
   // never overwrite another tool's result.
   let appendedUserRow: unknown;
+  const userPromptAttachments = isAgentContentTurn(request) ? seams.userPromptAttachments?.(context) : undefined;
   if (request.answer) {
     await applyAgentTurnAnswer({
       threadId: request.threadId,
@@ -525,6 +459,7 @@ export async function* streamAgentTurn<
       role: "user",
       content: request.content ?? "",
       ...(request.attachments?.length ? { attachments: request.attachments } : {}),
+      ...(userPromptAttachments?.length ? { promptAttachments: userPromptAttachments } : {}),
     });
   } else if (request.regenerate === true) {
     // AP-9 regenerate mode: NO input row — the trimmed thread state (the
@@ -562,7 +497,7 @@ export async function* streamAgentTurn<
   // turn's input), regenerate's ends with the surviving user row.
   const visibleAttachments = promptVisibleAttachments(request.attachments ?? []);
   const history: AgentHistoryMessage[] = isAgentContentTurn(request)
-    ? [...priorHistory, { role: "user", content: request.content ?? "", ...(visibleAttachments.length ? { attachments: visibleAttachments } : {}) }]
+    ? [...priorHistory, { role: "user", content: request.content ?? "", ...(visibleAttachments.length ? { attachments: visibleAttachments } : {}), ...(userPromptAttachments?.length ? { promptAttachments: userPromptAttachments } : {}) }]
     : priorHistory;
   const assembled = await seams.assemble({
     thread,
@@ -573,6 +508,7 @@ export async function* streamAgentTurn<
     model: modelName,
   });
 
+  trace?.record("assembled", { model: modelName, providerProfileId, messages: assembled.messages, priorMessages });
   debug("prompt-assembled", {
     threadId: request.threadId,
     systemMessageLength: assembled.systemMessage.length,
@@ -591,7 +527,8 @@ export async function* streamAgentTurn<
   });
 
   // ── 9. Resolve the model + start streaming ──
-  const providerFetch = await resolveProviderFetchForProfile(effectiveProfile);
+  const baseProviderFetch = await resolveProviderFetchForProfile(effectiveProfile);
+  const providerFetch = trace ? trace.wrapFetch(baseProviderFetch) : baseProviderFetch;
   const aiModel = deps.resolveModel(effectiveProfile, modelName, providerFetch);
 
   const stream = deps.streamText ?? streamText;
@@ -602,6 +539,7 @@ export async function* streamAgentTurn<
       appendedRow: appendedUserRow, currentAttachments: request.attachments,
       resolveVisionAssets: deps.resolveVisionAssets, providerFetch, signal, convert: toModelMessages,
     });
+    trace?.record("model.messages", { model: modelName, messages: modelMessages });
     result = stream({
       model: aiModel,
       messages: modelMessages,
@@ -624,6 +562,15 @@ export async function* streamAgentTurn<
         isStepCount(seams.limits.toolLoopCeiling),
         ...(seams.waitStopConditions ?? DEFAULT_WAIT_STOP_CONDITIONS),
       ],
+      // Retry-storm guard (owner 2026-11-13): the AI SDK's DEFAULT maxRetries
+      // is 2 — a retryable upstream hiccup (429/5xx/reset) silently re-fires
+      // the ENTIRE prompt up to 3 times, and each attempt can fan out across
+      // proxy rotation accounts with identical giant bodies. That mechanical
+      // back-to-back burst is the prime suspect in the TOS ban of a fresh
+      // Antigravity account (sidechat usage 2026-11-12: the model visibly
+      // received the request twice). One attempt only — errors surface
+      // immediately and the user retries deliberately through the UI.
+      maxRetries: 0,
     });
   } catch (err) {
     // Setup error (streamText() failed before iteration began).
@@ -659,9 +606,10 @@ export async function* streamAgentTurn<
 
   try {
     for await (const chunk of mapped as AsyncIterable<ProviderStreamChunk>) {
+      trace?.record("mapped.chunk", chunk);
       if (signal?.aborted) {
         yield { event: "abort", data: JSON.stringify({ partialLength: textAccumulator.length }) };
-        await persistTurn(deps.store, request.threadId, segments, reasoningCapture, nowMs);
+        await persistTurn(persistStore, request.threadId, segments, reasoningCapture, nowMs);
         return;
       }
       // AP-28: a non-reasoning chunk closes the open reasoning burst (the
@@ -718,7 +666,7 @@ export async function* streamAgentTurn<
   } catch (err) {
     if (signal?.aborted) {
       yield { event: "abort", data: JSON.stringify({ partialLength: textAccumulator.length }) };
-      await persistTurn(deps.store, request.threadId, segments, reasoningCapture, nowMs);
+      await persistTurn(persistStore, request.threadId, segments, reasoningCapture, nowMs);
       return;
     }
     const message = extractProviderErrorMessage(err);
@@ -726,13 +674,13 @@ export async function* streamAgentTurn<
     debug("provider-error", { threadId: request.threadId, message, category });
     yield { event: "error", data: JSON.stringify({ message, category }) };
     // Still persist whatever was accumulated so far (partial turn).
-    await persistTurn(deps.store, request.threadId, segments, reasoningCapture, nowMs);
+    await persistTurn(persistStore, request.threadId, segments, reasoningCapture, nowMs);
     return;
   }
 
   if (signal?.aborted) {
     yield { event: "abort", data: JSON.stringify({ partialLength: textAccumulator.length }) };
-    await persistTurn(deps.store, request.threadId, segments, reasoningCapture, nowMs);
+    await persistTurn(persistStore, request.threadId, segments, reasoningCapture, nowMs);
     return;
   }
 
@@ -747,7 +695,7 @@ export async function* streamAgentTurn<
     finishReason = "error";
   }
 
-  await persistTurn(deps.store, request.threadId, segments, reasoningCapture, nowMs);
+  await persistTurn(persistStore, request.threadId, segments, reasoningCapture, nowMs);
 
   if (reasoningAccumulator) {
     yield { event: "reasoning-done", data: JSON.stringify({}) };
@@ -786,4 +734,11 @@ export async function* streamAgentTurn<
     event: "finish",
     data: JSON.stringify({ finishReason, usage, modelId: modelName, metrics: contextMetrics }),
   };
+  } catch (error) {
+    trace?.record("turn.error", { message: error instanceof Error ? error.message : String(error) });
+    throw error;
+  } finally {
+    trace?.record("turn.end", {});
+    await trace?.flush();
+  }
 }

@@ -10,7 +10,11 @@ import { useDomEnv } from "../../../../test/dom-env.js";
 
 useDomEnv();
 
-const { render, fireEvent } = await import("@testing-library/react");
+const { render: rtlRender, fireEvent } = await import("@testing-library/react");
+const { TooltipProvider } = await import("../Tooltip.js");
+function render(ui: React.ReactNode) {
+  return rtlRender(ui, { wrapper: ({ children }) => <TooltipProvider delayDuration={0}>{children}</TooltipProvider> });
+}
 const { AiAssistantConnectionFields } = await import("./AiAssistantConnectionFields.js");
 
 const LABELS = {
@@ -42,7 +46,7 @@ describe("AiAssistantConnectionFields mobile layout (MUI step 17)", () => {
     expect(view.getByText("model")).toBeTruthy();
   });
 
-  it("opt-in secondary-model controls resolve the chat fallback and expose the shared toggle and pin", () => {
+  it("opt-in secondary-model controls resolve the chat fallback and expose the shared toggle and pin", async () => {
     const changes: Array<[string, unknown]> = [];
     const view = render(
       <AiAssistantConnectionFields
@@ -73,7 +77,10 @@ describe("AiAssistantConnectionFields mobile layout (MUI step 17)", () => {
     expect(view.getByRole("button", { name: "Active" })).toBeTruthy();
     expect(view.getByRole("button", { name: "Chat default" })).toBeTruthy();
     fireEvent.click(view.getByRole("switch", { name: "Use chat" }));
-    fireEvent.click(view.getByTitle("Pin model"));
+    const pin = view.getByRole("button", { name: "Pin model" });
+    fireEvent.pointerMove(pin, { pointerType: "mouse" });
+    expect((await view.findByRole("tooltip")).textContent).toBe("Pin model");
+    fireEvent.click(pin);
     expect(changes).toEqual([
       ["chat", false],
       ["pin", { pinned: true, providerId: "active", modelName: "chat-default" }],

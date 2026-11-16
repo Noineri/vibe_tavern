@@ -18,6 +18,7 @@ export interface StreamOpts {
    *  (see sse-parser). The live answer path wires it; the send/regenerate/
    *  replay paths leave it unset (no toast on replay). */
   onSwipeRunOutcome?: ParseSSEStreamOptions["onSwipeRunOutcome"];
+  onFinish?: ParseSSEStreamOptions["onFinish"];
   waitForStreamEnd?: boolean;
   signal?: AbortSignal;
   onEventId?: (id: string) => boolean | void;
@@ -105,6 +106,7 @@ export async function streamChatEndpoint(
     onGenerationContext: opts.onGenerationContext,
     onUserMessageSaved: opts.onUserMessageSaved,
     onSwipeRunOutcome: opts.onSwipeRunOutcome,
+    onFinish: opts.onFinish,
     waitForStreamEnd: opts.waitForStreamEnd,
   });
 }

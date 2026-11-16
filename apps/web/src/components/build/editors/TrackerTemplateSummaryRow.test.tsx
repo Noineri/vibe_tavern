@@ -54,6 +54,11 @@ installI18nContextSeam({
 });
 
 const { TrackerTemplateSummaryRow } = await import("./TrackerTemplateSummaryRow.js");
+const { TooltipProvider } = await import("../../shared/Tooltip.js");
+
+function renderRow(element: Parameters<typeof render>[0]) {
+  return render(createElement(TooltipProvider, { delayDuration: 0, children: element }));
+}
 
 function makeTemplate({
   mode = "goals",
@@ -123,7 +128,7 @@ function makeTemplate({
 
 describe("TrackerTemplateSummaryRow — schema preview accordion + icon remove", () => {
   it("renders the summary line with the schema accordion collapsed", () => {
-    const { container, getByRole, queryByText } = render(
+    const { container, getByRole, queryByText } = renderRow(
       createElement(TrackerTemplateSummaryRow, { template: makeTemplate(), onClear: mock() }),
     );
 
@@ -137,10 +142,19 @@ describe("TrackerTemplateSummaryRow — schema preview accordion + icon remove",
     const remove = container.querySelector('button[aria-label="Remove tracker template"]');
     expect(remove).not.toBeNull();
     expect(remove!.textContent).toBe("");
+    expect(remove!.getAttribute("title")).toBeNull();
+  });
+
+  it("shows the remove hint on keyboard focus", async () => {
+    const { getByRole, findByRole } = renderRow(
+      createElement(TrackerTemplateSummaryRow, { template: makeTemplate(), onClear: mock() }),
+    );
+    fireEvent.focus(getByRole("button", { name: "Remove tracker template" }));
+    expect((await findByRole("tooltip")).textContent).toBe("Remove tracker template");
   });
 
   it("toggles the schema preview open, revealing nested keys, goals, prompts, and the long-term goal", async () => {
-    const { container, findByText, getByRole, queryByText } = render(
+    const { container, findByText, getByRole, queryByText } = renderRow(
       createElement(TrackerTemplateSummaryRow, { template: makeTemplate(), onClear: mock() }),
     );
 
@@ -171,7 +185,7 @@ describe("TrackerTemplateSummaryRow — schema preview accordion + icon remove",
   });
 
   it("omits empty prompt blocks and leaves route and scene-only previews without a long-term-goal row", async () => {
-    const route = render(
+    const route = renderRow(
       createElement(TrackerTemplateSummaryRow, {
         template: makeTemplate({ mode: "route", authoredPrompts: false }),
         onClear: mock(),
@@ -184,7 +198,7 @@ describe("TrackerTemplateSummaryRow — schema preview accordion + icon remove",
     expect(route.queryByText("Objective generation prompt")).toBeNull();
     route.unmount();
 
-    const sceneOnly = render(
+    const sceneOnly = renderRow(
       createElement(TrackerTemplateSummaryRow, {
         template: makeTemplate({ includeObjective: false, authoredPrompts: false }),
         onClear: mock(),
@@ -198,7 +212,7 @@ describe("TrackerTemplateSummaryRow — schema preview accordion + icon remove",
 
   it("icon remove opens the confirm modal; confirm calls onClear", async () => {
     const onClear = mock(() => Promise.resolve());
-    const { findByRole, findByText, getByRole, queryByText } = render(
+    const { findByRole, findByText, getByRole, queryByText } = renderRow(
       createElement(TrackerTemplateSummaryRow, { template: makeTemplate(), onClear }),
     );
 

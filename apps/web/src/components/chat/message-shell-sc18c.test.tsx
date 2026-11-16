@@ -36,12 +36,7 @@ mock.module("../../hooks/use-mobile.js", () => ({
 
 const { MessageShell } = await import("./MessageShell.js");
 const { fireEvent, render, cleanup } = await import("@testing-library/react");
-const Tooltip = await import("@radix-ui/react-tooltip");
-// @radix-ui/react-tooltip@1.4.1 exports `Provider` as a typed alias of
-// TooltipProvider (index.d.ts:97) — the real export IS the provider, so the
-// old multi-shape probe (Provider ?? TooltipProvider ?? passthrough) was dead
-// defensive code against imagined package shapes. Read the typed export.
-const TooltipProvider = Tooltip.Provider;
+const { TooltipProvider } = await import("../shared/Tooltip.js");
 
 type ShellProps = Parameters<typeof MessageShell>[0];
 
@@ -126,7 +121,7 @@ function fullAssistantProps(overrides: Partial<ShellProps> = {}): ShellProps {
 }
 
 function renderWithTooltip(ui: React.ReactElement) {
-  return render(<TooltipProvider>{ui}</TooltipProvider>);
+  return render(<TooltipProvider delayDuration={0}>{ui}</TooltipProvider>);
 }
 
 /** The mobile action grid (the only `mt-2 grid` in a text-message render). */
@@ -181,15 +176,15 @@ describe("SC-18c mobile assistant row — switcher + images + continue + regener
     expect(grid.children[0].contains(stub), "the switcher must sit in the row's first cell").toBe(true);
     expect(grid.querySelector('[data-testid="image-gen-message-trigger"]'), "images stay in the row").not.toBeNull();
     expect(grid.querySelector('[data-testid="mobile-continue-btn"]'), "continue joins the row").not.toBeNull();
-    expect(grid.querySelector('[title="regen"]'), "regenerate stays in the row").not.toBeNull();
+    expect(grid.querySelector('[aria-label="regen"]'), "regenerate stays in the row").not.toBeNull();
 
     // Gone from the row: branch, narrate, AI editor, annotate, discuss, resend.
-    expect(grid.querySelector('[title="branch"]'), "branch leaves the row").toBeNull();
+    expect(grid.querySelector('[aria-label="branch"]'), "branch leaves the row").toBeNull();
     expect(grid.querySelector('[data-testid="mobile-narrate-btn"]'), "narrate leaves the row").toBeNull();
     expect(grid.querySelector('[aria-label="message_ai_editor_tooltip"]'), "AI editor leaves the row").toBeNull();
     expect(grid.querySelector('[data-testid="mobile-annotate-btn"]'), "annotate leaves the row").toBeNull();
     expect(grid.querySelector('[data-testid="discuss-sidechat-trigger"]'), "discuss leaves the row").toBeNull();
-    expect(grid.querySelector('[title="resend"]'), "resend is a user action, not in the assistant row").toBeNull();
+    expect(grid.querySelector('[aria-label="resend"]'), "resend is a user action, not in the assistant row").toBeNull();
     cleanup();
   });
 
@@ -201,6 +196,30 @@ describe("SC-18c mobile assistant row — switcher + images + continue + regener
 
     const noContinue = renderWithTooltip(React.createElement(MessageShell, fullAssistantProps({ canContinue: false })));
     expect(wideButtons(rowGrid(noContinue.container)).length, "without continue the group shrinks to two").toBe(2);
+    cleanup();
+  });
+
+  test("the right group clears the mobile rail's edge handle lane", () => {
+    // The rail's grab handle owns the first 24px of the transcript's right
+    // edge (scroll-rail.tsx: right-0 w-6). The row sits inside px-3 (12px),
+    // so without pr-4 on the right cell the buttons' last ~12px fall under
+    // the handle and taps meant for «регенерация» start a scrub instead
+    // (owner report 2026-11-06). The budget assertion is the composition.
+    const rightCell = (view: ReturnType<typeof renderWithTooltip>): HTMLElement => {
+      const grid = rowGrid(view.container);
+      return grid.children[grid.children.length - 1] as HTMLElement;
+    };
+    const assistant = renderWithTooltip(React.createElement(MessageShell, fullAssistantProps()));
+    expect(rightCell(assistant).className, "assistant right group keeps the pr-4 lane clearance").toContain("pr-4");
+    cleanup();
+
+    const user = renderWithTooltip(React.createElement(MessageShell, makeProps({
+      role: "user",
+      isUser: true,
+      canBranch: true,
+      canResend: true,
+    })));
+    expect(rightCell(user).className, "user right group keeps the same clearance").toContain("pr-4");
     cleanup();
   });
 
@@ -312,9 +331,28 @@ describe("SC-18c user rows keep their controls", () => {
       canResend: true,
     })));
     const grid = rowGrid(view.container);
-    expect(grid.querySelector('[title="resend"]'), "resend stays a user-row action").not.toBeNull();
-    expect(grid.querySelector('[title="branch"]'), "branch stays on the user row").not.toBeNull();
+    expect(grid.querySelector('[aria-label="resend"]'), "resend stays a user-row action").not.toBeNull();
+    expect(grid.querySelector('[aria-label="branch"]'), "branch stays on the user row").not.toBeNull();
     expect(grid.querySelector('[data-testid="mobile-continue-btn"]'), "no continue on user rows").toBeNull();
     cleanup();
   });
+});
+
+test("mobile regenerate and branch keep named themed hints and actions", async () => {
+  const onRegenerate = mock();
+  const assistant = renderWithTooltip(React.createElement(MessageShell, fullAssistantProps({ actions: { ...makeProps().actions, onRegenerate } })));
+  const regen = assistant.getByRole("button", { name: "regen" });
+  fireEvent.pointerMove(regen, { pointerType: "mouse" });
+  expect((await assistant.findByRole("tooltip")).textContent).toBe("regen");
+  fireEvent.click(regen);
+  expect(onRegenerate).toHaveBeenCalledTimes(1);
+  cleanup();
+  const onBranch = mock();
+  const user = renderWithTooltip(React.createElement(MessageShell, makeProps({ role: "user", isUser: true, canBranch: true, actions: { ...makeProps().actions, onBranch } })));
+  const branch = user.getByRole("button", { name: "branch" });
+  fireEvent.pointerMove(branch, { pointerType: "mouse" });
+  expect((await user.findByRole("tooltip")).textContent).toBe("branch");
+  fireEvent.click(branch);
+  expect(onBranch).toHaveBeenCalledTimes(1);
+  cleanup();
 });

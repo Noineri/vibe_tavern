@@ -1,3 +1,4 @@
+import { OverflowTooltip } from "../../shared/OverflowTooltip.js";
 /**
  * Objective zone — INS-6.
  *
@@ -230,7 +231,12 @@ function ObjectiveZone({ chatId, messageId }: { chatId: string; messageId: strin
           <NodeGlyph status={summaryStatus} />
           <span className="shrink-0 tabular-nums text-t4">{progress}</span>
           {mode === "goals" && longTermDesc && (
-            <span className="min-w-0 truncate text-t4" title={longTermDesc}>{longTermDesc}</span>
+            <span className="min-w-0 truncate text-t4" onPointerMove={(event) => {
+              const text = event.currentTarget.firstElementChild;
+              if (text && text.scrollWidth - text.clientWidth > 1) event.stopPropagation();
+            }}>
+              <OverflowTooltip asSpan text={longTermDesc} className="block" />
+            </span>
           )}
           {mode === "goals" && longTermDesc && activeDesc && <span className="shrink-0 text-t4">›</span>}
           {activeDesc && <span className="min-w-0 flex-1 truncate">{activeDesc}</span>}

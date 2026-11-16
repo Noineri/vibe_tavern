@@ -45,6 +45,19 @@ function mount(load: typeof getAgentFeedPage) {
 const olderButton = (view: ReturnType<typeof render>) => view.getByRole("button", { name: "agent_feed_load_older" });
 
 describe("AFP-17 feed feedback", () => {
+  it("places history controls inside the scrolling transcript instead of a fixed panel", async () => {
+    const { view } = mount(async () => page());
+    await waitFor(() => expect((olderButton(view) as HTMLButtonElement).disabled).toBe(false));
+    const viewport = view.container.querySelector<HTMLElement>("[data-scroll-viewport]")!;
+    const feedback = view.getByTestId("agent-feed-feedback");
+    expect(viewport.contains(feedback)).toBe(true);
+    expect(feedback.closest("[data-message-scroller-header]")).not.toBeNull();
+    expect(feedback.classList.contains("border-b")).toBe(false);
+    expect(olderButton(view).classList.contains("bg-s3")).toBe(false);
+    const row = view.getByText("history 2").closest("[data-scroller-message-id]")!;
+    expect(feedback.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+  });
+
   it("forwards a positive decreasing inverse index through the real core when virtual rows prepend", async () => {
     const observer = spyOn(scrollerCore, "MessageScrollerCore");
     try {

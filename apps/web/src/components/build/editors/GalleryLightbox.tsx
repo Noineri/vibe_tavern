@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useKeyDown } from "../../../hooks/use-key-down.js";
+import { CustomTooltip } from "../../shared/Tooltip.js";
 import { Icons } from "../../shared/icons.js";
 import { AutoTextarea } from "../../shared/auto-textarea.js";
 import { ScrollArea } from "../../shared/scroll-area.js";
@@ -87,39 +88,47 @@ export function GalleryLightbox({ characterId, assets, index, onIndexChange, onC
       <div className="absolute right-4 top-4 z-10 flex gap-2">
         {!editing && (
           <>
-            <button
-              className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20 active:scale-95"
-              onClick={(e) => { e.stopPropagation(); startEdit(); }}
-              title={currentDescription ? t("gallery_edit_description") : t("gallery_add_description")}
-            >
-              <Icons.edit className="h-4 w-4" />
-            </button>
-            {isRegenerating ? (
-              <button
-                className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full bg-danger/80 text-on-danger transition-colors hover:bg-danger active:scale-95"
-                onClick={(e) => { e.stopPropagation(); cancelRegenerate(); }}
-                title={t("gallery_describe_regenerate")}
-              >
-                <Icons.close className="h-4 w-4" />
-              </button>
-            ) : (
+            <CustomTooltip content={currentDescription ? t("gallery_edit_description") : t("gallery_add_description")}>
               <button
                 className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20 active:scale-95"
-                onClick={(e) => { e.stopPropagation(); regenerate(); }}
-                title={t("gallery_regenerate")}
+                onClick={(e) => { e.stopPropagation(); startEdit(); }}
+                aria-label={currentDescription ? t("gallery_edit_description") : t("gallery_add_description")}
               >
-                <Icons.regen />
+                <Icons.edit className="h-4 w-4" />
               </button>
+            </CustomTooltip>
+            {isRegenerating ? (
+              <CustomTooltip content={t("gallery_describe_regenerate")}>
+                <button
+                  className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full bg-danger/80 text-on-danger transition-colors hover:bg-danger active:scale-95"
+                  onClick={(e) => { e.stopPropagation(); cancelRegenerate(); }}
+                  aria-label={t("gallery_describe_regenerate")}
+                >
+                  <Icons.close className="h-4 w-4" />
+                </button>
+              </CustomTooltip>
+            ) : (
+              <CustomTooltip content={t("gallery_regenerate")}>
+                <button
+                  className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20 active:scale-95"
+                  onClick={(e) => { e.stopPropagation(); regenerate(); }}
+                  aria-label={t("gallery_regenerate")}
+                >
+                  <Icons.regen />
+                </button>
+              </CustomTooltip>
             )}
           </>
         )}
-        <button
-          className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20 active:scale-95"
-          onClick={(e) => { e.stopPropagation(); onClose(); }}
-          title={t("close")}
-        >
-          <Icons.close className="h-5 w-5" />
-        </button>
+        <CustomTooltip content={t("close")}>
+          <button
+            className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20 active:scale-95"
+            onClick={(e) => { e.stopPropagation(); onClose(); }}
+            aria-label={t("close")}
+          >
+            <Icons.close className="h-5 w-5" />
+          </button>
+        </CustomTooltip>
       </div>
 
       {/* Prev / next nav. */}

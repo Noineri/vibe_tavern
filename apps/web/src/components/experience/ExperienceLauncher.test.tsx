@@ -33,7 +33,7 @@ import { installSnapshotStoreSeam } from "../../../test/snapshot-store-seam.js";
 import type { ReactNode } from "react";
 
 useDomEnv();
-const { render, fireEvent, act } = await import("@testing-library/react");
+const { render: rtlRender, fireEvent, act } = await import("@testing-library/react");
 const { useSyncExternalStore } = await import("react");
 const { TIMER_RESYNC_INTERVAL_MS } = await import("../../hooks/use-experience-timer-resync.js");
 
@@ -137,7 +137,10 @@ const storeMocks = {
 // ─── module mocks ───────────────────────────────────────────────────────────
 const realStore = await import("../../stores/experience-store.js");
 const realMobile = await import("../../hooks/use-mobile.js");
-const realTooltip = await import("../shared/Tooltip.js");
+const { TooltipProvider } = await import("../shared/Tooltip.js");
+function render(ui: React.ReactNode, options?: Parameters<typeof rtlRender>[1]) {
+  return rtlRender(ui, { wrapper: TooltipProvider, ...options });
+}
 const realBottomSheet = await import("../shared/BottomSheet.js");
 const realDetached = await import("./ExperienceDetachedWindow.js");
 
@@ -229,11 +232,6 @@ mock.module("../../hooks/use-mobile.js", () => ({
   useIsMobile: () => mobileOverride,
 }));
 
-mock.module("../shared/Tooltip.js", () => ({
-  ...realTooltip,
-  CustomTooltip: ({ children }: { children: ReactNode }) => children,
-  TooltipProvider: ({ children }: { children: ReactNode }) => children,
-}));
 
 mock.module("../shared/BottomSheet.js", () => ({
   ...realBottomSheet,

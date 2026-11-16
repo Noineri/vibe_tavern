@@ -167,16 +167,17 @@ function DesktopMediaMenu({ characterId }: { characterId: string }) {
                       <div className="pointer-events-none absolute inset-0 bg-black/35 opacity-0 transition-opacity group-hover:opacity-100" />
                       {/* Send-to-chat: corner action button (mirrors GalleryGrid's
                           expand/menu pattern — small, z-20, stopPropagation). */}
-                      <button
-                        type="button"
-                        className="absolute bottom-1 right-1 z-20 flex h-6 w-6 items-center justify-center rounded-md bg-black/55 text-white opacity-0 backdrop-blur-sm transition-all hover:bg-accent hover:text-on-accent group-hover:opacity-100 disabled:opacity-40"
-                        onClick={(e) => { e.stopPropagation(); void sendImage(row); }}
-                        disabled={isSending}
-                        title={t("media_send_to_chat")}
-                        aria-label={t("media_send_to_chat")}
-                      >
-                        {isSending ? <span className="text-[calc(var(--ui-fs)-4px)]">…</span> : <Icons.send className="h-3.5 w-3.5" />}
-                      </button>
+                      <CustomTooltip content={t("media_send_to_chat")}>
+                        <button
+                          type="button"
+                          className="absolute bottom-1 right-1 z-20 flex h-6 w-6 items-center justify-center rounded-md bg-black/55 text-white opacity-0 backdrop-blur-sm transition-all hover:bg-accent hover:text-on-accent group-hover:opacity-100 disabled:opacity-40"
+                          onClick={(e) => { e.stopPropagation(); void sendImage(row); }}
+                          disabled={isSending}
+                          aria-label={t("media_send_to_chat")}
+                        >
+                          {isSending ? <span className="text-[calc(var(--ui-fs)-4px)]">…</span> : <Icons.send className="h-3.5 w-3.5" />}
+                        </button>
+                      </CustomTooltip>
                     </div>
                   );
                 })}

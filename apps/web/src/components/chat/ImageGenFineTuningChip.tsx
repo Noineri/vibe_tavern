@@ -42,6 +42,7 @@
  */
 
 import { useEffect, useRef, useState } from "react";
+import { ImageGenPromptCapCounter } from "./image-gen-prompt-cap.js";
 import * as Popover from "@radix-ui/react-popover";
 import { toast } from "sonner";
 
@@ -718,15 +719,7 @@ function ImageGenFineTuningBody({ chatId, onGenerateFired }: { chatId: string; o
             (never a send gate). Red past the cap; the hint explains the
             mode template still adds on top of the editor text. */}
         {effective !== null && promptCap !== undefined && (
-          <div
-            data-testid="image-gen-ft-prompt-cap"
-            title={t("image_gen_prompt_cap_hint")}
-            className={`flex justify-end font-ui text-[calc(var(--ui-fs)-3px)] ${
-              draft.prompt.length > promptCap ? "text-danger" : "text-t4"
-            }`}
-          >
-            {draft.prompt.length} / {promptCap}
-          </div>
+          <ImageGenPromptCapCounter length={draft.prompt.length} cap={promptCap} />
         )}
       </div>
       {supportsNegative && (

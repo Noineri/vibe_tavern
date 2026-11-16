@@ -8,7 +8,9 @@ import type { DiceDefinitionsResponse, DiceLaneState, DiceRollSnapshot, Experien
 useDomEnv({ failOnNetwork: true });
 
 let fireEvent: typeof import("@testing-library/react").fireEvent;
-let render: typeof import("@testing-library/react").render;
+const { render: renderBase } = await import("@testing-library/react");
+const { TooltipProvider } = await import("../shared/Tooltip.js");
+const render = (ui: import("react").ReactElement) => renderBase(ui, { wrapper: ({ children }) => <TooltipProvider delayDuration={0}>{children}</TooltipProvider> });
 let waitFor: typeof import("@testing-library/react").waitFor;
 let act: typeof import("@testing-library/react").act;
 
@@ -49,7 +51,6 @@ const realMobileHook = { ...(await import("../../hooks/use-mobile.js")) };
 const realSnapshotStore = { ...(await import("../../stores/snapshot-store.js")) };
 const realDiceStore = { ...(await import("../../stores/dice-store.js")) };
 const realExperienceStore = { ...(await import("../../stores/experience-store.js")) };
-const realTooltip = { ...(await import("../shared/Tooltip.js")) };
 const realBottomSheet = { ...(await import("../shared/BottomSheet.js")) };
 const realVoiceMapData = { ...(await import("../../lib/tts/voice-map-data.js")) };
 const realQueueManager = { ...(await import("./QueueManager.js")) };
@@ -127,14 +128,8 @@ mock.module("../../stores/dice-store.js", () => {
   };
 });
 
-mock.module("../shared/Tooltip.js", () => ({
-  ...realTooltip,
-  CustomTooltip: ({ children }: { children: ReactNode }) => children,
-  TooltipProvider: ({ children }: { children: ReactNode }) => children,
-}));
-
-// Mock the Experience store so tests control ExperienceLauncher visibility
-// without making real API calls inside the Dice tests.
+// Mock the Experience store so the ExperienceLauncher returns null (no config)
+// and its setScope/rehydrate do not make real API calls inside the Dice tests.
 mock.module("../../stores/experience-store.js", () => ({
   ...realExperienceStore,
   useExperienceConfig: () => mocks.experienceConfig,
@@ -169,7 +164,8 @@ let DicePanel: typeof import("./DicePanel.js").DicePanel;
 let DiceTray: typeof import("./DiceTray.js").DiceTray;
 let PlayMode: typeof import("../play/PlayMode.js").PlayMode;
 beforeAll(async () => {
-  ({ fireEvent, render, waitFor, act } = await import("@testing-library/react"));
+  ({ fireEvent, waitFor, act } = await import("@testing-library/react"));
+
   ({ DicePanel } = await import("./DicePanel.js"));
   ({ DiceTray } = await import("./DiceTray.js"));
   ({ PlayMode } = await import("../play/PlayMode.js"));
@@ -296,7 +292,7 @@ describe("DicePanel", () => {
 describe("DiceTray", () => {
   it("hides the persona button when no persona is loaded and rolls for character", async () => {
     mocks.persona = null;
-    const { queryByTestId, getByTestId } = render(
+    const { queryByTestId, getByTestId, findByRole } = render(
       <DiceTray
         chatId="chat_1"
         branchId="branch_1"
@@ -310,6 +306,10 @@ describe("DiceTray", () => {
     );
     // No persona loaded → no persona roll button; the character button remains.
     expect(queryByTestId("roll-btn-persona-fate")).toBeNull();
+    const rollButton = getByTestId("roll-btn-character-fate");
+    expect(rollButton.getAttribute("aria-label")).toContain("Fate");
+    fireEvent.pointerMove(rollButton, { pointerType: "mouse" });
+    expect((await findByRole("tooltip")).textContent).toBe("dice_roll — dice_character");
     fireEvent.click(getByTestId("roll-btn-character-fate"));
     await waitFor(() => expect(mocks.actions.roll).toHaveBeenCalledWith("chat_1", "branch_1", {
       scriptId: "script_1",

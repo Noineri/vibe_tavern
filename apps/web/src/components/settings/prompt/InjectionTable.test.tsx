@@ -42,22 +42,13 @@ useDomEnv();
 // component in the module graph (InjectionTable + all row components + shared
 // Tooltip/TokenCounter), since the module mock is keyed by resolved module path.
 const realTokenizer = await import("../../../utils/tokenizer.js");
-const realTooltip = await import("../../shared/Tooltip.js");
+const { TooltipProvider } = await import("../../shared/Tooltip.js");
 const realUseMobile = await import("../../../hooks/use-mobile.js");
 installI18nContextSeam();
 
 // countTokens loads a real tiktoken encoding (cl100k_base) — heavy and
 // irrelevant to canvas routing. Stub it to keep the test fast + isolated.
 mock.module("../../../utils/tokenizer.js", () => ({ ...realTokenizer, countTokens: () => 0 }));
-
-// CustomTooltip (Radix) needs a TooltipProvider context irrelevant to canvas
-// routing; passthrough so toggle/delete buttons render unwrapped. Matches the
-// convention in LorebookAccordion.test.tsx / LoreEntryEditor.test.tsx.
-mock.module("../../shared/Tooltip.js", () => ({
-  ...realTooltip,
-  CustomTooltip: ({ children }: { children: ReactNode }) => children,
-  TooltipProvider: ({ children }: { children: ReactNode }) => children,
-}));
 
 // useIsMobile reads window.matchMedia, which happy-dom does not reliably
 // implement. Default to desktop; one focused test opts into the mobile
@@ -86,7 +77,11 @@ mock.module("@dnd-kit/core", () => ({
   },
 }));
 
-const { render, fireEvent, within, act } = await import("@testing-library/react");
+const { render: rtlRender, fireEvent, within, act } = await import("@testing-library/react");
+// Keep the real Radix tooltip context while exercising canvas routing and controls.
+function render(ui: React.ReactNode) {
+  return rtlRender(ui, { wrapper: ({ children }) => <TooltipProvider delayDuration={0}>{children}</TooltipProvider> });
+}
 
 let InjectionTable: typeof import("./InjectionTable.js").InjectionTable;
 beforeAll(async () => {
@@ -566,7 +561,7 @@ describe("PromptOrderCanvas — characterization", () => {
     try {
       const card = view.container.querySelector('[data-canvas-identifier="custom_mobile"]') as HTMLElement;
       fireEvent.click(within(card).getByText("Mobile injection"));
-      fireEvent.click(within(card).getByTitle("expand_fullscreen"));
+      fireEvent.click(within(card).getByLabelText("expand_fullscreen"));
       const overlay = view.baseElement.querySelector(".fixed.inset-0") as HTMLElement;
       const fullscreenEditor = overlay.querySelector("textarea") as HTMLTextAreaElement;
       expect(fullscreenEditor.value).toBe("old content");

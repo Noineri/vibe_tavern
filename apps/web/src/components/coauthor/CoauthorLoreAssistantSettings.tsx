@@ -1,3 +1,4 @@
+import { OverflowTooltip } from "../shared/OverflowTooltip.js";
 import { useEffect, useState } from "react";
 import * as Popover from "@radix-ui/react-popover";
 
@@ -101,7 +102,7 @@ export function CoauthorLoreAssistantSettings() {
           className="flex min-h-8 w-full items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 py-1.5 text-left font-ui text-[calc(var(--ui-fs)-3px)] text-t2 transition-all hover:bg-s2 hover:text-t1"
         >
           <span>{t("coauthor.lore_assistant.title")} ·</span>
-          <span className="min-w-0 truncate" title={currentValue}>{currentValue}</span>
+          <OverflowTooltip asSpan className="min-w-0" text={currentValue} />
         </button>
       </Popover.Trigger>
       {!isMobile && (

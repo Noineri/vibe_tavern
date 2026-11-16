@@ -13,13 +13,18 @@ import { useDomEnv } from "../../../test/dom-env.js";
 
 useDomEnv();
 
-let render: typeof import("@testing-library/react").render;
+let rtlRender: typeof import("@testing-library/react").render;
+let TooltipProvider: typeof import("../shared/Tooltip.js").TooltipProvider;
+function render(ui: React.ReactNode, options?: Parameters<typeof rtlRender>[1]) {
+  return rtlRender(ui, { wrapper: TooltipProvider, ...options });
+}
 let buildLineDiff: typeof import("../shared/TextDiffPreview.js").buildLineDiff;
 let groupHunks: typeof import("../../lib/coauthor-hunk-merge.js").groupHunks;
 let CoauthorReviewingOverlay: typeof import("./CoauthorReviewingOverlay.js").CoauthorReviewingOverlay;
 
 beforeAll(async () => {
-  ({ render } = await import("@testing-library/react"));
+  ({ render: rtlRender } = await import("@testing-library/react"));
+  ({ TooltipProvider } = await import("../shared/Tooltip.js"));
   ({ buildLineDiff } = await import("../shared/TextDiffPreview.js"));
   ({ groupHunks } = await import("../../lib/coauthor-hunk-merge.js"));
   ({ CoauthorReviewingOverlay } = await import("./CoauthorReviewingOverlay.js"));

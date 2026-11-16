@@ -30,18 +30,11 @@ import { ListSearchPanel } from "../../shared/ListSearchPanel.js";
 import type { LinkTarget } from "../../shared/LinkBindingPopover.js";
 import { LorebookOwnerPicker } from "./LorebookOwnerPicker.js";
 import { LorebookActivationSettings } from "./lorebook-activation-settings.js";
-import { sumLoreEntryTokens } from "./lorebook-token-total.js";
+import { formatTokenCount, sumLoreEntryTokens } from "./lorebook-token-total.js";
 import type { TFunc } from "../../../i18n/locale-helpers.js";
 import type Resources from "../../../i18n/resources.js";
 
 // ── Helpers ────────────────────────────────────────────────────────────
-
-/** Compact token count: 999 → "999", 1200 → "1.2k", 1500000 → "1.5M". */
-function formatTokenCount(n: number): string {
-  if (n < 1000) return String(n);
-  if (n < 1_000_000) return `${(n / 1000).toFixed(n < 10_000 ? 1 : 0)}k`;
-  return `${(n / 1_000_000).toFixed(1)}M`;
-}
 
 /**
  * Derive a binding icon from the book's scope, not from a legacy owner field.
@@ -447,17 +440,18 @@ export function LorebookAccordion({
             </div>
 
             {/* Entry counter + token estimate */}
-            <span
-              className="shrink-0 rounded-full bg-s3 px-2 py-0.5 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 tabular-nums"
-              title={`${entries.length} · ${totalTokens.toLocaleString()} ${t("tokens_label")}`}
-            >
-              {entries.length}
-              {totalTokens > 0 && (
-                <span className="ml-1 text-t3/70">
-                  · {formatTokenCount(totalTokens)}
-                </span>
-              )}
-            </span>
+            <CustomTooltip content={`${entries.length} · ${totalTokens.toLocaleString()} ${t("tokens_label")}`}>
+              <span
+                className="shrink-0 rounded-full bg-s3 px-2 py-0.5 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 tabular-nums"
+              >
+                {entries.length}
+                {totalTokens > 0 && (
+                  <span className="ml-1 text-t3/70">
+                    · {formatTokenCount(totalTokens)}
+                  </span>
+                )}
+              </span>
+            </CustomTooltip>
 
             {/* ── Mobile context menu (⋮) → ActionSheet (bottom sheet) ──
                 Mobile rule: every popover surfaces as a bottom sheet, no
@@ -599,16 +593,19 @@ export function LorebookAccordion({
                         onChange={(v) => onUpdateMeta({ tokenBudgetPercent: Math.max(0, Math.min(100, v)) })}
                       />
                     )}
-                    <button
-                      type="button"
-                      onClick={() => onUpdateMeta({
-                        tokenBudgetPercent: lorebook.tokenBudgetPercent == null ? 25 : null,
-                      })}
-                      className="flex h-8 !min-h-8 shrink-0 cursor-pointer items-center rounded-md border border-border bg-s3 px-3 font-ui text-[calc(var(--ui-fs)-1px)] font-medium text-t2 transition-colors hover:border-t3 hover:text-t1"
-                      title={lorebook.tokenBudgetPercent == null ? t("lore_token_budget_switch_to_percent") : t("lore_token_budget_switch_to_fixed")}
-                    >
-                      {lorebook.tokenBudgetPercent == null ? t("lore_token_budget_mode_fixed") : t("lore_token_budget_mode_percent")}
-                    </button>
+                    <CustomTooltip content={lorebook.tokenBudgetPercent == null ? t("lore_token_budget_switch_to_percent") : t("lore_token_budget_switch_to_fixed")}>
+                      <button
+                        type="button"
+                        onClick={() => onUpdateMeta({
+                          tokenBudgetPercent: lorebook.tokenBudgetPercent == null ? 25 : null,
+                        })}
+                        // The enclosing budget hint must not open alongside this switch hint.
+                        onPointerMove={(event) => event.stopPropagation()}
+                        className="flex h-8 !min-h-8 shrink-0 cursor-pointer items-center rounded-md border border-border bg-s3 px-3 font-ui text-[calc(var(--ui-fs)-1px)] font-medium text-t2 transition-colors hover:border-t3 hover:text-t1"
+                      >
+                        {lorebook.tokenBudgetPercent == null ? t("lore_token_budget_mode_fixed") : t("lore_token_budget_mode_percent")}
+                      </button>
+                    </CustomTooltip>
                   </div>
                 </div>
               </CustomTooltip>

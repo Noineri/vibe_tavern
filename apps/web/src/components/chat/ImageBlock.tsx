@@ -31,6 +31,7 @@ import { Ic } from "../shared/icons.js";
 import { AnimatedDisclosure } from "../shared/AnimatedDisclosure.js";
 import { FloatingImageViewer } from "../build/editors/GalleryViewer.js";
 import { AutoTextarea } from "../shared/auto-textarea.js";
+import { OverflowTooltip } from "../shared/OverflowTooltip.js";
 
 export interface ImageBlockImage {
   src: string;
@@ -188,14 +189,10 @@ function ImageBlockTile({ image, onOpen }: { image: ImageBlockImage; onOpen: () 
              *  unaccented — see reports/IMAGEGEN_MAINTENANCE_REPORT.md).
              *  It is USER data
              *  (a stored model id) in an identification context — truncates
-             *  with the full value on the title tooltip. */}
+             *  with the full value on the measured overflow tooltip. */}
             {image.captionAuthor && (
-              <span
-                data-testid="image-block-caption-author"
-                className="min-w-0 truncate font-normal normal-case tracking-normal text-t4"
-                title={image.captionAuthor}
-              >
-                · {image.captionAuthor}
+              <span data-testid="image-block-caption-author" className="min-w-0">
+                <OverflowTooltip asSpan text={`· ${image.captionAuthor}`} className="block font-normal normal-case tracking-normal text-t4" />
               </span>
             )}
           </button>

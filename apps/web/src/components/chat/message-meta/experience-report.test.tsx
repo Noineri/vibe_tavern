@@ -6,8 +6,13 @@ import { installI18nContextSeam } from "../../../../test/i18n-context-seam.js";
 
 useDomEnv({ failOnNetwork: true });
 installI18nContextSeam({ interpolateKeys: ["experience_report_event_count", "experience_report_recent_events"] });
-const { render, fireEvent, act } = await import("@testing-library/react");
+const { render: rtlRender, fireEvent, act } = await import("@testing-library/react");
 const { ExperienceReportChip, ExperienceReportDetail, experienceReportMetaDescriptor } = await import("./experience-report.js");
+
+const { TooltipProvider } = await import("../../shared/Tooltip.js");
+function render(node: React.ReactNode) {
+  return rtlRender(node, { wrapper: ({ children }) => <TooltipProvider delayDuration={0}>{children}</TooltipProvider> });
+}
 
 const originalWidth = window.innerWidth;
 beforeEach(() => { window.innerWidth = 1200; });
@@ -83,4 +88,26 @@ describe("experience report message chip (ERX-8)", () => {
     // on phones per the CNR-7g policy; native scrolling continues).
     expect(lane!.querySelector("[data-scroll-viewport]")?.textContent).toContain("The match ended.");
   });
+});
+
+it("exposes clipped full text in the button through a measured themed hint", async () => {
+  const scrollWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollWidth");
+  const clientWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth");
+  Object.defineProperty(HTMLElement.prototype, "scrollWidth", { configurable: true, get: () => 300 });
+  Object.defineProperty(HTMLElement.prototype, "clientWidth", { configurable: true, get: () => 100 });
+  try {
+    const title = "A long report title";
+    const view = render(<ExperienceReportChip report={report({ title })} />);
+    const text = view.getByText(title);
+    expect(text.tagName).toBe("SPAN");
+    expect(text.className).toBe("truncate min-w-0 max-w-[12rem]");
+    fireEvent.pointerMove(text, { pointerType: "mouse" });
+    expect((await view.findByRole("tooltip")).textContent).toBe(title);
+    view.unmount();
+  } finally {
+    if (scrollWidth) Object.defineProperty(HTMLElement.prototype, "scrollWidth", scrollWidth);
+    else delete (HTMLElement.prototype as { scrollWidth?: number }).scrollWidth;
+    if (clientWidth) Object.defineProperty(HTMLElement.prototype, "clientWidth", clientWidth);
+    else delete (HTMLElement.prototype as { clientWidth?: number }).clientWidth;
+  }
 });

@@ -20,6 +20,7 @@ import {
 } from "../agent/agent-prompt.js";
 import type { AgentAssembledPrompt, AgentPromptMessage } from "../agent/agent-stream.js";
 import type { SidechatAutoCompactPressure } from "./sidechat-compaction.js";
+import { renderSidechatPromptAttachments } from "./sidechat-prompt-attachments.js";
 import {
   SIDECHAT_OOC_METER_SEGMENT_KEYS,
   type SidechatContextPackage,
@@ -48,7 +49,9 @@ type SidechatMeteredFlowMessage = AgentFlowMessage & {
 /** Tag every real history row (the OOC conversation — user, assistant, tool
  *  rows alike) as discussion (SC-9): none of them is RP-layer material. */
 function toDiscussionEntry(message: AgentFlowMessage): SidechatMeteredFlowMessage {
-  return { ...message, meterSegment: "discussion" };
+  const rendered = renderSidechatPromptAttachments(message);
+  if (rendered.role === "digest") throw new Error("Unexpected digest in sidechat flow");
+  return { ...rendered, meterSegment: "discussion" };
 }
 
 /**
@@ -300,7 +303,7 @@ export function assembleSidechatPrompt(input: {
     input.context.eventMessages.map((event) => ({ role: "user" as const, content: event.content })),
   );
   const autoCompactPressure: SidechatAutoCompactPressure = {
-    discussionTokens: digestTokens + estimateHistoryTokens(historyFlow),
+    discussionTokens: digestTokens + estimateHistoryTokens(historyFlow.map(toDiscussionEntry)),
     roomTokens: input.contextBudgetTokens - (systemTokens + attachedTokens) - rpLayerTokens,
   };
 

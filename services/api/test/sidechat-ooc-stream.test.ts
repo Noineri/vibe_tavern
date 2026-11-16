@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, beforeEach, afterAll } from "bun:test";
+import { describe, it, expect, beforeAll, beforeEach, afterAll, spyOn } from "bun:test";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -272,6 +272,7 @@ async function drainTurn(
 	content: string,
 	depsOverride?: SidechatStreamDeps,
 	attachedVariants?: readonly AttachedVariantPair[],
+	promptAttachments?: { presetId: string }[],
 ): Promise<Array<{ event: string; data: string }>> {
 	const chunks: Array<{ event: string; data: string }> = [];
 	for await (const chunk of streamSidechatTurn(
@@ -280,6 +281,7 @@ async function drainTurn(
 			content,
 			providerProfileId: "prov_1",
 			...(attachedVariants !== undefined ? { attachedVariants: [...attachedVariants] } : {}),
+			...(promptAttachments !== undefined ? { promptAttachments } : {}),
 		},
 		depsOverride ?? deps,
 	)) {
@@ -355,6 +357,129 @@ const SIX_SEGMENT_KEYS = ["context", "story_plan", "rp_summaries", "rp_messages"
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
 describe("streamSidechatTurn (SC-4b)", () => {
+  it("freezes the selected preset on its user message and keeps it after edits and deletion", async () => {
+    const { threadId } = await makeSidechatThread("The tavern door opens.");
+    const preset = await stores.presets.create({
+      name: "Pinned discussion preset",
+      systemPrompt: "PINNED-PRESET-V1 Narrate the scene around {{char}}.",
+      postHistoryInstructions: "PINNED-POST-HISTORY Keep the scene open.",
+      advancedMode: true,
+      mergeConsecutiveRoles: false,
+      customInjections: [{ identifier: "audit", name: "Audit", content: "PINNED-CUSTOM Keep the atmosphere grounded.", role: "user" }],
+      promptOrder: [{ identifier: "audit", enabled: true, kind: "custom", zone: "in_chat", depth: 2, order: 0 }],
+    });
+    const links = [{ targetType: "prompt_preset" as const, targetId: preset.id }, { targetType: "character" as const, targetId: characterId }];
+    await stores.experienceCopilot.setContextLinks(threadId, links);
+    const chunks = await drainTurn(threadId, "Discuss the attached preset.", undefined, undefined, [{ presetId: preset.id }]);
+    expect(chunks.some((chunk) => chunk.event === "finish")).toBe(true);
+    const rows = await stores.experienceCopilot.listMessages(threadId);
+    const snapshot = rows.find((row) => row.content === "Discuss the attached preset.")!.promptAttachments![0]!;
+    expect(snapshot.presetId).toBe(preset.id);
+    expect(snapshot.displayName).toBe("Pinned discussion preset");
+    expect(snapshot.promptText).toContain('<rp_prompt preset="Pinned discussion preset">');
+    for (const marker of ["PINNED-PRESET-V1 Narrate the scene around Theron.", "PINNED-POST-HISTORY Keep the scene open.", "PINNED-CUSTOM Keep the atmosphere grounded."]) {
+      expect(snapshot.promptText).toContain(marker);
+      expect(occurrences(promptText(), marker)).toBe(1);
+    }
+    expect(systemMessageText()).not.toContain("PINNED-PRESET-V1");
+    expect(messageIndexContaining("Discuss the attached preset.")).toBe(messageIndexContaining("PINNED-PRESET-V1"));
+    expect(await stores.experienceCopilot.getContextLinks(threadId)).toEqual([links[1]!]);
+    await stores.presets.update(preset.id, { systemPrompt: "PINNED-PRESET-V2 Use shorter sentences." });
+    await drainTurn(threadId, "Discuss the revised preset.");
+    expect(occurrences(promptText(), "PINNED-PRESET-V1")).toBe(1);
+    expect(promptText()).not.toContain("PINNED-PRESET-V2");
+    await stores.presets.delete(preset.id);
+    await stores.experienceCopilot.setContextLinks(threadId, []);
+    await drainTurn(threadId, "The preset was removed.");
+    expect(occurrences(promptText(), "PINNED-PRESET-V1")).toBe(1);
+    expect(promptText()).toContain(snapshot.promptText);
+    expect((await stores.experienceCopilot.listMessages(threadId))[0]!.promptAttachments).toEqual([snapshot]);
+  });
+
+  it("seats copied and branch-specific snapshots only in their own branch history", async () => {
+    const { threadId, chatId, branchId } = await makeSidechatThread();
+    const opening = await stores.messages.addMessage({ chatId, branchId, role: "user", authorType: "user", content: "Opening" });
+    const shared = await stores.presets.create({ name: "Shared", systemPrompt: "SHARED-BRANCH-SNAPSHOT" });
+    const own = await stores.presets.create({ name: "Original", systemPrompt: "ORIGINAL-BRANCH-SNAPSHOT" });
+    const forkOnly = await stores.presets.create({ name: "Fork", systemPrompt: "FORK-BRANCH-SNAPSHOT" });
+    await drainTurn(threadId, "Shared message", undefined, undefined, [{ presetId: shared.id }]);
+    const fork = await stores.chats.forkBranch(chatId, opening.id, "fork");
+    const copied = await stores.experienceCopilot.forkChatThreadToBranch(threadId, fork.id, {
+      eventPayload: (_kind, payloadJson) => ({ payloadJson }),
+      frontierJson: (json) => json,
+      trailingEvent: { kind: "branch_forked", payload: { at: 0 } },
+    });
+    expect(copied).not.toBeNull();
+    await drainTurn(threadId, "Original message", undefined, undefined, [{ presetId: own.id }]);
+    await drainTurn(copied!.id, "Fork message", undefined, undefined, [{ presetId: forkOnly.id }]);
+    expect(occurrences(promptText(), "SHARED-BRANCH-SNAPSHOT")).toBe(1);
+    expect(occurrences(promptText(), "FORK-BRANCH-SNAPSHOT")).toBe(1);
+    expect(promptText()).not.toContain("ORIGINAL-BRANCH-SNAPSHOT");
+    expect(messageIndexContaining("Shared message")).toBe(messageIndexContaining("SHARED-BRANCH-SNAPSHOT"));
+    expect(messageIndexContaining("Fork message")).toBe(messageIndexContaining("FORK-BRANCH-SNAPSHOT"));
+    await drainTurn(threadId, "Original again");
+    expect(occurrences(promptText(), "SHARED-BRANCH-SNAPSHOT")).toBe(1);
+    expect(occurrences(promptText(), "ORIGINAL-BRANCH-SNAPSHOT")).toBe(1);
+    expect(promptText()).not.toContain("FORK-BRANCH-SNAPSHOT");
+    expect(messageIndexContaining("Original message")).toBe(messageIndexContaining("ORIGINAL-BRANCH-SNAPSHOT"));
+  });
+
+  it("isolates prompt snapshots between sessions of the same chat and branch", async () => {
+    const { threadId, chatId, branchId } = await makeSidechatThread();
+    const first = await stores.presets.create({ name: "First session", systemPrompt: "FIRST-SESSION-SNAPSHOT" });
+    const second = await stores.presets.create({ name: "Second session", systemPrompt: "SECOND-SESSION-SNAPSHOT" });
+    await drainTurn(threadId, "First session message", undefined, undefined, [{ presetId: first.id }]);
+    const other = await stores.experienceCopilot.startNewChatSession(chatId, branchId, "sidechat-ooc");
+    await drainTurn(other.id, "Second session message", undefined, undefined, [{ presetId: second.id }]);
+    expect(occurrences(promptText(), "SECOND-SESSION-SNAPSHOT")).toBe(1);
+    expect(promptText()).not.toContain("FIRST-SESSION-SNAPSHOT");
+    await drainTurn(threadId, "Return to first session");
+    expect(occurrences(promptText(), "FIRST-SESSION-SNAPSHOT")).toBe(1);
+    expect(promptText()).not.toContain("SECOND-SESSION-SNAPSHOT");
+  });
+
+  it("consumes an empty rendered selection without claiming an attachment", async () => {
+    const { threadId } = await makeSidechatThread();
+    const preset = await stores.presets.create({ name: "Empty render", systemPrompt: "EMPTY-RENDER-MARKER" });
+    await stores.experienceCopilot.setContextLinks(threadId, [{ targetType: "prompt_preset", targetId: preset.id }]);
+    const assembly = deps.context.assembly;
+    const original = assembly.assembleForChat.bind(assembly);
+    const spy = spyOn(assembly, "assembleForChat").mockImplementation(async (input) => {
+      const result = await original(input);
+      return { ...result, prompt: { ...result.prompt, finalPayload: { ...result.prompt.finalPayload, messages: [] } } };
+    });
+    try {
+      await drainTurn(threadId, "Empty selected", undefined, undefined, [{ presetId: preset.id }]);
+    } finally {
+      spy.mockRestore();
+    }
+    const row = (await stores.experienceCopilot.listMessages(threadId))[0]!;
+    expect(row.promptAttachments).toBeUndefined();
+    expect(promptText()).not.toContain("EMPTY-RENDER-MARKER");
+    expect(await stores.experienceCopilot.getContextLinks(threadId)).toEqual([]);
+  });
+
+  it("consumes dangling selections and a stale PATCH leaves an inert pending link", async () => {
+    const { threadId } = await makeSidechatThread();
+    const preset = await stores.presets.create({ name: "Resurrected", systemPrompt: "RESURRECTED-MARKER" });
+    const link = { targetType: "prompt_preset" as const, targetId: preset.id };
+    const dangling = { targetType: "prompt_preset" as const, targetId: "preset_deleted" };
+    await stores.experienceCopilot.setContextLinks(threadId, [link, dangling]);
+    await drainTurn(threadId, "Consume selections", undefined, undefined, [{ presetId: preset.id }, { presetId: dangling.targetId }]);
+    expect(await stores.experienceCopilot.getContextLinks(threadId)).toEqual([]);
+    const first = (await stores.experienceCopilot.listMessages(threadId))[0]!;
+    expect(first.promptAttachments).toHaveLength(1);
+    await stores.experienceCopilot.setContextLinks(threadId, [link]);
+    await drainTurn(threadId, "Pending alone is inert");
+    expect(occurrences(promptText(), "RESURRECTED-MARKER")).toBe(1);
+    expect(messageIndexContaining("RESURRECTED-MARKER")).toBe(messageIndexContaining("Consume selections"));
+    expect(await stores.experienceCopilot.getContextLinks(threadId)).toEqual([link]);
+    await drainTurn(threadId, "Send it again", undefined, undefined, [{ presetId: preset.id }]);
+    expect(occurrences(promptText(), "RESURRECTED-MARKER")).toBe(2);
+    expect(messageIndexContaining("Send it again")).toBeGreaterThan(messageIndexContaining("Consume selections"));
+    expect(await stores.experienceCopilot.getContextLinks(threadId)).toEqual([]);
+  });
+
 	it("a turn syncs the RP branch before the user message, assembles base prompt + package, and persists the reply", async () => {
 		const { threadId } = await makeSidechatThread("The tavern door swings open.");
 
@@ -582,6 +707,25 @@ describe("streamSidechatTurn after a compaction (SC-8c)", () => {
 		await service.compact({ threadId });
 		return { threadId, chatId, branchId };
 	}
+
+	it("folds the snapshot with its message and leaves no orphan in the provider window", async () => {
+		const { threadId } = await makeSidechatThread();
+		const preset = await stores.presets.create({ name: "Compacted preset", systemPrompt: "COMPACTED-PROMPT-SNAPSHOT" });
+		await drainTurn(threadId, "Question with snapshot", undefined, undefined, [{ presetId: preset.id }]);
+		for (let turn = 2; turn <= 5; turn++) await drainTurn(threadId, `Question ${turn}`);
+		let summarizerInput = "";
+		const service = makeCompactionService(async (input) => {
+			summarizerInput = JSON.stringify(input);
+			return { text: "COMPACTION-DIGEST", providerResponse: { mode: "nonstream", steps: [] } };
+		});
+		await service.compact({ threadId });
+		expect(summarizerInput).toContain("Question with snapshot");
+		expect(summarizerInput).toContain("COMPACTED-PROMPT-SNAPSHOT");
+		await drainTurn(threadId, "After compaction");
+		expect(promptText()).toContain("COMPACTION-DIGEST");
+		expect(promptText()).not.toContain("Question with snapshot");
+		expect(promptText()).not.toContain("COMPACTED-PROMPT-SNAPSHOT");
+	});
 
 	it("a turn after compaction assembles without the guard firing (was: the SC-4d count-check throw)", async () => {
 		const { threadId, chatId, branchId } = await makeCompactedThread();
@@ -2033,6 +2177,24 @@ async function drainRegenerateTurn(
 }
 
 describe("streamSidechatTurn regenerate (AP-9)", () => {
+  it("regenerates a failed prompt-attached turn from its one frozen snapshot", async () => {
+    const { threadId } = await makeSidechatThread();
+    const preset = await stores.presets.create({ name: "Retry preset", systemPrompt: "RETRY-FROZEN-MARKER" });
+    const failed = await drainTurn(threadId, "Try this", { ...deps, streamText: () => { throw new Error("provider setup failed"); } }, undefined, [{ presetId: preset.id }]);
+    expect(failed.map((chunk) => chunk.event)).toContain("error");
+    const before = (await stores.experienceCopilot.listMessages(threadId)).filter((row) => row.role === "user");
+    expect(before).toHaveLength(1);
+    expect(before[0]!.promptAttachments).toHaveLength(1);
+    const snapshot = before[0]!.promptAttachments![0]!;
+    await stores.presets.update(preset.id, { systemPrompt: "CHANGED-AFTER-FAILURE" });
+    const retried = await drainRegenerateTurn(threadId);
+    expect(retried.map((chunk) => chunk.event)).toContain("finish");
+    expect(occurrences(promptText(), "RETRY-FROZEN-MARKER")).toBe(1);
+    expect(promptText()).not.toContain("CHANGED-AFTER-FAILURE");
+    const after = (await stores.experienceCopilot.listMessages(threadId)).filter((row) => row.role === "user");
+    expect(after).toHaveLength(1);
+    expect(after[0]!.promptAttachments).toEqual([snapshot]);
+  });
 	it("keeps the turn's events, replaces the last turn's rows without a new user row, and records a fresh rp_sync after the user row when the RP moved", async () => {
 		const { threadId, chatId, branchId } = await makeSidechatThread("RP-SEED the door opens.");
 		await drainTurn(threadId, "OOC question one");

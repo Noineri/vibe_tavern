@@ -346,14 +346,16 @@ export function ChipInput({
           )}
         />
         {!disabled && inputValue.length > 0 && (
-          <button
-            type="button"
-            onClick={() => addChip(inputValue)}
-            className="flex-shrink-0 rounded border border-accent/40 px-1.5 py-0.5 font-ui text-[calc(var(--ui-fs)-4px)] text-accent-t transition-colors hover:border-accent hover:bg-accent/10"
-            title={showPresets ? "Shift+Enter" : undefined}
-          >
-            ✓
-          </button>
+          <CustomTooltip content={showPresets ? "Shift+Enter" : undefined}>
+            <button
+              type="button"
+              onClick={() => addChip(inputValue)}
+              className="flex-shrink-0 rounded border border-accent/40 px-1.5 py-0.5 font-ui text-[calc(var(--ui-fs)-4px)] text-accent-t transition-colors hover:border-accent hover:bg-accent/10"
+              aria-label={t("confirm")}
+            >
+              ✓
+            </button>
+          </CustomTooltip>
         )}
       </div>
 

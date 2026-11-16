@@ -294,6 +294,18 @@ afterAll(() => {
 });
 
 describe("useExperienceCopilotController — attachments (CA-4e3)", () => {
+  test("carries prompt preset identities on the send body", async () => {
+    streamExperienceCopilot.mockResolvedValue({ finishReason: "stop" });
+    const { result } = renderHook(() =>
+      useAgentController({ transport: testTransport, kind: "experience", threadId: THREAD, providerProfileId: PROVIDER }),
+    );
+    await act(async () => {
+      await result.current.handleSend("discuss", { promptAttachments: [{ presetId: "preset_1" }] });
+    });
+    const body = streamExperienceCopilot.mock.calls[0][1] as Record<string, unknown>;
+    expect(body.promptAttachments).toEqual([{ presetId: "preset_1" }]);
+  });
+
   test("the send body carries the composer's attachments through the ONE send mapper", async () => {
     streamExperienceCopilot.mockResolvedValue({ finishReason: "stop" });
     const { result } = renderHook(() =>

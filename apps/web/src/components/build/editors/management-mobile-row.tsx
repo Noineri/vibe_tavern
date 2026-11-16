@@ -17,6 +17,7 @@ import { Ic } from "../../shared/icons.js";
 import { ActionSheet, type ActionSheetItem } from "../../shared/ActionSheet.js";
 import { SaveButton } from "../../shared/SaveBar.js";
 import { Toggle } from "../../shared/Toggle.js";
+import { CustomTooltip } from "../../shared/Tooltip.js";
 import { TextInput } from "../../shared/text-input.js";
 import type { ScriptDraftSaveState } from "../../../stores/script-draft-store.js";
 
@@ -79,15 +80,16 @@ export function ManagementMobileRow({
           onClick={onSave}
           label={saveLabel}
         />
-        <button
-          type="button"
-          aria-label={t("management_more_actions")}
-          title={t("management_more_actions")}
-          className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded text-t2 transition-all hover:bg-s2 hover:text-t1"
-          onClick={() => setSheetOpen(true)}
-        >
-          <Ic.ellipsis />
-        </button>
+        <CustomTooltip content={t("management_more_actions")}>
+          <button
+            type="button"
+            aria-label={t("management_more_actions")}
+            className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded text-t2 transition-all hover:bg-s2 hover:text-t1"
+            onClick={() => setSheetOpen(true)}
+          >
+            <Ic.ellipsis />
+          </button>
+        </CustomTooltip>
       </div>
       <ActionSheet
         open={sheetOpen}

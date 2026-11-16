@@ -4,6 +4,7 @@ import { cn } from "../../../lib/cn.js";
 import { DropdownSelect } from "../../shared/DropdownSelect.js";
 import { ToolbarSelect, type ToolbarSelectItem } from "../../shared/ToolbarSelect.js";
 import { SearchInput } from "../../shared/SearchInput.js";
+import { OverflowTooltip } from "../../shared/OverflowTooltip.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
 import { Ic } from "../../shared/icons.js";
 import type { Tab } from "./use-lorebook-editor-state.js";
@@ -88,7 +89,7 @@ export function WorldLoreOwnerFilter({
             data-testid={testId}
             className="flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 font-ui text-[calc(var(--ui-fs)-3px)] font-medium text-t3 transition-all hover:bg-s2 active:bg-s3"
           >
-            <span className="max-w-36 truncate" title={selectedOwner?.kind === "unbound" ? undefined : selectedOwner?.name}>{label}</span>
+            <OverflowTooltip className="max-w-36" text={label} />
             {Ic.caret("d")}
           </button>
         }

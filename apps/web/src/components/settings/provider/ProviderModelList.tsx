@@ -2,7 +2,7 @@ import { Command } from "cmdk";
 import type { ReactNode } from "react";
 import { useT } from "../../../i18n/context.js";
 import { cn } from "../../../lib/cn.js";
-import type { ProviderModelOption } from "../../../api/types.js";
+import type { FavoriteProviderModelRecord, ProviderModelOption } from "../../../api/types.js";
 import { Icons } from "../../shared/icons.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
 import { deriveOwner, type ToolSupport } from "../../../lib/provider-model-capabilities.js";
@@ -16,9 +16,11 @@ export type ProviderModelListOption = ProviderModelOption & {
 
 interface ProviderModelListProps {
   models: ProviderModelListOption[];
+  /** Unfiltered catalog: search and UI filters must not imply a model disappeared. */
+  catalogModels?: ProviderModelListOption[];
   selectedId: string;
   search: string;
-  favorites: Array<{ modelId: string }>;
+  favorites: Array<Pick<FavoriteProviderModelRecord, "modelId"> & Partial<Pick<FavoriteProviderModelRecord, "label" | "contextLength">>>;
   onSelect: (model: ProviderModelListOption) => void;
   onToggleFavorite?: (model: ProviderModelListOption) => void;
   onUseCustomSlug: (slug: string) => void;
@@ -35,6 +37,7 @@ interface ProviderModelListProps {
 
 export function ProviderModelList({
   models,
+  catalogModels = models,
   selectedId,
   search,
   favorites,
@@ -53,15 +56,29 @@ export function ProviderModelList({
 }: ProviderModelListProps) {
   const { t } = useT();
   const favoriteIds = new Set(favorites.map((model) => model.modelId));
+  const catalogIds = new Set(catalogModels.map((model) => model.id));
+  const missingFavorites: ProviderModelListOption[] = favorites
+    .filter((favorite) => !catalogIds.has(favorite.modelId))
+    .map((favorite) => ({
+      id: favorite.modelId,
+      label: favorite.label || favorite.modelId,
+      contextLength: favorite.contextLength ?? undefined,
+    }));
+  const missingIds = new Set(missingFavorites.map((model) => model.id));
   const query = search.trim().toLowerCase();
+  // Saved favorites remain manageable without pricing or capability metadata.
+  const visibleMissing = missingFavorites
+    .filter((model) => model.label.toLowerCase().includes(query) || model.id.toLowerCase().includes(query))
+    .sort((a, b) => a.label.localeCompare(b.label));
   const visible = models
+    .filter((model) => !missingIds.has(model.id))
     .filter((model) => !toolFilter || model.toolSupport === toolFilter)
     .sort((a, b) => {
       const favoriteOrder = Number(favoriteIds.has(b.id)) - Number(favoriteIds.has(a.id));
       return favoriteOrder || a.label.localeCompare(b.label);
     });
   const customSlug = search.trim();
-  const hasExactMatch = models.some((model) => model.id === customSlug);
+  const hasExactMatch = models.some((model) => model.id === customSlug) || missingIds.has(customSlug);
 
   const formatContext = (contextLength?: number) => {
     if (contextLength == null || !Number.isFinite(contextLength)) return null;
@@ -91,6 +108,7 @@ export function ProviderModelList({
         {onToggleFavorite && <CustomTooltip content={favorite ? t("remove_from_favorites") : t("add_to_favorites")}>
           <button
             type="button"
+            aria-label={favorite ? t("remove_from_favorites") : t("add_to_favorites")}
             data-testid={favoriteTestId}
             className={cn("flex h-5 w-5 shrink-0 items-center justify-center rounded text-t4 transition-colors hover:bg-s3 hover:text-warning-text", favorite && "text-warning-text")}
             onPointerDown={(event) => event.stopPropagation()}
@@ -147,6 +165,11 @@ export function ProviderModelList({
           moved onto the ScrollArea root; cmdk's active-item scrollIntoView is
           element-level, so it rides the lane viewport unchanged. */}
       <Command.List className={cn("p-1", listClassName)}>
+      {visibleMissing.length > 0 && (
+        <Command.Group heading={<div className="px-2.5 pb-1 pt-1.5 font-ui text-[calc(var(--ui-fs)-4px)] font-semibold uppercase tracking-[0.06em] text-t4">{t("favorites_outside_catalog")}</div>}>
+          {visibleMissing.map(renderRow)}
+        </Command.Group>
+      )}
       {groups
         ? groups.map(([owner, items]) => (
             <Command.Group
@@ -162,7 +185,7 @@ export function ProviderModelList({
           {t("use_custom_model_id", { id: customSlug })}
         </Command.Item>
       )}
-      {visible.length === 0 && !customSlug && <div className="px-2.5 py-1.5 text-center font-ui text-[calc(var(--ui-fs)-3px)] text-t4">{t("no_models_found")}</div>}
+      {visible.length === 0 && visibleMissing.length === 0 && !customSlug && <div className="px-2.5 py-1.5 text-center font-ui text-[calc(var(--ui-fs)-3px)] text-t4">{t("no_models_found")}</div>}
       </Command.List>
     </ScrollArea>
   );

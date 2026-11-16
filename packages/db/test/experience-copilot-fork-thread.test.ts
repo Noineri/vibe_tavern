@@ -119,7 +119,8 @@ describe("ExperienceCopilotStore.forkChatThreadToBranch (SC-20)", () => {
     // for the drop-behavior call below, and the source.
     const { store } = await setup("chat_1", ["brnch_1", "brnch_2", "brnch_3"]);
     const thread = await store.startNewChatSession("chat_1", "brnch_1", "sidechat-ooc");
-    await store.appendMessage(thread.id, { role: "user", content: "one" });
+    const promptAttachments = [{ presetId: 'p', displayName: 'Preset', promptText: 'Frozen' }];
+    await store.appendMessage(thread.id, { role: "user", content: "one", promptAttachments });
     await store.appendContextEvent(thread.id, "rp_sync", { fromPosition: 0, toPosition: 0, messages: [] });
     await store.appendMessage(thread.id, { role: "assistant", content: "two" });
     await store.setContextLinks(thread.id, [{ targetType: "persona", targetId: "p1" }]);
@@ -154,6 +155,7 @@ describe("ExperienceCopilotStore.forkChatThreadToBranch (SC-20)", () => {
       reasoning: m.reasoning,
       toolCallsJson: m.toolCallsJson,
       toolCallId: m.toolCallId,
+      promptAttachments: m.promptAttachments,
       seq: m.seq,
       createdAt: m.createdAt,
     }))).toEqual(sourceMessages.map((m) => ({
@@ -162,6 +164,7 @@ describe("ExperienceCopilotStore.forkChatThreadToBranch (SC-20)", () => {
       reasoning: m.reasoning,
       toolCallsJson: m.toolCallsJson,
       toolCallId: m.toolCallId,
+      promptAttachments: m.promptAttachments,
       seq: m.seq,
       createdAt: m.createdAt,
     })));
@@ -169,6 +172,7 @@ describe("ExperienceCopilotStore.forkChatThreadToBranch (SC-20)", () => {
       expect(message.id).not.toBe(sourceMessages[i]!.id);
       expect(message.threadId).toBe(copied!.id);
     }
+        expect(copiedMessages[0]?.promptAttachments).toEqual(promptAttachments);
 
     const copiedTimeline = await store.listTimeline(copied!.id);
     expect(copiedTimeline.map((entry) => entry.rowType)).toEqual(["message", "event", "message", "event"]);

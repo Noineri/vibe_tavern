@@ -2,6 +2,7 @@ import { cn } from "../../../lib/cn.js";
 import { DropdownSelect } from "../DropdownSelect.js";
 import { Ic } from "../icons.js";
 import { Toggle } from "../Toggle.js";
+import { CustomTooltip } from "../Tooltip.js";
 
 type ProviderProfile = {
   id: string;
@@ -174,18 +175,20 @@ export function AiAssistantConnectionFields({
 
 function ModelPinButton({ pin, providerId, modelName }: { pin: ModelPinOption; providerId: string; modelName: string }) {
   return (
-    <button
-      type="button"
-      className={cn(
-        "flex h-8 w-8 shrink-0 items-center justify-center rounded-md border transition-colors",
-        pin.disabledClassName && "disabled:pointer-events-none disabled:opacity-40",
-        pin.pinned ? "border-accent bg-accent-dim text-accent" : "border-border text-t4 hover:text-t3",
-      )}
-      title={pin.pinned ? pin.unpinLabel : pin.pinLabel}
-      onClick={() => pin.onChange(!pin.pinned, { providerId, modelName })}
-      disabled={pin.disabled}
-    >
-      {pin.pinned ? <Ic.starFilled /> : <Ic.star />}
-    </button>
+    <CustomTooltip content={pin.pinned ? pin.unpinLabel : pin.pinLabel}>
+      <button
+        type="button"
+        className={cn(
+          "flex h-8 w-8 shrink-0 items-center justify-center rounded-md border transition-colors",
+          pin.disabledClassName && "disabled:pointer-events-none disabled:opacity-40",
+          pin.pinned ? "border-accent bg-accent-dim text-accent" : "border-border text-t4 hover:text-t3",
+        )}
+        aria-label={pin.pinned ? pin.unpinLabel : pin.pinLabel}
+        onClick={() => pin.onChange(!pin.pinned, { providerId, modelName })}
+        disabled={pin.disabled}
+      >
+        {pin.pinned ? <Ic.starFilled /> : <Ic.star />}
+      </button>
+    </CustomTooltip>
   );
 }

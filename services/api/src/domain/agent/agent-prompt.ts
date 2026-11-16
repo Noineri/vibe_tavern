@@ -15,7 +15,7 @@
 
 import { estimateTokens } from "@vibe-tavern/prompt-pipeline";
 import type { ToolCallPart, ToolResultPart } from "ai";
-import { attachmentPromptTokens, type Attachment } from "@vibe-tavern/domain";
+import { attachmentPromptTokens, type Attachment, type PromptAttachment } from "@vibe-tavern/domain";
 
 // ─── History message shape (mirrors AI SDK v5/v6 message parts) ──────────────
 
@@ -26,7 +26,7 @@ import { attachmentPromptTokens, type Attachment } from "@vibe-tavern/domain";
  *  history flow during assembly — the LAST digest becomes a system-level JSON
  *  context section, older digests are dropped. */
 export type AgentHistoryMessage =
-  | { role: "user"; content: string; toolCalls?: ToolCallPart[]; attachments?: Attachment[] }
+  | { role: "user"; content: string; toolCalls?: ToolCallPart[]; attachments?: Attachment[]; promptAttachments?: PromptAttachment[] }
   | { role: "assistant"; content: string; toolCalls?: ToolCallPart[] }
   | { role: "tool"; content: ToolResultPart[] }
   | { role: "digest"; content: string };

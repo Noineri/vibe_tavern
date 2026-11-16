@@ -16,6 +16,7 @@
 import type { RecordProposal } from "@vibe-tavern/api-contracts";
 import { Icons } from "../icons.js";
 import { ScrollArea } from "../scroll-area.js";
+import { CustomTooltip } from "../Tooltip.js";
 import { useT } from "../../../i18n/context.js";
 
 export interface RecordProposalFallbackCardProps {
@@ -106,15 +107,18 @@ export function RecordProposalFallbackCard({ proposal }: RecordProposalFallbackC
       </ScrollArea>
 
       <div className="flex items-center gap-2">
-        <button
-          type="button"
-          data-testid="record-proposal-fallback-accept"
-          disabled
-          title={hint}
-          className="h-[37px] cursor-pointer rounded-md bg-accent py-0 px-[21px] font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-on-accent transition-all hover:brightness-110 disabled:opacity-50"
-        >
-          {t("agent.record_proposal.accept")}
-        </button>
+        <CustomTooltip content={hint}>
+          <span tabIndex={-1} className="inline-flex">
+            <button
+              type="button"
+              data-testid="record-proposal-fallback-accept"
+              disabled
+              className="h-[37px] cursor-pointer rounded-md bg-accent py-0 px-[21px] font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-on-accent transition-all hover:brightness-110 disabled:opacity-50"
+            >
+              {t("agent.record_proposal.accept")}
+            </button>
+          </span>
+        </CustomTooltip>
         <span
           data-testid="record-proposal-fallback-hint"
           className="min-w-0 whitespace-normal break-words font-ui text-[calc(var(--ui-fs)-3px)] text-t3"
