@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { sql } from "drizzle-orm";
 
 import { createDb } from "../src/db-connection.js";
+import { scriptLinks } from "../src/db-schema.js";
 import { ContentStore } from "../src/content-store.js";
 import { createFileStore, STORAGE_FOLDERS } from "../src/file-store.js";
 import { ScriptStore } from "../src/stores/script-store.js";
@@ -14,11 +15,11 @@ const fixedClock: StoreClock = { now: () => "2026-06-15T00:00:00.000Z" };
 let counter = 0;
 const idGen: StoreIdGenerator = { next: (prefix) => `${prefix}_test_${++counter}` };
 
-async function setup() {
+async function setup(clock: StoreClock = fixedClock) {
 	const dataRoot = await mkdtemp(join(tmpdir(), "vt-scriptstore-test-"));
 	const db = await createDb(":memory:");
 	const content = new ContentStore({ fileStore: createFileStore(dataRoot) });
-	const store = new ScriptStore(db, { content, clock: fixedClock, idGenerator: idGen });
+	const store = new ScriptStore(db, { content, clock, idGenerator: idGen });
 	// FK parents (scripts reference characters + personas; the chat FK is
 	// exercised by the setScope chat transition).
 	await db.run(sql`INSERT INTO characters (id, name, created_at, updated_at) VALUES ('char_1', 'C', '2026-01-01', '2026-01-01')`);
@@ -99,19 +100,21 @@ describe("ScriptStore link management (script_links junction)", () => {
 		expect(remaining[0]).toEqual({ scriptId: s.id, targetType: "character", targetId: "char_1" });
 	});
 
-	test("listAllEnabledForChat resolves entity-linked AND globally-linked scripts alike", async () => {
+	test("listAllEnabledForChat resolves entity-linked AND non-global multi-target-linked scripts alike", async () => {
 		const { store } = await setup();
-		// Entity script linked to char_1 (an owner binding).
+		// Entity script linked to char_1 alone.
 		const entityLinked = await store.create({ name: "fk-owned", scopeType: "entity", enabled: true });
 		await store.addLink(entityLinked.id, "character", "char_1");
-		// Global script, junction-linked to char_1.
-		const linked = await store.create({ name: "linked", scopeType: "global", enabled: true });
+		// Non-global entity script cross-linked to persona_9 and char_1 (would not resolve without link).
+		const linked = await store.create({ name: "linked", scopeType: "entity", enabled: true });
+		await store.addLink(linked.id, "persona", "persona_9");
 		await store.addLink(linked.id, "character", "char_1");
 
 		const resolved = await store.listAllEnabledForChat("char_1", null, "chat_x");
-		const names = resolved.map((s) => s.name);
-		expect(names).toContain("fk-owned");
-		expect(names).toContain("linked");
+		expect(resolved.map((s) => s.name)).toEqual(["fk-owned", "linked"]);
+		// Unrelated owner resolves neither; persona_9 resolves only the cross-linked script.
+		expect(await store.listAllEnabledForChat("char_other", null, "chat_x")).toEqual([]);
+		expect((await store.listAllEnabledForChat("char_other", "persona_9", "chat_x")).map((s) => s.name)).toEqual(["linked"]);
 	});
 
 	test("junction-linked script homed to a DIFFERENT character still resolves via link", async () => {
@@ -168,13 +171,15 @@ describe("ScriptStore link management (script_links junction)", () => {
 	});
 
 	test("deleting a script cascades to its links", async () => {
-		const { store } = await setup();
+		const { store, db } = await setup();
 		const s = await store.create({ name: "doomed", scopeType: "global" });
 		await store.addLink(s.id, "character", "char_1");
 		expect((await store.getLinks(s.id)).length).toBe(1);
 		await store.delete(s.id);
-		// Reverse query no longer returns it.
+		// Reverse query, getLinks, and the raw junction table are all empty.
 		expect(await store.listScriptsLinkedToTarget("character", "char_1")).toEqual([]);
+		expect(await store.getLinks(s.id)).toEqual([]);
+		expect(db.select().from(scriptLinks).all()).toEqual([]);
 	});
 });
 
@@ -197,13 +202,15 @@ describe("ScriptStore.setScope (PR-6, entity model)", () => {
 
 	test("reassigning to global leaves the chat FK empty and the links intact", async () => {
 		const { store } = await setup();
-		const created = await store.create({ name: "S2", scopeType: "entity" });
+		const created = await store.create({ name: "S2", scopeType: "chat", chatId: "chat_x" });
+		expect(created.chatId).toBe("chat_x");
 		await store.addLink(created.id, "persona", "persona_9");
 		const globalized = await store.setScope(created.id, "global", null);
 		expect(globalized.scopeType).toBe("global");
 		expect(globalized.characterId).toBeNull();
 		expect(globalized.personaId).toBeNull();
 		expect(globalized.chatId).toBeNull();
+		expect((await store.getById(created.id))?.chatId).toBeNull();
 		const globalScripts = await store.listByScope("global");
 		expect(globalScripts.some((s) => s.id === created.id)).toBe(true);
 		// Links survive the global flip — an owner-bound script stays bound
@@ -308,12 +315,13 @@ describe("ScriptStore kind-split resolvers (DICE-B2)", () => {
 
 	test("a dice script junction-linked to a character resolves ONLY via the dice resolver", async () => {
 		const { store } = await setup();
-		const dice = await store.create({ name: "dice-linked", scopeType: "global", enabled: true, scriptKind: "dice" });
+		const dice = await store.create({ name: "dice-linked", scopeType: "entity", enabled: true, scriptKind: "dice" });
 		await store.addLink(dice.id, "character", "char_1");
 		const promptResolved = await store.listAllEnabledForChat("char_1", null, "chat_x");
 		const diceResolved = await store.listAllEnabledDiceScriptsForChat("char_1", null, "chat_x");
 		expect(promptResolved.some((s) => s.name === "dice-linked")).toBe(false);
 		expect(diceResolved.some((s) => s.name === "dice-linked")).toBe(true);
+		expect(await store.listAllEnabledDiceScriptsForChat("char_other", null, "chat_x")).toEqual([]);
 	});
 
 	test("the dice resolver preserves dedup/order across links (mirrors prompt path)", async () => {
@@ -360,9 +368,9 @@ describe("ScriptStore.listDiceScriptsByIds (chat-local override, fix 1)", () => 
 	test("drops disabled, non-dice, and unknown ids silently", async () => {
 		const { store } = await setup();
 		const keep = await store.create({ name: "keep", scopeType: "global", enabled: true, scriptKind: "dice" });
-		await store.create({ name: "disabled", scopeType: "global", enabled: false, scriptKind: "dice" });
-		await store.create({ name: "prompt", scopeType: "global", enabled: true, scriptKind: "prompt" });
-		const resolved = await store.listDiceScriptsByIds([keep.id, "disabled", "prompt", "does-not-exist"]);
+		const disabled = await store.create({ name: "disabled", scopeType: "global", enabled: false, scriptKind: "dice" });
+		const prompt = await store.create({ name: "prompt", scopeType: "global", enabled: true, scriptKind: "prompt" });
+		const resolved = await store.listDiceScriptsByIds([keep.id, disabled.id, prompt.id, "does-not-exist"]);
 		expect(resolved.map((s) => s.name)).toEqual(["keep"]);
 	});
 
@@ -471,17 +479,21 @@ describe("ScriptStore.create owner links (step 2)", () => {
 			creationIntentId: "intent-1",
 			links: [{ targetType: "character", targetId: "char_1" }],
 		});
-		// Retry with the same intent + owner list: the same script comes back
-		// and the links exist exactly once (onConflictDoNothing).
+		// Retry with the existing link AND a newly requested link: char_1 is not
+		// duplicated (onConflictDoNothing) while missing persona_9 is repaired.
 		const retry = await store.create({
 			name: "intent",
 			scopeType: "entity",
 			creationIntentId: "intent-1",
-			links: [{ targetType: "character", targetId: "char_1" }],
+			links: [
+				{ targetType: "character", targetId: "char_1" },
+				{ targetType: "persona", targetId: "persona_9" },
+			],
 		});
 		expect(retry.id).toBe(first.id);
 		expect((await store.listAll()).filter((s) => s.creationIntentId === "intent-1")).toHaveLength(1);
-		expect(await store.getLinks(first.id)).toHaveLength(1);
+		expect((await store.getLinks(first.id)).map((l) => `${l.targetType}:${l.targetId}`).sort())
+			.toEqual(["character:char_1", "persona:persona_9"]);
 	});
 
 	test("deleteLinksForTarget removes only the target's rows; other links survive", async () => {
@@ -527,18 +539,23 @@ describe("ScriptStore origin + first-enable trust (SS-2)", () => {
 	});
 
 	test("first enable of an imported script stamps firstEnabledAt once; disable→enable never re-stamps or clears", async () => {
-		const { store } = await setup();
+		let now = "2026-06-15T00:00:00.000Z";
+		const { store } = await setup({ now: () => now });
 		const s = await store.create({ name: "imp", scopeType: "global", origin: "imported", enabled: false });
-		const enabled = await store.update(s.id, { enabled: true });
-		expect(enabled.firstEnabledAt).toBe("2026-06-15T00:00:00.000Z");
-		const stamp = enabled.firstEnabledAt;
 
+		now = "2026-06-15T00:05:00.000Z";
+		const enabled = await store.update(s.id, { enabled: true });
+		expect(enabled.firstEnabledAt).toBe("2026-06-15T00:05:00.000Z");
+
+		now = "2026-06-15T00:10:00.000Z";
 		await store.update(s.id, { enabled: false });
 		// Disabling does not clear the stamp.
-		expect((await store.getById(s.id))?.firstEnabledAt).toBe(stamp);
+		expect((await store.getById(s.id))?.firstEnabledAt).toBe("2026-06-15T00:05:00.000Z");
 
+		now = "2026-06-15T00:15:00.000Z";
 		const reEnabled = await store.update(s.id, { enabled: true });
-		expect(reEnabled.firstEnabledAt).toBe(stamp);
+		// Re-enabling keeps the original trust stamp rather than restamping to T+15m.
+		expect(reEnabled.firstEnabledAt).toBe("2026-06-15T00:05:00.000Z");
 	});
 
 	test("origin is fixed at creation — updates cannot change it", async () => {

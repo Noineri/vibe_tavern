@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 
 import { STT_BACKENDS } from '@vibe-tavern/domain';
 
@@ -14,9 +14,9 @@ const fixedClock: StoreClock = { now: () => '2026-08-27T00:00:00.000Z' };
 let counter = 0;
 const idGen: StoreIdGenerator = { next: (prefix) => `${prefix}_test_${++counter}` };
 
-async function setup() {
+async function setup(clock: StoreClock = fixedClock) {
 	const db = await createDb(':memory:');
-	const store = new SttStore(db, { clock: fixedClock, idGenerator: idGen });
+	const store = new SttStore(db, { clock, idGenerator: idGen });
 	return { store, db };
 }
 
@@ -90,26 +90,38 @@ describe('SttStore CRUD', () => {
 	});
 
 	test('update patches fields, serializes config, bumps updatedAt; unknown id → null', async () => {
-		const { store } = await setup();
+		let now = '2026-08-27T00:00:00.000Z';
+		const { store } = await setup({ now: () => now });
 		const created = await store.create(baseInput({ name: 'Old name' }));
+		expect(created.createdAt).toBe('2026-08-27T00:00:00.000Z');
 
+		now = '2026-08-27T00:05:00.000Z';
 		const updated = await store.update(created.id, {
 			name: 'New name',
 			config: { endpoint: 'https://api.openai.com/v1', model: 'gpt-4o-transcribe' },
 		});
 		expect(updated?.name).toBe('New name');
 		expect(updated?.config).toEqual({ endpoint: 'https://api.openai.com/v1', model: 'gpt-4o-transcribe' });
-		expect(updated?.createdAt).toBe(created.createdAt);
-		expect(updated?.updatedAt).toBe(fixedClock.now());
+		expect(updated?.createdAt).toBe('2026-08-27T00:00:00.000Z');
+		expect(updated?.updatedAt).toBe('2026-08-27T00:05:00.000Z');
 
 		expect(await store.update('stt_profile_missing', { name: 'x' })).toBeNull();
 	});
 
 	test('setDefault moves the pointer atomically; unknown id → null', async () => {
-		const { store } = await setup();
+		const { store, db } = await setup();
 		const first = await store.create(baseInput({ isDefault: true }));
 		const second = await store.create(baseInput());
 
+		// Trigger rejects the second step (setting is_default = 1 on second) AFTER
+		// step 1 already cleared first's is_default = 0 inside the transaction.
+		db.run(sql`CREATE TRIGGER fail_stt_set_default BEFORE UPDATE ON stt_profiles WHEN NEW.is_default = 1 AND NEW.id = '${sql.raw(second.id)}' BEGIN SELECT RAISE(ABORT, 'injected default boom'); END`);
+		await expect(store.setDefault(second.id)).rejects.toThrow('injected default boom');
+		expect((await store.getById(first.id))?.isDefault).toBe(true);
+		expect((await store.getById(second.id))?.isDefault).toBe(false);
+		expect((await store.getDefault())?.id).toBe(first.id);
+
+		db.run(sql`DROP TRIGGER fail_stt_set_default`);
 		const moved = await store.setDefault(second.id);
 		expect(moved?.isDefault).toBe(true);
 		expect((await store.getById(first.id))?.isDefault).toBe(false);

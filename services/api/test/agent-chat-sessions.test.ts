@@ -309,9 +309,13 @@ describe("the unchanged per-thread routes serve a chat-owned thread (SC-0b)", ()
     expect(renameRes.status).toBe(200);
     expect(((await renameRes.json()) as WireThread).title).toBe("Renamed chat session");
 
-    const archiveRes = await threadRoutes.request(`/api/experience-copilot/${second.id}/archive`, { method: "POST" });
+    // Archive the currently ACTIVE thread (`first`), then confirm active reads null.
+    expect(second.id).not.toBe(first.id);
+    const archiveRes = await threadRoutes.request(`/api/experience-copilot/${first.id}/archive`, { method: "POST" });
     expect(archiveRes.status).toBe(200);
     expect(((await archiveRes.json()) as WireThread).archivedAt).not.toBeNull();
+    const afterArchiveActive = await (await chatRoutes.request(`${chatUrl(chat, FAKE_CHAT_KIND_ID)}/active`)).json();
+    expect(afterArchiveActive).toBeNull();
   });
 });
 

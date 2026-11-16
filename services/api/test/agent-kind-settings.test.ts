@@ -269,7 +269,26 @@ describe("per-kind settings routes (SC-0d)", () => {
 
 describe("the bootstrap payload carries the per-kind map (SC-0d)", () => {
   test("getBootstrapState maps every registered kind to its effective settings", async () => {
-    const runtime = new SessionRuntime(stores, { getActiveProviderProfile: async () => null });
+    const dataRoot = await mkdtemp(join(tmpdir(), "vt-aks-bootstrap-"));
+    const localStores = await createStoreContainer(join(dataRoot, "bootstrap.db"), dataRoot);
+    await localStores.personas.ensureDefault();
+    await localStores.presets.ensureDefault();
+    await localStores.uiSettings.update({
+      copilotProviderId: LEGACY_PROVIDER_ID,
+      copilotModelName: LEGACY_MODEL_NAME,
+    });
+    const localRoutes = createAgentKindSettingsRoutes(new ExperienceCopilotAdapter(localStores));
+    const patchLocal = (kind: string, body: Record<string, unknown>) =>
+      localRoutes.request(settingsUrl(kind), {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    expect((await patchLocal("script", { providerProfileId: "prov_script", modelName: "model_script" })).status).toBe(200);
+    expect((await patchLocal(FAKE_KIND_ID, { providerProfileId: null, modelName: "model_fake2" })).status).toBe(200);
+    expect((await patchLocal("sidechat-ooc", { defaultProfileId: "prof_sidechat_default" })).status).toBe(200);
+
+    const runtime = new SessionRuntime(localStores, { getActiveProviderProfile: async () => null });
     // The same harness shape as session-runtime-bootstrap.test.ts: an awaited
     // character create settles the constructor's fire-and-forget chat-order
     // seed before the bootstrap read (a fresh runtime's order is still stale
@@ -299,6 +318,7 @@ describe("the bootstrap payload carries the per-kind map (SC-0d)", () => {
     // SC-7: the post-split kind's entry carries its (seedless) row's nulls.
     expect(boot.agentKindSettings["sidechat-ooc"].providerProfileId).toBeNull();
     expect(boot.agentKindSettings["sidechat-ooc"].modelName).toBeNull();
+    expect(boot.agentKindSettings["sidechat-ooc"].defaultProfileId).toBe("prof_sidechat_default");
   });
 
   test("the map carries each kind's served chat modes — the SC-7b wire field", async () => {

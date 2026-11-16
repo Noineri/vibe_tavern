@@ -195,11 +195,24 @@ describe("POST deck/:cardId/play — the foreign-goals 409 surfaces typed like t
 });
 
 describe("typed client", () => {
-	test("the web client's play chain resolves through AppType inference", () => {
-		// The `AppType` import is type-only (erased at runtime): this pins at
-		// compile time that the mounted router serves the play path shape.
-		const typed = hc<AppType>("http://localhost");
+	test("the web client's play chain resolves through AppType inference and drives the mounted route", async () => {
+		await putDeck(chat.id, chat.activeBranchId, FULL_DECK);
+		const typed = hc<AppType>("http://localhost", {
+			fetch: (input: Parameters<typeof app.request>[0], init?: Parameters<typeof app.request>[1]) =>
+				Promise.resolve(app.request(input, init)),
+		});
 		const play = typed.api.agent.chats[":chatId"].branches[":branchId"].deck[":cardId"].play;
 		expect(typeof play.$post).toBe("function");
+
+		const res = await play.$post({
+			param: { chatId: chat.id, branchId: chat.activeBranchId, cardId: "card_1" },
+			json: {},
+		});
+		expect(res.status).toBe(200);
+		const body = await res.json();
+		if (!("deck" in body)) throw new Error("unexpected validation error response");
+		expect(body.deck.cards.map((c) => c.id)).toEqual(["card_2"]);
+		expect(body.event.title).toBe("The door won't hold");
+		expect(body.event.status).toBe("active");
 	});
 });

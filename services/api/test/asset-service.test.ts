@@ -344,8 +344,15 @@ describe("AssetService.upload - text attachments (CA-1a)", () => {
 		expect(Object.keys(image).sort()).toEqual(["assetId", "url"]);
 		expect(await Bun.file(join(assetsDir, `${image.assetId}.png`)).exists()).toBe(true);
 		expect((await service.serve(image.assetId))?.headers.get("Content-Type")).toBe("image/png");
+
+		const audio = await service.upload(new File([WEBP_BYTES], "notes.txt", { type: "audio/webm;codecs=opus" }));
+		expect(Object.keys(audio).sort()).toEqual(["assetId", "url"]);
+		expect(await Bun.file(join(assetsDir, `${audio.assetId}.webm`)).exists()).toBe(true);
+		expect((await service.serve(audio.assetId))?.headers.get("Content-Type")).toBe("audio/webm");
+
 		// An unlisted media type is not rescued by a text extension either.
 		await expect(service.upload(new File([PNG_BYTES], "x.md", { type: "video/mp4" }))).rejects.toThrow(/Unsupported attachment type/);
+		await expect(service.upload(new File([WEBP_BYTES], "x.md", { type: "audio/x-custom" }))).rejects.toThrow(/Unsupported attachment type/);
 	});
 
 	test("a non-text extension with a non-allowed MIME is still refused", async () => {
@@ -378,6 +385,8 @@ describe("AssetService.upload - text attachments (CA-1a)", () => {
 		expect(result.tokenCount).toBeGreaterThan(500_000);
 		const stored = Bun.file(join(assetsDir, `${result.assetId}.txt`));
 		expect(stored.size).toBe(bytes.length);
+		const storedBytes = new Uint8Array(await stored.arrayBuffer());
+		expect(Buffer.from(storedBytes).equals(Buffer.from(bytes))).toBe(true);
 	});
 
 	test("a leading UTF-8 BOM is stripped before counting (same count with and without)", async () => {

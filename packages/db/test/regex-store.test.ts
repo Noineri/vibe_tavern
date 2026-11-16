@@ -18,9 +18,9 @@ const fixedClock: StoreClock = { now: () => "2026-08-25T00:00:00.000Z" };
 let counter = 0;
 const idGen: StoreIdGenerator = { next: (prefix) => `${prefix}_test_${++counter}` };
 
-async function setup() {
+async function setup(clock: StoreClock = fixedClock) {
 	const db = await createDb(":memory:");
-	const store = new RegexStore(db, { clock: fixedClock, idGenerator: idGen });
+	const store = new RegexStore(db, { clock, idGenerator: idGen });
 	return { store, db };
 }
 
@@ -87,37 +87,58 @@ function baseBundle(overrides: Partial<CreateRegexProfileBundleData> = {}): Crea
 describe("RegexStore CRUD", () => {
 	test("create → getById round-trips JSON array fields and booleans", async () => {
 		const { store } = await setup();
-		const created = await store.create(
-			baseInput({
-				name: "think-strip",
-				findRegex: "/<think>[\\s\\S]*?<\\/think>/g",
-				replaceString: "",
-				trimStrings: ["\n", "  "],
-				substituteRegex: REGEX_SUBSTITUTE.Escaped,
-				disabled: true,
-				markdownOnly: true,
-				promptOnly: false,
-				runOnEdit: false,
-				minDepth: 0,
-				maxDepth: 2,
-				placement: [REGEX_PLACEMENT.UserInput, REGEX_PLACEMENT.WorldInfo],
-				isGlobal: true,
-				sortOrder: 7,
-			}),
-		);
+		const input = baseInput({
+			name: "think-strip",
+			findRegex: "/<think>[\\s\\S]*?<\\/think>/g",
+			replaceString: "",
+			trimStrings: ["\n", "  "],
+			substituteRegex: REGEX_SUBSTITUTE.Escaped,
+			disabled: true,
+			markdownOnly: true,
+			promptOnly: false,
+			runOnEdit: false,
+			minDepth: 0,
+			maxDepth: 2,
+			placement: [REGEX_PLACEMENT.UserInput, REGEX_PLACEMENT.WorldInfo],
+			isGlobal: true,
+			sortOrder: 7,
+		});
+		const created = await store.create(input);
 
 		expect(created.id).toStartWith("regex_preset_");
 		expect(created.createdAt).toBe(fixedClock.now());
 		expect(created.updatedAt).toBe(fixedClock.now());
 
 		const loaded = await store.getById(created.id);
-		expect(loaded).toEqual(created);
+		expect(loaded).toEqual({
+			id: created.id,
+			name: "think-strip",
+			findRegex: "/<think>[\\s\\S]*?<\\/think>/g",
+			replaceString: "",
+			trimStrings: ["\n", "  "],
+			substituteRegex: REGEX_SUBSTITUTE.Escaped,
+			disabled: true,
+			markdownOnly: true,
+			promptOnly: false,
+			runOnEdit: false,
+			minDepth: 0,
+			maxDepth: 2,
+			placement: [REGEX_PLACEMENT.UserInput, REGEX_PLACEMENT.WorldInfo],
+			isGlobal: true,
+			sortOrder: 7,
+			profileId: null,
+			createdAt: fixedClock.now(),
+			updatedAt: fixedClock.now(),
+		});
 	});
 
 	test("update patches fields, serializes arrays, bumps updatedAt; unknown id → null", async () => {
-		const { store } = await setup();
+		let now = "2026-08-25T00:00:00.000Z";
+		const { store } = await setup({ now: () => now });
 		const created = await store.create(baseInput({ sortOrder: 1 }));
+		expect(created.createdAt).toBe("2026-08-25T00:00:00.000Z");
 
+		now = "2026-08-25T00:05:00.000Z";
 		const updated = await store.update(created.id, {
 			name: "renamed",
 			trimStrings: ["«", "»"],
@@ -131,7 +152,8 @@ describe("RegexStore CRUD", () => {
 		expect(updated!.placement).toEqual([REGEX_PLACEMENT.Reasoning]);
 		expect(updated!.disabled).toBe(true);
 		expect(updated!.minDepth).toBe(1);
-		expect(updated!.updatedAt).toBe(fixedClock.now()); // fixed clock — bump is a no-op but the write happened
+		expect(updated!.createdAt).toBe("2026-08-25T00:00:00.000Z");
+		expect(updated!.updatedAt).toBe("2026-08-25T00:05:00.000Z");
 
 		// Untouched fields survive the patch.
 		expect(updated!.findRegex).toBe(created.findRegex);
@@ -190,7 +212,7 @@ describe("RegexStore malformed-JSON hygiene", () => {
 
 describe("RegexStore link API", () => {
 	test("setLinks replaces atomically; addLink/removeLink/getLinks behave", async () => {
-		const { store } = await setup();
+		const { store, db } = await setup();
 		const preset = await store.create(baseInput());
 
 		await store.addLink(preset.id, "character", "char_1");
@@ -217,6 +239,16 @@ describe("RegexStore link API", () => {
 		await store.removeLink(preset.id, "preset", "preset_9");
 		const remaining = await store.getLinks(preset.id);
 		expect(remaining.map((l) => [l.targetType, l.targetId])).toEqual([["character", "char_1"]]);
+
+		// Later insert failure inside setLinks rolls back the initial delete.
+		db.run(sql`CREATE TRIGGER fail_regex_link_insert BEFORE INSERT ON regex_links WHEN NEW.target_id = 'boom_target' BEGIN SELECT RAISE(ABORT, 'injected regex link fail'); END`);
+		await expect(
+			store.setLinks(preset.id, [
+				{ targetType: "preset", targetId: "preset_safe" },
+				{ targetType: "character", targetId: "boom_target" },
+			]),
+		).rejects.toThrow("injected regex link fail");
+		expect((await store.getLinks(preset.id)).map((l) => [l.targetType, l.targetId])).toEqual([["character", "char_1"]]);
 	});
 });
 
@@ -263,9 +295,12 @@ describe("resolveActiveRegexPresets", () => {
 		await store.create(baseInput({ name: "disabled-global", isGlobal: true, disabled: true }));
 		const disabledChar = await store.create(baseInput({ name: "disabled-char", disabled: true }));
 		await store.addLink(disabledChar.id, "character", "char_1");
+		const disabledPreset = await store.create(baseInput({ name: "disabled-preset", disabled: true }));
+		await store.addLink(disabledPreset.id, "preset", "preset_9");
 
 		expect(await store.resolveActiveRegexPresets({ characterId: null, presetId: null })).toEqual([]);
 		expect(await store.resolveActiveRegexPresets({ characterId: "char_1", presetId: null })).toEqual([]);
+		expect(await store.resolveActiveRegexPresets({ characterId: "char_1", presetId: "preset_9" })).toEqual([]);
 		expect(await store.resolveActiveRegexPresets({ characterId: "other_char", presetId: "other_preset" })).toEqual([]);
 	});
 });
@@ -326,11 +361,16 @@ describe("RegexStore profile CRUD + membership (R-13)", () => {
 	});
 
 	test("updateProfile patches fields + bumps updatedAt; unknown id → null", async () => {
-		const { store } = await setup();
+		let now = "2026-08-25T00:00:00.000Z";
+		const { store } = await setup({ now: () => now });
 		const created = await store.createProfile(baseProfile({ disabled: true }));
+		expect(created.createdAt).toBe("2026-08-25T00:00:00.000Z");
+
+		now = "2026-08-25T00:05:00.000Z";
 		const updated = await store.updateProfile(created.id, { name: "renamed", disabled: false, isGlobal: true, sortOrder: 9 });
 		expect(updated).toMatchObject({ name: "renamed", disabled: false, isGlobal: true, sortOrder: 9 });
-		expect(updated!.updatedAt).toBe(fixedClock.now());
+		expect(updated!.createdAt).toBe("2026-08-25T00:00:00.000Z");
+		expect(updated!.updatedAt).toBe("2026-08-25T00:05:00.000Z");
 		expect(await store.updateProfile("missing", { name: "x" })).toBeNull();
 	});
 
@@ -348,7 +388,7 @@ describe("RegexStore profile CRUD + membership (R-13)", () => {
 	});
 
 	test("profile link API round-trips (set/add/remove/get) and replaces atomically", async () => {
-		const { store } = await setup();
+		const { store, db } = await setup();
 		const profile = await store.createProfile(baseProfile());
 		const set = await store.setProfileLinks(profile.id, [
 			{ targetType: "character", targetId: "char_1" },
@@ -362,7 +402,17 @@ describe("RegexStore profile CRUD + membership (R-13)", () => {
 		await store.addProfileLink(profile.id, "character", "char_1"); // idempotent
 		expect(await store.getProfileLinks(profile.id)).toHaveLength(2);
 		await store.removeProfileLink(profile.id, "character", "char_2");
-		expect(await store.getProfileLinks(profile.id)).toHaveLength(1);
+		expect((await store.getProfileLinks(profile.id)).map((l) => [l.targetType, l.targetId])).toEqual([["character", "char_1"]]);
+
+		// Later insert failure inside setProfileLinks rolls back the initial delete.
+		db.run(sql`CREATE TRIGGER fail_profile_link_insert BEFORE INSERT ON regex_profile_links WHEN NEW.target_id = 'boom_profile_target' BEGIN SELECT RAISE(ABORT, 'injected profile link fail'); END`);
+		await expect(
+			store.setProfileLinks(profile.id, [
+				{ targetType: "preset", targetId: "preset_safe" },
+				{ targetType: "character", targetId: "boom_profile_target" },
+			]),
+		).rejects.toThrow("injected profile link fail");
+		expect((await store.getProfileLinks(profile.id)).map((l) => [l.targetType, l.targetId])).toEqual([["character", "char_1"]]);
 	});
 
 	test("listProfileMemberIds returns members ordered by sortOrder", async () => {
@@ -426,7 +476,7 @@ describe("resolveActiveRegexPresets — R-13 profile gating matrix", () => {
 
 	test("member of disabled profile does NOT fire", async () => {
 		const { store } = await setup();
-		const profile = await store.createProfile(baseProfile({ disabled: true }));
+		const profile = await store.createProfile(baseProfile({ disabled: true, isGlobal: true }));
 		const rule = await store.create(baseInput({ name: "gated-disabled" }));
 		await store.attachRule(profile.id, rule.id);
 		expect(await store.resolveActiveRegexPresets({ characterId: null, presetId: null })).toEqual([]);
@@ -449,16 +499,15 @@ describe("resolveActiveRegexPresets — R-13 profile gating matrix", () => {
 
 	test("member's own isGlobal=1 or own matching links are INERT while it is a member", async () => {
 		const { store } = await setup();
-		const profile = await store.createProfile(baseProfile({ isGlobal: true }));
-		// Rule insists on global AND is character-linked, but the profile gate
-		// is what decides — the own config must be ignored while a member.
+		// Enabled but unbound profile (isGlobal: false, no profile links).
+		const profile = await store.createProfile(baseProfile({ isGlobal: false }));
+		// Rule insists on global AND is linked to both char_1 and preset_9, yet
+		// the unbound profile gates it off — own bindings stay inert.
 		const member = await store.create(baseInput({ name: "rebel", isGlobal: true, sortOrder: 3 }));
 		await store.addLink(member.id, "character", "char_1");
+		await store.addLink(member.id, "preset", "preset_9");
 		await store.attachRule(profile.id, member.id);
-		const result = await store.resolveActiveRegexPresets({ characterId: "char_1", presetId: null });
-		// Only profile-gated inclusion (profile global → member active)
-		// matters; nothing changes for the bound-char angle either.
-		expect(result.map((p) => p.id)).toEqual([member.id]);
+		expect(await store.resolveActiveRegexPresets({ characterId: "char_1", presetId: "preset_9" })).toEqual([]);
 	});
 
 	test("standalone rule (profileId null) is never gated by any profile state", async () => {
@@ -530,7 +579,8 @@ describe("resolveActiveRegexPresets — R-13 profile gating matrix", () => {
 // a trigger kills exactly one stage's INSERT; the whole bundle must vanish.
 describe("RegexStore.createProfileBundle — atomic bundle creation (RXU-12)", () => {
 	test("one-rule bundle: profile + rule committed, rule born with the profile id on insert", async () => {
-		const { store } = await setup();
+		const { store, db } = await setup();
+		db.run(sql`CREATE TRIGGER require_profile_id_on_insert BEFORE INSERT ON regex_presets WHEN NEW.profile_id IS NULL BEGIN SELECT RAISE(ABORT, 'rule inserted without profile_id'); END`);
 		const result = await store.createProfileBundle(baseBundle({ name: "solo" }));
 		expect(result.profile.id).toStartWith("regex_profile_");
 		expect(result.rules).toHaveLength(1);

@@ -145,6 +145,12 @@ describe("PUT validation (strict storyDeckSchema at the wire)", () => {
 	});
 
 	test("a rejected write never lands — GET still serves the previous deck", async () => {
+		await putDeck(chat.id, chat.activeBranchId, FULL_DECK);
+		const rejected = await putDeck(chat.id, chat.activeBranchId, {
+			cards: [{ id: "card_x", suit: "plot_twist", title: "Invalid", body: "" }],
+		});
+		expect(rejected.status).toBe(400);
+
 		const getRes = await app.request(deckUrl(chat.id, chat.activeBranchId));
 		expect(((await getRes.json()) as { deck: WireDeck }).deck).toEqual(FULL_DECK);
 	});
@@ -168,6 +174,7 @@ describe("unknown or foreign owners are 404s on both routes", () => {
 	});
 
 	test("a branch belonging to a DIFFERENT chat → 404 (never a cross-owner leak)", async () => {
+		await putDeck(chat.id, chat.activeBranchId, FULL_DECK);
 		// chat's branch id under otherChat's path: exists, but not there.
 		const getRes = await app.request(deckUrl(otherChat.id, chat.activeBranchId));
 		expect(getRes.status).toBe(404);
@@ -185,13 +192,31 @@ describe("unknown or foreign owners are 404s on both routes", () => {
 });
 
 describe("typed client", () => {
-	test("the web client's exact chains resolve through AppType inference", () => {
-		// The `AppType` import is type-only (erased at runtime): this pins at
-		// compile time that the mounted router actually serves the branch-deck
-		// path shape (DK-5's web client will drive it).
-		const typed = hc<AppType>("http://localhost");
+	test("the web client's exact chains resolve through AppType inference and drive the mounted route", async () => {
+		const typed = hc<AppType>("http://localhost", {
+			fetch: (input: Parameters<typeof app.request>[0], init?: Parameters<typeof app.request>[1]) =>
+				Promise.resolve(app.request(input, init)),
+		});
 		const branch = typed.api.agent.chats[":chatId"].branches[":branchId"].deck;
 		expect(typeof branch.$get).toBe("function");
 		expect(typeof branch.$put).toBe("function");
+
+		const typedDeck = {
+			cards: [{ id: "card_typed", suit: "mystery" as const, title: "Typed", body: "Via hc" }],
+		};
+		const putRes = await branch.$put({
+			param: { chatId: chat.id, branchId: chat.activeBranchId },
+			json: { deck: typedDeck },
+		});
+		expect(putRes.status).toBe(200);
+		const putBody = await putRes.json();
+		if (!("deck" in putBody)) throw new Error("unexpected validation error response");
+		expect(putBody.deck).toEqual(typedDeck);
+
+		const getRes = await branch.$get({
+			param: { chatId: chat.id, branchId: chat.activeBranchId },
+		});
+		expect(getRes.status).toBe(200);
+		expect((await getRes.json()).deck).toEqual(typedDeck);
 	});
 });

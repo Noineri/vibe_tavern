@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import { mkdtemp, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -31,7 +31,7 @@ async function setup() {
   const characterFolder = new CharacterFolder(content);
   const characters = new CharacterStore(db, { folder: characterFolder, clock, idGenerator: idGen });
   const versions = new VersionStore(db, { clock, idGenerator: idGen, folder: characterFolder });
-  return { dataRoot, db, content, characters, versions };
+  return { dataRoot, db, content, characterFolder, characters, versions };
 }
 
 async function setupWithRegistry() {
@@ -146,12 +146,26 @@ describe("VersionStore (VTF Phase 3)", () => {
   });
 
   test("setActive is a no-op when the target is already active", async () => {
-    const { characters, versions } = await setup();
+    const { dataRoot, characterFolder, characters, versions } = await setup();
     const char = await characters.create({ name: "N", description: "d", firstMessage: "f" });
     const base = await versions.ensureBaseVersion(char.id);
-    const result = await versions.setActive(char.id, base.id);
-    expect(result.id).toBe(base.id);
-    expect((await versions.listVersions(char.id))).toHaveLength(1);
+    await characters.update(char.id, { description: "edited-root" });
+    const profileBefore = await readProfile(dataRoot, char.id);
+
+    const snapshotSpy = spyOn(characterFolder, "snapshotToVersion");
+    const restoreSpy = spyOn(characterFolder, "restoreFromVersion");
+    try {
+      const result = await versions.setActive(char.id, base.id);
+      expect(result.id).toBe(base.id);
+      expect(snapshotSpy).not.toHaveBeenCalled();
+      expect(restoreSpy).not.toHaveBeenCalled();
+      expect(await folderExists(dataRoot, char.id, base.id)).toBe(false);
+      expect(await readProfile(dataRoot, char.id)).toBe(profileBefore);
+      expect((await versions.listVersions(char.id))).toHaveLength(1);
+    } finally {
+      snapshotSpy.mockRestore();
+      restoreSpy.mockRestore();
+    }
   });
 
   test("setActive throws when the version belongs to a different character", async () => {
@@ -188,11 +202,14 @@ describe("VersionStore (VTF Phase 3)", () => {
     const { characters, versions, dataRoot } = await setup();
     const char = await characters.create({ name: "R", description: "d", firstMessage: "f" });
     const base = await versions.ensureBaseVersion(char.id);
+    const profileBefore = await readProfile(dataRoot, char.id);
+    const instructionsBefore = await readInstructions(dataRoot, char.id);
+
     const renamed = await versions.renameVersion(base.id, "Renamed Base");
     expect(renamed?.title).toBe("Renamed Base");
-    // Content untouched.
-    const profile = await readProfile(dataRoot, char.id);
-    expect(profile).toContain("name: R");
+    // Full profile and instructions files stay byte-identical.
+    expect(await readProfile(dataRoot, char.id)).toBe(profileBefore);
+    expect(await readInstructions(dataRoot, char.id)).toBe(instructionsBefore);
     // renameVersion of a missing version returns null.
     expect(await versions.renameVersion("charver_does_not_exist", "x")).toBeNull();
   });

@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { eq } from 'drizzle-orm';
 
 import { createDb } from '../src/db-connection.js';
 import { servicePromptProfiles } from '../src/db-schema.js';
@@ -38,14 +39,18 @@ describe('ServicePromptProfileStore', () => {
   test('create → list puts Default first then by sortOrder', async () => {
     const { store } = await setup();
     await store.ensureDefaultServicePromptProfile();
-    await store.createServicePromptProfile({ name: 'Alpha', overrides: {} });
-    await store.createServicePromptProfile({ name: 'Zebra', overrides: { script: 's1' } });
+    // Reverse alphabetical insertion distinguishes sortOrder from name sorting.
+    const zebra = await store.createServicePromptProfile({ name: 'Zebra', overrides: { script: 's1' } });
+    const alpha = await store.createServicePromptProfile({ name: 'Alpha', overrides: {} });
+    const beta = await store.createServicePromptProfile({ name: 'Beta', overrides: {} });
     const list = await store.listServicePromptProfiles();
-    expect(list.map((p) => p.name)).toEqual(['Default', 'Alpha', 'Zebra']);
+    expect(list.map((p) => p.name)).toEqual(['Default', 'Zebra', 'Alpha', 'Beta']);
+    // 'default' occupies sortOrder 0, so created profiles start at 1.
+    expect([zebra.sortOrder, alpha.sortOrder, beta.sortOrder]).toEqual([1, 2, 3]);
   });
 
   test('reorder persists sortOrder and Default stays pinned first', async () => {
-    const { store } = await setup();
+    const { db, store } = await setup();
     await store.ensureDefaultServicePromptProfile();
     const a = await store.createServicePromptProfile({ name: 'Alpha', overrides: {} });
     const b = await store.createServicePromptProfile({ name: 'Beta', overrides: {} });
@@ -58,10 +63,17 @@ describe('ServicePromptProfileStore', () => {
     ]);
     const reordered = await store.listServicePromptProfiles();
     expect(reordered.map((p) => p.name)).toEqual(['Default', 'Gamma', 'Alpha', 'Beta']);
-    // Default reorder is ignored
+    expect(reordered[0].sortOrder).toBe(0);
+    const rawBefore = db.select().from(servicePromptProfiles).where(eq(servicePromptProfiles.id, 'default')).get();
+    expect(rawBefore?.sortOrder).toBe(0);
+
+    // Default reorder is ignored (isDefault pinned and sortOrder stays 0)
     await store.reorderServicePromptProfiles([{ id: 'default', sortOrder: 99 }]);
     const still = await store.listServicePromptProfiles();
     expect(still[0].id).toBe('default');
+    expect(still[0].sortOrder).toBe(0);
+    const rawAfter = db.select().from(servicePromptProfiles).where(eq(servicePromptProfiles.id, 'default')).get();
+    expect(rawAfter?.sortOrder).toBe(0);
   });
 
   test('update/delete refuse default profile', async () => {

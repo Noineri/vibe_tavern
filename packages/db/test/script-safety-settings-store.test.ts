@@ -1,13 +1,14 @@
 import { describe, expect, test } from "bun:test";
 
 import { createDb, ScriptSafetySettingsStore } from "../src/index.js";
+import { scriptSafetySettings } from "../src/db-schema.js";
 import type { StoreClock } from "../src/persistence.js";
 
 const clock: StoreClock = { now: () => "2026-06-15T00:00:00.000Z" };
 
-async function makeStore(): Promise<ScriptSafetySettingsStore> {
+async function makeStore() {
   const db = await createDb(":memory:");
-  return new ScriptSafetySettingsStore(db, { clock });
+  return { db, store: new ScriptSafetySettingsStore(db, { clock }) };
 }
 
 // SS-2 (SCRIPT_SAFETY_PLAN): the server-side singleton "don't show again"
@@ -16,14 +17,14 @@ async function makeStore(): Promise<ScriptSafetySettingsStore> {
 // replaces the row wholesale.
 describe("ScriptSafetySettingsStore (SS-2 singleton)", () => {
   test("defaults to not suppressed when no row exists", async () => {
-    const store = await makeStore();
+    const { store } = await makeStore();
     const settings = await store.get();
     expect(settings.suppressImportWarnings).toBe(false);
     expect(settings.updatedAt).toBe("");
   });
 
   test("upsert + get round-trips the suppress flag", async () => {
-    const store = await makeStore();
+    const { store } = await makeStore();
     const upserted = await store.upsert({ suppressImportWarnings: true });
     expect(upserted.suppressImportWarnings).toBe(true);
     expect(upserted.updatedAt).toBe("2026-06-15T00:00:00.000Z");
@@ -31,9 +32,14 @@ describe("ScriptSafetySettingsStore (SS-2 singleton)", () => {
   });
 
   test("upsert replaces the previous value (singleton, never duplicates rows)", async () => {
-    const store = await makeStore();
+    const { db, store } = await makeStore();
     await store.upsert({ suppressImportWarnings: true });
     await store.upsert({ suppressImportWarnings: false });
     expect((await store.get()).suppressImportWarnings).toBe(false);
+
+    const rows = await db.select().from(scriptSafetySettings).all();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.id).toBe("default");
+    expect(rows[0]!.suppressImportWarnings).toBe(0);
   });
 });

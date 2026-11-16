@@ -1,8 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { sql } from "drizzle-orm";
+import { join, resolve } from "node:path";
 
 import { createDb } from "../src/db-connection.js";
 import { ContentStore } from "../src/content-store.js";
@@ -14,6 +13,28 @@ import type { StoreClock, StoreIdGenerator } from "../src/persistence.js";
 const fixedClock: StoreClock = { now: () => "2026-06-15T00:00:00.000Z" };
 let counter = 0;
 const idGen: StoreIdGenerator = { next: (prefix) => `${prefix}_test_${++counter}` };
+
+const REAL_DRIZZLE_DIR = resolve(import.meta.dir, "..", "drizzle");
+const PRE_0036_LAST_TAG = "0035_nifty_alex_power";
+
+interface JournalEntry { idx: number; version: string; when: number; tag: string; breakpoints: boolean }
+
+/** Drizzle folder copy stopping immediately before migration 0036 (script_visuals junction). */
+async function buildPre0036Folder(dir: string): Promise<string> {
+	const folder = join(dir, "drizzle");
+	await mkdir(folder, { recursive: true });
+	const journal = JSON.parse(await readFile(resolve(REAL_DRIZZLE_DIR, "meta", "_journal.json"), "utf8")) as { entries: JournalEntry[] };
+	const cut = journal.entries.findIndex((e) => e.tag === PRE_0036_LAST_TAG);
+	if (cut < 0) throw new Error(`journal does not contain ${PRE_0036_LAST_TAG}`);
+	const kept = journal.entries.slice(0, cut + 1);
+	for (const entry of kept) {
+		const sqlText = await readFile(resolve(REAL_DRIZZLE_DIR, `${entry.tag}.sql`), "utf8");
+		await Bun.write(resolve(folder, `${entry.tag}.sql`), sqlText);
+	}
+	await mkdir(resolve(folder, "meta"), { recursive: true });
+	await Bun.write(resolve(folder, "meta", "_journal.json"), JSON.stringify({ ...journal, entries: kept }));
+	return folder;
+}
 
 async function setup() {
 	const dataRoot = await mkdtemp(join(tmpdir(), "vt-scriptvis-test-"));
@@ -28,15 +49,6 @@ async function mkVisual(resources: ExperienceResourceStore, name: string): Promi
 	const v = await resources.createVisual({ name, source: name, apiVersion: 1, scopeType: "global" });
 	return v.id;
 }
-
-/** The backfill statement from migration 0036 (must stay byte-identical to the
- *  `INSERT ... SELECT` in `packages/db/drizzle/0036_hard_sabretooth.sql`). */
-const BACKFILL_SQL = sql`INSERT INTO "script_visuals" ("script_id", "visual_id")
-SELECT s."id", s."default_visual_id"
-FROM "scripts" s
-WHERE s."default_visual_id" IS NOT NULL
-  AND EXISTS (SELECT 1 FROM "experience_visuals" v WHERE v."id" = s."default_visual_id")
-ON CONFLICT("script_id", "visual_id") DO NOTHING`;
 
 // BE-5: the script_visuals junction + the "primary ∈ bound set" invariant.
 // The invariant is maintained on bind/unbind: the first bound visual becomes
@@ -63,7 +75,9 @@ describe("ScriptStore visual bindings (script_visuals junction)", () => {
 		const v2 = await mkVisual(resources, "V2");
 		const s = await scripts.create({ name: "S", scopeType: "global", defaultVisualId: v1 });
 
-		await scripts.bindVisual(s.id, v1); // bind the already-default visual again
+		await scripts.bindVisual(s.id, v1); // bind the already-default visual
+		await scripts.bindVisual(s.id, v1); // repeat same pair to prove idempotence
+		await scripts.bindVisual(s.id, v2);
 		await scripts.bindVisual(s.id, v2);
 
 		expect((await scripts.getBoundVisualIds(s.id)).sort()).toEqual([v1, v2]);
@@ -132,21 +146,36 @@ describe("ScriptStore visual bindings (script_visuals junction)", () => {
 		expect(await scripts.listScriptsBoundToVisual("nope")).toEqual([]);
 	});
 
-	test("backfill populates the junction from default_visual_id (upgrade path); stale defaults skipped", async () => {
-		const { db, scripts, resources } = await setup();
-		const v = await mkVisual(resources, "V");
-		// Created WITH a default but NO junction row — mirrors the Wave 1 seed
-		// state before the script_visuals junction existed (BE-4 set
-		// defaultVisualId; the junction lands in BE-5).
-		const s = await scripts.create({ name: "S", scopeType: "global", defaultVisualId: v });
-		expect(await scripts.getBoundVisualIds(s.id)).toEqual([]); // pre-backfill
+	test("real migration 0036 backfills script_visuals from default_visual_id and skips stale defaults", async () => {
+		const work = await mkdtemp(join(tmpdir(), "vt-scriptvis-0036-"));
+		const preFolder = await buildPre0036Folder(work);
+		const dbPath = join(work, "upgrade.db");
+		const preDb = await createDb(dbPath, preFolder);
 
-		// Stale default → points at a visual that does not exist.
-		const stale = await scripts.create({ name: "stale", scopeType: "global", defaultVisualId: "ghost_visual" });
+		const beforeTable = preDb.$client
+			.query("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'script_visuals'")
+			.get();
+		expect(beforeTable).toBeNull();
 
-		await db.run(BACKFILL_SQL);
+		preDb.$client.exec(`
+			INSERT INTO experience_visuals (id, name, source, source_hash, api_version, scope_type, created_at, updated_at)
+			VALUES ('vis_1', 'V', 'V', 'hash_v1', 1, 'global', '2026-06-15T00:00:00.000Z', '2026-06-15T00:00:00.000Z');
+			INSERT INTO scripts (id, name, scope_type, default_visual_id, created_at, updated_at)
+			VALUES
+				('sc_valid', 'S', 'global', 'vis_1', '2026-06-15T00:00:00.000Z', '2026-06-15T00:00:00.000Z'),
+				('sc_stale', 'stale', 'global', 'ghost_visual', '2026-06-15T00:00:00.000Z', '2026-06-15T00:00:00.000Z');
+		`);
+		preDb.$client.close();
 
-		expect(await scripts.getBoundVisualIds(s.id)).toEqual([v]); // backfilled
-		expect(await scripts.getBoundVisualIds(stale.id)).toEqual([]); // EXISTS guard skipped it
+		// Upgrade through the real committed migrations (0036+ through latest).
+		const upgradedDb = await createDb(dbPath);
+		const upgradedScripts = new ScriptStore(upgradedDb, {
+			content: new ContentStore({ fileStore: createFileStore(work) }),
+			clock: fixedClock,
+			idGenerator: idGen,
+		});
+
+		expect(await upgradedScripts.getBoundVisualIds("sc_valid")).toEqual(["vis_1"]);
+		expect(await upgradedScripts.getBoundVisualIds("sc_stale")).toEqual([]);
 	});
 });
