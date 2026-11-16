@@ -682,8 +682,9 @@ describe("CharacterStore — field-preservation drift guard (ERA-2)", () => {
 	// Every field flipped to a distinct second sentinel so the update path can
 	// detect a missing `if (data.X !== undefined)` guard — the field would stay
 	// at the pre-update value and the assertion would fail. Note:
-	// CharacterStore.update() does not map avatarSourceAssetId (managed via
-	// setAvatarSourceAssetId), so only the 5 update-mapped avatar fields flip.
+	// CharacterStore.update() deliberately does not map avatarSourceAssetId
+	// (the sole writer is setAvatarSourceAssetId — D8/Bug #3 salvage invariant),
+	// so only the 5 update-mapped avatar fields flip.
 	const UPDATED_CONTENT: Required<CreateCharacterData> = {
 		name: "Aria Renamed",
 		description: "fire mage",
@@ -753,7 +754,9 @@ describe("CharacterStore — field-preservation drift guard (ERA-2)", () => {
 		const { store } = await setupDbOnly();
 		const created = await store.create(FULL_CONTENT);
 		const updated = await store.update(created.id, UPDATED_CONTENT);
-		// CharacterStore.update() does not map avatarSourceAssetId (setAvatarSourceAssetId owns it).
+		// Deliberate contract (owner-confirmed 2026-11-16, D8/Bug #3 invariant):
+		// CharacterStore.update() intentionally does not map avatarSourceAssetId;
+		// the sole writer is setAvatarSourceAssetId.
 		const updateSkip = new Set<keyof CreateCharacterData>(["avatarSourceAssetId"]);
 		expectContentFields(updated, UPDATED_CONTENT, updateSkip);
 		expect(updated.avatarSourceAssetId).toBe(FULL_CONTENT.avatarSourceAssetId);
