@@ -410,14 +410,17 @@ describe("assembleSidechatPrompt overflow (SC-6)", () => {
 	function contextPackage(): SidechatContextPackage {
 		return {
 			staticPackage: "",
+			storyPlanSection: null,
+			storyDeckSection: null,
 			// Merged flow order (oldest first): the rp_summary row, the OOC
 			// row, the rp_message block, the turn's own user message (pushed
 			// by the loop).
 			eventMessages: [
-				{ precedingMessages: 0, content: SUMMARY_ROW },
-				{ precedingMessages: 1, content: RP_BLOCK },
+				{ precedingMessages: 0, meterSegment: "rp_summaries", content: SUMMARY_ROW },
+				{ precedingMessages: 1, meterSegment: "rp_messages", content: RP_BLOCK },
 			],
 			messageCount: 1,
+			heldLoreEntryIds: new Set(),
 		};
 	}
 

@@ -282,7 +282,7 @@ describe("NovelAI adapter — doStream", () => {
         },
       },
     );
-    if (model.specificationVersion !== "v3") throw new Error("expected a V3 model");
+    if (typeof model === "string" || model.specificationVersion !== "v3") throw new Error("expected a V3 model");
 
     const result = await model.doStream({
       prompt: [{ role: "user", content: [{ type: "text", text: "Hi" }] }],
@@ -526,7 +526,7 @@ describe("NovelAI adapter — V3 interface + protocol object", () => {
       { providerPreset: "novelai", endpoint: "", apiKey: TEST_API_KEY },
       "",
     );
-    if (model.specificationVersion !== "v3") throw new Error("expected a V3 model");
+    if (typeof model === "string" || model.specificationVersion !== "v3") throw new Error("expected a V3 model");
     expect(model.modelId).toBe("kayra-v1");
 
     await model.doGenerate({ prompt: [{ role: "user", content: [{ type: "text", text: "go" }] }] });
