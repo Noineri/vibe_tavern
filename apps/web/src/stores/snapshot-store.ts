@@ -1,8 +1,8 @@
 import { create } from "zustand";
 import { immer } from "zustand/middleware/immer";
 import { useShallow } from "zustand/react/shallow";
-import type { AppSnapshot, AppMessage, AppCharacter, AppPersona, AppCharacterEntry, ChatListItem, InsightsCompletionPatchResponse, SceneTargetResponse } from "../api/types.js";
-import { parseStoredAttachments, type ChatBranch, type PromptTraceRecordDto, type PronounForms } from "@vibe-tavern/domain";
+import type { AppSnapshot, AppMessage, AppCharacter, AppPersona, AppCharacterEntry, AppPromptTrace, ChatListItem, InsightsCompletionPatchResponse, SceneTargetResponse } from "../api/types.js";
+import { parseStoredAttachments, type ChatBranch, type PronounForms } from "@vibe-tavern/domain";
 import { addKnownTokenCounts, replaceKnownTokenCounts } from "../utils/tokenizer.js";
 
 // ── Macro context (derived from character + persona) ──────────────────
@@ -44,7 +44,7 @@ interface SnapshotState {
   summaries: NonNullable<AppSnapshot["summaries"]>;
 
   /** Prompt trace from last generation. */
-  promptTrace: PromptTraceRecordDto | null;
+  promptTrace: AppPromptTrace | null;
 
   /** Swipe direction for variant animation (1 = forward, -1 = back). */
   swipeDirection: 1 | -1;

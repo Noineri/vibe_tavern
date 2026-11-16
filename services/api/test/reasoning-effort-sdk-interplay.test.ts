@@ -221,7 +221,7 @@ describe("reasoning effort SDK interplay (installed ai@7 / @ai-sdk 4.x)", () => 
     expect(changedKeys(on, off)).toEqual(["generationConfig"]);
   });
 
-  it("google interactions: effort must ride providerOptions.google.thinkingLevel — the neutral reasoning setting is a no-op there", async () => {
+  it("google interactions: neutral reasoning and provider thinkingLevel change only thinking_level; explicit provider options take precedence", async () => {
     const { bodies, fetch } = captureFetch(INTERACTIONS_RESPONSE);
     const google = createGoogle({ apiKey: "test-key", fetch });
     const base = {
@@ -237,20 +237,28 @@ describe("reasoning effort SDK interplay (installed ai@7 / @ai-sdk 4.x)", () => 
       ...base,
       providerOptions: { google: { thinkingLevel: "low" } },
     });
+    await generateText({
+      ...base,
+      reasoning: "high",
+      providerOptions: { google: { thinkingLevel: "low" } },
+    });
 
-    expect(bodies).toHaveLength(3);
-    const [off, neutralOn, providerOptionsOn] = bodies.map(
+    expect(bodies).toHaveLength(4);
+    const [off, neutralOn, providerOptionsOn, explicitOverride] = bodies.map(
       (b) => b["generation_config"] as Record<string, unknown>,
     );
     // Baseline: no thinking_level, temperature present.
     expect(off["thinking_level"]).toBeUndefined();
     expect(off["temperature"]).toBe(0.9);
-    // The no-op pin (installed @ai-sdk/google 4.0.69): GoogleInteractionsLanguageModel
-    // never reads the neutral `reasoning` call setting — the body is unchanged.
-    expect(changedKeys(neutralOn, off)).toEqual([]);
-    // The documented surface for this model type: providerOptions.google.thinkingLevel
-    // -> generation_config.thinking_level, and nothing else differs.
+    // The installed SDK now maps neutral reasoning on Interactions too.
+    // VT's existing explicit provider option remains equivalent and wins when both are set.
+    expect(neutralOn["thinking_level"]).toBe("low");
+    expect(changedKeys(neutralOn, off)).toEqual(["thinking_level"]);
     expect(providerOptionsOn["thinking_level"]).toBe("low");
     expect(changedKeys(providerOptionsOn, off)).toEqual(["thinking_level"]);
+    expect(explicitOverride).toEqual(providerOptionsOn);
+    expect(changedKeys(bodies[1]!, bodies[0]!)).toEqual(["generation_config"]);
+    expect(changedKeys(bodies[2]!, bodies[0]!)).toEqual(["generation_config"]);
+    expect(changedKeys(bodies[3]!, bodies[0]!)).toEqual(["generation_config"]);
   });
 });

@@ -1,11 +1,11 @@
-import type { ProviderResponseTrace } from "@vibe-tavern/domain";
+import type { AppPromptTrace } from "../../api/types.js";
 import { cn } from "../../lib/cn.js";
 import { useT } from "../../i18n/context.js";
 
 interface TraceJsonDownloadsProps {
   traceId: string;
   requestPayload: Record<string, unknown>;
-  providerResponse?: ProviderResponseTrace;
+  providerResponse?: AppPromptTrace["providerResponse"];
   mobile?: boolean;
 }
 

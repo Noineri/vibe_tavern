@@ -1,6 +1,11 @@
 import { parse as parseStylesheet, type Rule, type Document } from "postcss";
-import { parse as parseSelector, walk, type CssNode } from "css-tree";
+import type { CssNode } from "css-tree";
 import { validation } from "../../shared/errors.js";
+
+// css-tree's ESM entry loads JSON through createRequire(import.meta.url),
+// which survives bundling and then resolves against the installed server.
+// Its public CJS entry uses static requires, so Bun embeds those assets.
+const { parse: parseSelector, walk } = require("css-tree") as typeof import("css-tree");
 
 function isRoot(node: CssNode | undefined): boolean {
   return node?.type === "PseudoClassSelector" && node.name.toLowerCase() === "root" && node.children === null;

@@ -93,7 +93,7 @@ export function useMacroContext(): MacroContext | null {
  */
 export function useActiveTrace(
   selectedTraceId: string | null,
-): import("@vibe-tavern/domain").PromptTraceRecordDto | import("@vibe-tavern/domain").AssemblePromptResponse | null {
+): import("../api/types.js").AppPromptTrace | import("@vibe-tavern/domain").AssemblePromptResponse | null {
   const promptTrace = useSnapshotStore((s) => s.promptTrace);
   const activeBranchId = useSnapshotStore((s) => s.activeBranch?.id ?? null);
   const activeChatId = useSnapshotStore((s) => s.activeChat?.id ?? null);

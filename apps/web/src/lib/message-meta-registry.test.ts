@@ -18,6 +18,7 @@ function ctx(overrides: Partial<MessageMetaContext> = {}): MessageMetaContext {
       messageId: brandId<MessageId>("msg-1"),
       variantIndex: 0,
       content: "",
+      tokenCount: 0,
       isSelected: true,
       finishReason: null,
       modelId: "anthropic/claude-sonnet-4",

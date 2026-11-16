@@ -44,13 +44,13 @@ import type { AppMessage, AppSnapshot } from "../../../api/types.js";
 import { wireBranch, wireChat, wireMessage, wireVariant } from "../../../../test/wire-fixtures.js";
 
 useDomEnv();
-const { fireEvent, render, waitFor, within } = await import("@testing-library/react");
+const { act, fireEvent, render, waitFor, within } = await import("@testing-library/react");
 
 installI18nContextSeam();
 
 let isMobile = false;
 const onOpenEvent = mock((taskId: string) => {});
-const realMobileHook = await import("../../../hooks/use-mobile.js");
+const realMobileHook = { ...(await import("../../../hooks/use-mobile.js")) };
 mock.module("../../../hooks/use-mobile.js", () => ({ ...realMobileHook, useIsMobile: () => isMobile }));
 
 const { useSnapshotStore } = await import("../../../stores/snapshot-store.js");
@@ -172,6 +172,7 @@ const sceneEdits: Array<{ body: { target: { messageId: string; variantId: string
 const insightPatches: Array<{ body: { insightsConfig?: { tracker?: { schema: SceneTrackerDsl }; trackerEnabled?: boolean } } }> = [];
 let configSchema: SceneTrackerDsl = CLOCK_SCHEMA;
 let configTrackerEnabled = true;
+let planGetGate: Promise<void> | null = null;
 
 beforeEach(() => {
   plansByBranch.clear();
@@ -180,6 +181,7 @@ beforeEach(() => {
   insightPatches.length = 0;
   configSchema = CLOCK_SCHEMA;
   configTrackerEnabled = true;
+  planGetGate = null;
   isMobile = false;
   onOpenEvent.mockClear();
   globalThis.fetch = testFetch(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
@@ -188,6 +190,7 @@ beforeEach(() => {
     if (/\/plan$/.test(path)) {
       const branchId = path.split("/branches/")[1]?.split("/")[0] ?? "";
       if (method === "GET") {
+        if (planGetGate !== null) await planGetGate;
         return new Response(JSON.stringify({ plan: plansByBranch.get(branchId) ?? EMPTY_PLAN }), {
           status: 200,
           headers: { "content-type": "application/json" },
@@ -258,8 +261,17 @@ async function mountCalendar(over: {
       onOpenEvent={onOpenEvent}
     />,
   );
-  // The plan GET settles before any interaction.
+  // The grid exists even while the plan GET is pending; wait for the loaded
+  // plan's contents, not the shell (otherwise the assign affordance can be absent).
   await waitFor(() => expect(view.queryByTestId("story-cal-grid")).not.toBeNull());
+  await waitFor(() => {
+    const rendered = [...view.container.querySelectorAll("[data-task-id]")]
+      .map((element) => element.getAttribute("data-task-id"));
+    for (const task of (over.plan ?? PLAN).tasks.filter((task) => task.at !== undefined)) expect(rendered).toContain(task.id);
+    const undated = view.getByTestId("story-cal-undated-list");
+    const expectedUndated = (over.plan ?? PLAN).tasks.filter((task) => task.at === undefined);
+    expect([...undated.children].map((element) => element.lastElementChild?.textContent)).toEqual(expectedUndated.map((task) => task.title));
+  });
   return view;
 }
 
@@ -425,7 +437,23 @@ describe("StoryCalendarView — assigning an undated event", () => {
 
   it("phone (§8): the «+» opens the ActionSheet with the caption + «Отмена»; picking assigns the same write", async () => {
     isMobile = true;
-    const view = await mountCalendar({ branchId: "b-sheet" });
+    const gate = Promise.withResolvers<void>();
+    planGetGate = gate.promise;
+    let mounted = false;
+    const mounting = mountCalendar({ branchId: "b-sheet" }).then((view) => {
+      mounted = true;
+      return view;
+    });
+    try {
+      await waitFor(() => expect(within(document.body).queryByTestId("story-cal-grid")).not.toBeNull());
+      await act(async () => {});
+      // Prove the helper cannot mistake the mounted shell for a loaded plan.
+      expect(mounted).toBe(false);
+      expect(within(document.body).queryByTestId("story-cal-plus-4-morning")).toBeNull();
+    } finally {
+      gate.resolve();
+    }
+    const view = await mounting;
     fireEvent.click(view.getByTestId("story-cal-plus-4-morning"));
     // The sheet (a BottomSheet in happy-dom) carries the caption + options
     // (the sheet popup is the `.glass-blur` container — BottomSheet.test's

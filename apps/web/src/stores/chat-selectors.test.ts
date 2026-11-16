@@ -12,7 +12,8 @@
  */
 import { afterAll, beforeEach, describe, expect, test } from "bun:test";
 import { brandId } from "@vibe-tavern/domain";
-import type { ChatBranchId, ChatId, MessageId, PromptTraceRecordDto, AssemblePromptResponse } from "@vibe-tavern/domain";
+import type { ChatBranchId, ChatId, MessageId, AssemblePromptResponse } from "@vibe-tavern/domain";
+import type { AppPromptTrace } from "../api/types.js";
 import { useDomEnv } from "../../test/dom-env.js";
 import { wireBranch, wireChat, wirePromptPreview } from "../../test/wire-fixtures.js";
 import { useActiveTrace } from "./chat-selectors.js";
@@ -37,7 +38,7 @@ const chatId = "chat-1" as ChatId;
 const branchA = "brnch-a" as ChatBranchId;
 const branchB = "brnch-b" as ChatBranchId;
 
-function makeTrace(id: string, branchId: ChatBranchId, tokenTotal: number): PromptTraceRecordDto {
+function makeTrace(id: string, branchId: ChatBranchId, tokenTotal: number): AppPromptTrace {
 	return {
 		id,
 		chatId,
@@ -63,7 +64,7 @@ const previewA = wirePromptPreview(50);
 const previewB = wirePromptPreview(10);
 
 /** Seed the trace-history cache with a success entry for (chatId, branchId). */
-function seedTraceCache(branchId: ChatBranchId, traces: PromptTraceRecordDto[]): TraceHistoryEntry {
+function seedTraceCache(branchId: ChatBranchId, traces: AppPromptTrace[]): TraceHistoryEntry {
 	const entry: TraceHistoryEntry = { status: "success", traces, error: null };
 	useTraceHistoryStore.setState((s) => ({
 		entries: { ...s.entries, [`${chatId}::${branchId}`]: entry },
@@ -144,7 +145,7 @@ describe("useActiveTrace — branch-scoped selection (lazy cache)", () => {
 		});
 		try {
 			expect(hook.result.current).toBe(traceOnB);
-			expect((hook.result.current as PromptTraceRecordDto).id).toBe("t-on-b");
+			expect((hook.result.current as AppPromptTrace).id).toBe("t-on-b");
 		} finally {
 			hook.unmount();
 		}

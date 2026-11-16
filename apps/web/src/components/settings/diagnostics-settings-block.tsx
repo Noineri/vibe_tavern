@@ -11,7 +11,7 @@ import {
   type DiagnosticsManifestEntry,
 } from "../../api/diagnostics-api.js";
 import { fetchTraceHistory } from "../../api/chat-api.js";
-import type { PromptTraceRecordDto } from "@vibe-tavern/domain";
+import type { AppPromptTrace } from "../../api/types.js";
 import { useChatStore } from "../../stores/chat-store.js";
 import { formatBytes } from "../../lib/format-bytes.js";
 import { codeQuoteFrameCls, codeQuoteBodyCls, lblCls } from "../../lib/field-tokens.js";
@@ -59,7 +59,7 @@ type DiagnosticsState =
 type AttachState = "off" | "listing" | "ready" | "failed" | "noChat";
 type PreviewState = { kind: "idle" | "loading" | "failed" } | { kind: "ready"; value: DiagnosticsGenerationPreview };
 
-function selectionOfTrace(trace: PromptTraceRecordDto): DiagnosticsGenerationSelection {
+function selectionOfTrace(trace: AppPromptTrace): DiagnosticsGenerationSelection {
   return {
     traceId: trace.id,
     chatId: trace.chatId,
@@ -70,7 +70,7 @@ function selectionOfTrace(trace: PromptTraceRecordDto): DiagnosticsGenerationSel
 }
 
 /** Full date matters: different days can have attempts at the same time. */
-function traceOptionLabel(trace: PromptTraceRecordDto, locale: string): string {
+function traceOptionLabel(trace: AppPromptTrace, locale: string): string {
   const time = new Date(trace.createdAt).toLocaleString(locale);
   return `${time} · ${trace.model}`;
 }
@@ -88,7 +88,7 @@ export function DiagnosticsSettingsBlock() {
   const { t, locale } = useT();
   const [diag, setDiag] = useState<DiagnosticsState>({ kind: "idle" });
   const [attach, setAttach] = useState<AttachState>("off");
-  const [traces, setTraces] = useState<PromptTraceRecordDto[]>([]);
+  const [traces, setTraces] = useState<AppPromptTrace[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [preview, setPreview] = useState<PreviewState>({ kind: "idle" });
   const [confirmation, setConfirmation] = useState<DiagnosticsGenerationSelection | null>(null);

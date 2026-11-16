@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
-import type { DiceRollSnapshot, ExperienceMessageReport, MessageVariant } from "@vibe-tavern/domain";
+import type { DiceRollSnapshot, ExperienceMessageReport } from "@vibe-tavern/domain";
+import type { AppMessage } from "../api/types.js";
 
 // ────────────────────────────────────────────────────────────────────────────
 // Message Meta Registry
@@ -47,7 +48,7 @@ export interface MessageMetaContext {
    * (modelId, presetName, reasoningDurationMs, coauthorModuleId, coauthorSkillId,
    * finishReason) live here. Null only when the message has no variants yet.
    */
-  variant: MessageVariant | null;
+  variant: AppMessage["variants"][number] | null;
   /** Currently selected variant index. */
   variantIndex: number;
   /** Whether this message is currently streaming. */

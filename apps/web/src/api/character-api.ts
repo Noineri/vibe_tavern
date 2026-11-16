@@ -2,6 +2,7 @@ import type { ChatId, TrackerTemplate } from "@vibe-tavern/domain";
 import type { AppSnapshot, AppCharacterVersion, ImportJsonResponse, LorebookRecord, ScriptRecord } from "./types.js";
 import { apiFetch, client, getGatewayBaseUrl, getMobileToken } from "./client.js";
 import { unwrapRpc, unwrapError } from "./unwrap.js";
+import { readTrackerTemplateResponse } from "./tracker-template-response.js";
 
 export async function updateCharacter(
   characterId: string,
@@ -80,12 +81,13 @@ export async function exportCharacter(characterId: string): Promise<Record<strin
 
 export async function getTrackerTemplate(characterId: string): Promise<TrackerTemplate | null> {
   const response = await client.api.characters[":characterId"]["tracker-template"].$get({ param: { characterId } });
-  return (await unwrapRpc(response)).template;
+  const { template } = await unwrapRpc(response);
+  return template === null ? null : readTrackerTemplateResponse(template);
 }
 
 export async function updateTrackerTemplate(characterId: string, template: TrackerTemplate): Promise<TrackerTemplate> {
   const response = await client.api.characters[":characterId"]["tracker-template"].$put({ param: { characterId }, json: { template } });
-  return (await unwrapRpc(response)).template;
+  return readTrackerTemplateResponse((await unwrapRpc(response)).template);
 }
 
 export async function deleteTrackerTemplate(characterId: string): Promise<void> {

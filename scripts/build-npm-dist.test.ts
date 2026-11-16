@@ -1,4 +1,7 @@
-import { describe, expect, it } from "bun:test";
+import { afterAll, beforeAll, describe, expect, it } from "bun:test";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { hasBakedModuleFilename, manifest, rewriteBakedModuleFilenames } from "./build-npm-dist.js";
 
 /**
@@ -8,6 +11,39 @@ import { hasBakedModuleFilename, manifest, rewriteBakedModuleFilenames } from ".
  * registry: `npm pack` and `npm publish --dry-run` do not fail on either —
  * one warns, the other only misbehaves outside CI.
  */
+
+describe("bundled user-theme CSS runtime", () => {
+	let directory: string;
+	let bundle: string;
+	beforeAll(async () => {
+		directory = await mkdtemp(join(tmpdir(), "vt-npm-css-"));
+		bundle = join(directory, "theme.js");
+		const built = await Bun.build({
+			entrypoints: [resolve(import.meta.dir, "../services/api/src/domain/themes/user-theme-css.ts")],
+			target: "bun",
+			minify: true,
+		});
+		expect(built.success).toBe(true);
+		await Bun.write(bundle, rewriteBakedModuleFilenames(await built.outputs[0]!.text()));
+	});
+	afterAll(async () => {
+		if (directory) await rm(directory, { recursive: true, force: true });
+	});
+
+	it("loads and normalizes CSS outside the source tree without runtime dependency assets", async () => {
+		// A fresh process cannot reuse the test runner's loaded css-tree module.
+		// This is the dependency-free, minified npm artifact boundary, not a source import.
+		const proc = Bun.spawn([process.execPath, "--eval", `
+			const { normalizeUserThemeCss } = await import(${JSON.stringify(bundle)});
+			console.log(normalizeUserThemeCss(":root.old { --bg: #123; }", "sample"));
+		`], { cwd: directory, stdout: "pipe", stderr: "pipe" });
+		const [stdout, stderr, code] = await Promise.all([
+			new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited,
+		]);
+		expect({ code, stderr }).toEqual({ code: 0, stderr: "" });
+		expect(stdout.trim()).toBe(":root.user-sample { --bg: #123; }");
+	});
+});
 
 describe("npm manifest", () => {
 	it("declares the bin without a './' prefix", () => {
