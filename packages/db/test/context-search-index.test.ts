@@ -3,7 +3,6 @@ import { describe, expect, test } from "bun:test";
 import {
   buildContextSearchIndex,
   DEFAULT_SEARCH_LIMIT,
-  type ContextSearchResult,
   type IndexedContextRecord,
 } from "../src/context-search-index.js";
 
@@ -52,14 +51,32 @@ describe("buildContextSearchIndex — tiered ranking", () => {
 
   test("case-insensitive and diacritic-folded exact title", () => {
     const idx = buildContextSearchIndex(corpus);
-    const out = idx.search("ARIA STORMWIND");
-    expect(out[0].id).toBe("ch_aria");
-    expect(out[0].matchKind).toBe("exact-title");
-    // Cyrillic exact
-    const ru = idx.search("борис крэг");
-    expect(ru[0].id).toBe("ch_boris");
-    expect(ru[0].matchKind).toBe("exact-title");
-    idx.dispose();
+    try {
+      const out = idx.search("Áríà Störmwînd");
+      expect(out[0]?.id).toBe("ch_aria");
+      expect(out[0]?.matchKind).toBe("exact-title");
+      // Cyrillic exact with combining acute stress accent (escaped to keep diff ASCII-clean)
+      const ru = idx.search("\u0431\u043E\u0301\u0440\u0438\u0441 \u043A\u0440\u044D\u0433");
+      expect(ru[0]?.id).toBe("ch_boris");
+      expect(ru[0]?.matchKind).toBe("exact-title");
+    } finally {
+      idx.dispose();
+    }
+
+    const accentedIdx = buildContextSearchIndex([
+      rec({ type: "character", id: "ch_cafe", title: "Café Éclair", body: "" }),
+    ]);
+    try {
+      const plainQuery = accentedIdx.search("cafe eclair");
+      expect(plainQuery[0]?.id).toBe("ch_cafe");
+      expect(plainQuery[0]?.matchKind).toBe("exact-title");
+
+      const upperAccentedQuery = accentedIdx.search("CÀFÉ ÉCLAIR");
+      expect(upperAccentedQuery[0]?.id).toBe("ch_cafe");
+      expect(upperAccentedQuery[0]?.matchKind).toBe("exact-title");
+    } finally {
+      accentedIdx.dispose();
+    }
   });
 
   test("partial name resolves via trigram fallback tier", () => {
@@ -74,19 +91,23 @@ describe("buildContextSearchIndex — tiered ranking", () => {
   });
 
   test("trigram never pollutes content tier ordering", () => {
-    // Query "aria" has a strong content/exact match; ensure a trigram-only
-    // partial such as a contrived "ari" does not outrank it. We verify the
-    // banding invariant: any content result precedes any trigram-only result.
-    const idx = buildContextSearchIndex(corpus);
-    const out = idx.search("aria");
-    let sawTrigram = false;
-    for (const r of out) {
-      if (r.matchKind === "trigram-title") sawTrigram = true;
-      else if (sawTrigram && (r.matchKind === "content" || r.matchKind === "exact-title")) {
-        throw new Error("content match appeared after a trigram match — banding broken");
-      }
+    // Seed distinct records that each trigger one tier for query "aria", so
+    // the test genuinely exercises all three tiers in strict order.
+    const idx = buildContextSearchIndex([
+      rec({ type: "character", id: "ch_tri", title: "Valiariana", body: "unrelated" }),
+      rec({ type: "character", id: "ch_content", title: "Harbor Log", body: "aria arrived at dawn" }),
+      rec({ type: "character", id: "ch_exact", title: "Aria", body: "" }),
+    ]);
+    try {
+      const out = idx.search("aria");
+      expect(out.map((r) => [r.id, r.matchKind])).toEqual([
+        ["ch_exact", "exact-title"],
+        ["ch_content", "content"],
+        ["ch_tri", "trigram-title"],
+      ]);
+    } finally {
+      idx.dispose();
     }
-    idx.dispose();
   });
 
   test("duplicate titles across types both surface and stay stable", () => {
@@ -113,26 +134,22 @@ describe("buildContextSearchIndex — filtering and scope", () => {
   });
 
   test("scope boost ranks active-scope records first within a tier", () => {
-    // Two characters share no title here, so use a content query that hits both
-    // a global and an active-scope record, then verify scope ordering.
+    // Construct a pair where the global record outranks the active-scope record
+    // in the unboosted baseline so scopeBoosts must genuinely flip the ordering.
     const local = [
-      rec({ type: "character", id: "ch_x", title: "Harbor Master", body: "runs the docks", scope: "character:ch_active", ownerId: "ch_active" }),
-      rec({ type: "character", id: "ch_y", title: "Harbor Master Duplicate", body: "runs the docks elsewhere", scope: "global" }),
+      rec({ type: "character", id: "ch_y", title: "Harbor Watch", body: "docks docks docks", scope: "global" }),
+      rec({ type: "character", id: "ch_x", title: "Lantern Keeper", body: "docks", scope: "character:ch_active", ownerId: "ch_active" }),
     ];
     const idx = buildContextSearchIndex(local);
-    const flat = idx.search("docks");
-    const flatIds = flat.map((r) => r.id);
-    const boosted = idx.search("docks", { scopeBoosts: ["character:ch_active"] });
-    const boostedIds = boosted.map((r) => r.id);
-    // with boost, the active-scope record precedes the global one
-    const posActive = boostedIds.indexOf("ch_x");
-    const posGlobal = boostedIds.indexOf("ch_y");
-    expect(posActive).toBeGreaterThanOrEqual(0);
-    expect(posGlobal).toBeGreaterThanOrEqual(0);
-    expect(posActive).toBeLessThan(posGlobal);
-    // both still present
-    expect(boostedIds.sort()).toEqual(flatIds.sort());
-    idx.dispose();
+    try {
+      const flat = idx.search("docks");
+      expect(flat.map((r) => r.id)).toEqual(["ch_y", "ch_x"]);
+
+      const boosted = idx.search("docks", { scopeBoosts: ["character:ch_active"] });
+      expect(boosted.map((r) => r.id)).toEqual(["ch_x", "ch_y"]);
+    } finally {
+      idx.dispose();
+    }
   });
 
   test("limit caps the result count and defaults to DEFAULT_SEARCH_LIMIT", () => {
@@ -149,13 +166,29 @@ describe("buildContextSearchIndex — filtering and scope", () => {
 describe("buildContextSearchIndex — DTO contract", () => {
   test("results never expose body content", () => {
     const idx = buildContextSearchIndex(corpus);
-    for (const r of idx.search("aria")) {
-      // Privacy-contract probe: `body` is deliberately absent from the DTO
-      // (indexed, never returned); the widened view exists only to read the
-      // forbidden member and pin its absence.
-      expect((r as ContextSearchResult & { body?: unknown }).body).toBeUndefined();
+    try {
+      const out = idx.search("aria");
+      expect(out.length).toBeGreaterThanOrEqual(2);
+      for (const r of out) {
+        expect("body" in r).toBe(false);
+        expect(Object.keys(r).sort()).toEqual([
+          "channel",
+          "id",
+          "matchKind",
+          "meta",
+          "ownerId",
+          "parentId",
+          "scope",
+          "title",
+          "type",
+        ]);
+        const serialized = JSON.stringify(r);
+        expect(serialized).not.toContain("Captain of the northern fleet");
+        expect(serialized).not.toContain("docked at harbor");
+      }
+    } finally {
+      idx.dispose();
     }
-    idx.dispose();
   });
 
   test("parent and meta metadata are surfaced", () => {

@@ -83,11 +83,13 @@ describe("ExperienceCopilotStore", () => {
     const { store } = await setup();
     const SCRIPT = "script_c";
     const active = await store.startNewSession(SCRIPT, "Active");
+    const before = await store.getById(active.id);
+    expect(before).not.toBeNull();
 
     const result = await store.activate(active.id);
 
-    expect(result?.id).toBe(active.id);
-    expect(result?.archivedAt).toBeNull();
+    expect(result).toEqual(before);
+    expect(await store.getById(active.id)).toEqual(before);
     const sessions = await store.listSessions(SCRIPT);
     expect(sessions.filter((s) => s.archivedAt === null)).toHaveLength(1);
   });
@@ -105,12 +107,14 @@ describe("ExperienceCopilotStore", () => {
 
     const archived = await store.archive(active.id);
     expect(archived?.archivedAt).not.toBeNull();
+    expect(archived!.updatedAt > active.updatedAt).toBe(true);
     // No active remains.
     expect(await store.getActive(SCRIPT)).toBeNull();
 
-    // Idempotent: archiving again returns the thread unchanged (still archived).
+    // Idempotent: archiving again returns the exact row untouched (no timestamp bump).
     const archivedAgain = await store.archive(active.id);
-    expect(archivedAgain?.archivedAt).not.toBeNull();
+    expect(archivedAgain).toEqual(archived);
+    expect(await store.getById(active.id)).toEqual(archived);
   });
 
   test("renameSession sets the title and bumps updated_at, without touching archived_at", async () => {
@@ -118,21 +122,25 @@ describe("ExperienceCopilotStore", () => {
     const SCRIPT = "script_d2";
     const first = await store.startNewSession(SCRIPT, ""); // untitled → auto-number label in UI
     const second = await store.startNewSession(SCRIPT, ""); // archives first
+    const beforeRename = await store.getById(first.id);
+    expect(beforeRename?.archivedAt).not.toBeNull();
 
     // Rename the ARCHIVED sibling — renaming must not resurrect it.
     const renamed = await store.renameSession(first.id, "Дурак — визуал");
     expect(renamed?.title).toBe("Дурак — визуал");
-    expect(renamed?.archivedAt).not.toBeNull();
+    expect(renamed?.archivedAt).toBe(beforeRename!.archivedAt);
 
-    // Renaming bumps updated_at ("most recently touched") but the ACTIVE
-    // session is unchanged — rename never swaps which session is active.
-    expect(renamed?.updatedAt >= first.updatedAt).toBe(true);
+    // Renaming strictly bumps updated_at relative to the immediate pre-rename
+    // state while leaving the active session untouched.
+    expect(renamed!.updatedAt > beforeRename!.updatedAt).toBe(true);
     const activeAfter = await store.getActive(SCRIPT);
     expect(activeAfter?.id).toBe(second.id);
 
-    // Clearing to "" is the "back to auto-number" state.
+    // Clearing to "" is the "back to auto-number" state and bumps updated_at again.
     const cleared = await store.renameSession(first.id, "");
     expect(cleared?.title).toBe("");
+    expect(cleared?.archivedAt).toBe(beforeRename!.archivedAt);
+    expect(cleared!.updatedAt > renamed!.updatedAt).toBe(true);
 
     // Missing id → null, no throw.
     expect(await store.renameSession("nope", "x")).toBeNull();
@@ -157,7 +165,7 @@ describe("ExperienceCopilotStore", () => {
 
     const after = await store.getById(thread.id);
     // updated_at strictly advanced (advancing clock → later ISO timestamp).
-    expect(after!.updatedAt >= before!.updatedAt).toBe(true);
+    expect(after!.updatedAt > before!.updatedAt).toBe(true);
   });
 
   // AP-28: the reasoning pair round-trips through appendMessage/listMessages —
@@ -619,16 +627,33 @@ describe("ExperienceCopilotStore — setToolResultOutput (TAG-5)", () => {
   test("returns null for a toolCallId that matches no tool row (stale/foreign)", async () => {
     const { store } = await setup();
     const thread = await store.startNewSession("script_ask_2", "T");
+    const otherThread = await store.startNewSession("script_ask_other", "Other");
     await store.appendMessage(thread.id, { role: "assistant", content: "no tool rows yet" });
 
     expect(await store.setToolResultOutput(thread.id, "tc_missing", { toolName: "ask_user", output: {} })).toBeNull();
 
-    // A row that CARRIES the id but is not a tool row (defensive: the role
-    // guard keeps an assistant toolCall-carrying row from matching).
-    await store.appendMessage(thread.id, { role: "tool", content: "x", toolCallId: "tc_real" });
+    // Non-tool (assistant) row carrying the exact queried toolCallId must NOT match.
+    const assistantSameId = await store.appendMessage(thread.id, {
+      role: "assistant",
+      content: "assistant call",
+      toolCallId: "tc_asst_same",
+    });
     expect(
-      await store.setToolResultOutput(thread.id, "tc_other_thread", { toolName: "ask_user", output: {} }),
+      await store.setToolResultOutput(thread.id, "tc_asst_same", { toolName: "ask_user", output: {} }),
     ).toBeNull();
+
+    // Tool row carrying a foreign thread's matching toolCallId must NOT match either.
+    const foreignTool = await store.appendMessage(otherThread.id, {
+      role: "tool",
+      content: "foreign-original",
+      toolCallId: "tc_foreign",
+    });
+    expect(
+      await store.setToolResultOutput(thread.id, "tc_foreign", { toolName: "ask_user", output: {} }),
+    ).toBeNull();
+
+    expect((await store.listMessages(thread.id)).find((m) => m.id === assistantSameId.id)?.content).toBe("assistant call");
+    expect((await store.listMessages(otherThread.id)).find((m) => m.id === foreignTool.id)?.content).toBe("foreign-original");
   });
 });
 

@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach } from "bun:test";
+import { describe, test, expect, beforeEach, spyOn } from "bun:test";
 import { eq } from "drizzle-orm";
 
 import { createDb, type AppDb } from "../src/db-connection.js";
@@ -192,10 +192,30 @@ describe("IR-51 atomic send binding — characterization (no-experience unchange
     await seedQueued(sessionId); // a queued attachment exists but is not referenced
     const before = branchMessageCount("brnch_1");
 
-    const message = await messages.addMessage(baseInput);
+    const prepareSpy = spyOn(db.$client, "prepare");
+    let preparedSql: string[] = [];
+    let message: Awaited<ReturnType<MessageStore["addMessage"]>>;
+    try {
+      message = await messages.addMessage(baseInput);
+      preparedSql = prepareSpy.mock.calls.map(([sqlText]) => String(sqlText));
+    } finally {
+      prepareSpy.mockRestore();
+    }
+
+    expect(preparedSql.some((s) => s.includes("messages"))).toBe(true);
+    expect(preparedSql.some((s) => s.includes("message_variants"))).toBe(true);
+    expect(preparedSql.some((s) => s.includes("experience_"))).toBe(false);
 
     expect(branchMessageCount("brnch_1")).toBe(before + 1);
     expect(message.role).toBe("user");
+    expect(message.content).toBe("submit turn");
+    expect(message.state).toBe("complete");
+
+    const variants = await messages.getVariants(message.id);
+    expect(variants).toHaveLength(1);
+    expect(variants[0]!.isSelected).toBe(true);
+    expect(variants[0]!.content).toBe("submit turn");
+
     // The queued attachment was NOT touched by a plain send.
     const queued = await experiences.getQueuedAttachmentForSession(sessionId);
     expect(queued).not.toBeNull();

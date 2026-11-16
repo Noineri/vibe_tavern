@@ -145,7 +145,9 @@ describe("CharacterFolder (isolated, no DB)", () => {
 
 		// absent source: no throw, no file
 		await folder.copyAvatarFile("nonexistent", "dst2", "png");
+		await folder.copyAvatarFullFile("nonexistent", "dst2", "webp");
 		await expect(Bun.file(join(dataRoot, CHARS, "dst2", "avatar.png")).arrayBuffer()).rejects.toThrow();
+		await expect(Bun.file(join(dataRoot, CHARS, "dst2", "avatar-full.webp")).arrayBuffer()).rejects.toThrow();
 	});
 
 	test("snapshotToVersion → restoreFromVersion round-trips the VTF folder; versionExists / removeVersionFolder track it", async () => {
@@ -218,16 +220,18 @@ describe("CharacterFolder (isolated, no DB)", () => {
 		const { dataRoot, folder } = await setup();
 		const id = "char_sid_4";
 		await folder.writeVtfFolder(id, SAMPLE, "char_sid_4");
+		const originalProfile = await Bun.file(join(dataRoot, CHARS, id, "profile.md")).text();
+		expect(originalProfile).toContain("storage_id: char_sid_4");
 		await folder.snapshotToVersion(id, "v1");
-		// The version snapshot's profile.md is a raw-text copy: storage_id is intact.
+		// The version snapshot's profile.md is a byte-identical raw copy.
 		const snapProfile = await Bun.file(join(dataRoot, CHARS, id, "versions/v1/profile.md")).text();
-		expect(snapProfile).toContain("storage_id: char_sid_4");
+		expect(snapProfile).toBe(originalProfile);
 		// Rewrite root WITHOUT storage_id, then restore — the snapshot's stamped
-		// profile (with storage_id) comes back unchanged.
+		// profile returns byte-identically unchanged.
 		await folder.writeVtfFolder(id, { ...SAMPLE, name: "Changed" });
 		expect(await Bun.file(join(dataRoot, CHARS, id, "profile.md")).text()).not.toContain("storage_id");
 		await folder.restoreFromVersion(id, "v1");
 		const restored = await Bun.file(join(dataRoot, CHARS, id, "profile.md")).text();
-		expect(restored).toContain("storage_id: char_sid_4");
+		expect(restored).toBe(originalProfile);
 	});
 });

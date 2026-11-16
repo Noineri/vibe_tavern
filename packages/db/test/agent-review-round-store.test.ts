@@ -41,8 +41,21 @@ describe("AgentReviewRoundStore", () => {
     const chat = await chatOwner(db);
     await store.put(thread.id, envelope());
     await store.putChat(chat.id, '{"_v":1,"activities":[]}');
+    db.$client.exec(`CREATE TRIGGER abort_chat_review_update
+      BEFORE UPDATE ON agent_review_rounds
+      WHEN NEW.chat_id = '${chat.id}'
+      BEGIN SELECT RAISE(ABORT, 'abort review update'); END;`);
+    try {
+      await expect(store.putChat(chat.id, '{"_v":1,"activities":[{"proposed":"Failed"}]}')).rejects.toThrow("abort review update");
+      expect(await store.getChat(chat.id)).toEqual({
+        chatId: chat.id, envelopeJson: '{"_v":1,"activities":[]}', updatedAt: "2026-10-29T00:00:01.000Z",
+      });
+      expect(await db.select().from(agentReviewRounds).all()).toHaveLength(2);
+    } finally {
+      db.$client.exec("DROP TRIGGER IF EXISTS abort_chat_review_update");
+    }
     await store.putChat(chat.id, '{"_v":1,"activities":[{"proposed":"New"}]}');
-    expect(await store.getChat(chat.id)).toEqual({ chatId: chat.id, envelopeJson: '{"_v":1,"activities":[{"proposed":"New"}]}', updatedAt: "2026-10-29T00:00:02.000Z" });
+    expect(await store.getChat(chat.id)).toEqual({ chatId: chat.id, envelopeJson: '{"_v":1,"activities":[{"proposed":"New"}]}', updatedAt: "2026-10-29T00:00:03.000Z" });
     expect((await store.get(thread.id))!.envelopeJson).toBe(envelope());
     expect(await db.select().from(agentReviewRounds).all()).toHaveLength(2);
     await store.delete(chat.id);

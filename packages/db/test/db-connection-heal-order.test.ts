@@ -107,8 +107,9 @@ describe("heal-order — an unstamped rebuild stops the heal", () => {
 		const dbPath = join(dir, "test.db");
 		await rm(folder, { recursive: true, force: true });
 		await mkdir(folder, { recursive: true });
-		// 0000 creates parent; 0001 is a plain ALTER that a prior pre-flight
-		// already applied without stamping (the heal's designed scenario).
+		// 0000 creates parent; 0001 adds `extra` (already applied by preflight without
+		// stamping) plus a second `healed_col` statement (must actually be applied by the heal),
+		// and 0002 creates `after_heal` (must run in post-heal retry migrate()).
 		await Bun.write(resolve(folder, "0000_init.sql"), INIT_SQL);
 		await writeJournal(folder, [
 			{ idx: 0, version: "6", when: 1700000000000, tag: "0000_init", breakpoints: true },
@@ -117,19 +118,34 @@ describe("heal-order — an unstamped rebuild stops the heal", () => {
 		client.exec("PRAGMA journal_mode = WAL");
 		migrate(drizzle(client), { migrationsFolder: folder });
 		client.close();
-		// The newer binary's 0001 arrives unstamped...
-		await Bun.write(resolve(folder, "0001_alter.sql"), `ALTER TABLE "parent" ADD COLUMN "extra" text;--> statement-breakpoint`);
+		// The newer binary's 0001 (partial) + 0002 arrive unstamped...
+		await Bun.write(
+			resolve(folder, "0001_alter.sql"),
+			`ALTER TABLE "parent" ADD COLUMN "extra" text;--> statement-breakpoint\nALTER TABLE "parent" ADD COLUMN "healed_col" text;`,
+		);
+		await Bun.write(
+			resolve(folder, "0002_after_heal.sql"),
+			`CREATE TABLE "after_heal" ("id" integer PRIMARY KEY, "note" text);`,
+		);
 		await writeJournal(folder, [
 			{ idx: 0, version: "6", when: 1700000000000, tag: "0000_init", breakpoints: true },
 			{ idx: 1, version: "6", when: 1700000001000, tag: "0001_alter", breakpoints: true },
+			{ idx: 2, version: "6", when: 1700000002000, tag: "0002_after_heal", breakpoints: true },
 		]);
-		// ...and a prior pre-flight already added its column without stamping.
+		// ...and a prior pre-flight already added `extra` without stamping 0001.
 		const preflight = new Database(dbPath);
 		preflight.exec(`ALTER TABLE "parent" ADD COLUMN "extra" text;`);
 		preflight.close();
 
 		const db = await createDb(dbPath, folder);
 		const cols = db.$client.query("PRAGMA table_info(parent)").all() as { name: string }[];
-		expect(cols.map((c) => c.name)).toContain("extra");
+		expect(cols.map((c) => c.name)).toEqual(["id", "mode", "extra", "healed_col"]);
+
+		db.$client.exec(`INSERT INTO after_heal (id, note) VALUES (1, 'post-heal')`);
+		const afterRows = db.$client.query("SELECT id, note FROM after_heal").all() as { id: number; note: string }[];
+		expect(afterRows).toEqual([{ id: 1, note: "post-heal" }]);
+
+		const stamps = db.$client.query("SELECT created_at FROM __drizzle_migrations ORDER BY created_at ASC").all() as { created_at: number }[];
+		expect(stamps.map((s) => s.created_at)).toEqual([1700000000000, 1700000001000, 1700000002000]);
 	});
 });

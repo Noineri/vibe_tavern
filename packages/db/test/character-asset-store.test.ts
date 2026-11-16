@@ -29,14 +29,25 @@ async function setup() {
 
 describe("CharacterAssetStore (DB-only)", () => {
 	test("create → list (ordered by order, then createdAt)", async () => {
-		const { store, charId } = await setup();
-		const a = await store.create({ characterId: charId, ext: "png", mimeType: "image/png", order: 1 });
-		const b = await store.create({ characterId: charId, ext: "jpg", mimeType: "image/jpeg", caption: "pic", order: 0 });
+		const { db, charId } = await setup();
+		const timestamps = [
+			"2026-06-15T00:00:00.000Z",
+			"2026-06-15T00:00:02.000Z",
+			"2026-06-15T00:00:01.000Z",
+		];
+		let idx = 0;
+		const timedStore = new CharacterAssetStore(db, {
+			clock: { now: () => timestamps[idx++]! },
+			idGenerator: idGen,
+		});
+		const high = await timedStore.create({ characterId: charId, ext: "png", mimeType: "image/png", order: 1 });
+		const later = await timedStore.create({ characterId: charId, ext: "webp", mimeType: "image/webp", order: 0 });
+		const earlier = await timedStore.create({ characterId: charId, ext: "jpg", mimeType: "image/jpeg", caption: "pic", order: 0 });
 
-		const list = await store.listByCharacter(charId);
-		expect(list.map((x) => x.id)).toEqual([b.id, a.id]); // order 0 before 1
+		const list = await timedStore.listByCharacter(charId);
+		expect(list.map((x) => x.id)).toEqual([earlier.id, later.id, high.id]); // order 0 (createdAt asc), then order 1
 		expect(list[0]).toMatchObject({ ext: "jpg", caption: "pic", description: null });
-		expect(a.caption).toBe(""); // default
+		expect(high.caption).toBe(""); // default
 	});
 
 	test("list is scoped by characterId", async () => {
@@ -63,17 +74,25 @@ describe("CharacterAssetStore (DB-only)", () => {
 	});
 
 	test("reorder rewrites order 0..n-1, scoped to characterId", async () => {
-		const { store, charId } = await setup();
+		const { store, characterStore, charId } = await setup();
+		const char2 = await characterStore.create({ name: "Other" });
+		const foreignA = await store.create({ characterId: char2.id, ext: "png", mimeType: "image/png", order: 0 });
+		const foreignB = await store.create({ characterId: char2.id, ext: "png", mimeType: "image/png", order: 1 });
 		const a = await store.create({ characterId: charId, ext: "png", mimeType: "image/png", order: 0 });
 		const b = await store.create({ characterId: charId, ext: "png", mimeType: "image/png", order: 1 });
 		const c = await store.create({ characterId: charId, ext: "png", mimeType: "image/png", order: 2 });
 
-		// Reverse the order; pass a foreign id too to confirm it is ignored.
-		await store.reorder(charId, [c.id, "foreign_id", a.id, b.id]);
+		// Reverse the order; include a real foreign character's asset id and missing id to confirm scoping.
+		await store.reorder(charId, [c.id, foreignA.id, "foreign_id", a.id, b.id]);
 
 		const list = await store.listByCharacter(charId);
 		expect(list.map((x) => x.id)).toEqual([c.id, a.id, b.id]);
 		expect(list.map((x) => x.order)).toEqual([0, 1, 2]);
+		const foreignList = await store.listByCharacter(char2.id);
+		expect(foreignList.map((x) => ({ id: x.id, order: x.order, characterId: x.characterId }))).toEqual([
+			{ id: foreignA.id, order: 0, characterId: char2.id },
+			{ id: foreignB.id, order: 1, characterId: char2.id },
+		]);
 	});
 
 	test("delete returns {characterId, ext} and does NOT touch the filesystem", async () => {
@@ -132,13 +151,18 @@ describe("CharacterAssetStore (DB-only)", () => {
 	test("removes a single binary leaf inside an entity folder", async () => {
 		const { dataRoot, content, store, charId } = await setup();
 		const a = await store.create({ characterId: charId, ext: "png", mimeType: "image/png", order: 0 });
+		const b = await store.create({ characterId: charId, ext: "png", mimeType: "image/png", order: 1 });
 		const leaf = `gallery/${a.id}.png`;
+		const siblingLeaf = `gallery/${b.id}.png`;
 		await content.writeBinary(CHARS, charId, leaf, new Uint8Array([1, 2, 3]));
+		await content.writeBinary(CHARS, charId, siblingLeaf, new Uint8Array([4, 5, 6]));
 
 		await content.deleteBinary(CHARS, charId, leaf);
 
-		// The targeted leaf is gone.
+		// The targeted leaf is gone while sibling files remain intact.
 		await expect(Bun.file(join(dataRoot, CHARS, charId, "gallery", `${a.id}.png`)).arrayBuffer()).rejects.toThrow();
+		const siblingBytes = new Uint8Array(await Bun.file(join(dataRoot, CHARS, charId, "gallery", `${b.id}.png`)).arrayBuffer());
+		expect(Array.from(siblingBytes)).toEqual([4, 5, 6]);
 	});
 
 	test("is a no-op when the file is missing", async () => {

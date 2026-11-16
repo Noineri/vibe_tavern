@@ -50,8 +50,9 @@ describe("CoauthorConnectionSettingsStore", () => {
     expect(saved.updatedAt).toBeTypeOf("string");
 
     const read = await store.getByProviderId(profileId);
-    expect(read).not.toBeNull();
+    expect(read).toEqual(saved);
     expect(read!.modelName).toBe("glm-4.7");
+    expect(read!.settings.contextBudget).toBe(1_048_576);
     expect(read!.settings.maxTokens).toBe(15_000);
     expect(read!.settings.temperature).toBe(0.9);
   });
@@ -155,8 +156,35 @@ describe("single-source defaults (RP new-connection ↔ provider store)", () => 
     // asserts.
     type DefaultsEntry = [field: keyof ModelSettingsOverlay, value: Required<ModelSettingsOverlay>[keyof ModelSettingsOverlay]];
     const defaults = Object.entries(PROVIDER_PROFILE_GENERATION_DEFAULTS) as DefaultsEntry[];
+    expect(defaults).toHaveLength(45);
     for (const [field, value] of defaults) {
       expect(profile[field]).toEqual(value);
     }
+
+    // Independent literal spot-checks so an accidental edit to the shared defaults
+    // constant cannot slip past the loop silently.
+    expect(profile.contextBudget).toBeNull();
+    expect(profile.pinContextBudget).toBe(false);
+    expect(profile.maxTokens).toBe(2000);
+    expect(profile.temperature).toBe(1);
+    expect(profile.topP).toBe(1);
+    expect(profile.topK).toBe(0);
+    expect(profile.minP).toBe(0);
+    expect(profile.dryMultiplier).toBe(0);
+    expect(profile.dryBase).toBe(1.75);
+    expect(profile.dryAllowedLength).toBe(2);
+    expect(profile.dryPenaltyLastN).toBe(-1);
+    expect(profile.drySequenceBreakers).toEqual([]);
+    expect(profile.phraseRepPen).toBe("off");
+    expect(profile.thinkingMode).toBe("auto");
+    expect(profile.reasoningEffort).toBe("auto");
+    expect(profile.showReasoning).toBe(false);
+    expect(profile.streamResponse).toBe(true);
+    expect(profile.customSamplers).toBe(false);
+    expect(profile.samplerSetId).toBeNull();
+    expect(profile.seed).toBeNull();
+    expect(profile.stopSequences).toEqual([]);
+    expect(profile.bannedStrings).toEqual([]);
+    expect(profile.logitBias).toEqual([]);
   });
 });

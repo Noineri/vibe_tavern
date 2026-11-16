@@ -108,11 +108,24 @@ describe("DiceRollStore", () => {
     });
 
     test("empty lane retains/increases revision", async () => {
-      const lane = await store.getOrCreateLane("chat_1", "branch_1", "immersive");
-      expect(lane.revision).toBe(0);
-      // Lane persists even without rolls.
-      const lane2 = await store.getOrCreateLane("chat_1", "branch_1", "immersive");
-      expect(lane2.revision).toBe(0);
+      const initial = await store.getOrCreateLane("chat_1", "branch_1", "normal");
+      expect(initial.revision).toBe(0);
+
+      await store.createRoll({
+        chatId: "chat_1",
+        branchId: "branch_1",
+        ...makeRoll({ requestId: "req_empty_rev" }),
+      });
+      // Emptying via clearNormalLane leaves zero rolls and increases revision (1 → 2).
+      await store.clearNormalLane("chat_1", "branch_1");
+
+      const empty = await store.listPending("chat_1", "branch_1");
+      expect(empty.normal.rolls).toHaveLength(0);
+      expect(empty.normal.revision).toBe(2);
+
+      // Re-reading the empty lane retains the bumped revision (never resets to 0).
+      const laneAfter = await store.getOrCreateLane("chat_1", "branch_1", "normal");
+      expect(laneAfter.revision).toBe(2);
     });
   });
 
@@ -208,17 +221,31 @@ describe("DiceRollStore", () => {
     });
 
     test("removeRoll removes a specific roll", async () => {
-      const roll = await store.createRoll({
+      const target = await store.createRoll({
         chatId: "chat_1",
         branchId: "branch_1",
-        ...makeRoll({ requestId: "req_rem" }),
+        ...makeRoll({ requestId: "req_rem_target", checkId: "check_target" }),
       });
-      await store.removeRoll(roll.id);
+      const survivor = await store.createRoll({
+        chatId: "chat_1",
+        branchId: "branch_1",
+        ...makeRoll({ requestId: "req_rem_keep", checkId: "check_keep" }),
+      });
+      await store.removeRoll(target.id);
+      expect(await store.getRollById(target.id)).toBeNull();
       const rolls = (await store.listPending("chat_1", "branch_1")).normal.rolls;
-      expect(rolls.length).toBe(0);
+      expect(rolls.map((r) => r.id)).toEqual([survivor.id]);
     });
 
     test("clearNormalLane removes all unbound normal rolls", async () => {
+      await seedMessage(db, "msg_clear_keep");
+      const boundNormal = await store.createRoll({
+        chatId: "chat_1",
+        branchId: "branch_1",
+        ...makeRoll({ requestId: "req_clear_bound", checkId: "check_bound" }),
+      });
+      await store.bindActiveAndReset("chat_1", "branch_1", "normal", 1, "msg_clear_keep");
+
       await store.createRoll({
         chatId: "chat_1",
         branchId: "branch_1",
@@ -229,9 +256,21 @@ describe("DiceRollStore", () => {
         branchId: "branch_1",
         ...makeRoll({ requestId: "req_2", checkId: "check_b" }),
       });
+      const immersiveRoll = await store.createRoll({
+        chatId: "chat_1",
+        branchId: "branch_1",
+        mode: "immersive",
+        ...makeRoll({ requestId: "req_imm_keep", mode: "immersive", checkId: "check_imm" }),
+      });
+
       await store.clearNormalLane("chat_1", "branch_1");
-      const rolls = (await store.listPending("chat_1", "branch_1")).normal.rolls;
-      expect(rolls.length).toBe(0);
+
+      const pending = await store.listPending("chat_1", "branch_1");
+      expect(pending.normal.rolls.length).toBe(0);
+      // Bound normal roll and unbound immersive roll survive untouched.
+      expect((await store.getRollById(boundNormal.id))?.boundMessageId).toBe("msg_clear_keep");
+      expect((await store.getRollsForMessage("msg_clear_keep")).map((r) => r.id)).toEqual([boundNormal.id]);
+      expect(pending.immersive.rolls.map((r) => r.id)).toEqual([immersiveRoll.id]);
     });
   });
 
@@ -274,9 +313,9 @@ describe("DiceRollStore", () => {
     });
 
     test("compareAndAppendAttempt rejects on stale revision", async () => {
-      const lane = await store.getOrCreateLane("chat_1", "branch_1", "immersive");
+      await store.getOrCreateLane("chat_1", "branch_1", "immersive");
       // Bump revision by creating a roll.
-      await store.createRoll({
+      const original = await store.createRoll({
         chatId: "chat_1",
         branchId: "branch_1",
         mode: "immersive",
@@ -302,6 +341,7 @@ describe("DiceRollStore", () => {
         chatId: "chat_1",
         branchId: "branch_1",
         expectedRevision: 0, // stale!
+        existingRollId: original.id,
         requestId: "req_new",
         actorType: "persona",
         actorId: "persona_1",
@@ -327,6 +367,11 @@ describe("DiceRollStore", () => {
       if (!result.ok) {
         expect(result.conflict).toBe("stale_revision");
       }
+      // Existing roll, pending list, and lane revision remain unchanged.
+      const pendingAfter = (await store.listPending("chat_1", "branch_1")).immersive;
+      expect(pendingAfter.revision).toBe(1);
+      expect(pendingAfter.rolls).toEqual([original]);
+      expect(await store.getRollById(original.id)).toEqual(original);
     });
 
     test("compareAndAppendAttempt appends to existing roll", async () => {
@@ -477,20 +522,24 @@ describe("DiceRollStore", () => {
       await db.run(
         sql`INSERT INTO chat_branches (id, chat_id, label, created_at) VALUES ('branch_2', 'chat_1', 'Branch 2', '2026-01-01')`,
       );
-      await store.createRoll({
+      const roll1 = await store.createRoll({
         chatId: "chat_1",
         branchId: "branch_1",
         ...makeRoll({ requestId: "req_b1" }),
       });
-      await store.createRoll({
+      const roll2 = await store.createRoll({
         chatId: "chat_1",
         branchId: "branch_2",
         ...makeRoll({ requestId: "req_b2" }),
       });
       const pending1 = await store.listPending("chat_1", "branch_1");
       const pending2 = await store.listPending("chat_1", "branch_2");
-      expect(pending1.normal.rolls.length).toBe(1);
-      expect(pending2.normal.rolls.length).toBe(1);
+      expect(pending1.normal.rolls.map((r) => ({ id: r.id, requestId: r.requestId }))).toEqual([
+        { id: roll1.id, requestId: "req_b1" },
+      ]);
+      expect(pending2.normal.rolls.map((r) => ({ id: r.id, requestId: r.requestId }))).toEqual([
+        { id: roll2.id, requestId: "req_b2" },
+      ]);
     });
   });
 
@@ -586,6 +635,16 @@ describe("DiceRollStore", () => {
       await store.setIncluded(roll.id, false);
       const bound = await store.bindActiveAndReset("chat_1", "branch_1", "immersive", 2, "msg_excl");
       expect(bound).toBe(0);
+
+      expect(await store.getRollsForMessage("msg_excl")).toEqual([]);
+      const rollAfter = await store.getRollById(roll.id);
+      expect(rollAfter?.boundMessageId).toBeNull();
+      expect(rollAfter?.included).toBe(false);
+      const pendingAfter = (await store.listPending("chat_1", "branch_1")).immersive;
+      expect(pendingAfter.revision).toBe(3);
+      expect(pendingAfter.rolls.map((r) => ({ id: r.id, boundMessageId: r.boundMessageId, included: r.included }))).toEqual([
+        { id: roll.id, boundMessageId: null, included: false },
+      ]);
     });
   });
 
@@ -617,16 +676,30 @@ describe("DiceRollStore", () => {
   describe("deleteRollsWithMessage", () => {
     test("deletes all rolls bound to a message", async () => {
       await seedMessage(db, "msg_del");
-      await store.createRoll({
+      await seedMessage(db, "msg_keep");
+      const delRoll = await store.createRoll({
         chatId: "chat_1",
         branchId: "branch_1",
         mode: "normal",
         ...makeRoll({ requestId: "req_del1", mode: "normal" }),
       });
       await store.bindActiveAndReset("chat_1", "branch_1", "normal", 1, "msg_del");
+
+      const keepRoll = await store.createRoll({
+        chatId: "chat_1",
+        branchId: "branch_1",
+        mode: "normal",
+        ...makeRoll({ requestId: "req_keep1", mode: "normal" }),
+      });
+      await store.bindActiveAndReset("chat_1", "branch_1", "normal", 3, "msg_keep");
+
       await store.deleteRollsWithMessage("msg_del");
-      const rolls = await store.getRollsForMessage("msg_del");
-      expect(rolls.length).toBe(0);
+      expect(await store.getRollsForMessage("msg_del")).toEqual([]);
+      // Deleted row is gone by ID (not merely unbound).
+      expect(await store.getRollById(delRoll.id)).toBeNull();
+      // Control message's bound roll survives intact.
+      expect((await store.getRollsForMessage("msg_keep")).map((r) => r.id)).toEqual([keepRoll.id]);
+      expect((await store.getRollById(keepRoll.id))?.boundMessageId).toBe("msg_keep");
     });
   });
 
@@ -649,13 +722,21 @@ describe("DiceRollStore", () => {
         ...makeRoll({ requestId: "req_fork2", mode: "normal", checkId: "check_b" }),
       });
       await store.bindActiveAndReset("chat_1", "branch_1", "normal", 2, "msg_src");
+      const srcBefore = await store.getRollsForMessage("msg_src");
 
       await store.forkCopyRolls("msg_src", "msg_dst");
       const dstRolls = await store.getRollsForMessage("msg_dst");
       expect(dstRolls.length).toBe(2);
-      // Copied rolls have new ids.
-      expect(dstRolls[0]!.boundMessageId).toBe("msg_dst");
-      expect(dstRolls[1]!.boundMessageId).toBe("msg_dst");
+      const srcIds = new Set(srcBefore.map((r) => r.id));
+      const srcRequestIds = new Set(srcBefore.map((r) => r.requestId));
+      for (const copied of dstRolls) {
+        expect(srcIds.has(copied.id)).toBe(false);
+        expect(srcRequestIds.has(copied.requestId)).toBe(false);
+        expect(copied.boundMessageId).toBe("msg_dst");
+      }
+      expect(dstRolls.map((r) => r.checkId).sort()).toEqual(["check_b", "fate_check"]);
+      // Source rolls stay completely intact.
+      expect(await store.getRollsForMessage("msg_src")).toEqual(srcBefore);
     });
   });
 
@@ -669,31 +750,55 @@ describe("DiceRollStore", () => {
       await seedMessage(db, "new_b");
       await store.createRoll({
         chatId: "chat_1", branchId: "branch_1", mode: "normal",
-        ...makeRoll({ requestId: "req_map1", mode: "normal" }),
+        ...makeRoll({ requestId: "req_map1", mode: "normal", actorId: "actor_a1" }),
       });
       await store.createRoll({
         chatId: "chat_1", branchId: "branch_1", mode: "normal",
-        ...makeRoll({ requestId: "req_map2", mode: "normal", checkId: "check_b" }),
+        ...makeRoll({ requestId: "req_map2", mode: "normal", checkId: "check_b", actorId: "actor_a2" }),
       });
       // Two rolls materialized → lane now at revision 2; bind both to msg_a.
       await store.bindActiveAndReset("chat_1", "branch_1", "normal", 2, "msg_a");
       await store.createRoll({
         chatId: "chat_1", branchId: "branch_1", mode: "normal",
-        ...makeRoll({ requestId: "req_map3", mode: "normal" }),
+        ...makeRoll({ requestId: "req_map3", mode: "normal", actorId: "actor_b1" }),
       });
       // bind reset the lane, then createRoll bumped it again — read the live rev.
       const pending = await store.listPending("chat_1", "branch_1");
       await store.bindActiveAndReset("chat_1", "branch_1", "normal", pending.normal.revision, "msg_b");
+
+      const srcARolls = await store.getRollsForMessage("msg_a");
+      const srcBRolls = await store.getRollsForMessage("msg_b");
 
       const copied = db.transaction((tx) =>
         store.forkCopyRollsInTx(tx, new Map([["msg_a", "new_a"], ["msg_b", "new_b"]])),
       );
       expect(copied).toBe(3);
 
+      const projectSnapshot = (r: Awaited<ReturnType<DiceRollStore["getRollsForMessage"]>>[number]) => ({
+        actorId: r.actorId,
+        checkId: r.checkId,
+        notation: r.notation,
+        attemptsJson: r.attemptsJson,
+      });
+
       const newARolls = await store.getRollsForMessage("new_a");
       const newBRolls = await store.getRollsForMessage("new_b");
-      expect(newARolls.length).toBe(2);
-      expect(newBRolls.length).toBe(1);
+      expect(newARolls.map(projectSnapshot).sort((a, b) => a.actorId.localeCompare(b.actorId))).toEqual(
+        srcARolls.map(projectSnapshot).sort((a, b) => a.actorId.localeCompare(b.actorId)),
+      );
+      expect(newBRolls.map(projectSnapshot)).toEqual(srcBRolls.map(projectSnapshot));
+      for (const r of newARolls) {
+        expect(r.boundMessageId).toBe("new_a");
+        expect(srcARolls.some((s) => s.id === r.id)).toBe(false);
+        expect(srcARolls.some((s) => s.requestId === r.requestId)).toBe(false);
+      }
+      for (const r of newBRolls) {
+        expect(r.boundMessageId).toBe("new_b");
+        expect(srcBRolls.some((s) => s.id === r.id)).toBe(false);
+        expect(srcBRolls.some((s) => s.requestId === r.requestId)).toBe(false);
+      }
+      expect(await store.getRollsForMessage("msg_a")).toEqual(srcARolls);
+      expect(await store.getRollsForMessage("msg_b")).toEqual(srcBRolls);
     });
 
     test("preserves the full immutable snapshot with fresh ids + request ids", async () => {
@@ -796,7 +901,7 @@ describe("DiceRollStore", () => {
       await seedMessage(db, "msg_b2");
 
       // Roll for msg_b1. createRoll bumps revision to 1.
-      await store.createRoll({
+      const r1 = await store.createRoll({
         chatId: "chat_1",
         branchId: "branch_1",
         mode: "normal",
@@ -806,7 +911,7 @@ describe("DiceRollStore", () => {
       // After bind: revision is 2.
 
       // Roll for msg_b2. createRoll bumps revision to 3.
-      await store.createRoll({
+      const r2 = await store.createRoll({
         chatId: "chat_1",
         branchId: "branch_1",
         mode: "normal",
@@ -815,8 +920,13 @@ describe("DiceRollStore", () => {
       await store.bindActiveAndReset("chat_1", "branch_1", "normal", 3, "msg_b2");
 
       const map = await store.getRollsForMessages(["msg_b1", "msg_b2"]);
-      expect(map.get("msg_b1")!.length).toBe(1);
-      expect(map.get("msg_b2")!.length).toBe(1);
+      expect(map.size).toBe(2);
+      expect(map.get("msg_b1")!.map((r) => ({ id: r.id, requestId: r.requestId, checkId: r.checkId }))).toEqual([
+        { id: r1.id, requestId: "req_b1", checkId: "fate_check" },
+      ]);
+      expect(map.get("msg_b2")!.map((r) => ({ id: r.id, requestId: r.requestId, checkId: r.checkId }))).toEqual([
+        { id: r2.id, requestId: "req_b2", checkId: "check_b" },
+      ]);
     });
   });
 
@@ -837,7 +947,27 @@ describe("DiceRollStore", () => {
 
   describe("revision monotonicity", () => {
     test("every pending mutation increments revision", async () => {
-      // Create → revision 1.
+      // Normal lane: createRoll → 1, replaceNormalPending → 2, clearNormalLane → 3.
+      await store.createRoll({
+        chatId: "chat_1",
+        branchId: "branch_1",
+        mode: "normal",
+        ...makeRoll({ requestId: "req_mono_n1", mode: "normal" }),
+      });
+      expect((await store.getOrCreateLane("chat_1", "branch_1", "normal")).revision).toBe(1);
+
+      await store.replaceNormalPending({
+        chatId: "chat_1",
+        branchId: "branch_1",
+        ...makeRoll({ requestId: "req_mono_n2" }),
+      });
+      expect((await store.getOrCreateLane("chat_1", "branch_1", "normal")).revision).toBe(2);
+
+      await store.clearNormalLane("chat_1", "branch_1");
+      expect((await store.getOrCreateLane("chat_1", "branch_1", "normal")).revision).toBe(3);
+
+      // Immersive lane: createRoll → 1, compareAndAppendAttempt → 2,
+      // setIncluded(false) → 3, setIncluded(true) → 4, chooseFinalAttempt → 5.
       const roll = await store.createRoll({
         chatId: "chat_1",
         branchId: "branch_1",
@@ -847,20 +977,47 @@ describe("DiceRollStore", () => {
       let lane = await store.getOrCreateLane("chat_1", "branch_1", "immersive");
       expect(lane.revision).toBe(1);
 
-      // setIncluded → revision 2.
-      await store.setIncluded(roll.id, false);
+      const appended = await store.compareAndAppendAttempt({
+        chatId: "chat_1",
+        branchId: "branch_1",
+        expectedRevision: 1,
+        existingRollId: roll.id,
+        requestId: "req_mono_append",
+        actorType: "persona",
+        actorId: "persona_1",
+        actorLabel: "Player",
+        scriptId: "script_1",
+        scriptLabel: "Fate Die",
+        scriptRevision: 12345,
+        checkId: "fate_check",
+        checkLabel: "Fate Roll",
+        notation: "4dF",
+        faceShape: "dF",
+        resolution: "narrative",
+        newAttemptJson: JSON.stringify({
+          attemptId: "attempt_2",
+          faces: [1, 1, 0, 0],
+          modifier: 0,
+          subtotal: 2,
+          total: 2,
+        }),
+        finalJson: null,
+      });
+      expect(appended.ok).toBe(true);
       lane = await store.getOrCreateLane("chat_1", "branch_1", "immersive");
       expect(lane.revision).toBe(2);
 
-      // setIncluded back → revision 3.
-      await store.setIncluded(roll.id, true);
+      await store.setIncluded(roll.id, false);
       lane = await store.getOrCreateLane("chat_1", "branch_1", "immersive");
       expect(lane.revision).toBe(3);
 
-      // chooseFinalAttempt → revision 4.
-      await store.chooseFinalAttempt(roll.id, "attempt_1");
+      await store.setIncluded(roll.id, true);
       lane = await store.getOrCreateLane("chat_1", "branch_1", "immersive");
       expect(lane.revision).toBe(4);
+
+      await store.chooseFinalAttempt(roll.id, "attempt_1");
+      lane = await store.getOrCreateLane("chat_1", "branch_1", "immersive");
+      expect(lane.revision).toBe(5);
     });
   });
 });

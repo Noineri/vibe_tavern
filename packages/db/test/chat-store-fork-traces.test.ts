@@ -146,23 +146,32 @@ describe("ChatStore.forkBranch — trace inheritance (Defect C)", () => {
 		const forkTraces = await traceStore.getTracesByChat("chat_1", forkedBranch.id);
 		expect(forkTraces).toHaveLength(2);
 
-		// Every forked trace belongs to the new branch and references a fork message.
-		const forkMessageIds = new Set((await messageStore.getMessages(forkedBranch.id)).map((m) => m.id));
+		// Every forked trace gets a brand-new id (not any source trace id),
+		// belongs to the new branch, and remaps strictly onto its paired copy message.
+		const beforeSourceTraces = await traceStore.getTracesByChat("chat_1", "brnch_1");
+		const sourceTraceIds = new Set(beforeSourceTraces.map((t) => t.id));
+		const forkMsgs = await messageStore.getMessages(forkedBranch.id);
+		const forkMsgIds = new Set(forkMsgs.map((m) => m.id));
+		const forkMsgByContent = new Map(forkMsgs.map((m) => [m.content, m.id]));
 		for (const t of forkTraces) {
+			expect(sourceTraceIds.has(t.id)).toBe(false);
 			expect(t.branchId).toBe(forkedBranch.id);
-			expect(forkMessageIds.has(t.messageId)).toBe(true);
+			expect(forkMsgIds.has(t.messageId)).toBe(true);
 			// No forked trace references a source-branch messageId.
 			expect(t.messageId).not.toBe(msg0.id);
 			expect(t.messageId).not.toBe(msg1.id);
 			expect(t.messageId).not.toBe(msg2.id);
-			// New independent trace ids (not the source ids).
-			expect(t.id).not.toContain("brnch_1");
 		}
 
-		// Trace content preserved verbatim (both tags T0 and T1, not T2).
+		// Trace content & exact message-to-trace pairing preserved (T0->M0, T1->M1; T2 excluded).
 		const forkTags = forkTraces.map((t) => t.model).sort();
 		expect(forkTags).toEqual(["model-T0", "model-T1"]);
 		const t0Copy = forkTraces.find((t) => t.model === "model-T0")!;
+		const t1Copy = forkTraces.find((t) => t.model === "model-T1")!;
+		expect(t0Copy.messageId).toBe(forkMsgByContent.get("M0")!);
+		expect(t1Copy.messageId).toBe(forkMsgByContent.get("M1")!);
+		expect(t1Copy.presetName).toBe("preset-T1");
+		expect(t1Copy.finalPayload).toEqual({ payloadTag: "T1" });
 		expect(t0Copy.presetName).toBe("preset-T0");
 		expect(t0Copy.prefill).toBe("prefill-T0");
 		expect(t0Copy.assembledLayers).toEqual([{ layer: "T0" }]);

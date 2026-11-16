@@ -174,9 +174,7 @@ describe("ChatStore.forkBranch — bound Dice clone (DICE-B12)", () => {
 		);
 
 		const after = await diceStore.getRollsForMessage(userId);
-		expect(after.length).toBe(before.length);
-		expect(after[0]!.id).toBe(before[0]!.id);
-		expect(after[0]!.boundMessageId).toBe(userId);
+		expect(after).toEqual(before);
 	});
 
 	test("fork with no bound dice is a no-op (closure called, copies nothing)", async () => {
@@ -188,15 +186,24 @@ describe("ChatStore.forkBranch — bound Dice clone (DICE-B12)", () => {
 			chatId: "chat_1", branchId: "brnch_1", role: "assistant", authorType: "assistant", content: "ok",
 		});
 
+		const capturedMaps: Map<string, string>[] = [];
 		const forked = await chatStore.forkBranch(
 			"chat_1",
 			msg.id,
 			"no dice fork",
-			(tx, msgIdMap) => diceStore.forkCopyRollsInTx(tx, msgIdMap),
+			(tx, msgIdMap) => {
+				capturedMaps.push(new Map(msgIdMap));
+				diceStore.forkCopyRollsInTx(tx, msgIdMap);
+			},
 		);
 
-		// No rolls exist anywhere for the forked branch's messages.
+		expect(capturedMaps).toHaveLength(1);
+		expect(capturedMaps[0]?.size).toBe(1);
+		// Fork copied the message up to the fork point while cloning zero dice rolls.
 		const forkedMessages = await messageStore.getMessages(forked.id);
+		expect(forkedMessages.map((m) => ({ role: m.role, content: m.content }))).toEqual([
+			{ role: "user", content: "no dice" },
+		]);
 		for (const m of forkedMessages) {
 			expect((await diceStore.getRollsForMessage(m.id)).length).toBe(0);
 		}
@@ -220,6 +227,10 @@ describe("ChatStore.forkBranch — bound Dice clone (DICE-B12)", () => {
 		const userId = await userMessageWithBoundRolls("rollback src", [
 			{ checkId: "check_rb", checkLabel: "RB" },
 		]);
+		const beforeBranches = await db.select().from(schema.chatBranches).orderBy(schema.chatBranches.id).all();
+		const beforeMessages = await db.select().from(schema.messages).orderBy(schema.messages.id).all();
+		const beforeVariants = await db.select().from(schema.messageVariants).orderBy(schema.messageVariants.id).all();
+		const beforeRolls = await db.select().from(schema.diceRolls).orderBy(schema.diceRolls.id).all();
 
 		// A closure that copies then throws — the dice copy must roll back with
 		// the synchronous fork transaction (the atomicity this unit guarantees).
@@ -235,14 +246,10 @@ describe("ChatStore.forkBranch — bound Dice clone (DICE-B12)", () => {
 			),
 		).rejects.toThrow("dice fork boom");
 
-		// No fork branch created (the whole tx rolled back)…
-		const branches = await db.select().from(schema.chatBranches)
-			.where(sql`chat_id = 'chat_1'`).all();
-		expect(branches.length).toBe(1); // only the root branch
-
-		// …and no orphaned dice rows on any new message.
-		const allRolls = await db.select().from(schema.diceRolls).all();
-		expect(allRolls.length).toBe(1); // only the source roll
-		expect(allRolls[0]!.boundMessageId).toBe(userId);
+		// No fork branch, message, variant, or dice row leaked out of the aborted txn.
+		expect(await db.select().from(schema.chatBranches).orderBy(schema.chatBranches.id).all()).toEqual(beforeBranches);
+		expect(await db.select().from(schema.messages).orderBy(schema.messages.id).all()).toEqual(beforeMessages);
+		expect(await db.select().from(schema.messageVariants).orderBy(schema.messageVariants.id).all()).toEqual(beforeVariants);
+		expect(await db.select().from(schema.diceRolls).orderBy(schema.diceRolls.id).all()).toEqual(beforeRolls);
 	});
 });

@@ -44,11 +44,15 @@ describe("CoauthorModuleStore (CS-24)", () => {
     const created = await store.create(PAYLOAD);
     expect(created.id).toMatch(/^cmod_test_\d+$/);
     expect(created.name).toBe("My Module");
+    expect(created.description).toBe("A custom module");
     expect(created.basePrompt).toBe("You are a co-author. ...");
     expect(created.openingMessage).toBe("Hi, I'll help with {{char}}.");
     expect(created.skillIds).toEqual(["general-writing"]);
     expect(created.toolSet).toEqual({ write_profile: true, edit_personality: true });
     expect(created.maxSteps).toBe(4);
+    expect(created.sortOrder).toBe(0);
+    expect(created.createdAt).toBe("2026-06-06T00:00:00.000Z");
+    expect(created.updatedAt).toBe("2026-06-06T00:00:00.000Z");
 
     const fetched = await store.getById(created.id);
     expect(fetched).toEqual(created);
@@ -64,12 +68,29 @@ describe("CoauthorModuleStore (CS-24)", () => {
   });
 
   test("update merges a partial (single field) and bumps updatedAt", async () => {
-    const store = await mkStore();
+    const dir = await mkdtemp(join(tmpdir(), "vibe-tavern-db-test-"));
+    const db = await createDb(join(dir, "test.db"));
+    let tick = 0;
+    const steppedClock: StoreClock = {
+      now() {
+        tick += 1;
+        return `2026-06-06T00:00:0${tick - 1}.000Z`;
+      },
+    };
+    const store = new CoauthorModuleStore(db, { clock: steppedClock, idGenerator: testIdGen });
     const created = await store.create(PAYLOAD);
     const updated = await store.update(created.id, { maxSteps: 9 });
     expect(updated.maxSteps).toBe(9);
+    expect(updated.createdAt).toBe("2026-06-06T00:00:00.000Z");
+    expect(updated.updatedAt).toBe("2026-06-06T00:00:01.000Z");
+    expect(updated.updatedAt).not.toBe(created.updatedAt);
     expect(updated.name).toBe("My Module"); // untouched
+    expect(updated.description).toBe(PAYLOAD.description);
     expect(updated.basePrompt).toBe(PAYLOAD.basePrompt); // untouched
+    expect(updated.openingMessage).toBe(PAYLOAD.openingMessage);
+    expect(updated.skillIds).toEqual(PAYLOAD.skillIds);
+    expect(updated.toolSet).toEqual(PAYLOAD.toolSet);
+    expect(await store.getById(created.id)).toEqual(updated);
   });
 
   test("update with a full payload replaces every field", async () => {
@@ -85,9 +106,13 @@ describe("CoauthorModuleStore (CS-24)", () => {
       maxSteps: 7,
     });
     expect(updated.name).toBe("Renamed");
+    expect(updated.description).toBe("new desc");
+    expect(updated.basePrompt).toBe("new prompt");
+    expect(updated.openingMessage).toBe("new opening");
     expect(updated.skillIds).toEqual(["dialogue-generation"]);
     expect(updated.toolSet).toEqual({ edit_examples: true });
     expect(updated.maxSteps).toBe(7);
+    expect(await store.getById(created.id)).toEqual(updated);
   });
 
   test("update throws when the id does not exist", async () => {
@@ -206,44 +231,60 @@ describe("CoauthorModuleStore — stored order (ML-5)", () => {
   test("equal sort_order falls back to createdAt ASC, then id ASC (total order)", async () => {
     // Rows the order does not know (or rows tied by a bulk backfill) must not
     // shuffle nondeterministically: the store's list ordering stays total via
-    // created_at → id fallbacks. Flattening sort_order back to the migration
-    // default simulates such rows (the fixed testClock pins createdAt equal,
-    // so the id tiebreak is exercised too).
+    // created_at → id fallbacks. Insert IDs out of alphabetical order ("C", "A", "B")
+    // so id ASC differs from insertion/rowid order when sort_order and createdAt tie.
     const dir = await mkdtemp(join(tmpdir(), "vibe-tavern-db-test-"));
     const db = await createDb(join(dir, "test.db"));
-    const store = new CoauthorModuleStore(db, { clock: testClock, idGenerator: testIdGen });
+    const ids = ["cmod_c", "cmod_a", "cmod_b"];
+    let idIdx = 0;
+    const outOfOrderIdGen: StoreIdGenerator = {
+      next() {
+        return ids[idIdx++]!;
+      },
+    };
+    const store = new CoauthorModuleStore(db, { clock: testClock, idGenerator: outOfOrderIdGen });
+    await store.create({ ...PAYLOAD, name: "C" });
     await store.create({ ...PAYLOAD, name: "A" });
     await store.create({ ...PAYLOAD, name: "B" });
-    await store.create({ ...PAYLOAD, name: "C" });
     await db
       .update(coauthorModules)
       .set({ sortOrder: 0 })
       .run();
     const all = await store.list();
     expect(all.every((m) => m.sortOrder === 0)).toBe(true);
-    expect(all.map((m) => m.name)).toEqual(["A", "B", "C"]); // same clock ⇒ id ASC
+    expect(all.map((m) => m.id)).toEqual(["cmod_a", "cmod_b", "cmod_c"]); // same clock ⇒ id ASC
+    expect(all.map((m) => m.name)).toEqual(["A", "B", "C"]);
   });
 
   test("createdAt breaks a sort_order tie before id is consulted", async () => {
-    // Distinct createdAt values (a stepped clock) decide the order when
-    // sort_order ties, matching the backfill's ORDER BY created_at ASC, id ASC.
+    // Pit createdAt ASC strictly against BOTH insertion order and id ASC:
+    // the later-timestamp row is inserted first with a smaller id, while the
+    // earlier-timestamp row is inserted second with a larger id.
     const dir = await mkdtemp(join(tmpdir(), "vibe-tavern-db-test-"));
     const db = await createDb(join(dir, "test.db"));
-    let tick = 0;
-    const steppedClock: StoreClock = {
+    const times = ["2026-06-06T00:00:02.000Z", "2026-06-06T00:00:01.000Z"];
+    let tIdx = 0;
+    const reverseClock: StoreClock = {
       now() {
-        tick += 1;
-        return `2026-06-06T00:00:${String(tick).padStart(2, "0")}.000Z`;
+        return times[tIdx++]!;
       },
     };
-    const store = new CoauthorModuleStore(db, { clock: steppedClock, idGenerator: testIdGen });
-    await store.create({ ...PAYLOAD, name: "first-created" });
-    await store.create({ ...PAYLOAD, name: "second-created" });
+    const ids = ["cmod_a", "cmod_z"];
+    let idIdx = 0;
+    const idGen: StoreIdGenerator = {
+      next() {
+        return ids[idIdx++]!;
+      },
+    };
+    const store = new CoauthorModuleStore(db, { clock: reverseClock, idGenerator: idGen });
+    await store.create({ ...PAYLOAD, name: "second-chronologically" });
+    await store.create({ ...PAYLOAD, name: "first-chronologically" });
     await db
       .update(coauthorModules)
       .set({ sortOrder: 0 })
       .run();
     const all = await store.list();
-    expect(all.map((m) => m.name)).toEqual(["first-created", "second-created"]);
+    expect(all.map((m) => m.name)).toEqual(["first-chronologically", "second-chronologically"]);
+    expect(all.map((m) => m.id)).toEqual(["cmod_z", "cmod_a"]);
   });
 });

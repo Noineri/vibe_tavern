@@ -230,14 +230,25 @@ describe("ChatStore.forkBranch — bound experience attachment clone (IR-53)", (
   });
 
   test("later unsent state: an attachment bound AFTER the fork point is NOT copied", async () => {
-    // Two user messages, each with a bound attachment (same session, successive
-    // queue revisions). Fork from the FIRST.
+    // Two user messages, each with a distinct bound attachment snapshot (same session,
+    // successive queue revisions). Fork from the FIRST.
     const sessionId = await seedSession();
-    const first = await userMessageWithBoundAttachment(sessionId, "move one", 1);
+    const firstPublic = JSON.stringify({ title: "Tic-Tac-Toe", summary: "Round 1", events: [{ type: "move", detail: "X center" }] });
+    const firstHidden = '{"board":["X","","","","","","","",""]}';
+    const secondPublic = JSON.stringify({ title: "Tic-Tac-Toe", summary: "Round 2", events: [{ type: "move", detail: "O corner" }] });
+    const secondHidden = '{"board":["X","O","","","","","","",""]}';
+
+    const first = await userMessageWithBoundAttachment(sessionId, "move one", 1, {
+      publicEventsJson: firstPublic,
+      hiddenStateCheckpointJson: firstHidden,
+    });
     await messageStore.addMessage({
       chatId: "chat_1", branchId: "brnch_1", role: "assistant", authorType: "assistant", content: "reply one",
     });
-    const second = await userMessageWithBoundAttachment(sessionId, "move two", 2);
+    const second = await userMessageWithBoundAttachment(sessionId, "move two", 2, {
+      publicEventsJson: secondPublic,
+      hiddenStateCheckpointJson: secondHidden,
+    });
 
     const forked = await chatStore.forkBranch(
       "chat_1", first.messageId, "partial fork",
@@ -250,13 +261,22 @@ describe("ChatStore.forkBranch — bound experience attachment clone (IR-53)", (
     expect(forkedMessages.length).toBe(1);
     expect(forkedMessages[0]!.role).toBe("user");
 
-    // The forked branch has exactly ONE attachment (from the first message).
+    // The forked branch has ONLY the first message's attachment snapshot (distinct from `second`).
     const allForked = db.select()
       .from(schema.experienceAttachments)
       .where(eq(schema.experienceAttachments.branchId, forked.id))
       .all();
     expect(allForked).toHaveLength(1);
+    expect(allForked[0]!.id).not.toBe(first.attachmentId);
+    expect(allForked[0]!.id).not.toBe(second.attachmentId);
     expect(allForked[0]!.boundMessageId).toBe(forkedMessages[0]!.id);
+    expect(allForked[0]!.publicEventsJson).toBe(firstPublic);
+    expect(allForked[0]!.hiddenStateCheckpointJson).toBe(firstHidden);
+
+    const sourceSecond = await experiences.getAttachmentsForMessage(second.messageId);
+    expect(sourceSecond).toHaveLength(1);
+    expect(sourceSecond[0]!.id).toBe(second.attachmentId);
+    expect(sourceSecond[0]!.hiddenStateCheckpointJson).toBe(secondHidden);
   });
 
   test("fork with no bound attachment is a no-op for the experience copy", async () => {
@@ -298,34 +318,45 @@ describe("ChatStore.forkBranch — bound experience attachment clone (IR-53)", (
 
   test("fork rollback: a callback throw rolls back BOTH dice + experience copies (no orphans)", async () => {
     const sessionId = await seedSession();
-    const { messageId: userId } = await userMessageWithBoundAttachment(sessionId, "rollback me", 1);
+    const { messageId: userId, attachmentId } = await userMessageWithBoundAttachment(sessionId, "rollback me", 1);
     await diceStore.createRoll({ chatId: "chat_1", branchId: "brnch_1", mode: "normal", ...rollInput({ requestId: "req_rb" }) });
     await diceStore.bindActiveAndReset("chat_1", "brnch_1", "normal", 1, userId);
 
-    const sourceRollCount = (await diceStore.getRollsForMessage(userId)).length;
-    const sourceAttCount = (await experiences.getAttachmentsForMessage(userId)).length;
+    const sourceRolls = await diceStore.getRollsForMessage(userId);
+    const sourceAttachments = await experiences.getAttachmentsForMessage(userId);
+    expect(sourceRolls).toHaveLength(1);
+    expect(sourceAttachments).toHaveLength(1);
 
-    // A callback that copies then throws — the whole synchronous fork transaction
-    // (messages + dice + experience) must roll back together.
+    // Run BOTH copy hooks first, then throw AFTER experience copy inserts rows, so
+    // the synchronous transaction rolls back messages + dice rolls + experience attachments.
+    let diceRan = false;
+    let experienceRan = false;
     await expect(
       chatStore.forkBranch(
         "chat_1", userId, "rollback fork",
         (tx, msgIdMap) => {
+          diceRan = true;
           diceStore.forkCopyRollsInTx(tx, msgIdMap);
+        },
+        (tx, msgIdMap, newBranchId) => {
+          experienceRan = true;
+          experiences.forkCopyAttachmentsInTx(tx, msgIdMap, newBranchId);
           throw new Error("combined fork boom");
         },
-        (tx, msgIdMap, newBranchId) => experiences.forkCopyAttachmentsInTx(tx, msgIdMap, newBranchId),
       ),
     ).rejects.toThrow("combined fork boom");
+
+    expect(diceRan).toBe(true);
+    expect(experienceRan).toBe(true);
 
     // No new branch was created (the fork fully rolled back).
     const branches = await chatStore.getBranches("chat_1");
     expect(branches.length).toBe(1);
-    // No orphan dice rolls or attachments leak onto a non-existent branch.
+    // Only the original source rows remain; no orphan copies exist.
     const allRolls = db.select().from(schema.diceRolls).all();
-    expect(allRolls.length).toBe(sourceRollCount);
+    expect(allRolls.map((r) => r.id)).toEqual([sourceRolls[0]!.id]);
     const allAttachments = db.select().from(schema.experienceAttachments).all();
-    expect(allAttachments.length).toBe(sourceAttCount);
+    expect(allAttachments.map((a) => a.id)).toEqual([attachmentId]);
   });
 });
 
