@@ -90,6 +90,31 @@ function installNetworkGuard(): void {
   globalThis.fetch = Object.assign(guard, { preconnect: () => {} });
 }
 
+export interface DomEnvOptions {
+  /** Fail any test that reached for the network (see `installNetworkGuard`). */
+  readonly failOnNetwork?: boolean;
+}
+
+/**
+ * Build the per-test network-guard drain hook used by `useDomEnv`'s `afterEach`.
+ * Exported so the self-test can verify both strict (`failOnNetwork: true`) and
+ * permissive draining directly against `DomEnvOptions`.
+ */
+export function createNetworkGuardAfterEach(options: DomEnvOptions = {}): () => void {
+  const failOnNetwork = options.failOnNetwork === true;
+  return () => {
+    const blocked = blockedRequests.splice(0);
+    if (failOnNetwork && blocked.length > 0) {
+      const targets = [...new Set(blocked.map((r) => `${r.method} ${r.url}`))].join(", ");
+      throw new Error(
+        `This test reached for the network ${blocked.length} time(s): ${targets}. ` +
+          "Mock the module that fetches (spread the real module, override the one function), " +
+          "or assign globalThis.fetch for the duration of the test.",
+      );
+    }
+  };
+}
+
 function ensureDomEnvRegistration(): void {
   if (typeof globalThis.window === "undefined") {
     GlobalRegistrator.register();
@@ -188,25 +213,13 @@ const { cleanup } = await import("@testing-library/react");
  */
 expect.extend(matchers);
 
-export interface DomEnvOptions {
-  /** Fail any test that reached for the network (see `installNetworkGuard`). */
-  readonly failOnNetwork?: boolean;
-}
-
 export function useDomEnv(options: DomEnvOptions = {}): void {
   ensureDomEnvRegistration();
+  const flushBlockedNetwork = createNetworkGuardAfterEach(options);
 
   afterEach(() => {
     cleanup();
-    const blocked = blockedRequests.splice(0);
-    if (options.failOnNetwork === true && blocked.length > 0) {
-      const targets = [...new Set(blocked.map((r) => `${r.method} ${r.url}`))].join(", ");
-      throw new Error(
-        `This test reached for the network ${blocked.length} time(s): ${targets}. ` +
-          "Mock the module that fetches (spread the real module, override the one function), " +
-          "or assign globalThis.fetch for the duration of the test.",
-      );
-    }
+    flushBlockedNetwork();
   });
 
   afterAll(async () => {
