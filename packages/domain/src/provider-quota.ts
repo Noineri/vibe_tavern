@@ -426,6 +426,7 @@ export const REMOTE_PROVIDER_PRESET_IDS = [
   "nanogpt",
   "chutes",
   "electronhub",
+  "demonroute",
   "zai",
   "zai-coding",
   "siliconflow",

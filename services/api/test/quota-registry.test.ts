@@ -66,9 +66,9 @@ describe("resolveQuotaAdapter", () => {
 		}
 	});
 
-	test("the other eighteen report not_exposed with a maintainer note", () => {
+	test("the other nineteen report not_exposed with a maintainer note", () => {
 		const unsupported = REMOTE_PROVIDER_PRESET_IDS.filter((id) => !SUPPORTED.has(id));
-		expect(unsupported).toHaveLength(18);
+		expect(unsupported).toHaveLength(19);
 		for (const presetId of unsupported) {
 			const capability = resolveQuotaAdapter(presetId, PRESET_ENDPOINTS[presetId]!);
 			expect(capability.kind).toBe(PROVIDER_QUOTA_KIND.none);

@@ -88,6 +88,7 @@ const PRESET_CAPABILITIES = {
 	// response from a real Chutes key before an adapter can be written honestly.
 	chutes: notExposed("Endpoint exists (/users/me/subscription_usage) but its response shape is unverified."),
 	electronhub: notExposed("No citable key-auth usage endpoint found."),
+	demonroute: notExposed("No citable key-auth usage endpoint found."),
 	siliconflow: notExposed("No citable key-auth usage endpoint found."),
 	pollinations: notExposed("No citable key-auth usage endpoint found."),
 	novelai: notExposed("No citable key-auth usage endpoint found."),

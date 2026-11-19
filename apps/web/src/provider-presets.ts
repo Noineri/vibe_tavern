@@ -46,6 +46,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   { id: "nanogpt", label: "NanoGPT", type: PROVIDER_TYPE.openaiCompat, baseUrl: "https://nano-gpt.com/api/v1", group: PROVIDER_PRESET_GROUP.cloud, requiresAuthForModels: true },
   { id: "chutes", label: "Chutes", type: PROVIDER_TYPE.openaiCompat, baseUrl: "https://llm.chutes.ai/v1", group: PROVIDER_PRESET_GROUP.cloud },
   { id: "electronhub", label: "ElectronHub", type: PROVIDER_TYPE.openaiCompat, baseUrl: "https://api.electronhub.ai/v1", group: PROVIDER_PRESET_GROUP.cloud },
+  { id: "demonroute", label: "Demon Route", type: PROVIDER_TYPE.openaiCompat, baseUrl: "https://api.demonroute.com/v1", group: PROVIDER_PRESET_GROUP.cloud, requiresAuthForModels: true },
   { id: "novelai", label: "NovelAI", type: PROVIDER_TYPE.novelai, baseUrl: "https://text.novelai.net", group: PROVIDER_PRESET_GROUP.native, requiresAuthForModels: true, defaultMaxTokens: 150 },
   { id: "novelai_oa", label: "NovelAI", type: PROVIDER_TYPE.openaiCompat, baseUrl: "https://text.novelai.net/oa/v1", group: PROVIDER_PRESET_GROUP.cloud, requiresAuthForModels: true },
   { id: "zai", label: "ZAI", type: PROVIDER_TYPE.openaiCompat, baseUrl: "https://api.z.ai/api/paas/v4", group: PROVIDER_PRESET_GROUP.cloud },
